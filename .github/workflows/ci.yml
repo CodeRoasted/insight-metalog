@@ -1,0 +1,56 @@
+name: CI
+permissions:
+  contents: read
+  pull-requests: read
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'api/**'
+      - 'src/**'
+      - 'tests/**'
+      - 'benchmarks/**'
+      - 'CMakeLists.txt'
+      - 'conanfile.py'
+      - '.github/workflows/ci.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      CONAN_HOME: ${{ github.workspace }}/.conan2
+      INSIGHT_REPO: coderoast-dev/insight
+      CR_PIN_INSIGHT: '1.2.8'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build python3-pip build-essential clang-tidy
+
+      - name: Setup Conan
+        uses: conan-io/setup-conan@v1
+        with:
+          home: ${{ env.CONAN_HOME }}
+          cache_packages: true
+          profile_detect: false
+
+      - name: Vendor insight_sequence from insight release
+        env:
+          GH_TOKEN: ${{ secrets.INSIGHT_RELEASE_TOKEN }}
+        run: |
+          for pkg in insight_core insight_tokenization insight_sequence; do
+            bash scripts/ci_fetch_conan_package.sh "$pkg" "$CR_PIN_INSIGHT" "$INSIGHT_REPO"
+          done
+
+      - name: Build and test
+        run: |
+          conan create . \
+            --profile:host="$CONAN_HOME/profiles/linux-gcc13-release" \
+            --profile:build="$CONAN_HOME/profiles/linux-gcc13-release" \
+            --build=missing \
+            --build-test=missing
