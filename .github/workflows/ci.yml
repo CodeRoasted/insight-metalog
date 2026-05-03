@@ -21,8 +21,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CONAN_HOME: ${{ github.workspace }}/.conan2
-      INSIGHT_REPO: coderoast-dev/insight
-      CR_PIN_INSIGHT: '1.2.8'
+      INSIGHT_CANON_REPO: coderoast-dev/insight-canon
+      CR_PIN_INSIGHT_CANON: '1.2.8'
 
     steps:
       - uses: actions/checkout@v4
@@ -39,13 +39,11 @@ jobs:
           cache_packages: true
           profile_detect: false
 
-      - name: Vendor insight_sequence from insight release
+      - name: Vendor insight_canon from insight-canon release
         env:
           GH_TOKEN: ${{ secrets.INSIGHT_RELEASE_TOKEN }}
         run: |
-          for pkg in insight_core insight_tokenization insight_sequence; do
-            bash scripts/ci_fetch_conan_package.sh "$pkg" "$CR_PIN_INSIGHT" "$INSIGHT_REPO"
-          done
+          bash scripts/ci_fetch_conan_package.sh insight_canon "$CR_PIN_INSIGHT_CANON" "$INSIGHT_CANON_REPO"
 
       - name: Build and test
         run: |

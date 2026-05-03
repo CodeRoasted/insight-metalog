@@ -1,28 +1,23 @@
 # insight-metalog
 
-**Phase 3 of the InSight pipeline** — MetaLog v0.2.0 producer.
+**insight-metalog** — MetaLog v0.2.0 producer.
 
-`insight_metalog` consumes an event sequence (Phase 2 output from `insight_sequence`) and produces a **bounded statistical fingerprint** of a window of log behaviour: composition, session framing, HLL-backed field-cardinality estimation, transition-stability ratios, and diff-encoded deltas between windows.
+`insight_metalog` consumes an event sequence from `insight_canon` and produces a **bounded statistical fingerprint** of a window of log behaviour: composition, session framing, HLL-backed field-cardinality estimation, transition-stability ratios, and diff-encoded deltas between windows.
 
-It is the reference implementation of the open [MetaLog specification](https://github.com/coderoast-dev/metalog-spec) and the direct upstream of the detection layer (`insight_detection`).
+It is the reference implementation of the open [MetaLog specification](https://github.com/coderoast-dev/metalog-spec) and the direct upstream of the detection layer in **insight-eidos**.
 
 ## Pipeline
 
 ```text
 Raw logs
-  -> Phase 1: tokenization -> CanonicalEvent         (insight-canon)
-  -> Phase 2: sequence     -> event stream            (insight-canon)
-  -> Phase 3: MetaLog      -> bounded fingerprint     (this repo)
-  -> Phase 4: detection    -> precision-first reports (insight-eidos)
-  -> Phase 5: explain      -> human explanation layer (insight-eidos)
+  insight-canon   ->  CanonicalEvent  ->  event stream
+  insight-metalog ->  bounded behavioral fingerprint
+  insight-eidos   ->  detection reports + explain packets
 ```
 
-> **Phase 1 — Canonical event** (`insight_tokenization`): Format strategies,
-> parser, Drain clustering, tokenizer facade. Produces the canonical
-> event representation that all downstream phases consume.
-
-> **Phase 2 — Sequence** (`insight_sequence`): Event ordering, n-gram model,
-> transition graph. Produces the event stream / transition model.
+> **insight-canon** (`insight_canon`): Tokenization — format strategies, parser, Drain clustering,
+> tokenizer facade, producing the canonical event representation — then Sequence — event ordering,
+> n-gram model, transition graph.
 
 ## Package
 
