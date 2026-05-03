@@ -75,4 +75,4 @@ conan create . \
 
 ### Release token
 
-The CI fetches `insight_sequence` (and its transitive dependencies) from the `insight-canon` GitHub Release. Set the repository secret `INSIGHT_RELEASE_TOKEN` to a fine-grained PAT with read access to `coderoast-dev/insight` releases.
+The CI fetches `insight_canon` from the `insight-canon` GitHub Release. Set the repository secret `INSIGHT_CANON_RELEASE_TOKEN` to a fine-grained PAT with read access to `coderoast-dev/insight-canon` releases.
