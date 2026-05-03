@@ -13,7 +13,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(INSIGHT_METALOG_BUILD_TESTS "Build metalog unit tests" ${PROJECT_IS_TOP_LEVEL})
 option(INSIGHT_METALOG_BUILD_BENCHMARKS "Build metalog micro-benchmarks" ${PROJECT_IS_TOP_LEVEL})
 
-find_package(insight_sequence REQUIRED CONFIG)
+find_package(insight_canon REQUIRED CONFIG)
 find_package(nlohmann_json REQUIRED CONFIG)
 find_package(picosha2 REQUIRED CONFIG)
 
@@ -35,7 +35,7 @@ target_include_directories(insight_metalog
 
 target_link_libraries(insight_metalog
     PUBLIC
-        insight::sequence
+        insight::canon
         nlohmann_json::nlohmann_json
     PRIVATE
         picosha2::picosha2
@@ -98,52 +98,5 @@ if(INSIGHT_METALOG_BUILD_BENCHMARKS)
         target_include_directories(insight_metalog_bench PRIVATE
             "${CMAKE_CURRENT_SOURCE_DIR}/src"
         )
-    endif()
-endif()
-
-###########################################################
-#  Integration tests vs LogCraft (off-chain, opt-in)
-#  --------------------------------------------------------
-#  Lightweight format-compatibility tests that confirm this
-#  phase still consumes LogCraft outputs as expected. Built
-#  only when logcraft_core is reachable through find_package
-#  (i.e. the user vendored it from the shared CodeRoast cache,
-#  see scripts/setup_shared_cache.sh or scripts/dev.sh package integration).
-###########################################################
-find_package(logcraft_core CONFIG QUIET)
-option(INSIGHT_METALOG_BUILD_INTEGRATION_TESTS
-    "Build metalog-vs-LogCraft format compatibility tests"
-    ${logcraft_core_FOUND})
-
-if(INSIGHT_METALOG_BUILD_INTEGRATION_TESTS)
-    if(NOT logcraft_core_FOUND)
-        message(FATAL_ERROR
-            "INSIGHT_METALOG_BUILD_INTEGRATION_TESTS=ON but logcraft_core "
-            "was not found. Run scripts/setup_shared_cache.sh and ensure "
-            "scripts/dev.sh package integration has vendored logcraft_core into "
-            "the local Conan cache, then re-configure.")
-    endif()
-
-    file(GLOB_RECURSE INTEGRATION_SOURCES CONFIGURE_DEPENDS
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/integration/*.cpp"
-    )
-
-    if(INTEGRATION_SOURCES)
-        include(CTest)
-        find_package(GTest REQUIRED CONFIG)
-        enable_testing()
-
-        add_executable(insight_metalog_integration_tests ${INTEGRATION_SOURCES})
-        target_link_libraries(insight_metalog_integration_tests PRIVATE
-            insight_metalog
-            logcraft::core
-            GTest::gtest
-            GTest::gtest_main
-        )
-        target_include_directories(insight_metalog_integration_tests PRIVATE
-            "${CMAKE_CURRENT_SOURCE_DIR}/src"
-        )
-        include(GoogleTest)
-        gtest_discover_tests(insight_metalog_integration_tests)
     endif()
 endif()

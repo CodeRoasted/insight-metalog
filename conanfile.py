@@ -30,7 +30,7 @@ class InsightMetalogConan(ConanFile):
             self.options.rm_safe("fPIC")
 
     def requirements(self):
-        self.requires("insight_sequence/1.2.8", transitive_headers=True, transitive_libs=True)
+        self.requires("insight_canon/1.2.8", transitive_headers=True, transitive_libs=True)
         self.requires("nlohmann_json/3.11.3", transitive_headers=True, transitive_libs=True)
         self.requires("picosha2/1.0.0")
 
