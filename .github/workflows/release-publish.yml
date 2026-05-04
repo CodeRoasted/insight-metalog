@@ -81,12 +81,7 @@ jobs:
       - name: Verify recipe version matches tag
         run: |
           set -euo pipefail
-          RECIPE_VERSION="$(python3 -c "
-          import re, pathlib
-          m = re.search(r'^\s*version\s*=\s*[\"\'']([^\"\'\']+)[\"\'']',
-                        pathlib.Path('conanfile.py').read_text(), re.M)
-          print(m.group(1) if m else '')
-          ")"
+          RECIPE_VERSION="$(sed -nE "s/^[[:space:]]*version[[:space:]]*=[[:space:]]*['\"]([^'\"]+)['\"]/\1/p" conanfile.py | head -n1 || true)"
           if [[ "$RECIPE_VERSION" != "${{ steps.tag.outputs.version }}" ]]; then
             echo "::error::conanfile.py version='$RECIPE_VERSION' != tag '${{ steps.tag.outputs.tag }}'"
             exit 1
