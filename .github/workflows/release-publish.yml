@@ -74,7 +74,7 @@ jobs:
 
       - name: Vendor insight_canon from insight-canon release
         env:
-          GH_TOKEN: ${{ secrets.INSIGHT_RELEASE_TOKEN }}
+          GH_TOKEN: ${{ secrets.INSIGHT_CANON_RELEASE_TOKEN }}
         run: |
           bash scripts/ci_fetch_conan_package.sh insight_canon "$CR_PIN_INSIGHT_CANON" "$INSIGHT_CANON_REPO"
 
