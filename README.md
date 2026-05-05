@@ -6,6 +6,8 @@
 
 It is the reference implementation of the open [MetaLog specification](https://github.com/coderoast-dev/metalog-spec) and the direct upstream of the detection layer in **insight-eidos**.
 
+Cross-repo package pins are tracked in [../technical_docs/compatibility_matrix.md](../technical_docs/compatibility_matrix.md), and planning lives in [../technical_docs/ROADMAP.md](../technical_docs/ROADMAP.md).
+
 ## Pipeline
 
 ```text
@@ -26,7 +28,7 @@ Raw logs
 | Conan name | `insight_metalog` |
 | Version | `1.2.8` |
 | Spec conformance | MetaLog v0.2.0 |
-| Visibility | Closed source |
+| Visibility | CodeRoast-owned package |
 
 ## Requirements
 
@@ -76,3 +78,11 @@ conan create . \
 ### Release token
 
 The CI fetches `insight_canon` from the `insight-canon` GitHub Release. Set the repository secret `INSIGHT_CANON_RELEASE_TOKEN` to a fine-grained PAT with read access to `coderoast-dev/insight-canon` releases.
+
+## Technical Docs
+
+MetaLog producer phase reference lives in [technical_docs/](technical_docs/README.md).
+
+## License
+
+License not yet decided — Apache-2.0 or BSL-1.1. Decision will be made before v1 public launch. See [insight-eidos/technical_docs/product/open_source_strategy.md](../insight-eidos/technical_docs/product/open_source_strategy.md) for rationale.
