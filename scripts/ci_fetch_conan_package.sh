@@ -15,8 +15,8 @@
 # revision), this is a no-op and exits 0 without contacting GitHub.
 #
 # Usage:
-#   bash scripts/ci_fetch_conan_package.sh logcraft_core 1.0.0 coderoast-dev/logcraft
-#   bash scripts/ci_fetch_conan_package.sh coderoast_ipc 0.1.0 coderoast-dev/coderoast-ipc
+#   bash scripts/ci_fetch_conan_package.sh logcraft_core X.X.X coderoast-dev/logcraft
+#   bash scripts/ci_fetch_conan_package.sh coderoast_ipc X.X.X coderoast-dev/coderoast-ipc
 #
 # Requirements:
 #   * `gh` CLI on PATH (pre-installed on GitHub-hosted runners).
