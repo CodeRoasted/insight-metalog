@@ -22,7 +22,7 @@ jobs:
     env:
       CONAN_HOME: ${{ github.workspace }}/.conan2
       INSIGHT_CANON_REPO: coderoast-dev/insight-canon
-      CR_PIN_INSIGHT_CANON: '1.3.0'
+      CR_PIN_INSIGHT_CANON: '1.3.1'
 
     steps:
       - uses: actions/checkout@v4
@@ -38,6 +38,11 @@ jobs:
           home: ${{ env.CONAN_HOME }}
           cache_packages: true
           profile_detect: false
+
+      - name: Setup Conan profile
+        run: |
+          mkdir -p "$CONAN_HOME/profiles"
+          cp linux-gcc13-release "$CONAN_HOME/profiles/linux-gcc13-release"
 
       - name: Vendor insight_canon from insight-canon release
         env:
