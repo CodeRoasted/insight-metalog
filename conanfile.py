@@ -29,6 +29,10 @@ class InsightMetalogConan(ConanFile):
         if self.options.get_safe("shared"):
             self.options.rm_safe("fPIC")
 
+    def layout(self):
+        self.cpp.source.includedirs = ["api"]
+        self.cpp.build.libdirs = ["build"]
+
     def requirements(self):
         self.requires("insight_canon/1.3.0", transitive_headers=True, transitive_libs=True)
         self.requires("nlohmann_json/3.11.3", transitive_headers=True, transitive_libs=True)
