@@ -1341,9 +1341,10 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
     std::ranges::sort(out.new_templates);
     std::ranges::sort(out.vanished_templates);
 
-    // branching_delta: join on template_id
-    if (previous.behavior && current.behavior &&
-        (!previous.behavior->branching.empty() || !current.behavior->branching.empty()))
+    // branching_delta: join on template_id. Missing branching rows mean
+    // "not comparable" (e.g. composed docs), not zero entropy.
+    if (previous.behavior && current.behavior && !previous.behavior->branching.empty() &&
+        !current.behavior->branching.empty())
     {
         std::unordered_map<std::string, double> prev_h;
         for (const auto& b : previous.behavior->branching)
