@@ -161,6 +161,37 @@ TEST_F(BehaviorBlockTest, TopNgramsSizeZeroOmitsBlock)
     EXPECT_FALSE(doc.behavior.has_value());
 }
 
+TEST_F(BehaviorBlockTest, DiffDoesNotInventBranchingDeltaWhenComposedBaselineDropsBranching)
+{
+    meta::MetaLogEngine engine{meta::MetaLogConfig{
+        .top_k_size = 8,
+        .top_ngrams_size = 8,
+        .top_branching_size = 8,
+    }};
+
+    engine.open_window(start_);
+    const auto a{make_event("alpha")};
+    const auto b{make_event("beta")};
+    const auto c{make_event("gamma")};
+    engine.ingest_event(a);
+    engine.ingest_event(b);
+    engine.ingest_event(a);
+    engine.ingest_event(c);
+    const auto doc{engine.close_window(start_ + std::chrono::seconds(1))};
+
+    ASSERT_TRUE(doc.behavior.has_value());
+    ASSERT_FALSE(doc.behavior->branching.empty());
+
+    const auto composed{meta::compose(doc, doc)};
+    ASSERT_TRUE(composed.behavior.has_value());
+    EXPECT_TRUE(composed.behavior->branching.empty());
+
+    const auto diff{meta::diff(composed, doc)};
+    EXPECT_TRUE(diff.branching_delta.empty())
+        << "A composed baseline has no comparable branching entropy rows; missing rows must not "
+           "be treated as zero entropy.";
+}
+
 TEST_F(BehaviorBlockTest, BoundedNgramKeysCapDistinctEntries)
 {
     meta::MetaLogEngine engine{meta::MetaLogConfig{
