@@ -41,13 +41,14 @@ Raw logs
 ## Quick Start
 
 ```sh
-# Install with malf (from coderoast parent repo)
+# Local CodeRoast workspace iteration
 malf build .
+malf test .
 
 # Or directly
 conan install . \
-  --profile:host=.conan2/profiles/linux-gcc13-release \
-  --profile:build=.conan2/profiles/linux-gcc13-release \
+  --profile:host=linux-gcc13-release \
+  --profile:build=linux-gcc13-release \
   --build=missing
 cmake --preset conan-release
 cmake --build build --preset conan-release
@@ -55,8 +56,8 @@ ctest --test-dir build --output-on-failure
 
 # Create the Conan package
 conan create . \
-  --profile:host=.conan2/profiles/linux-gcc13-release \
-  --profile:build=.conan2/profiles/linux-gcc13-release \
+  --profile:host=linux-gcc13-release \
+  --profile:build=linux-gcc13-release \
   --build=missing \
   --build-test=missing
 ```
@@ -85,4 +86,4 @@ MetaLog producer phase reference lives in [technical_docs/](technical_docs/READM
 
 ## License
 
-License not yet decided — Apache-2.0 or BSL-1.1. Decision will be made before v1 public launch. See [insight-eidos/technical_docs/product/open_source_strategy.md](../insight-eidos/technical_docs/product/open_source_strategy.md) for rationale.
+Planned source license for public launch: BUSL-1.1 (Business Source License 1.1), with `insight-canon` remaining Apache-2.0 and `insight-eidos` remaining closed source. Before public release, add the license file and recipe/package metadata so the repository state matches the strategy. See [insight-eidos/technical_docs/product/open_source_strategy.md](../insight-eidos/technical_docs/product/open_source_strategy.md) for rationale.
