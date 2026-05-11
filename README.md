@@ -26,7 +26,7 @@ Raw logs
 | Field | Value |
 |---|---|
 | Conan name | `insight_metalog` |
-| Version | `1.3.2` |
+| Version | `1.3.3` |
 | Spec conformance | MetaLog v0.2.0 |
 | Visibility | CodeRoast-owned package |
 

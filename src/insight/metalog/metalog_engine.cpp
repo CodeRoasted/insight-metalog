@@ -23,87 +23,86 @@ namespace insight::metalog
 
 namespace
 {
-    constexpr std::size_t kHashLeftShift{6U};
-    constexpr std::size_t kHashRightShift{2U};
+constexpr std::size_t kHashLeftShift{6U};
+constexpr std::size_t kHashRightShift{2U};
 
-    std::string format_rfc3339_utc(Timestamp timestamp)
-    {
-        const auto secs{std::chrono::time_point_cast<std::chrono::seconds>(timestamp)};
-        const std::time_t tt{std::chrono::system_clock::to_time_t(secs)};
-        std::tm tm{};
+std::string format_rfc3339_utc(Timestamp timestamp)
+{
+    const auto secs{std::chrono::time_point_cast<std::chrono::seconds>(timestamp)};
+    const std::time_t tt{std::chrono::system_clock::to_time_t(secs)};
+    std::tm tm{};
 #if defined(_WIN32)
-        gmtime_s(&tm, &tt);
+    gmtime_s(&tm, &tt);
 #else
-        gmtime_r(&tt, &tm);
+    gmtime_r(&tt, &tm);
 #endif
-        std::ostringstream oss;
-        oss << std::put_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
-        return oss.str();
-    }
+    std::ostringstream oss;
+    oss << std::put_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
+    return oss.str();
+}
 
-    std::optional<LogLevel>
-    dominant_level_of(const std::unordered_map<LogLevel, std::uint64_t>& levels)
+std::optional<LogLevel> dominant_level_of(const std::unordered_map<LogLevel, std::uint64_t>& levels)
+{
+    if (levels.empty())
+        return std::nullopt;
+    auto best_it{levels.begin()};
+    for (auto it{std::next(levels.begin())}; it != levels.end(); ++it)
     {
-        if (levels.empty())
-            return std::nullopt;
-        auto best_it{levels.begin()};
-        for (auto it{std::next(levels.begin())}; it != levels.end(); ++it)
-        {
-            if (it->second > best_it->second)
-                best_it = it;
-        }
-        return best_it->first;
+        if (it->second > best_it->second)
+            best_it = it;
     }
+    return best_it->first;
+}
 
-    std::string level_to_spec_string(LogLevel level)
+std::string level_to_spec_string(LogLevel level)
+{
+    switch (level)
     {
-        switch (level)
-        {
-        case LogLevel::Trace:
-            return "TRACE";
-        case LogLevel::Debug:
-            return "DEBUG";
-        case LogLevel::Info:
-            return "INFO";
-        case LogLevel::Warn:
-            return "WARN";
-        case LogLevel::Error:
-            return "ERROR";
-        case LogLevel::Fatal:
-            return "FATAL";
-        case LogLevel::Unknown:
-        default:
-            return "INFO"; // spec doesn't define UNKNOWN
-        }
+    case LogLevel::Trace:
+        return "TRACE";
+    case LogLevel::Debug:
+        return "DEBUG";
+    case LogLevel::Info:
+        return "INFO";
+    case LogLevel::Warn:
+        return "WARN";
+    case LogLevel::Error:
+        return "ERROR";
+    case LogLevel::Fatal:
+        return "FATAL";
+    case LogLevel::Unknown:
+    default:
+        return "INFO"; // spec doesn't define UNKNOWN
     }
+}
 
-    [[nodiscard]] std::size_t mix(std::size_t seed, std::uint64_t value) noexcept
-    {
-        constexpr std::size_t kGoldenRatio = 0x9e3779b97f4a7c15ULL;
-        seed ^= static_cast<std::size_t>(value) + kGoldenRatio + (seed << kHashLeftShift) +
-                (seed >> kHashRightShift);
-        return seed;
-    }
+[[nodiscard]] std::size_t mix(std::size_t seed, std::uint64_t value) noexcept
+{
+    constexpr std::size_t kGoldenRatio = 0x9e3779b97f4a7c15ULL;
+    seed ^= static_cast<std::size_t>(value) + kGoldenRatio + (seed << kHashLeftShift) +
+            (seed >> kHashRightShift);
+    return seed;
+}
 
-    // Shannon entropy in bits over a (possibly partial) frequency
-    // distribution: -Σ p log2 p. Computed over the bucketed templates
-    // we have full counts for; tail templates we only know the sum
-    // of, so we treat them collectively as a single residual bucket.
-    double shannon_entropy_bits(const std::vector<std::uint64_t>& counts, std::uint64_t total)
+// Shannon entropy in bits over a (possibly partial) frequency
+// distribution: -Σ p log2 p. Computed over the bucketed templates
+// we have full counts for; tail templates we only know the sum
+// of, so we treat them collectively as a single residual bucket.
+double shannon_entropy_bits(const std::vector<std::uint64_t>& counts, std::uint64_t total)
+{
+    if (total == 0)
+        return 0.0;
+    const double inv_total = 1.0 / static_cast<double>(total);
+    double h = 0.0;
+    for (auto c : counts)
     {
-        if (total == 0)
-            return 0.0;
-        const double inv_total = 1.0 / static_cast<double>(total);
-        double h = 0.0;
-        for (auto c : counts)
-        {
-            if (c == 0)
-                continue;
-            const double p = static_cast<double>(c) * inv_total;
-            h -= p * std::log2(p);
-        }
-        return h;
+        if (c == 0)
+            continue;
+        const double p = static_cast<double>(c) * inv_total;
+        h -= p * std::log2(p);
     }
+    return h;
+}
 
 } // namespace
 
@@ -330,114 +329,114 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
 namespace
 {
 
-    // KL(p || q) over the union of keys, with Laplace add-α smoothing
-    // applied to BOTH distributions so that zero entries on either
-    // side don't blow up to infinity. α = 1 over the union size is a
-    // standard cheap choice; the resulting divergence is biased but
-    // bounded and monotone in the underlying distributional change.
-    struct DivergenceResult
+// KL(p || q) over the union of keys, with Laplace add-α smoothing
+// applied to BOTH distributions so that zero entries on either
+// side don't blow up to infinity. α = 1 over the union size is a
+// standard cheap choice; the resulting divergence is biased but
+// bounded and monotone in the underlying distributional change.
+struct DivergenceResult
+{
+    double kl;
+    double js;
+};
+
+DivergenceResult divergences(const std::unordered_map<std::string, std::uint64_t>& cur,
+                             std::uint64_t cur_total,
+                             const std::unordered_map<std::string, std::uint64_t>& prev,
+                             std::uint64_t prev_total)
+{
+    std::unordered_set<std::string> keys;
+    keys.reserve(cur.size() + prev.size());
+    for (const auto& kv : cur)
+        keys.insert(kv.first);
+    for (const auto& kv : prev)
+        keys.insert(kv.first);
+    if (keys.empty() || cur_total == 0 || prev_total == 0)
+        return {0.0, 0.0};
+
+    const double alpha = 1.0;
+    const auto k{static_cast<double>(keys.size())};
+    const double cur_denom = static_cast<double>(cur_total) + (alpha * k);
+    const double prev_denom = static_cast<double>(prev_total) + (alpha * k);
+
+    double kl = 0.0;
+    double js = 0.0;
+    for (const auto& key : keys)
     {
-        double kl;
-        double js;
-    };
-
-    DivergenceResult divergences(const std::unordered_map<std::string, std::uint64_t>& cur,
-                                 std::uint64_t cur_total,
-                                 const std::unordered_map<std::string, std::uint64_t>& prev,
-                                 std::uint64_t prev_total)
-    {
-        std::unordered_set<std::string> keys;
-        keys.reserve(cur.size() + prev.size());
-        for (const auto& kv : cur)
-            keys.insert(kv.first);
-        for (const auto& kv : prev)
-            keys.insert(kv.first);
-        if (keys.empty() || cur_total == 0 || prev_total == 0)
-            return {0.0, 0.0};
-
-        const double alpha = 1.0;
-        const auto k{static_cast<double>(keys.size())};
-        const double cur_denom = static_cast<double>(cur_total) + (alpha * k);
-        const double prev_denom = static_cast<double>(prev_total) + (alpha * k);
-
-        double kl = 0.0;
-        double js = 0.0;
-        for (const auto& key : keys)
-        {
-            const auto cur_it{cur.find(key)};
-            const auto prev_it{prev.find(key)};
-            const double cn = (cur_it == cur.end() ? 0.0 : static_cast<double>(cur_it->second));
-            const double pn = (prev_it == prev.end() ? 0.0 : static_cast<double>(prev_it->second));
-            const double p = (cn + alpha) / cur_denom;
-            const double q = (pn + alpha) / prev_denom;
-            const double m = 0.5 * (p + q);
-            kl += p * std::log2(p / q);
-            js += 0.5 * ((p * std::log2(p / m)) + (q * std::log2(q / m)));
-        }
-        // NOLINTNEXTLINE(readability-use-std-min-max)
-        if (kl < 0.0)
-            kl = 0.0;
-        js = std::clamp(js, 0.0, 1.0);
-        return {.kl = kl, .js = js};
+        const auto cur_it{cur.find(key)};
+        const auto prev_it{prev.find(key)};
+        const double cn = (cur_it == cur.end() ? 0.0 : static_cast<double>(cur_it->second));
+        const double pn = (prev_it == prev.end() ? 0.0 : static_cast<double>(prev_it->second));
+        const double p = (cn + alpha) / cur_denom;
+        const double q = (pn + alpha) / prev_denom;
+        const double m = 0.5 * (p + q);
+        kl += p * std::log2(p / q);
+        js += 0.5 * ((p * std::log2(p / m)) + (q * std::log2(q / m)));
     }
+    // NOLINTNEXTLINE(readability-use-std-min-max)
+    if (kl < 0.0)
+        kl = 0.0;
+    js = std::clamp(js, 0.0, 1.0);
+    return {.kl = kl, .js = js};
+}
 
-    std::pair<std::uint64_t, std::uint64_t>
-    new_and_vanished(const std::unordered_map<std::string, std::uint64_t>& cur,
-                     const std::unordered_map<std::string, std::uint64_t>& prev)
+std::pair<std::uint64_t, std::uint64_t>
+new_and_vanished(const std::unordered_map<std::string, std::uint64_t>& cur,
+                 const std::unordered_map<std::string, std::uint64_t>& prev)
+{
+    std::uint64_t added = 0;
+    std::uint64_t gone = 0;
+    for (const auto& kv : cur)
+        if (!prev.contains(kv.first))
+            ++added;
+    for (const auto& kv : prev)
+        if (!cur.contains(kv.first))
+            ++gone;
+    return {added, gone};
+}
+
+// JS divergence between two per-param value-count maps.
+//
+// Uses the same Laplace-smoothed log2 convention as divergences():
+//   alpha = 1, smoothed over the union of keys.
+// Returns value in [0, 1] (bits, clamped).
+// Returns 0.0 when either total is zero.
+double histogram_js(const std::unordered_map<std::string, std::uint64_t>& prev,
+                    std::uint64_t prev_total,
+                    const std::unordered_map<std::string, std::uint64_t>& curr,
+                    std::uint64_t curr_total)
+{
+    if (prev_total == 0 || curr_total == 0)
+        return 0.0;
+
+    std::unordered_set<std::string> keys;
+    keys.reserve(prev.size() + curr.size());
+    for (const auto& [k, _] : prev)
+        keys.insert(k);
+    for (const auto& [k, _] : curr)
+        keys.insert(k);
+    if (keys.empty())
+        return 0.0;
+
+    const double alpha = 1.0;
+    const double k = static_cast<double>(keys.size());
+    const double p_denom = static_cast<double>(prev_total) + alpha * k;
+    const double c_denom = static_cast<double>(curr_total) + alpha * k;
+
+    double js = 0.0;
+    for (const auto& key : keys)
     {
-        std::uint64_t added = 0;
-        std::uint64_t gone = 0;
-        for (const auto& kv : cur)
-            if (!prev.contains(kv.first))
-                ++added;
-        for (const auto& kv : prev)
-            if (!cur.contains(kv.first))
-                ++gone;
-        return {added, gone};
+        const auto p_it = prev.find(key);
+        const auto c_it = curr.find(key);
+        const double pn = p_it == prev.end() ? 0.0 : static_cast<double>(p_it->second);
+        const double cn = c_it == curr.end() ? 0.0 : static_cast<double>(c_it->second);
+        const double p = (pn + alpha) / p_denom;
+        const double c = (cn + alpha) / c_denom;
+        const double m = 0.5 * (p + c);
+        js += 0.5 * ((p * std::log2(p / m)) + (c * std::log2(c / m)));
     }
-
-    // JS divergence between two per-param value-count maps.
-    //
-    // Uses the same Laplace-smoothed log2 convention as divergences():
-    //   alpha = 1, smoothed over the union of keys.
-    // Returns value in [0, 1] (bits, clamped).
-    // Returns 0.0 when either total is zero.
-    double histogram_js(const std::unordered_map<std::string, std::uint64_t>& prev,
-                        std::uint64_t prev_total,
-                        const std::unordered_map<std::string, std::uint64_t>& curr,
-                        std::uint64_t curr_total)
-    {
-        if (prev_total == 0 || curr_total == 0)
-            return 0.0;
-
-        std::unordered_set<std::string> keys;
-        keys.reserve(prev.size() + curr.size());
-        for (const auto& [k, _] : prev)
-            keys.insert(k);
-        for (const auto& [k, _] : curr)
-            keys.insert(k);
-        if (keys.empty())
-            return 0.0;
-
-        const double alpha = 1.0;
-        const double k = static_cast<double>(keys.size());
-        const double p_denom = static_cast<double>(prev_total) + alpha * k;
-        const double c_denom = static_cast<double>(curr_total) + alpha * k;
-
-        double js = 0.0;
-        for (const auto& key : keys)
-        {
-            const auto p_it = prev.find(key);
-            const auto c_it = curr.find(key);
-            const double pn = p_it == prev.end() ? 0.0 : static_cast<double>(p_it->second);
-            const double cn = c_it == curr.end() ? 0.0 : static_cast<double>(c_it->second);
-            const double p = (pn + alpha) / p_denom;
-            const double c = (cn + alpha) / c_denom;
-            const double m = 0.5 * (p + c);
-            js += 0.5 * ((p * std::log2(p / m)) + (c * std::log2(c / m)));
-        }
-        return std::clamp(js, 0.0, 1.0);
-    }
+    return std::clamp(js, 0.0, 1.0);
+}
 
 } // namespace
 
@@ -793,58 +792,58 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end)
 namespace
 {
 
-    nlohmann::json behavior_to_json(const BehaviorBlock& bh)
+nlohmann::json behavior_to_json(const BehaviorBlock& bh)
+{
+    nlohmann::json top = nlohmann::json::array();
+    for (const auto& e : bh.top_ngrams)
     {
-        nlohmann::json top = nlohmann::json::array();
-        for (const auto& e : bh.top_ngrams)
+        top.push_back({
+            {"sequence", e.sequence},
+            {"count", e.count},
+            {"probability", e.probability},
+        });
+    }
+    nlohmann::json out{
+        {"ngram_size", bh.ngram_size},
+        {"top_ngrams", std::move(top)},
+        {"top_ngrams_size", bh.top_ngrams_size},
+    };
+    if (bh.graph_edge_count)
+        out["graph_edge_count"] = *bh.graph_edge_count;
+    if (!bh.dominant_path.empty())
+        out["dominant_path"] = bh.dominant_path;
+    if (!bh.branching.empty())
+    {
+        nlohmann::json br = nlohmann::json::array();
+        for (const auto& b : bh.branching)
         {
-            top.push_back({
-                {"sequence", e.sequence},
-                {"count", e.count},
-                {"probability", e.probability},
+            br.push_back({
+                {"template_id", b.template_id},
+                {"fanout", b.fanout},
+                {"total_outgoing", b.total_outgoing},
+                {"entropy_bits", b.entropy_bits},
             });
         }
-        nlohmann::json out{
-            {"ngram_size", bh.ngram_size},
-            {"top_ngrams", std::move(top)},
-            {"top_ngrams_size", bh.top_ngrams_size},
-        };
-        if (bh.graph_edge_count)
-            out["graph_edge_count"] = *bh.graph_edge_count;
-        if (!bh.dominant_path.empty())
-            out["dominant_path"] = bh.dominant_path;
-        if (!bh.branching.empty())
-        {
-            nlohmann::json br = nlohmann::json::array();
-            for (const auto& b : bh.branching)
-            {
-                br.push_back({
-                    {"template_id", b.template_id},
-                    {"fanout", b.fanout},
-                    {"total_outgoing", b.total_outgoing},
-                    {"entropy_bits", b.entropy_bits},
-                });
-            }
-            out["branching"] = std::move(br);
-        }
-        if (bh.sessions_observed)
-            out["sessions_observed"] = *bh.sessions_observed;
-        if (bh.session_aware)
-            out["session_aware"] = bh.session_aware;
-        return out;
+        out["branching"] = std::move(br);
     }
+    if (bh.sessions_observed)
+        out["sessions_observed"] = *bh.sessions_observed;
+    if (bh.session_aware)
+        out["session_aware"] = bh.session_aware;
+    return out;
+}
 
-    nlohmann::json stability_to_json(const StabilityBlock& sb)
-    {
-        return nlohmann::json{
-            {"previous_window_end", sb.previous_window_end_iso},
-            {"kl_divergence", sb.kl_divergence},
-            {"js_divergence", sb.js_divergence},
-            {"new_templates", sb.new_templates},
-            {"vanished_templates", sb.vanished_templates},
-            {"stability_score", sb.stability_score},
-        };
-    }
+nlohmann::json stability_to_json(const StabilityBlock& sb)
+{
+    return nlohmann::json{
+        {"previous_window_end", sb.previous_window_end_iso},
+        {"kl_divergence", sb.kl_divergence},
+        {"js_divergence", sb.js_divergence},
+        {"new_templates", sb.new_templates},
+        {"vanished_templates", sb.vanished_templates},
+        {"stability_score", sb.stability_score},
+    };
+}
 
 } // namespace
 
@@ -953,15 +952,15 @@ nlohmann::json to_json(const MetaLogDocument& doc)
 
 namespace
 {
-    nlohmann::json doc_ref_to_json(const DocumentRef& r)
-    {
-        nlohmann::json out{
-            {"window", {{"start", r.window_start_iso}, {"end", r.window_end_iso}}},
-        };
-        if (r.document_id)
-            out["document_id"] = *r.document_id;
-        return out;
-    }
+nlohmann::json doc_ref_to_json(const DocumentRef& r)
+{
+    nlohmann::json out{
+        {"window", {{"start", r.window_start_iso}, {"end", r.window_end_iso}}},
+    };
+    if (r.document_id)
+        out["document_id"] = *r.document_id;
+    return out;
+}
 } // namespace
 
 nlohmann::json to_json(const MetaLogDiff& d)
@@ -1044,66 +1043,66 @@ nlohmann::json to_json(const MetaLogDiff& d)
 
 namespace
 {
-    // Compare ISO 8601 lexicographically — valid for fixed-format
-    // RFC 3339 UTC strings as we emit (always Z, fixed widths).
-    [[nodiscard]] const std::string& iso_min(const std::string& a, const std::string& b)
-    {
-        if (a.empty())
-            return b;
-        if (b.empty())
-            return a;
-        return a < b ? a : b;
-    }
-    [[nodiscard]] const std::string& iso_max(const std::string& a, const std::string& b)
-    {
-        if (a.empty())
-            return b;
-        if (b.empty())
-            return a;
-        return a > b ? a : b;
-    }
+// Compare ISO 8601 lexicographically — valid for fixed-format
+// RFC 3339 UTC strings as we emit (always Z, fixed widths).
+[[nodiscard]] const std::string& iso_min(const std::string& a, const std::string& b)
+{
+    if (a.empty())
+        return b;
+    if (b.empty())
+        return a;
+    return a < b ? a : b;
+}
+[[nodiscard]] const std::string& iso_max(const std::string& a, const std::string& b)
+{
+    if (a.empty())
+        return b;
+    if (b.empty())
+        return a;
+    return a > b ? a : b;
+}
 
-    SourceBlock common_source(const SourceBlock& a, const SourceBlock& b)
+SourceBlock common_source(const SourceBlock& a, const SourceBlock& b)
+{
+    if (a == b)
+        return a;
+    SourceBlock out;
+    if (a.fleet == b.fleet)
+        out.fleet = a.fleet;
+    if (a.service == b.service)
+        out.service = a.service;
+    if (a.host == b.host)
+        out.host = a.host;
+    // host_count: sum if both present; otherwise leave unset.
+    if (a.host_count && b.host_count)
+        out.host_count = *a.host_count + *b.host_count;
+    // tags: keep entries present and equal in both.
+    for (const auto& [k, v] : a.tags)
     {
-        if (a == b)
-            return a;
-        SourceBlock out;
-        if (a.fleet == b.fleet)
-            out.fleet = a.fleet;
-        if (a.service == b.service)
-            out.service = a.service;
-        if (a.host == b.host)
-            out.host = a.host;
-        // host_count: sum if both present; otherwise leave unset.
-        if (a.host_count && b.host_count)
-            out.host_count = *a.host_count + *b.host_count;
-        // tags: keep entries present and equal in both.
-        for (const auto& [k, v] : a.tags)
-        {
-            auto it{b.tags.find(k)};
-            if (it != b.tags.end() && it->second == v)
-                out.tags.emplace(k, v);
-        }
-        return out;
+        auto it{b.tags.find(k)};
+        if (it != b.tags.end() && it->second == v)
+            out.tags.emplace(k, v);
     }
+    return out;
+}
 
-    void aggregate_top_k(std::unordered_map<std::string, std::uint64_t>& counts,
-                         std::unordered_map<std::string, std::string>& templates,
-                         std::unordered_map<std::string, std::optional<LogLevel>>& levels,
-                         const MetaLogDocument& doc)
+void aggregate_top_k(std::unordered_map<std::string, std::uint64_t>& counts,
+                     std::unordered_map<std::string, std::string>& templates,
+                     std::unordered_map<std::string, std::optional<LogLevel>>& levels,
+                     const MetaLogDocument& doc)
+{
+    for (const auto& e : doc.stats.top_k)
     {
-        for (const auto& e : doc.stats.top_k)
-        {
-            counts[e.template_id] += e.count;
-            if (!e.template_str.empty() && !templates.contains(e.template_id))
-                templates.emplace(e.template_id, e.template_str);
-            if (e.dominant_level && !levels.contains(e.template_id))
-                levels.emplace(e.template_id, e.dominant_level);
-        }
-        for (const auto& [tid, tstr] : doc.templates)
-            if (!templates.contains(tid))
-                templates.emplace(tid, tstr);
+        counts[e.template_id] += e.count;
+        if (!e.template_str.empty() && !templates.contains(e.template_id))
+            templates.emplace(e.template_id, e.template_str);
+        if (e.dominant_level && !levels.contains(e.template_id))
+            levels.emplace(e.template_id, e.dominant_level);
     }
+    for (const auto& [tid, tstr] : doc.templates)
+        if (!templates.contains(tid))
+            templates.emplace(tid, tstr);
+}
 } // namespace
 
 MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
@@ -1261,23 +1260,23 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
 
 namespace
 {
-    [[nodiscard]] std::unordered_map<std::string, std::uint64_t> counts_of(const MetaLogDocument& d)
-    {
-        std::unordered_map<std::string, std::uint64_t> out;
-        out.reserve(d.stats.top_k.size());
-        for (const auto& e : d.stats.top_k)
-            out.emplace(e.template_id, e.count);
-        return out;
-    }
+[[nodiscard]] std::unordered_map<std::string, std::uint64_t> counts_of(const MetaLogDocument& d)
+{
+    std::unordered_map<std::string, std::uint64_t> out;
+    out.reserve(d.stats.top_k.size());
+    for (const auto& e : d.stats.top_k)
+        out.emplace(e.template_id, e.count);
+    return out;
+}
 
-    [[nodiscard]] std::unordered_map<std::string, double> freqs_of(const MetaLogDocument& d)
-    {
-        std::unordered_map<std::string, double> out;
-        out.reserve(d.stats.top_k.size());
-        for (const auto& e : d.stats.top_k)
-            out.emplace(e.template_id, e.frequency);
-        return out;
-    }
+[[nodiscard]] std::unordered_map<std::string, double> freqs_of(const MetaLogDocument& d)
+{
+    std::unordered_map<std::string, double> out;
+    out.reserve(d.stats.top_k.size());
+    for (const auto& e : d.stats.top_k)
+        out.emplace(e.template_id, e.frequency);
+    return out;
+}
 } // namespace
 
 MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current)
