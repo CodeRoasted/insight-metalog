@@ -4,7 +4,7 @@ from conan.tools.cmake import CMake, CMakeDeps, CMakeToolchain
 
 class InsightMetalogConan(ConanFile):
     name = "insight_metalog"
-    version = "1.3.2"
+    version = "1.3.3"
     package_type = "library"
     description = "MetaLog spec v0.2.0 producer: bounded statistical fingerprint of a window of log behaviour, with behavior, stability, diff/compose, and HLL cardinality blocks (https://github.com/coderoast-dev/metalog-spec)."
     settings = "os", "arch", "compiler", "build_type"
@@ -34,7 +34,7 @@ class InsightMetalogConan(ConanFile):
         self.cpp.build.libdirs = ["build"]
 
     def requirements(self):
-        self.requires("insight_canon/1.3.2", transitive_headers=True, transitive_libs=True)
+        self.requires("insight_canon/1.3.3", transitive_headers=True, transitive_libs=True)
         self.requires("nlohmann_json/3.11.3", transitive_headers=True, transitive_libs=True)
         self.requires("picosha2/1.0.0")
 
