@@ -27,11 +27,12 @@ insight-metalog is the compression boundary: it turns an unbounded event stream 
 | insight-canon | Upstream: tokenization, sequence, shared core types | [../../insight-canon/technical_docs/README.md](../../insight-canon/technical_docs/README.md) |
 | insight-metalog | This repo: MetaLog producer, compose, diff, spec conformance | This folder |
 | metalog-spec | Spec that this package implements | [../../metalog-spec/README.md](../../metalog-spec/README.md) |
-| insight-eidos | Detection, explain, engine, CLI, and full product reference | [../../insight-eidos/technical_docs/README.md](../../insight-eidos/technical_docs/README.md) |
-| CodeRoast parent docs | Cross-repo status, compatibility matrix, and roadmap | [../../technical_docs/README.md](../../technical_docs/README.md) |
+| insight-eidos | Detection, explain, engine, CLI, and phase-level implementation docs | [../../insight-eidos/technical_docs/README.md](../../insight-eidos/technical_docs/README.md) |
+| CodeRoast parent docs | Product strategy, cross-repo status, compatibility matrix, and roadmap | [../../technical_docs/README.md](../../technical_docs/README.md) |
 
 ## Key Cross-References
 
 - Parent compatibility matrix: [../../technical_docs/compatibility_matrix.md](../../technical_docs/compatibility_matrix.md)
 - insight-canon phase reference: [../../insight-canon/technical_docs/phases/tokenization.md](../../insight-canon/technical_docs/phases/tokenization.md)
-- InSight full pipeline and product reference: [../../insight-eidos/technical_docs/README.md](../../insight-eidos/technical_docs/README.md)
+- InSight product strategy: [../../technical_docs/product/strategy.md](../../technical_docs/product/strategy.md)
+- InSight implementation pipeline: [../../insight-eidos/technical_docs/README.md](../../insight-eidos/technical_docs/README.md)
