@@ -34,8 +34,10 @@ class InsightMetalogConan(ConanFile):
         self.cpp.build.libdirs = ["build"]
 
     def requirements(self):
-        self.requires("insight_canon/1.3.4", transitive_headers=True, transitive_libs=True)
-        self.requires("nlohmann_json/3.11.3", transitive_headers=True, transitive_libs=True)
+        # insight_canon provides logging and types; transitive headers needed.
+        # Don't use transitive_libs since it pulls in spdlog which is header-only.
+        self.requires("insight_canon/1.3.4", transitive_headers=True)
+        self.requires("nlohmann_json/3.11.3", transitive_headers=True)
         self.requires("picosha2/1.0.0")
 
     def build_requirements(self):
@@ -63,3 +65,9 @@ class InsightMetalogConan(ConanFile):
         self.cpp_info.libs = ["insight_metalog"]
         self.cpp_info.set_property("cmake_file_name", "insight_metalog")
         self.cpp_info.set_property("cmake_target_name", "insight::metalog")
+        # insight_canon handles spdlog/fmt internally, so only propagate these:
+        self.cpp_info.requires = [
+            "insight_canon::insight_canon",
+            "nlohmann_json::nlohmann_json",
+            "picosha2::picosha2"
+        ]
