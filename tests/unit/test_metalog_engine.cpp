@@ -419,6 +419,82 @@ TEST(MetaLogEngineStats, TopKSizeZeroGivesEmptyTopK)
     EXPECT_EQ(doc.stats.tail_unique, 1U);
 }
 
+// SPEC §3.6 (MetaLog 0.3): tail_summary is absent when the tail is
+// empty (everything fits in top_k), and present + populated otherwise.
+TEST(MetaLogEngineStats, TailSummaryAbsentWhenTailEmpty)
+{
+    meta::MetaLogEngine engine{meta::MetaLogConfig{.top_k_size = 10, .top_ngrams_size = 0}};
+    auto t0{std::chrono::system_clock::now()};
+    engine.open_window(t0);
+    for (int i = 0; i < 5; ++i)
+        engine.ingest_event(make_event("a"));
+    for (int i = 0; i < 5; ++i)
+        engine.ingest_event(make_event("b"));
+    auto doc{engine.close_window(t0 + std::chrono::seconds(1))};
+    EXPECT_EQ(doc.stats.tail_unique, 0U);
+    EXPECT_FALSE(doc.stats.tail_summary.has_value());
+}
+
+TEST(MetaLogEngineStats, TailSummaryPresentAndMaxRateMatchesTopTailTemplate)
+{
+    // top_k = 1 forces b/c/d/e into the tail. `b` is the loudest tail
+    // template (3 events out of 14 total lines).
+    meta::MetaLogEngine engine{meta::MetaLogConfig{.top_k_size = 1, .top_ngrams_size = 0}};
+    auto t0{std::chrono::system_clock::now()};
+    engine.open_window(t0);
+    for (int i = 0; i < 10; ++i)
+        engine.ingest_event(make_event("a")); // top_k
+    for (int i = 0; i < 3; ++i)
+        engine.ingest_event(make_event("b")); // tail (max)
+    engine.ingest_event(make_event("c"));     // tail
+    auto doc{engine.close_window(t0 + std::chrono::seconds(1))};
+    ASSERT_TRUE(doc.stats.tail_summary.has_value());
+    EXPECT_EQ(doc.stats.tail_summary->tail_template_count, doc.stats.tail_unique);
+    EXPECT_EQ(doc.stats.tail_summary->tail_template_count, 2U);
+    EXPECT_DOUBLE_EQ(doc.stats.tail_summary->tail_max_rate, 3.0 / 14.0);
+    // Tail = {b:3, c:1}; H = -[(3/4) log2(3/4) + (1/4) log2(1/4)] ≈ 0.811.
+    EXPECT_GT(doc.stats.tail_summary->tail_entropy_bits, 0.7);
+    EXPECT_LT(doc.stats.tail_summary->tail_entropy_bits, 0.9);
+}
+
+TEST(MetaLogEngineStats, TailSummaryEntropyCollapsesWhenOneTemplateDominatesTail)
+{
+    // Three tail templates but one dominates 98/100 of the tail mass;
+    // entropy should collapse far below the uniform bound (log2(3)≈1.58).
+    meta::MetaLogEngine engine{meta::MetaLogConfig{.top_k_size = 1, .top_ngrams_size = 0}};
+    auto t0{std::chrono::system_clock::now()};
+    engine.open_window(t0);
+    for (int i = 0; i < 200; ++i)
+        engine.ingest_event(make_event("dominant_topk"));
+    for (int i = 0; i < 98; ++i)
+        engine.ingest_event(make_event("dominant_tail"));
+    engine.ingest_event(make_event("noise_a"));
+    engine.ingest_event(make_event("noise_b"));
+    auto doc{engine.close_window(t0 + std::chrono::seconds(1))};
+    ASSERT_TRUE(doc.stats.tail_summary.has_value());
+    EXPECT_LT(doc.stats.tail_summary->tail_entropy_bits, 0.4); // tail is concentrated
+    EXPECT_GT(doc.stats.tail_summary->tail_max_rate, 0.32);    // 98/300 ≈ 0.327
+}
+
+TEST(MetaLogEngineStats, TailSummarySerialisedToJsonAtomically)
+{
+    meta::MetaLogEngine engine{meta::MetaLogConfig{.top_k_size = 1, .top_ngrams_size = 0}};
+    auto t0{std::chrono::system_clock::now()};
+    engine.open_window(t0);
+    for (int i = 0; i < 10; ++i)
+        engine.ingest_event(make_event("a"));
+    engine.ingest_event(make_event("b"));
+    auto doc{engine.close_window(t0 + std::chrono::seconds(1))};
+    const auto j = meta::to_json(doc);
+    ASSERT_TRUE(j.contains("stats")) << j.dump(2);
+    ASSERT_TRUE(j["stats"].is_object()) << j.dump(2);
+    ASSERT_TRUE(j["stats"].contains("tail_summary")) << j["stats"].dump(2);
+    const auto& ts = j["stats"]["tail_summary"];
+    EXPECT_TRUE(ts.contains("tail_template_count"));
+    EXPECT_TRUE(ts.contains("tail_entropy_bits"));
+    EXPECT_TRUE(ts.contains("tail_max_rate"));
+}
+
 TEST(MetaLogEngineStats, FrequencySumsToOne)
 {
     meta::MetaLogEngine engine{meta::MetaLogConfig{.top_k_size = 100, .top_ngrams_size = 0}};

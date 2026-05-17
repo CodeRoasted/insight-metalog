@@ -121,6 +121,32 @@ struct BranchingEntry
     double entropy_bits{0.0};
 };
 
+// Compact "shape of the long tail" summary (SPEC §3.6, MetaLog 0.3).
+// Three-field block exposing how concentrated and how loud the tail is,
+// without expanding `top_k`. Adds ~60 bytes/window.
+//
+// * tail_template_count: number of distinct templates strictly below
+//   top_k (== StatsBlock::tail_unique; duplicated for spec-conformant
+//   self-contained block).
+// * tail_entropy_bits: Shannon entropy in bits over the row-normalised
+//   tail distribution (p_i = count_i / Σ count_j for j ∈ tail).
+//   Collapses toward 0 when one template dominates the tail.
+// * tail_max_rate: max(count_i)/lines_observed across the tail.
+//   Catches a single emerging template growing inside the tail while
+//   never breaching top_k.
+//
+// All three fields are REQUIRED when the block is present (atomic
+// emission). Producers MUST either emit all three or omit the block
+// entirely.
+struct TailSummary
+{
+    std::uint64_t tail_template_count{0};
+    double tail_entropy_bits{0.0};
+    double tail_max_rate{0.0};
+
+    [[nodiscard]] bool operator==(const TailSummary&) const noexcept = default;
+};
+
 struct StatsBlock
 {
     std::uint64_t unique_templates{0};
@@ -129,6 +155,10 @@ struct StatsBlock
     std::uint64_t tail_count{0};
     std::uint64_t tail_unique{0};
     std::optional<double> entropy_bits; // Shannon entropy over full template distribution
+    // SPEC §3.6 (MetaLog 0.3). Optional bounded "shape of the tail"
+    // signal. Present when there is at least one template in the tail
+    // (tail_unique > 0); absent otherwise.
+    std::optional<TailSummary> tail_summary;
 };
 
 // One n-gram row in the behaviour block. `sequence` holds the
@@ -281,6 +311,8 @@ struct MetaLogConfig
     // Default 64 bounds each slot to ~5 KB at typical string sizes.
     static constexpr std::size_t kDefaultMaxHistogramValues{64};
     std::size_t max_histogram_values{kDefaultMaxHistogramValues};
+
+    [[nodiscard]] bool operator==(const MetaLogConfig&) const noexcept = default;
 };
 
 // ── Diff document (SPEC §13) ───────────────────────────────────

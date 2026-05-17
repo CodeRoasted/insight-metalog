@@ -520,10 +520,33 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end)
     }
 
     std::uint64_t tail_count = 0;
+    std::uint64_t tail_max = 0;
+    std::vector<std::uint64_t> tail_counts;
+    if (ordered.size() > k)
+        tail_counts.reserve(ordered.size() - k);
     for (std::size_t i = k; i < ordered.size(); ++i)
-        tail_count += ordered[i].second->count;
+    {
+        const auto c = ordered[i].second->count;
+        tail_count += c;
+        if (c > tail_max)
+            tail_max = c;
+        tail_counts.push_back(c);
+    }
     stats.tail_count = tail_count;
     stats.tail_unique = ordered.size() > k ? static_cast<std::uint64_t>(ordered.size() - k) : 0;
+
+    // SPEC §3.6: tail_summary — emit when there is at least one tail
+    // template. Entropy is normalised over the tail mass (NOT over
+    // lines_observed_) so a few-template tail with one dominator
+    // collapses cleanly toward 0 bits.
+    if (stats.tail_unique > 0 && lines_observed_ > 0)
+    {
+        TailSummary ts;
+        ts.tail_template_count = stats.tail_unique;
+        ts.tail_entropy_bits = shannon_entropy_bits(tail_counts, tail_count);
+        ts.tail_max_rate = static_cast<double>(tail_max) / static_cast<double>(lines_observed_);
+        stats.tail_summary = ts;
+    }
 
     // entropy_bits over the full (untruncated) template distribution.
     if (lines_observed_ > 0)
@@ -907,6 +930,15 @@ nlohmann::json to_json(const MetaLogDocument& doc)
     };
     if (doc.stats.entropy_bits)
         stats["entropy_bits"] = *doc.stats.entropy_bits;
+    if (doc.stats.tail_summary)
+    {
+        // SPEC §3.6: atomic three-field block.
+        stats["tail_summary"] = {
+            {"tail_template_count", doc.stats.tail_summary->tail_template_count},
+            {"tail_entropy_bits", doc.stats.tail_summary->tail_entropy_bits},
+            {"tail_max_rate", doc.stats.tail_summary->tail_max_rate},
+        };
+    }
     j["stats"] = std::move(stats);
 
     if (doc.behavior)
@@ -1161,11 +1193,42 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
 
     out.stats.unique_templates = ordered.size();
     std::uint64_t tail_count = 0;
+    std::uint64_t tail_max = 0;
+    std::vector<std::uint64_t> tail_counts;
+    if (ordered.size() > k)
+        tail_counts.reserve(ordered.size() - k);
     for (std::size_t i = k; i < ordered.size(); ++i)
-        tail_count += ordered[i].second;
+    {
+        const auto c = ordered[i].second;
+        tail_count += c;
+        if (c > tail_max)
+            tail_max = c;
+        tail_counts.push_back(c);
+    }
     out.stats.tail_count =
         tail_count + lhs.stats.tail_count + rhs.stats.tail_count; // approximate (SPEC §12.3)
     out.stats.tail_unique = ordered.size() > k ? ordered.size() - k : 0;
+
+    // SPEC §3.6 + §12.3: tail_summary is recomputed from the merged
+    // tail directly (not aggregated from inputs) so it stays exact for
+    // the templates we actually have counts for. Inputs' own tail
+    // masses (lhs.stats.tail_count / rhs.stats.tail_count) are
+    // collapsed into a residual bucket so the entropy reflects "how
+    // concentrated is the visible tail vs the lumped residuals".
+    if (out.stats.tail_unique > 0 && out.window.lines_observed > 0)
+    {
+        TailSummary ts;
+        ts.tail_template_count = out.stats.tail_unique;
+        std::vector<std::uint64_t> entropy_counts = tail_counts;
+        const std::uint64_t residual = lhs.stats.tail_count + rhs.stats.tail_count;
+        if (residual > 0)
+            entropy_counts.push_back(residual);
+        const std::uint64_t denom = tail_count + residual;
+        ts.tail_entropy_bits = shannon_entropy_bits(entropy_counts, denom);
+        ts.tail_max_rate =
+            static_cast<double>(tail_max) / static_cast<double>(out.window.lines_observed);
+        out.stats.tail_summary = ts;
+    }
 
     // Templates dedup map: union (matches SPEC §12).
     for (auto& [tid, tstr] : templates)
