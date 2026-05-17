@@ -446,7 +446,7 @@ TEST(MetaLogEngineStats, TailSummaryPresentAndMaxRateMatchesTopTailTemplate)
         engine.ingest_event(make_event("a")); // top_k
     for (int i = 0; i < 3; ++i)
         engine.ingest_event(make_event("b")); // tail (max)
-    engine.ingest_event(make_event("c")); // tail
+    engine.ingest_event(make_event("c"));     // tail
     auto doc{engine.close_window(t0 + std::chrono::seconds(1))};
     ASSERT_TRUE(doc.stats.tail_summary.has_value());
     EXPECT_EQ(doc.stats.tail_summary->tail_template_count, doc.stats.tail_unique);
