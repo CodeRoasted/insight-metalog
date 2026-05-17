@@ -281,6 +281,8 @@ struct MetaLogConfig
     // Default 64 bounds each slot to ~5 KB at typical string sizes.
     static constexpr std::size_t kDefaultMaxHistogramValues{64};
     std::size_t max_histogram_values{kDefaultMaxHistogramValues};
+
+    [[nodiscard]] bool operator==(const MetaLogConfig&) const noexcept = default;
 };
 
 // ── Diff document (SPEC §13) ───────────────────────────────────
