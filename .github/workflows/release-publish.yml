@@ -36,7 +36,7 @@ jobs:
     env:
       CONAN_HOME: ${{ github.workspace }}/.conan2
       CONAN_PROFILE: linux-gcc13-release
-      INSIGHT_CANON_REPO: coderoast-dev/insight-canon
+      INSIGHT_CANON_REPO: CodeRoasted/insight-canon
       CR_PIN_INSIGHT_CANON: '1.3.5'
 
     steps:

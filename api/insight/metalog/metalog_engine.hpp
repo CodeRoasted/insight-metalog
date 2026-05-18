@@ -2,7 +2,7 @@
 
 // MetaLog v0.2.0 spec-conformant producer.
 //
-// Spec: https://github.com/coderoast-dev/metalog-spec (tag v0.2.0).
+// Spec: https://github.com/CodeRoasted/metalog-spec (tag v0.2.0).
 //
 // v0.2.0 additions over 0.1.x:
 //   * top-level `templates` dedup map (SPEC §3.4).
@@ -204,7 +204,7 @@ struct ProducerBlock
 {
     std::string name{"insight"};
     std::string version{"0.2.0"};
-    std::string implementation_uri{"https://github.com/coderoast-dev/insight"};
+    std::string implementation_uri{"https://github.com/CodeRoasted/insight"};
 };
 
 struct SourceBlock
