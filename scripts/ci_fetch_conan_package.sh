@@ -15,8 +15,8 @@
 # revision), this is a no-op and exits 0 without contacting GitHub.
 #
 # Usage:
-#   bash scripts/ci_fetch_conan_package.sh logcraft_core X.X.X coderoast-dev/logcraft
-#   bash scripts/ci_fetch_conan_package.sh coderoast_ipc X.X.X coderoast-dev/coderoast-ipc
+#   bash scripts/ci_fetch_conan_package.sh logcraft_core X.X.X CodeRoasted/logcraft
+#   bash scripts/ci_fetch_conan_package.sh coderoast_ipc X.X.X CodeRoasted/coderoast-ipc
 #
 # Requirements:
 #   * `gh` CLI on PATH (pre-installed on GitHub-hosted runners).
@@ -32,7 +32,7 @@ set -euo pipefail
 
 PKG_NAME="${1:-}"
 PKG_VERSION="${2:-}"
-SOURCE_REPO="${3:-coderoast-dev/logcraft}"
+SOURCE_REPO="${3:-CodeRoasted/logcraft}"
 # RELEASE_TAG: the GitHub Release tag that holds the asset. Defaults to
 # v${PKG_VERSION}, which is correct for logcraft_core (where the package
 # version == the release tag). For packages owned by another repo, pass that
