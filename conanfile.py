@@ -4,7 +4,7 @@ from conan.tools.cmake import CMake, CMakeDeps, CMakeToolchain
 
 class InsightMetalogConan(ConanFile):
     name = "insight_metalog"
-    version = "1.3.5"
+    version = "1.3.6"
     package_type = "library"
     description = "MetaLog spec v0.2.0 producer: bounded statistical fingerprint of a window of log behaviour, with behavior, stability, diff/compose, and HLL cardinality blocks (https://github.com/CodeRoasted/metalog-spec)."
     settings = "os", "arch", "compiler", "build_type"
@@ -36,7 +36,7 @@ class InsightMetalogConan(ConanFile):
     def requirements(self):
         # insight_canon provides logging and types; transitive headers needed.
         # Don't use transitive_libs since it pulls in spdlog which is header-only.
-        self.requires("insight_canon/1.3.5", transitive_headers=True)
+        self.requires("insight_canon/1.3.6", transitive_headers=True)
         self.requires("nlohmann_json/3.11.3", transitive_headers=True)
         self.requires("picosha2/1.0.0")
 
