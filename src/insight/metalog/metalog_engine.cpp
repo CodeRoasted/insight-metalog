@@ -1068,6 +1068,21 @@ nlohmann::json to_json(const MetaLogDiff& d)
         }
         j["ngram_delta"] = std::move(nd);
     }
+    if (d.tail_delta)
+    {
+        const auto& t = *d.tail_delta;
+        j["tail_delta"] = {
+            {"previous_tail_template_count", t.previous_tail_template_count},
+            {"current_tail_template_count", t.current_tail_template_count},
+            {"tail_template_count_delta", t.tail_template_count_delta},
+            {"previous_tail_entropy_bits", t.previous_tail_entropy_bits},
+            {"current_tail_entropy_bits", t.current_tail_entropy_bits},
+            {"tail_entropy_bits_delta", t.tail_entropy_bits_delta},
+            {"previous_tail_max_rate", t.previous_tail_max_rate},
+            {"current_tail_max_rate", t.current_tail_max_rate},
+            {"tail_max_rate_delta", t.tail_max_rate_delta},
+        };
+    }
     return j;
 }
 
@@ -1537,6 +1552,28 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
                                   return a.template_id < b.template_id;
                               return a.param_index < b.param_index;
                           });
+    }
+
+    // tail_delta: pairwise change in long-tail shape. Only when BOTH documents
+    // carry a tail_summary (a one-sided tail is appearance/vanishing, expressed
+    // by the template-level signals). Stateless before/after/delta; consumers
+    // decide significance (the "louder AND more concentrated" rule is theirs).
+    if (previous.stats.tail_summary && current.stats.tail_summary)
+    {
+        const auto& prev_tail = *previous.stats.tail_summary;
+        const auto& cur_tail = *current.stats.tail_summary;
+        TailDelta td;
+        td.previous_tail_template_count = prev_tail.tail_template_count;
+        td.current_tail_template_count = cur_tail.tail_template_count;
+        td.tail_template_count_delta = static_cast<std::int64_t>(cur_tail.tail_template_count) -
+                                       static_cast<std::int64_t>(prev_tail.tail_template_count);
+        td.previous_tail_entropy_bits = prev_tail.tail_entropy_bits;
+        td.current_tail_entropy_bits = cur_tail.tail_entropy_bits;
+        td.tail_entropy_bits_delta = cur_tail.tail_entropy_bits - prev_tail.tail_entropy_bits;
+        td.previous_tail_max_rate = prev_tail.tail_max_rate;
+        td.current_tail_max_rate = cur_tail.tail_max_rate;
+        td.tail_max_rate_delta = cur_tail.tail_max_rate - prev_tail.tail_max_rate;
+        out.tail_delta = td;
     }
 
     return out;

@@ -988,6 +988,46 @@ TEST(HllCardinalityTest, CardinalityDeltaPopulatedInDiff)
            "window contains more distinct param values than the first.";
 }
 
+// tail_delta is populated only when BOTH documents carry a tail_summary, and
+// carries before/after/delta for all three TailSummary fields. A tail going
+// louder + more concentrated (the emerging-chronic-error signature) shows a
+// positive max_rate delta and a negative entropy delta.
+TEST(TailDeltaDiffTest, PopulatedWithLouderConcentratedTail)
+{
+    meta::MetaLogDocument prev;
+    prev.window.lines_observed = 1000;
+    prev.stats.tail_summary = meta::TailSummary{
+        .tail_template_count = 40, .tail_entropy_bits = 4.0, .tail_max_rate = 0.001};
+
+    meta::MetaLogDocument curr;
+    curr.window.lines_observed = 1000;
+    curr.stats.tail_summary = meta::TailSummary{
+        .tail_template_count = 38, .tail_entropy_bits = 1.0, .tail_max_rate = 0.02};
+
+    const auto d = meta::diff(prev, curr);
+
+    ASSERT_TRUE(d.tail_delta.has_value())
+        << "tail_delta must be present when both documents carry a tail_summary";
+    const auto& t = *d.tail_delta;
+    EXPECT_EQ(t.tail_template_count_delta, -2) << "40 -> 38";
+    EXPECT_DOUBLE_EQ(t.tail_entropy_bits_delta, -3.0) << "4.0 -> 1.0: tail concentrating";
+    EXPECT_DOUBLE_EQ(t.tail_max_rate_delta, 0.019) << "0.001 -> 0.02: tail getting louder";
+}
+
+TEST(TailDeltaDiffTest, AbsentWhenEitherDocLacksTailSummary)
+{
+    meta::MetaLogDocument with_tail;
+    with_tail.window.lines_observed = 1000;
+    with_tail.stats.tail_summary = meta::TailSummary{
+        .tail_template_count = 10, .tail_entropy_bits = 2.0, .tail_max_rate = 0.005};
+    meta::MetaLogDocument without_tail;
+    without_tail.window.lines_observed = 1000; // no tail_summary set
+
+    EXPECT_FALSE(meta::diff(with_tail, without_tail).tail_delta.has_value())
+        << "a one-sided tail is appearance/vanishing, not a tail delta";
+    EXPECT_FALSE(meta::diff(without_tail, with_tail).tail_delta.has_value());
+}
+
 } // namespace
 
 // NOLINTEND
