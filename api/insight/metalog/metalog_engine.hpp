@@ -515,6 +515,12 @@ class MetaLogEngine
     };
 
     [[nodiscard]] TemplateLookup content_template_id_for(const tokenization::CanonicalEvent& event);
+    // Re-attribute a bucket when a Drain cluster's template evolves mid-window
+    // (e.g. its first literal occurrence later gains a wildcard): merge the prior
+    // occurrences from the old content_id into the new one so the cluster stays a
+    // single template, never a stray literal singleton.
+    void migrate_bucket(const std::string& from_content_id, const std::string& to_content_id,
+                        std::string_view new_template_str);
     void account_ngram(const NGramKey& key);
 
     MetaLogConfig config_{};

@@ -392,6 +392,38 @@ TEST(MetaLogEngineStats, TopKOrderedByCountDesc)
     EXPECT_EQ(doc.stats.top_k[0].count, 20U);
 }
 
+// A single Drain cluster (one real template_id) whose template EVOLVES mid-window —
+// its first occurrence renders a literal value, then the position becomes a wildcard
+// — must stay ONE template with the full count, not a literal singleton plus a
+// wildcarded rest. The split would let a diff mis-read the literal first occurrence
+// as a vanished/new line (and surface it for an error template via severity).
+TEST(MetaLogEngineStats, EvolvingClusterTemplateStaysOneBucket)
+{
+    meta::MetaLogEngine engine{meta::MetaLogConfig{.top_k_size = 10}};
+    auto t0{std::chrono::system_clock::now()};
+    engine.open_window(t0);
+    const auto evt = [](std::string_view tmpl)
+    {
+        tok::CanonicalEvent ev;
+        ev.template_id = 7; // one real Drain cluster id (>= 1)
+        ev.template_str = tmpl;
+        ev.level = insight::LogLevel::Error;
+        return ev;
+    };
+    engine.ingest_event(evt("payment timeout txn=8821")); // first: rendered literal
+    engine.ingest_event(evt("payment timeout txn=<*>"));  // evolved: position wildcarded
+    engine.ingest_event(evt("payment timeout txn=<*>"));
+    engine.ingest_event(evt("payment timeout txn=<*>"));
+    auto doc{engine.close_window(t0 + std::chrono::seconds(1))};
+
+    EXPECT_EQ(doc.stats.unique_templates, 1U)
+        << "an evolving cluster split into multiple templates";
+    ASSERT_GE(doc.stats.top_k.size(), 1U);
+    EXPECT_EQ(doc.stats.top_k[0].count, 4U)
+        << "the literal first occurrence was lost to a singleton bucket";
+    EXPECT_EQ(doc.stats.top_k[0].template_str, "payment timeout txn=<*>");
+}
+
 TEST(MetaLogEngineStats, TailCountAndUnique)
 {
     meta::MetaLogEngine engine{meta::MetaLogConfig{.top_k_size = 1, .top_ngrams_size = 0}};
