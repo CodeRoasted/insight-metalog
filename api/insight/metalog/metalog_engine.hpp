@@ -385,9 +385,36 @@ struct DocumentRef
     std::optional<std::string> document_id;
 };
 
+// Pairwise change in the bounded long-tail shape (SPEC §3.6 tail_summary).
+// Present only when BOTH documents carried a tail_summary (both had a non-empty
+// tail) — a one-sided tail is a tail appearing/vanishing, which the template-
+// level new/vanished signals already express. Mirrors the TailSummary triple as
+// before / after / delta (delta = current - previous):
+//   * tail_template_count — distinct templates sitting below top_k.
+//   * tail_entropy_bits    — tail concentration. A NEGATIVE delta means the tail
+//     is collapsing toward one dominant template.
+//   * tail_max_rate        — tail loudness. A POSITIVE delta means the loudest
+//     tail template is growing relative to the stream.
+// "Louder AND more concentrated" (max_rate up, entropy down) is the classic
+// emerging-chronic-error signature — a single error growing inside the tail
+// without ever breaching top_k. eidos `TailShift` is the streaming analogue;
+// this is the same signal as a pairwise, stateless diff field.
+struct TailDelta
+{
+    std::uint64_t previous_tail_template_count{0};
+    std::uint64_t current_tail_template_count{0};
+    std::int64_t tail_template_count_delta{0};
+    double previous_tail_entropy_bits{0.0};
+    double current_tail_entropy_bits{0.0};
+    double tail_entropy_bits_delta{0.0};
+    double previous_tail_max_rate{0.0};
+    double current_tail_max_rate{0.0};
+    double tail_max_rate_delta{0.0};
+};
+
 struct MetaLogDiff
 {
-    std::string diff_version{"0.2.0"};
+    std::string diff_version{"0.4.0"};
     DocumentRef previous{};
     DocumentRef current{};
     std::optional<double> kl_divergence;
@@ -402,6 +429,9 @@ struct MetaLogDiff
     // with max_param_histograms > 0 and share at least one template_id.
     // Sorted by js_divergence descending (highest shift first).
     std::vector<FieldHistogramDelta> field_histogram_deltas;
+    // Long-tail shape change. Present only when both documents carried a
+    // tail_summary. See TailDelta.
+    std::optional<TailDelta> tail_delta;
 };
 
 // ── Engine ─────────────────────────────────────────────────────
@@ -485,6 +515,12 @@ class MetaLogEngine
     };
 
     [[nodiscard]] TemplateLookup content_template_id_for(const tokenization::CanonicalEvent& event);
+    // Re-attribute a bucket when a Drain cluster's template evolves mid-window
+    // (e.g. its first literal occurrence later gains a wildcard): merge the prior
+    // occurrences from the old content_id into the new one so the cluster stays a
+    // single template, never a stray literal singleton.
+    void migrate_bucket(const std::string& from_content_id, const std::string& to_content_id,
+                        std::string_view new_template_str);
     void account_ngram(const NGramKey& key);
 
     MetaLogConfig config_{};

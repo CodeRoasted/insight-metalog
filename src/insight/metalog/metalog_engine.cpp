@@ -215,6 +215,24 @@ MetaLogEngine::content_template_id_for(const tokenization::CanonicalEvent& event
     }
 
     std::string content_id = compute_template_id(event.template_str);
+
+    // A Drain cluster whose template EVOLVED (its first literal occurrence later
+    // gained a wildcard) changes content_id mid-window. Re-attribute the prior
+    // occurrences, bucketed under the old literal template, to the new template so
+    // the cluster stays ONE entry. Otherwise the literal first occurrence is left
+    // as a count-1 singleton that a diff mis-reads as a vanished/new line — and for
+    // an error/warn template it surfaces despite the low count via severity
+    // promotion (the spurious "recovered"/"appeared" rows on identical errors).
+    //
+    // Guard on a real cluster id: canon assigns each Drain cluster a unique id >= 1,
+    // so "same id, changed template" is a genuine evolution. Id 0 is the reserved
+    // empty-content / unset sentinel and may front many unrelated templates (e.g.
+    // synthetic events), so it must NOT trigger a merge.
+    if (auto evolved{template_id_cache_.find(event.template_id)};
+        event.template_id != 0 && evolved != template_id_cache_.end() &&
+        evolved->second.content_id != content_id)
+        migrate_bucket(evolved->second.content_id, content_id, event.template_str);
+
     auto index_it{content_template_index_.find(content_id)};
     InternalTemplateID internal_id{};
     if (index_it == content_template_index_.end())
@@ -236,6 +254,40 @@ MetaLogEngine::content_template_id_for(const tokenization::CanonicalEvent& event
     (void)inserted;
     return {.content_id = &iterator->second.content_id,
             .internal_id = iterator->second.internal_id};
+}
+
+void MetaLogEngine::migrate_bucket(const std::string& from_content_id,
+                                   const std::string& to_content_id,
+                                   std::string_view new_template_str)
+{
+    auto from_it{buckets_.find(from_content_id)};
+    if (from_it == buckets_.end())
+        return; // nothing accumulated under the old template yet
+
+    Bucket moved{std::move(from_it->second)};
+    buckets_.erase(from_it);
+
+    Bucket& dst{buckets_[to_content_id]};
+    dst.template_str.assign(new_template_str.begin(), new_template_str.end());
+    dst.count += moved.count;
+    for (const auto& [level, level_count] : moved.level_counts)
+        dst.level_counts[level] += level_count;
+
+    // Param histograms (only populated when config_.max_param_histograms > 0).
+    if (!moved.param_value_counts.empty())
+    {
+        if (dst.param_value_counts.size() < moved.param_value_counts.size())
+        {
+            dst.param_value_counts.resize(moved.param_value_counts.size());
+            dst.param_totals.resize(moved.param_value_counts.size(), 0);
+        }
+        for (std::size_t pi{0}; pi < moved.param_value_counts.size(); ++pi)
+        {
+            dst.param_totals[pi] += moved.param_totals[pi];
+            for (const auto& [value, value_count] : moved.param_value_counts[pi])
+                dst.param_value_counts[pi][value] += value_count;
+        }
+    }
 }
 
 void MetaLogEngine::account_ngram(const NGramKey& key)
@@ -1068,6 +1120,21 @@ nlohmann::json to_json(const MetaLogDiff& d)
         }
         j["ngram_delta"] = std::move(nd);
     }
+    if (d.tail_delta)
+    {
+        const auto& t = *d.tail_delta;
+        j["tail_delta"] = {
+            {"previous_tail_template_count", t.previous_tail_template_count},
+            {"current_tail_template_count", t.current_tail_template_count},
+            {"tail_template_count_delta", t.tail_template_count_delta},
+            {"previous_tail_entropy_bits", t.previous_tail_entropy_bits},
+            {"current_tail_entropy_bits", t.current_tail_entropy_bits},
+            {"tail_entropy_bits_delta", t.tail_entropy_bits_delta},
+            {"previous_tail_max_rate", t.previous_tail_max_rate},
+            {"current_tail_max_rate", t.current_tail_max_rate},
+            {"tail_max_rate_delta", t.tail_max_rate_delta},
+        };
+    }
     return j;
 }
 
@@ -1537,6 +1604,28 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
                                   return a.template_id < b.template_id;
                               return a.param_index < b.param_index;
                           });
+    }
+
+    // tail_delta: pairwise change in long-tail shape. Only when BOTH documents
+    // carry a tail_summary (a one-sided tail is appearance/vanishing, expressed
+    // by the template-level signals). Stateless before/after/delta; consumers
+    // decide significance (the "louder AND more concentrated" rule is theirs).
+    if (previous.stats.tail_summary && current.stats.tail_summary)
+    {
+        const auto& prev_tail = *previous.stats.tail_summary;
+        const auto& cur_tail = *current.stats.tail_summary;
+        TailDelta td;
+        td.previous_tail_template_count = prev_tail.tail_template_count;
+        td.current_tail_template_count = cur_tail.tail_template_count;
+        td.tail_template_count_delta = static_cast<std::int64_t>(cur_tail.tail_template_count) -
+                                       static_cast<std::int64_t>(prev_tail.tail_template_count);
+        td.previous_tail_entropy_bits = prev_tail.tail_entropy_bits;
+        td.current_tail_entropy_bits = cur_tail.tail_entropy_bits;
+        td.tail_entropy_bits_delta = cur_tail.tail_entropy_bits - prev_tail.tail_entropy_bits;
+        td.previous_tail_max_rate = prev_tail.tail_max_rate;
+        td.current_tail_max_rate = cur_tail.tail_max_rate;
+        td.tail_max_rate_delta = cur_tail.tail_max_rate - prev_tail.tail_max_rate;
+        out.tail_delta = td;
     }
 
     return out;
