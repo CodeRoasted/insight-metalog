@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include <glaze/glaze.hpp>
 #include <gtest/gtest.h>
 
 #include "insight/metalog/metalog_engine.hpp"
@@ -180,11 +181,14 @@ TEST_F(BehaviorBlockTest, DiffDoesNotInventBranchingDeltaWhenComposedBaselineDro
     const auto doc{engine.close_window(start_ + std::chrono::seconds(1))};
 
     ASSERT_TRUE(doc.behavior.has_value());
-    ASSERT_FALSE(doc.behavior->branching.empty());
+    ASSERT_TRUE(doc.behavior->branching.has_value());
+    ASSERT_FALSE(doc.behavior->branching->empty());
 
     const auto composed{meta::compose(doc, doc)};
     ASSERT_TRUE(composed.behavior.has_value());
-    EXPECT_TRUE(composed.behavior->branching.empty());
+    // compose drops branching (cannot recompute from aggregated counts), so
+    // it is absent — not present-but-empty.
+    EXPECT_FALSE(composed.behavior->branching.has_value());
 
     const auto diff{meta::diff(composed, doc)};
     EXPECT_TRUE(diff.branching_delta.empty())
@@ -517,14 +521,19 @@ TEST(MetaLogEngineStats, TailSummarySerialisedToJsonAtomically)
         engine.ingest_event(make_event("a"));
     engine.ingest_event(make_event("b"));
     auto doc{engine.close_window(t0 + std::chrono::seconds(1))};
-    const auto j = meta::to_json(doc);
-    ASSERT_TRUE(j.contains("stats")) << j.dump(2);
-    ASSERT_TRUE(j["stats"].is_object()) << j.dump(2);
-    ASSERT_TRUE(j["stats"].contains("tail_summary")) << j["stats"].dump(2);
-    const auto& ts = j["stats"]["tail_summary"];
-    EXPECT_TRUE(ts.contains("tail_template_count"));
-    EXPECT_TRUE(ts.contains("tail_entropy_bits"));
-    EXPECT_TRUE(ts.contains("tail_max_rate"));
+    const std::string json = meta::to_json(doc);
+
+    auto parsed = glz::read_json<glz::generic>(json);
+    ASSERT_TRUE(parsed.has_value()) << "serialised output did not parse: " << json;
+    ASSERT_TRUE(parsed->contains("stats")) << json;
+    auto& stats = (*parsed)["stats"];
+    ASSERT_TRUE(stats.is_object()) << json;
+    ASSERT_TRUE(stats.contains("tail_summary")) << json;
+    // Atomic block: when present, all three fields are emitted together.
+    auto& ts = stats["tail_summary"];
+    EXPECT_TRUE(ts.contains("tail_template_count")) << json;
+    EXPECT_TRUE(ts.contains("tail_entropy_bits")) << json;
+    EXPECT_TRUE(ts.contains("tail_max_rate")) << json;
 }
 
 TEST(MetaLogEngineStats, FrequencySumsToOne)

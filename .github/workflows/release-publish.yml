@@ -37,7 +37,7 @@ jobs:
       CONAN_HOME: ${{ github.workspace }}/.conan2
       CONAN_PROFILE: linux-gcc13-release
       INSIGHT_CANON_REPO: CodeRoasted/insight-canon
-      CR_PIN_INSIGHT_CANON: '1.3.7'
+      CR_PIN_INSIGHT_CANON: '1.3.8'
 
     steps:
       - name: Resolve tag
@@ -68,6 +68,7 @@ jobs:
       - name: Setup Conan
         uses: conan-io/setup-conan@v1
         with:
+          version: "2.28.1"
           home: ${{ env.CONAN_HOME }}
           cache_packages: true
           profile_detect: false

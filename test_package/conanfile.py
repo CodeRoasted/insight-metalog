@@ -9,6 +9,11 @@ class InsightMetalogTestPackageConan(ConanFile):
 
     def requirements(self):
         self.requires(self.tested_reference_str)
+        # glaze is impl-only in insight_metalog (visible=False), so it does not
+        # reach consumers. This smoke test re-parses to_json() output to assert
+        # the serialised contract, so it brings its own parser — exactly as a
+        # real external consumer inspecting the JSON would.
+        self.requires("glaze/7.4.0")
 
     def build_requirements(self):
         self.test_requires("gtest/1.17.0")

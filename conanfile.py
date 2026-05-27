@@ -2,9 +2,12 @@ from conan import ConanFile
 from conan.tools.cmake import CMake, CMakeDeps, CMakeToolchain
 
 
+required_conan_version = ">=2.28"
+
+
 class InsightMetalogConan(ConanFile):
     name = "insight_metalog"
-    version = "1.3.7"
+    version = "1.3.8"
     package_type = "library"
     description = "MetaLog spec v0.2.0 producer: bounded statistical fingerprint of a window of log behaviour, with behavior, stability, diff/compose, and HLL cardinality blocks (https://github.com/CodeRoasted/metalog-spec)."
     settings = "os", "arch", "compiler", "build_type"
@@ -36,13 +39,15 @@ class InsightMetalogConan(ConanFile):
     def requirements(self):
         # insight_canon provides logging and types; transitive headers needed.
         # Don't use transitive_libs since it pulls in spdlog which is header-only.
-        self.requires("insight_canon/1.3.7", transitive_headers=True)
-        self.requires("nlohmann_json/3.11.3", transitive_headers=True)
+        self.requires("insight_canon/1.3.8", transitive_headers=True)
+        # glaze is the JSON serializer, used only in metalog_engine.cpp and never
+        # in a public header — a private, non-propagated build dependency.
+        self.requires("glaze/7.4.0", visible=False)
         self.requires("picosha2/1.0.0")
 
     def build_requirements(self):
         self.test_requires("gtest/1.17.0")
-        self.test_requires("benchmark/1.8.3")
+        self.test_requires("benchmark/1.9.5")
 
     def generate(self):
         tc = CMakeToolchain(self)
@@ -65,9 +70,9 @@ class InsightMetalogConan(ConanFile):
         self.cpp_info.libs = ["insight_metalog"]
         self.cpp_info.set_property("cmake_file_name", "insight_metalog")
         self.cpp_info.set_property("cmake_target_name", "insight::metalog")
-        # insight_canon handles spdlog/fmt internally, so only propagate these:
+        # insight_canon handles spdlog/fmt internally; glaze is impl-only (not
+        # propagated). Only these reach consumers:
         self.cpp_info.requires = [
             "insight_canon::insight_canon",
-            "nlohmann_json::nlohmann_json",
             "picosha2::picosha2"
         ]
