@@ -16,6 +16,7 @@
 #include <unordered_set>
 #include <utility>
 
+#include <glaze/glaze.hpp>
 #include <picosha2.h>
 
 namespace insight::metalog
@@ -862,280 +863,415 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end)
     return doc;
 }
 
-// ── JSON serialiser ────────────────────────────────────────────
+// ── JSON serialiser (glaze, DTO layer) ─────────────────────────
+//
+// Serialization is a thin DTO mirroring the MetaLog v0.2.0 envelope: each
+// DTO field name IS the JSON key, so the struct declaration reads as the
+// schema and glaze reflects it with zero stringly-typed mapping. The domain
+// types stay free of any serialization concern.
+//
+// Restrictive/canonical output: every field that the spec omits-when-absent
+// is a std::optional here, populated only when present; glaze's
+// skip_null_members then drops it. One document -> one byte sequence.
+namespace dto
+{
+
+struct Producer
+{
+    std::string name;
+    std::string version;
+    std::string implementation_uri;
+};
+
+struct Window
+{
+    std::string start;
+    std::string end;
+    std::uint64_t duration_seconds{0};
+    std::uint64_t lines_observed{0};
+};
+
+// All fields optional: each omitted when absent. An all-empty source still
+// serialises as `{}` (the block itself is always present in a document).
+struct Source
+{
+    std::optional<std::string> service;
+    std::optional<std::string> fleet;
+    std::optional<std::uint64_t> host_count;
+    std::optional<std::string> host;
+    std::optional<std::map<std::string, std::string>> tags; // omitted when empty
+};
+
+struct TailSummary
+{
+    std::uint64_t tail_template_count{0};
+    double tail_entropy_bits{0.0};
+    double tail_max_rate{0.0};
+};
+
+struct TopKEntry
+{
+    std::string template_id;
+    std::uint64_t count{0};
+    double frequency{0.0};
+    std::optional<std::string> tmpl;  // key "template"; omitted when empty
+    std::optional<std::string> level; // spec level string; omitted when absent
+
+    // glaze rename: `tmpl` -> "template" (a C++ keyword), every other field
+    // by reflection. field_histograms is internal and excluded by omission.
+    struct glaze
+    {
+        using T = TopKEntry;
+        static constexpr auto value =
+            glz::object("template_id", &T::template_id, "count", &T::count, "frequency",
+                        &T::frequency, "template", &T::tmpl, "level", &T::level);
+    };
+};
+
+struct Stats
+{
+    std::uint64_t unique_templates{0};
+    std::size_t top_k_size{0};
+    std::uint64_t tail_count{0};
+    std::uint64_t tail_unique{0};
+    std::vector<TopKEntry> top_k;
+    std::optional<double> entropy_bits;
+    std::optional<TailSummary> tail_summary;
+};
+
+struct NGramEntry
+{
+    std::vector<std::string> sequence;
+    std::uint64_t count{0};
+    double probability{0.0};
+};
+
+struct BranchingEntry
+{
+    std::string template_id;
+    std::uint64_t fanout{0};
+    std::uint64_t total_outgoing{0};
+    double entropy_bits{0.0};
+};
+
+struct Behavior
+{
+    std::size_t ngram_size{2};
+    std::vector<NGramEntry> top_ngrams;
+    std::size_t top_ngrams_size{0};
+    std::optional<std::uint64_t> graph_edge_count;
+    std::optional<std::vector<std::string>> dominant_path;
+    std::optional<std::vector<BranchingEntry>> branching;
+    std::optional<std::uint64_t> sessions_observed;
+    std::optional<bool> session_aware; // omitted when false
+};
+
+struct Stability
+{
+    std::string previous_window_end;
+    double kl_divergence{0.0};
+    double js_divergence{0.0};
+    std::uint64_t new_templates{0};
+    std::uint64_t vanished_templates{0};
+    double stability_score{1.0};
+};
+
+struct ProvenanceWindow
+{
+    std::string start;
+    std::string end;
+};
+
+struct Provenance
+{
+    ProvenanceWindow window;
+    std::optional<Source> source; // omitted when empty
+    std::uint64_t lines_observed{0};
+    std::optional<std::string> document_id;
+};
+
+struct Document
+{
+    std::string metalog_version;
+    Producer producer;
+    Window window;
+    Source source;
+    std::optional<std::map<std::string, std::string>> templates; // omitted when empty
+    Stats stats;
+    std::optional<Behavior> behavior;
+    std::optional<Stability> stability;
+    std::optional<std::vector<Provenance>> provenance;
+};
+
+// ── Diff DTO (SPEC §13) ──
+struct DocRef
+{
+    ProvenanceWindow window;
+    std::optional<std::string> document_id;
+};
+
+struct TemplateDelta
+{
+    std::string template_id;
+    std::uint64_t previous_count{0};
+    std::uint64_t current_count{0};
+    std::int64_t delta{0};
+    std::optional<double> previous_frequency;
+    std::optional<double> current_frequency;
+};
+
+struct BranchingDelta
+{
+    std::string template_id;
+    double previous_entropy_bits{0.0};
+    double current_entropy_bits{0.0};
+    double delta_bits{0.0};
+};
+
+struct NGramRateChange
+{
+    std::vector<std::string> sequence;
+    double previous_probability{0.0};
+    double current_probability{0.0};
+    double delta{0.0};
+};
+
+struct NGramDelta
+{
+    std::size_t ngram_size{2};
+    std::optional<std::vector<std::vector<std::string>>> new_ngrams;      // omit when empty
+    std::optional<std::vector<std::vector<std::string>>> vanished_ngrams; // omit when empty
+    std::optional<std::vector<NGramRateChange>> rate_changed;             // omit when empty
+};
+
+struct TailDelta
+{
+    std::uint64_t previous_tail_template_count{0};
+    std::uint64_t current_tail_template_count{0};
+    std::int64_t tail_template_count_delta{0};
+    double previous_tail_entropy_bits{0.0};
+    double current_tail_entropy_bits{0.0};
+    double tail_entropy_bits_delta{0.0};
+    double previous_tail_max_rate{0.0};
+    double current_tail_max_rate{0.0};
+    double tail_max_rate_delta{0.0};
+};
+
+struct Diff
+{
+    std::string diff_version;
+    DocRef previous;
+    DocRef current;
+    std::optional<double> kl_divergence;
+    std::optional<double> js_divergence;
+    std::optional<double> stability_score;
+    std::optional<std::vector<TemplateDelta>> template_deltas; // omit when empty
+    std::optional<std::vector<std::string>> new_templates;     // omit when empty
+    std::optional<std::vector<std::string>> vanished_templates;
+    std::optional<std::vector<BranchingDelta>> branching_delta;
+    std::optional<NGramDelta> ngram_delta;
+    std::optional<TailDelta> tail_delta;
+};
+
+} // namespace dto
 
 namespace
 {
 
-nlohmann::json behavior_to_json(const BehaviorBlock& bh)
+constexpr glz::opts kWriteOpts{.skip_null_members = true};
+
+// Build the serialization Source DTO from the domain SourceBlock.
+dto::Source make_source(const SourceBlock& src)
 {
-    nlohmann::json top = nlohmann::json::array();
-    for (const auto& e : bh.top_ngrams)
-    {
-        top.push_back({
-            {"sequence", e.sequence},
-            {"count", e.count},
-            {"probability", e.probability},
-        });
-    }
-    nlohmann::json out{
-        {"ngram_size", bh.ngram_size},
-        {"top_ngrams", std::move(top)},
-        {"top_ngrams_size", bh.top_ngrams_size},
-    };
-    if (bh.graph_edge_count)
-        out["graph_edge_count"] = *bh.graph_edge_count;
-    if (!bh.dominant_path.empty())
-        out["dominant_path"] = bh.dominant_path;
-    if (!bh.branching.empty())
-    {
-        nlohmann::json br = nlohmann::json::array();
-        for (const auto& b : bh.branching)
-        {
-            br.push_back({
-                {"template_id", b.template_id},
-                {"fanout", b.fanout},
-                {"total_outgoing", b.total_outgoing},
-                {"entropy_bits", b.entropy_bits},
-            });
-        }
-        out["branching"] = std::move(br);
-    }
-    if (bh.sessions_observed)
-        out["sessions_observed"] = *bh.sessions_observed;
-    if (bh.session_aware)
-        out["session_aware"] = bh.session_aware;
+    dto::Source out;
+    out.service = src.service;
+    out.fleet = src.fleet;
+    out.host_count = src.host_count;
+    out.host = src.host;
+    if (!src.tags.empty())
+        out.tags = src.tags;
     return out;
 }
 
-nlohmann::json stability_to_json(const StabilityBlock& sb)
+[[nodiscard]] bool source_is_empty(const SourceBlock& src) noexcept
 {
-    return nlohmann::json{
-        {"previous_window_end", sb.previous_window_end_iso},
-        {"kl_divergence", sb.kl_divergence},
-        {"js_divergence", sb.js_divergence},
-        {"new_templates", sb.new_templates},
-        {"vanished_templates", sb.vanished_templates},
-        {"stability_score", sb.stability_score},
-    };
+    return !src.service && !src.fleet && !src.host_count && !src.host && src.tags.empty();
 }
 
-} // namespace
-
-nlohmann::json to_json(const MetaLogDocument& doc)
+dto::Document make_document(const MetaLogDocument& doc)
 {
-    nlohmann::json j;
-
-    j["metalog_version"] = doc.metalog_version;
-
-    j["producer"] = {
-        {"name", doc.producer.name},
-        {"version", doc.producer.version},
-        {"implementation_uri", doc.producer.implementation_uri},
-    };
-
-    j["window"] = {
-        {"start", doc.window.start_iso},
-        {"end", doc.window.end_iso},
-        {"duration_seconds", doc.window.duration_seconds},
-        {"lines_observed", doc.window.lines_observed},
-    };
-
-    nlohmann::json src = nlohmann::json::object();
-    if (doc.source.service)
-        src["service"] = *doc.source.service;
-    if (doc.source.fleet)
-        src["fleet"] = *doc.source.fleet;
-    if (doc.source.host_count)
-        src["host_count"] = *doc.source.host_count;
-    if (doc.source.host)
-        src["host"] = *doc.source.host;
-    if (!doc.source.tags.empty())
-        src["tags"] = doc.source.tags;
-    j["source"] = std::move(src);
-
+    dto::Document out;
+    out.metalog_version = doc.metalog_version;
+    out.producer = {doc.producer.name, doc.producer.version, doc.producer.implementation_uri};
+    out.window = {doc.window.start_iso, doc.window.end_iso, doc.window.duration_seconds,
+                  doc.window.lines_observed};
+    out.source = make_source(doc.source);
     if (!doc.templates.empty())
-        j["templates"] = doc.templates;
+        out.templates = doc.templates;
 
-    nlohmann::json top_k = nlohmann::json::array();
+    out.stats.unique_templates = doc.stats.unique_templates;
+    out.stats.top_k_size = doc.stats.top_k_size;
+    out.stats.tail_count = doc.stats.tail_count;
+    out.stats.tail_unique = doc.stats.tail_unique;
+    out.stats.entropy_bits = doc.stats.entropy_bits;
+    out.stats.top_k.reserve(doc.stats.top_k.size());
     for (const auto& entry : doc.stats.top_k)
     {
-        nlohmann::json row = {
-            {"template_id", entry.template_id},
-            {"count", entry.count},
-            {"frequency", entry.frequency},
-        };
-        // SPEC §3.4: inline `template` is optional. Emit only when the
-        // engine config asked for inline emission.
+        dto::TopKEntry row;
+        row.template_id = entry.template_id;
+        row.count = entry.count;
+        row.frequency = entry.frequency;
+        // SPEC §3.4: inline `template` is optional.
         if (!entry.template_str.empty())
-            row["template"] = entry.template_str;
+            row.tmpl = entry.template_str;
         if (entry.dominant_level)
-            row["level"] = level_to_spec_string(*entry.dominant_level);
-        top_k.push_back(std::move(row));
+            row.level = level_to_spec_string(*entry.dominant_level);
+        out.stats.top_k.push_back(std::move(row));
     }
-    nlohmann::json stats = {
-        {"unique_templates", doc.stats.unique_templates},
-        {"top_k_size", doc.stats.top_k_size},
-        {"tail_count", doc.stats.tail_count},
-        {"tail_unique", doc.stats.tail_unique},
-        {"top_k", std::move(top_k)},
-    };
-    if (doc.stats.entropy_bits)
-        stats["entropy_bits"] = *doc.stats.entropy_bits;
     if (doc.stats.tail_summary)
-    {
-        // SPEC §3.6: atomic three-field block.
-        stats["tail_summary"] = {
-            {"tail_template_count", doc.stats.tail_summary->tail_template_count},
-            {"tail_entropy_bits", doc.stats.tail_summary->tail_entropy_bits},
-            {"tail_max_rate", doc.stats.tail_summary->tail_max_rate},
-        };
-    }
-    j["stats"] = std::move(stats);
+        out.stats.tail_summary = dto::TailSummary{doc.stats.tail_summary->tail_template_count,
+                                                  doc.stats.tail_summary->tail_entropy_bits,
+                                                  doc.stats.tail_summary->tail_max_rate};
 
     if (doc.behavior)
-        j["behavior"] = behavior_to_json(*doc.behavior);
-    if (doc.stability)
-        j["stability"] = stability_to_json(*doc.stability);
-
-    if (!doc.provenance.empty())
     {
-        nlohmann::json prov = nlohmann::json::array();
-        for (const auto& p : doc.provenance)
+        const auto& bh = *doc.behavior;
+        dto::Behavior out_bh;
+        out_bh.ngram_size = bh.ngram_size;
+        out_bh.top_ngrams_size = bh.top_ngrams_size;
+        out_bh.top_ngrams.reserve(bh.top_ngrams.size());
+        for (const auto& ng : bh.top_ngrams)
+            out_bh.top_ngrams.push_back({ng.sequence, ng.count, ng.probability});
+        out_bh.graph_edge_count = bh.graph_edge_count;
+        if (bh.dominant_path && !bh.dominant_path->empty())
+            out_bh.dominant_path = *bh.dominant_path;
+        if (bh.branching && !bh.branching->empty())
         {
-            nlohmann::json row;
-            row["window"] = {
-                {"start", p.window_start_iso},
-                {"end", p.window_end_iso},
-            };
-            nlohmann::json ps = nlohmann::json::object();
-            if (p.source.service)
-                ps["service"] = *p.source.service;
-            if (p.source.fleet)
-                ps["fleet"] = *p.source.fleet;
-            if (p.source.host)
-                ps["host"] = *p.source.host;
-            if (p.source.host_count)
-                ps["host_count"] = *p.source.host_count;
-            if (!p.source.tags.empty())
-                ps["tags"] = p.source.tags;
-            if (!ps.empty())
-                row["source"] = std::move(ps);
-            row["lines_observed"] = p.lines_observed;
-            if (p.document_id)
-                row["document_id"] = *p.document_id;
+            std::vector<dto::BranchingEntry> rows;
+            rows.reserve(bh.branching->size());
+            for (const auto& b : *bh.branching)
+                rows.push_back({b.template_id, b.fanout, b.total_outgoing, b.entropy_bits});
+            out_bh.branching = std::move(rows);
+        }
+        out_bh.sessions_observed = bh.sessions_observed;
+        if (bh.session_aware)
+            out_bh.session_aware = true;
+        out.behavior = std::move(out_bh);
+    }
+
+    if (doc.stability)
+    {
+        const auto& sb = *doc.stability;
+        out.stability = dto::Stability{sb.previous_window_end_iso, sb.kl_divergence,
+                                       sb.js_divergence,           sb.new_templates,
+                                       sb.vanished_templates,      sb.stability_score};
+    }
+
+    if (doc.provenance && !doc.provenance->empty())
+    {
+        std::vector<dto::Provenance> prov;
+        prov.reserve(doc.provenance->size());
+        for (const auto& p : *doc.provenance)
+        {
+            dto::Provenance row;
+            row.window = {p.window_start_iso, p.window_end_iso};
+            if (!source_is_empty(p.source))
+                row.source = make_source(p.source);
+            row.lines_observed = p.lines_observed;
+            row.document_id = p.document_id;
             prov.push_back(std::move(row));
         }
-        j["provenance"] = std::move(prov);
+        out.provenance = std::move(prov);
     }
-
-    return j;
-}
-
-// ── Diff serialiser (SPEC §13) ─────────────────────────────────
-
-namespace
-{
-nlohmann::json doc_ref_to_json(const DocumentRef& r)
-{
-    nlohmann::json out{
-        {"window", {{"start", r.window_start_iso}, {"end", r.window_end_iso}}},
-    };
-    if (r.document_id)
-        out["document_id"] = *r.document_id;
     return out;
 }
-} // namespace
 
-nlohmann::json to_json(const MetaLogDiff& d)
+dto::DocRef make_doc_ref(const DocumentRef& ref)
 {
-    nlohmann::json j;
-    j["diff_version"] = d.diff_version;
-    j["previous"] = doc_ref_to_json(d.previous);
-    j["current"] = doc_ref_to_json(d.current);
-    if (d.kl_divergence)
-        j["kl_divergence"] = *d.kl_divergence;
-    if (d.js_divergence)
-        j["js_divergence"] = *d.js_divergence;
-    if (d.stability_score)
-        j["stability_score"] = *d.stability_score;
+    return {{ref.window_start_iso, ref.window_end_iso}, ref.document_id};
+}
+
+dto::Diff make_diff(const MetaLogDiff& d)
+{
+    dto::Diff out;
+    out.diff_version = d.diff_version;
+    out.previous = make_doc_ref(d.previous);
+    out.current = make_doc_ref(d.current);
+    out.kl_divergence = d.kl_divergence;
+    out.js_divergence = d.js_divergence;
+    out.stability_score = d.stability_score;
+
     if (!d.template_deltas.empty())
     {
-        nlohmann::json arr = nlohmann::json::array();
+        std::vector<dto::TemplateDelta> deltas;
+        deltas.reserve(d.template_deltas.size());
         for (const auto& t : d.template_deltas)
-        {
-            nlohmann::json row{
-                {"template_id", t.template_id},
-                {"previous_count", t.previous_count},
-                {"current_count", t.current_count},
-                {"delta", t.delta},
-            };
-            if (t.previous_frequency)
-                row["previous_frequency"] = *t.previous_frequency;
-            if (t.current_frequency)
-                row["current_frequency"] = *t.current_frequency;
-            arr.push_back(std::move(row));
-        }
-        j["template_deltas"] = std::move(arr);
+            deltas.push_back({t.template_id, t.previous_count, t.current_count, t.delta,
+                              t.previous_frequency, t.current_frequency});
+        out.template_deltas = std::move(deltas);
     }
     if (!d.new_templates.empty())
-        j["new_templates"] = d.new_templates;
+        out.new_templates = d.new_templates;
     if (!d.vanished_templates.empty())
-        j["vanished_templates"] = d.vanished_templates;
+        out.vanished_templates = d.vanished_templates;
     if (!d.branching_delta.empty())
     {
-        nlohmann::json arr = nlohmann::json::array();
+        std::vector<dto::BranchingDelta> deltas;
+        deltas.reserve(d.branching_delta.size());
         for (const auto& b : d.branching_delta)
-        {
-            arr.push_back({
-                {"template_id", b.template_id},
-                {"previous_entropy_bits", b.previous_entropy_bits},
-                {"current_entropy_bits", b.current_entropy_bits},
-                {"delta_bits", b.delta_bits},
-            });
-        }
-        j["branching_delta"] = std::move(arr);
+            deltas.push_back(
+                {b.template_id, b.previous_entropy_bits, b.current_entropy_bits, b.delta_bits});
+        out.branching_delta = std::move(deltas);
     }
     if (d.ngram_delta)
     {
-        nlohmann::json nd;
-        nd["ngram_size"] = d.ngram_delta->ngram_size;
+        dto::NGramDelta nd;
+        nd.ngram_size = d.ngram_delta->ngram_size;
         if (!d.ngram_delta->new_ngrams.empty())
-            nd["new_ngrams"] = d.ngram_delta->new_ngrams;
+            nd.new_ngrams = d.ngram_delta->new_ngrams;
         if (!d.ngram_delta->vanished_ngrams.empty())
-            nd["vanished_ngrams"] = d.ngram_delta->vanished_ngrams;
+            nd.vanished_ngrams = d.ngram_delta->vanished_ngrams;
         if (!d.ngram_delta->rate_changed.empty())
         {
-            nlohmann::json arr = nlohmann::json::array();
+            std::vector<dto::NGramRateChange> changes;
+            changes.reserve(d.ngram_delta->rate_changed.size());
             for (const auto& r : d.ngram_delta->rate_changed)
-            {
-                arr.push_back({
-                    {"sequence", r.sequence},
-                    {"previous_probability", r.previous_probability},
-                    {"current_probability", r.current_probability},
-                    {"delta", r.delta},
-                });
-            }
-            nd["rate_changed"] = std::move(arr);
+                changes.push_back(
+                    {r.sequence, r.previous_probability, r.current_probability, r.delta});
+            nd.rate_changed = std::move(changes);
         }
-        j["ngram_delta"] = std::move(nd);
+        out.ngram_delta = std::move(nd);
     }
     if (d.tail_delta)
     {
         const auto& t = *d.tail_delta;
-        j["tail_delta"] = {
-            {"previous_tail_template_count", t.previous_tail_template_count},
-            {"current_tail_template_count", t.current_tail_template_count},
-            {"tail_template_count_delta", t.tail_template_count_delta},
-            {"previous_tail_entropy_bits", t.previous_tail_entropy_bits},
-            {"current_tail_entropy_bits", t.current_tail_entropy_bits},
-            {"tail_entropy_bits_delta", t.tail_entropy_bits_delta},
-            {"previous_tail_max_rate", t.previous_tail_max_rate},
-            {"current_tail_max_rate", t.current_tail_max_rate},
-            {"tail_max_rate_delta", t.tail_max_rate_delta},
-        };
+        out.tail_delta = dto::TailDelta{
+            t.previous_tail_template_count, t.current_tail_template_count,
+            t.tail_template_count_delta,    t.previous_tail_entropy_bits,
+            t.current_tail_entropy_bits,    t.tail_entropy_bits_delta,
+            t.previous_tail_max_rate,       t.current_tail_max_rate,
+            t.tail_max_rate_delta};
     }
-    return j;
+    return out;
+}
+
+} // namespace
+
+std::string to_json(const MetaLogDocument& doc)
+{
+    const dto::Document out{make_document(doc)};
+    std::string buf;
+    // Serialising a fully-formed value to a growable string cannot fail.
+    (void)glz::write<kWriteOpts>(out, buf);
+    return buf;
+}
+
+std::string to_json(const MetaLogDiff& diff)
+{
+    const dto::Diff out{make_diff(diff)};
+    std::string buf;
+    (void)glz::write<kWriteOpts>(out, buf);
+    return buf;
 }
 
 // ── compose (SPEC §12) ─────────────────────────────────────────
@@ -1303,16 +1439,22 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
 
     // Stability dropped per SPEC §12.1.
 
-    // Provenance: extend with the two inputs.
-    out.provenance = lhs.provenance;
-    out.provenance.insert(out.provenance.end(), rhs.provenance.begin(), rhs.provenance.end());
-    if (out.provenance.empty()) // first-level composition: add both inputs
+    // Provenance: a composed document always carries it (SPEC §12.4). Extend
+    // with the inputs' own provenance when present; otherwise this is a
+    // first-level composition and we record both inputs directly.
+    std::vector<ProvenanceEntry> prov;
+    if (lhs.provenance)
+        prov = *lhs.provenance;
+    if (rhs.provenance)
+        prov.insert(prov.end(), rhs.provenance->begin(), rhs.provenance->end());
+    if (prov.empty())
     {
-        out.provenance.push_back({lhs.window.start_iso, lhs.window.end_iso, lhs.source,
-                                  lhs.window.lines_observed, std::nullopt});
-        out.provenance.push_back({rhs.window.start_iso, rhs.window.end_iso, rhs.source,
-                                  rhs.window.lines_observed, std::nullopt});
+        prov.push_back({lhs.window.start_iso, lhs.window.end_iso, lhs.source,
+                        lhs.window.lines_observed, std::nullopt});
+        prov.push_back({rhs.window.start_iso, rhs.window.end_iso, rhs.source,
+                        rhs.window.lines_observed, std::nullopt});
     }
+    out.provenance = std::move(prov);
 
     // Behavior: best-effort merge of top_ngrams by summing counts on
     // identical sequences. Branching/dominant_path/graph_edge_count
@@ -1472,14 +1614,15 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
 
     // branching_delta: join on template_id. Missing branching rows mean
     // "not comparable" (e.g. composed docs), not zero entropy.
-    if (previous.behavior && current.behavior && !previous.behavior->branching.empty() &&
-        !current.behavior->branching.empty())
+    if (previous.behavior && current.behavior && previous.behavior->branching &&
+        !previous.behavior->branching->empty() && current.behavior->branching &&
+        !current.behavior->branching->empty())
     {
         std::unordered_map<std::string, double> prev_h;
-        for (const auto& b : previous.behavior->branching)
+        for (const auto& b : *previous.behavior->branching)
             prev_h[b.template_id] = b.entropy_bits;
         std::unordered_map<std::string, double> cur_h;
-        for (const auto& b : current.behavior->branching)
+        for (const auto& b : *current.behavior->branching)
             cur_h[b.template_id] = b.entropy_bits;
         std::unordered_set<std::string> ids;
         for (const auto& [k, _] : prev_h)

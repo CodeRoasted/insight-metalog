@@ -65,8 +65,6 @@
 #include <unordered_set>
 #include <vector>
 
-#include <nlohmann/json.hpp>
-
 #include "insight/core/types.hpp"
 #include "insight/tokenization/canonical_event.hpp"
 
@@ -176,8 +174,8 @@ struct BehaviorBlock
     std::vector<NGramEntry> top_ngrams;
     std::size_t top_ngrams_size{0};
     std::optional<std::uint64_t> graph_edge_count;
-    std::vector<std::string> dominant_path; // empty when not computed
-    std::vector<BranchingEntry> branching;  // empty when not computed
+    std::optional<std::vector<std::string>> dominant_path;  // absent when not computed
+    std::optional<std::vector<BranchingEntry>> branching;   // absent when not computed
     std::optional<std::uint64_t> sessions_observed;
     bool session_aware{false};
 };
@@ -239,7 +237,7 @@ struct MetaLogDocument
     std::optional<BehaviorBlock> behavior;
     std::optional<StabilityBlock> stability;
     std::map<std::string, std::string> templates; // optional dedup map (SPEC §3.4)
-    std::vector<ProvenanceEntry> provenance;      // empty unless composed (SPEC §12.4)
+    std::optional<std::vector<ProvenanceEntry>> provenance; // absent unless composed (SPEC §12.4)
 };
 
 // ── Producer configuration ─────────────────────────────────────
@@ -563,12 +561,18 @@ class MetaLogEngine
     std::unique_ptr<HllState> hll_state_;
 };
 
-// Free serialiser. Produces a JSON value that conforms to the v0.2.0
-// MetaLog envelope.
-[[nodiscard]] nlohmann::json to_json(const MetaLogDocument& doc);
+// Free serialiser. Produces a serialised JSON document conforming to the
+// v0.2.0 MetaLog envelope.
+//
+// Output is canonical and restrictive: empty/default optional fields are
+// OMITTED, never emitted as empty/zero/false (one document -> one byte
+// sequence). Consumers MUST treat an absent field as equivalent to its
+// empty/zero/false value (SPEC §0: producers omit, consumers read lenient).
+[[nodiscard]] std::string to_json(const MetaLogDocument& doc);
 
-// Free serialiser for the diff document (SPEC §13).
-[[nodiscard]] nlohmann::json to_json(const MetaLogDiff& diff);
+// Free serialiser for the diff document (SPEC §13). Same restrictive,
+// omit-empty discipline as the document serialiser above.
+[[nodiscard]] std::string to_json(const MetaLogDiff& diff);
 
 // ── Composition and diff (SPEC §12, §13) ───────────────────────
 

@@ -14,7 +14,7 @@ option(INSIGHT_METALOG_BUILD_TESTS "Build metalog unit tests" ${PROJECT_IS_TOP_L
 option(INSIGHT_METALOG_BUILD_BENCHMARKS "Build metalog micro-benchmarks" ${PROJECT_IS_TOP_LEVEL})
 
 find_package(insight_canon REQUIRED CONFIG)
-find_package(nlohmann_json REQUIRED CONFIG)
+find_package(glaze REQUIRED CONFIG)
 find_package(picosha2 REQUIRED CONFIG)
 
 file(GLOB_RECURSE API_HEADERS     CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/api/*.hpp")
@@ -36,8 +36,8 @@ target_include_directories(insight_metalog
 target_link_libraries(insight_metalog
     PUBLIC
         insight::canon
-        nlohmann_json::nlohmann_json
     PRIVATE
+        glaze::glaze
         picosha2::picosha2
 )
 
@@ -68,6 +68,7 @@ if(INSIGHT_METALOG_BUILD_TESTS)
         add_executable(insight_metalog_tests ${TEST_SOURCES})
         target_link_libraries(insight_metalog_tests PRIVATE
             insight_metalog
+            glaze::glaze
             GTest::gtest
             GTest::gtest_main
         )
