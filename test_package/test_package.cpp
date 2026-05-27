@@ -1,6 +1,8 @@
 // NOLINTBEGIN Smoke test: consumes insight::metalog as if external.
 #include <chrono>
+#include <string>
 
+#include <glaze/glaze.hpp>
 #include <gtest/gtest.h>
 
 #include "insight/metalog/metalog_engine.hpp"
@@ -46,14 +48,20 @@ TEST(InsightMetaLogPackage, ProducesSpecConformantDocument)
     // First window in a session => no stability block.
     EXPECT_FALSE(doc.stability.has_value());
 
-    auto json = to_json(doc);
-    EXPECT_EQ(json["metalog_version"], "0.2.0");
-    EXPECT_EQ(json["stats"]["top_k"][0]["count"], 2U);
-    EXPECT_TRUE(json["stats"]["top_k"][0]["template_id"].get<std::string>().starts_with("h:"));
-    EXPECT_TRUE(json["stats"].contains("entropy_bits"));
-    EXPECT_TRUE(json.contains("behavior"));
-    EXPECT_FALSE(json.contains("stability"));
-    EXPECT_FALSE(json.contains("attribution")); // reserved by spec for v1.0
+    // to_json() now emits a serialised glaze string; re-parse it generically to
+    // assert the on-the-wire contract (keys/values), as an external consumer would.
+    const std::string serialized = to_json(doc);
+    auto parsed = glz::read_json<glz::generic>(serialized);
+    ASSERT_TRUE(parsed.has_value()) << "serialised output did not parse: " << serialized;
+    auto& json = *parsed;
+    EXPECT_EQ(json["metalog_version"].get<std::string>(), "0.2.0") << serialized;
+    EXPECT_EQ(json["stats"]["top_k"][0]["count"].get<double>(), 2.0) << serialized;
+    EXPECT_TRUE(json["stats"]["top_k"][0]["template_id"].get<std::string>().starts_with("h:"))
+        << serialized;
+    EXPECT_TRUE(json["stats"].contains("entropy_bits")) << serialized;
+    EXPECT_TRUE(json.contains("behavior")) << serialized;
+    EXPECT_FALSE(json.contains("stability")) << serialized;
+    EXPECT_FALSE(json.contains("attribution")) << serialized; // reserved by spec for v1.0
 }
 
 TEST(InsightMetaLogPackage, SecondWindowEmitsStability)
@@ -94,8 +102,12 @@ TEST(InsightMetaLogPackage, SecondWindowEmitsStability)
     EXPECT_LT(d2.stability->js_divergence, 1e-6);
     EXPECT_GT(d2.stability->stability_score, 0.999);
 
-    auto json = to_json(d2);
-    EXPECT_TRUE(json.contains("stability"));
-    EXPECT_EQ(json["stability"]["previous_window_end"], d1.window.end_iso);
+    const std::string serialized = to_json(d2);
+    auto parsed = glz::read_json<glz::generic>(serialized);
+    ASSERT_TRUE(parsed.has_value()) << "serialised output did not parse: " << serialized;
+    auto& json = *parsed;
+    EXPECT_TRUE(json.contains("stability")) << serialized;
+    EXPECT_EQ(json["stability"]["previous_window_end"].get<std::string>(), d1.window.end_iso)
+        << serialized;
 }
 // NOLINTEND
