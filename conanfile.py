@@ -2,6 +2,9 @@ from conan import ConanFile
 from conan.tools.cmake import CMake, CMakeDeps, CMakeToolchain
 
 
+required_conan_version = ">=2.28"
+
+
 class InsightMetalogConan(ConanFile):
     name = "insight_metalog"
     version = "1.3.7"
@@ -37,12 +40,12 @@ class InsightMetalogConan(ConanFile):
         # insight_canon provides logging and types; transitive headers needed.
         # Don't use transitive_libs since it pulls in spdlog which is header-only.
         self.requires("insight_canon/1.3.7", transitive_headers=True)
-        self.requires("nlohmann_json/3.11.3", transitive_headers=True)
+        self.requires("nlohmann_json/3.12.0", transitive_headers=True)
         self.requires("picosha2/1.0.0")
 
     def build_requirements(self):
         self.test_requires("gtest/1.17.0")
-        self.test_requires("benchmark/1.8.3")
+        self.test_requires("benchmark/1.9.5")
 
     def generate(self):
         tc = CMakeToolchain(self)
