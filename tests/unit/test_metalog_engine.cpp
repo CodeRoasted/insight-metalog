@@ -1142,6 +1142,51 @@ TEST(ReservoirTest, RareBenignNotAdmitted)
         << "rarity must never gate a benign template into the reservoir";
 }
 
+// 2d structural_surprise (epic §5.1): a benign INFO template that severity⊗rarity
+// scores 0 IS retained when it is reached only via a RECURRING low-probability
+// transition off the dominant path. Distinct from RareBenignNotAdmitted: there the
+// rare event is a single one-off (edge seen once → untrusted boundary artifact);
+// here the off-path branch recurs (edge seen 3×), so it is a real alternate path.
+TEST(ReservoirTest, StructuralSurpriseAdmitsRecurringOffPathBranch)
+{
+    meta::MetaLogEngine engine{
+        meta::MetaLogConfig{.top_k_size = 3, .reservoir_size = 8, .emit_stability = false}};
+    engine.open_window(std::chrono::system_clock::time_point{});
+    // Dominant path A→B→C, 100×.
+    for (int rep = 0; rep < 100; ++rep)
+    {
+        engine.ingest_event(make_event("alpha request received"));
+        engine.ingest_event(make_event("beta verify token"));
+        engine.ingest_event(make_event("gamma response sent"));
+    }
+    // Rare RECURRING off-path branch A→B→X→C, 3× — X is benign Info, lexically
+    // clean, so its level/lexicon severity is 0. It is salient ONLY structurally:
+    // B→X is a ~3% transition off the dominant B→C.
+    for (int rep = 0; rep < 3; ++rep)
+    {
+        engine.ingest_event(make_event("alpha request received"));
+        engine.ingest_event(make_event("beta verify token"));
+        engine.ingest_event(make_event("took alternate cache path", insight::LogLevel::Info));
+        engine.ingest_event(make_event("gamma response sent"));
+    }
+    const auto doc{engine.close_window(std::chrono::system_clock::time_point{} +
+                                       std::chrono::seconds{60})};
+
+    EXPECT_FALSE(top_k_has(doc, "took alternate cache path"))
+        << "the branch is below top_k by frequency";
+    ASSERT_TRUE(reservoir_has(doc, "took alternate cache path"))
+        << "structural_surprise must retain a benign Info branch reached via a rare transition";
+    for (const auto& entry : doc.stats.reservoir)
+        if (entry.template_str == "took alternate cache path")
+        {
+            EXPECT_GT(entry.structural_surprise, 0U)
+                << "retention must be attributed to structural_surprise, not severity";
+            EXPECT_EQ(entry.dominant_level, insight::LogLevel::Info)
+                << "the branch is benign Info — severity⊗rarity scores it 0";
+            EXPECT_GT(entry.salience, 0U);
+        }
+}
+
 TEST(ReservoirTest, DisabledByDefault)
 {
     auto rare{make_event("connection refused to db", insight::LogLevel::Error)};

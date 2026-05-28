@@ -124,8 +124,16 @@ struct ReservoirEntry
     double frequency{0.0};
     std::optional<LogLevel> dominant_level;
     StructuralRole structural_role{StructuralRole::None};
+    // Structural-surprise band (0..100): how off-path this template is, derived
+    // from the lowest-probability incoming transition in the behavior graph. >0
+    // means the template was reached only via a rare transition off the dominant
+    // path — the axis that retains a benign-but-anomalous event (an Info "took
+    // alternate cache path") that severity⊗rarity alone would drop. Attribution:
+    // a nonzero value here on a non-severe entry explains the retention.
+    std::uint32_t structural_surprise{0};
     // Quantized salience score (deterministic, integer; I5). Higher = more
-    // salient. severity (level · failure-lexicon · structural_role) ⊗ rarity.
+    // salient. (severity ⊕ structural_surprise) ⊗ rarity, where severity folds
+    // level · failure-lexicon · structural_role.
     std::uint32_t salience{0};
 };
 

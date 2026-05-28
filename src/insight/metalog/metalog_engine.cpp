@@ -101,13 +101,44 @@ StructuralRole dominant_role_of(const std::unordered_map<StructuralRole, std::ui
            contains_ci(tmpl, "segmentation fault");
 }
 
-// Deterministic, quantized salience (Salience epic §5.1, first cut: severity ⊗
-// rarity; structural_surprise + novelty deferred to a later increment). Integer
+// A structural branch must recur to be trusted: a transition observed ONCE is
+// indistinguishable from a one-off / window-boundary artifact (e.g. a novel
+// template appended as the last event of a window), and -log2(p) from a single
+// sample is unreliable. Requiring ≥2 observations means "this off-path branch
+// recurred — it is a real alternate path, not noise."
+constexpr std::uint64_t kMinSurpriseEdgeObservations{2};
+
+// Structural-surprise band (0..100) for an edge probability p = c/t, where the
+// edge is the MOST-LIKELY incoming transition into a template (so a template is
+// surprising only when even its easiest way in is rare). Integer thresholds on
+// c·K vs t — no float (I5). c==0 means no incoming edge (a root / unreachable
+// node): expected, not surprising. The bands sit alongside the severity ladder
+// (Warn 30 … Error 80 … Fatal 100) so a rare off-path transition is a peer
+// severity signal, not an afterthought.
+[[nodiscard]] std::uint32_t surprise_band(std::uint64_t edge_count,
+                                          std::uint64_t source_outgoing) noexcept
+{
+    if (edge_count < kMinSurpriseEdgeObservations || source_outgoing == 0U)
+        return 0U;
+    if (edge_count * 50U < source_outgoing)
+        return 90U; // p < 2%   — strongly off-path
+    if (edge_count * 20U < source_outgoing)
+        return 75U; // p < 5%
+    if (edge_count * 10U < source_outgoing)
+        return 50U; // p < 10%
+    if (edge_count * 5U < source_outgoing)
+        return 25U; // p < 20%
+    return 0U;       // common transition — on the expected flow
+}
+
+// Deterministic, quantized salience (Salience epic §5.1: (severity ⊕
+// structural_surprise) ⊗ rarity; novelty deferred to a later increment). Integer
 // math only — no float in this retention-content path (I5). Returns 0 for a
 // non-salient template (so rare-benign noise never enters the reservoir).
 [[nodiscard]] std::uint32_t salience_score(std::optional<LogLevel> level, StructuralRole role,
                                            std::string_view tmpl, std::uint64_t count,
-                                           std::uint64_t lines) noexcept
+                                           std::uint64_t lines,
+                                           std::uint32_t structural_surprise) noexcept
 {
     // severity 0..100, multi-signal max (robust to any single signal missing).
     std::uint32_t severity{0};
@@ -132,6 +163,10 @@ StructuralRole dominant_role_of(const std::unordered_map<StructuralRole, std::ui
     }
     if (looks_like_failure(tmpl))
         severity = std::max<std::uint32_t>(severity, 70U);
+    // structural_surprise is a peer severity axis: a benign Info line reached only
+    // via a rare off-path transition is salient as a STRUCTURE anomaly even though
+    // its level/lexicon severity is 0.
+    severity = std::max(severity, structural_surprise);
     if (severity == 0U)
         return 0U; // not salient — rarity must never gate a benign template in
 
@@ -624,6 +659,69 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end)
                           return lhs.first < rhs.first;
                       });
 
+    // ── Transition graph + per-template structural surprise (2d, epic §5.1) ──
+    // Built once here (cold path) from the accumulated n-grams, BEFORE reservoir
+    // selection so structural_surprise can feed salience, then reused by the
+    // behavior block below. A template's structural_surprise is the surprise of
+    // its MOST-LIKELY incoming transition: a node reachable only via a rare edge
+    // off the dominant path scores high even when its level/lexicon severity is 0
+    // (the benign Info "took alternate cache path"). Integer-only (I5); the band
+    // depends solely on the winning edge's probability, so unordered_map iteration
+    // order cannot perturb it (equal-probability edges yield the same band).
+    std::unordered_map<InternalTemplateID, std::unordered_map<InternalTemplateID, std::uint64_t>>
+        transitions;
+    std::vector<std::uint32_t> incoming_surprise; // indexed by internal id; 0 = on-path/root
+    const bool need_graph{(config_.reservoir_size > 0 || config_.top_ngrams_size > 0) &&
+                          ngram_total_ > 0};
+    if (need_graph)
+    {
+        const auto node_count{content_templates_by_internal_id_.size()};
+        transitions.reserve(node_count);
+        for (const auto& [key, count] : ngram_counts_)
+        {
+            if (key.size < 2)
+                continue;
+            transitions[key.ids[0]][key.ids[1]] += count;
+        }
+        // Per `to`, track the highest-probability incoming edge as the ratio
+        // best_c/best_t; compare ratios by cross-multiply (exact integer math).
+        incoming_surprise.assign(node_count, 0U);
+        std::vector<std::uint64_t> best_c(node_count, 0);
+        std::vector<std::uint64_t> best_t(node_count, 1);
+        for (const auto& [from, row] : transitions)
+        {
+            std::uint64_t outgoing{0};
+            for (const auto& [to, count] : row)
+                outgoing += count;
+            if (outgoing == 0U)
+                continue;
+            for (const auto& [to, count] : row)
+            {
+                if (to >= node_count)
+                    continue;
+                if (count * best_t[to] > best_c[to] * outgoing)
+                {
+                    best_c[to] = count;
+                    best_t[to] = outgoing;
+                }
+            }
+        }
+        for (std::size_t id = 0; id < node_count; ++id)
+            incoming_surprise[id] = surprise_band(best_c[id], best_t[id]);
+    }
+    // Structural surprise for a bucket's content_id (0 when the graph is absent or
+    // the template has no rare incoming edge).
+    const auto surprise_of{[&](const std::string& content_id) noexcept -> std::uint32_t
+                           {
+                               if (incoming_surprise.empty())
+                                   return 0U;
+                               const auto it{content_template_index_.find(content_id)};
+                               if (it == content_template_index_.end() ||
+                                   it->second >= incoming_surprise.size())
+                                   return 0U;
+                               return incoming_surprise[it->second];
+                           }};
+
     const auto k{std::min(config_.top_k_size, ordered.size())};
     const auto total{static_cast<double>(lines_observed_)};
 
@@ -686,16 +784,19 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end)
         {
             std::size_t index;
             std::uint32_t salience;
+            std::uint32_t structural_surprise;
         };
         std::vector<Candidate> candidates;
         for (std::size_t i = k; i < ordered.size(); ++i)
         {
             const Bucket& bucket{*ordered[i].second};
+            const auto surprise{surprise_of(ordered[i].first)};
             const auto sal{salience_score(dominant_level_of(bucket.level_counts),
                                           dominant_role_of(bucket.role_counts), bucket.template_str,
-                                          bucket.count, lines_observed_)};
+                                          bucket.count, lines_observed_, surprise)};
             if (sal > 0U)
-                candidates.push_back(Candidate{.index = i, .salience = sal});
+                candidates.push_back(
+                    Candidate{.index = i, .salience = sal, .structural_surprise = surprise});
         }
         std::ranges::sort(candidates,
                           [&ordered](const Candidate& lhs, const Candidate& rhs)
@@ -738,6 +839,7 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end)
             entry.frequency = total > 0.0 ? static_cast<double>(bucket.count) / total : 0.0;
             entry.dominant_level = level;
             entry.structural_role = role;
+            entry.structural_surprise = candidate.structural_surprise;
             entry.salience = candidate.salience;
             stats.reservoir.push_back(std::move(entry));
             reserved.insert(ordered[candidate.index].first);
@@ -836,23 +938,11 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end)
             entries.resize(config_.top_ngrams_size);
         bh.top_ngrams = std::move(entries);
 
-        // Derive bigram (transition) view from the configured n-gram
-        // table: count(A→B) = sum over the trailing dimension of the
-        // n-gram counts that start with (A, B). When ngram_size==2
-        // this is identity; when ngram_size==3 we sum out the third
-        // position. Cold path — happens only at close_window.
-        std::unordered_map<std::uint64_t, std::unordered_map<std::uint64_t, std::uint64_t>>
-            transitions;
-        transitions.reserve(content_templates_by_internal_id_.size());
-        for (const auto& [key, count] : ngram_counts_)
-        {
-            if (key.size < 2)
-                continue;
-            const auto from{key.ids[0]};
-            const auto to{key.ids[1]};
-            transitions[from][to] += count;
-        }
-
+        // The bigram (transition) view — count(A→B) summed over the trailing
+        // n-gram dimension — was already built above (it also feeds
+        // structural_surprise); reuse it for branching + dominant_path. Reaching
+        // this block (top_ngrams_size > 0 && ngram_total_ > 0) guarantees
+        // need_graph held, so `transitions` is populated.
         std::uint64_t edge_count = 0;
         for (const auto& [from, row] : transitions)
             edge_count += row.size();
