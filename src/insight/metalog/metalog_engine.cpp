@@ -55,6 +55,103 @@ std::optional<LogLevel> dominant_level_of(const std::unordered_map<LogLevel, std
     return best_it->first;
 }
 
+// Most-common announced structural role for a template (F12 → salience). Roles
+// are deterministic per template, so this is effectively "the" role.
+StructuralRole dominant_role_of(const std::unordered_map<StructuralRole, std::uint64_t>& roles)
+{
+    StructuralRole best{StructuralRole::None};
+    std::uint64_t best_count{0};
+    for (const auto& [role, count] : roles)
+    {
+        if (count > best_count)
+        {
+            best_count = count;
+            best = role;
+        }
+    }
+    return best;
+}
+
+// Case-insensitive substring search; `needle` must be lowercase.
+[[nodiscard]] bool contains_ci(std::string_view hay, std::string_view needle) noexcept
+{
+    if (needle.empty() || hay.size() < needle.size())
+        return false;
+    const auto lower{[](char chr) noexcept
+                     { return chr >= 'A' && chr <= 'Z' ? static_cast<char>(chr - 'A' + 'a') : chr; }};
+    for (std::size_t start{0}; start + needle.size() <= hay.size(); ++start)
+    {
+        std::size_t off{0};
+        for (; off < needle.size(); ++off)
+            if (lower(hay[start + off]) != needle[off])
+                break;
+        if (off == needle.size())
+            return true;
+    }
+    return false;
+}
+
+// The "looks-like-failure" lexicon (F7) — a secondary severity signal for lines
+// whose level/role did not already mark them (e.g. a raw `FAILED`/`Traceback`).
+[[nodiscard]] bool looks_like_failure(std::string_view tmpl) noexcept
+{
+    return contains_ci(tmpl, "error") || contains_ci(tmpl, "fatal") ||
+           contains_ci(tmpl, "exception") || contains_ci(tmpl, "panic") ||
+           contains_ci(tmpl, "traceback") || contains_ci(tmpl, "failed") ||
+           contains_ci(tmpl, "segmentation fault");
+}
+
+// Deterministic, quantized salience (Salience epic §5.1, first cut: severity ⊗
+// rarity; structural_surprise + novelty deferred to a later increment). Integer
+// math only — no float in this retention-content path (I5). Returns 0 for a
+// non-salient template (so rare-benign noise never enters the reservoir).
+[[nodiscard]] std::uint32_t salience_score(std::optional<LogLevel> level, StructuralRole role,
+                                           std::string_view tmpl, std::uint64_t count,
+                                           std::uint64_t lines) noexcept
+{
+    // severity 0..100, multi-signal max (robust to any single signal missing).
+    std::uint32_t severity{0};
+    if (role == StructuralRole::Terminator)
+        severity = std::max<std::uint32_t>(severity, 90U);
+    if (level)
+    {
+        switch (*level)
+        {
+        case LogLevel::Fatal:
+            severity = std::max<std::uint32_t>(severity, 100U);
+            break;
+        case LogLevel::Error:
+            severity = std::max<std::uint32_t>(severity, 80U);
+            break;
+        case LogLevel::Warn:
+            severity = std::max<std::uint32_t>(severity, 30U);
+            break;
+        default:
+            break;
+        }
+    }
+    if (looks_like_failure(tmpl))
+        severity = std::max<std::uint32_t>(severity, 70U);
+    if (severity == 0U)
+        return 0U; // not salient — rarity must never gate a benign template in
+
+    // rarity modulation (a modulator, never a gate): rare → amplify, frequent →
+    // damp toward baseline. Integer thresholds on count·N vs lines (no float).
+    std::uint32_t rarity{100U};
+    if (lines > 0)
+    {
+        if (count * 1000U < lines)
+            rarity = 100U; // < 0.1%  — rare
+        else if (count * 100U < lines)
+            rarity = 90U; // < 1%
+        else if (count * 10U < lines)
+            rarity = 60U; // < 10%
+        else
+            rarity = 30U; // frequent — likely known/baseline
+    }
+    return severity * rarity; // 0..10000
+}
+
 std::string level_to_spec_string(LogLevel level)
 {
     switch (level)
@@ -273,6 +370,8 @@ void MetaLogEngine::migrate_bucket(const std::string& from_content_id,
     dst.count += moved.count;
     for (const auto& [level, level_count] : moved.level_counts)
         dst.level_counts[level] += level_count;
+    for (const auto& [role, role_count] : moved.role_counts)
+        dst.role_counts[role] += role_count;
 
     // Param histograms (only populated when config_.max_param_histograms > 0).
     if (!moved.param_value_counts.empty())
@@ -320,6 +419,7 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
         bucket.template_str.assign(event.template_str.begin(), event.template_str.end());
     ++bucket.count;
     ++bucket.level_counts[event.level];
+    ++bucket.role_counts[event.structural_role]; // F12 announced role → salience
     ++lines_observed_;
 
     // Per-param field histogram accumulation.
@@ -572,6 +672,58 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end)
         stats.top_k.push_back(std::move(entry));
     }
 
+    // ── Tier 2: Salience Reservoir (F1) ──
+    // From the below-top_k templates, retain the most SALIENT (not the most
+    // frequent) — this is where a rare-but-severe event (a lone fatal) survives
+    // instead of collapsing into the tail. Disjoint from top_k by construction
+    // (candidates are ordered[k..]); admitted templates are excluded from the
+    // tail residual below so they are not double-counted. Deterministic: integer
+    // salience, ranked desc with a template_id tie-break.
+    std::unordered_set<std::string> reserved; // content_ids promoted to the reservoir
+    if (config_.reservoir_size > 0 && ordered.size() > k)
+    {
+        struct Candidate
+        {
+            std::size_t index;
+            std::uint32_t salience;
+        };
+        std::vector<Candidate> candidates;
+        for (std::size_t i = k; i < ordered.size(); ++i)
+        {
+            const Bucket& bucket{*ordered[i].second};
+            const auto sal{salience_score(dominant_level_of(bucket.level_counts),
+                                          dominant_role_of(bucket.role_counts), bucket.template_str,
+                                          bucket.count, lines_observed_)};
+            if (sal > 0U)
+                candidates.push_back(Candidate{.index = i, .salience = sal});
+        }
+        std::ranges::sort(candidates,
+                          [&ordered](const Candidate& lhs, const Candidate& rhs)
+                          {
+                              if (lhs.salience != rhs.salience)
+                                  return lhs.salience > rhs.salience;
+                              return ordered[lhs.index].first < ordered[rhs.index].first;
+                          });
+        const auto m{std::min(config_.reservoir_size, candidates.size())};
+        stats.reservoir.reserve(m);
+        for (std::size_t j = 0; j < m; ++j)
+        {
+            const auto idx{candidates[j].index};
+            const Bucket& bucket{*ordered[idx].second};
+            ReservoirEntry entry;
+            entry.template_id = ordered[idx].first;
+            if (config_.template_emission == TemplateEmissionMode::Inline)
+                entry.template_str = bucket.template_str;
+            entry.count = bucket.count;
+            entry.frequency = total > 0.0 ? static_cast<double>(bucket.count) / total : 0.0;
+            entry.dominant_level = dominant_level_of(bucket.level_counts);
+            entry.structural_role = dominant_role_of(bucket.role_counts);
+            entry.salience = candidates[j].salience;
+            stats.reservoir.push_back(std::move(entry));
+            reserved.insert(ordered[idx].first);
+        }
+    }
+
     std::uint64_t tail_count = 0;
     std::uint64_t tail_max = 0;
     std::vector<std::uint64_t> tail_counts;
@@ -579,6 +731,8 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end)
         tail_counts.reserve(ordered.size() - k);
     for (std::size_t i = k; i < ordered.size(); ++i)
     {
+        if (reserved.contains(ordered[i].first))
+            continue; // promoted to the reservoir — not part of the tail residual
         const auto c = ordered[i].second->count;
         tail_count += c;
         if (c > tail_max)
@@ -586,7 +740,7 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end)
         tail_counts.push_back(c);
     }
     stats.tail_count = tail_count;
-    stats.tail_unique = ordered.size() > k ? static_cast<std::uint64_t>(ordered.size() - k) : 0;
+    stats.tail_unique = static_cast<std::uint64_t>(tail_counts.size());
 
     // SPEC §3.6: tail_summary — emit when there is at least one tail
     // template. Entropy is normalised over the tail mass (NOT over

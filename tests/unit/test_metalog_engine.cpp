@@ -1069,6 +1069,97 @@ TEST(TailDeltaDiffTest, AbsentWhenEitherDocLacksTailSummary)
     EXPECT_FALSE(meta::diff(without_tail, with_tail).tail_delta.has_value());
 }
 
+// ── Salience Reservoir (Tier 2, F1) ──────────────────────────────────────────
+//
+// A rare-but-severe template that falls below top_k by frequency must survive in
+// the reservoir (admitted by salience) instead of collapsing into the tail.
+
+namespace
+{
+// Feed N frequent benign Info templates plus one rare event, with a small top_k
+// so the rare event is below it. Returns the closed document.
+meta::MetaLogDocument
+run_with_rare_event(const tok::CanonicalEvent& rare, std::size_t top_k, std::size_t reservoir_size)
+{
+    meta::MetaLogEngine engine{meta::MetaLogConfig{
+        .top_k_size = top_k, .reservoir_size = reservoir_size, .emit_stability = false}};
+    engine.open_window(std::chrono::system_clock::time_point{});
+    for (int rep = 0; rep < 100; ++rep)
+    {
+        engine.ingest_event(make_event("alpha steady event"));
+        engine.ingest_event(make_event("beta steady event"));
+        engine.ingest_event(make_event("gamma steady event"));
+        engine.ingest_event(make_event("delta steady event"));
+    }
+    engine.ingest_event(rare); // one occurrence — rank last by frequency
+    return engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{60});
+}
+
+[[nodiscard]] bool reservoir_has(const meta::MetaLogDocument& doc, std::string_view tmpl)
+{
+    return std::ranges::any_of(doc.stats.reservoir,
+                               [&](const auto& entry) { return entry.template_str == tmpl; });
+}
+[[nodiscard]] bool top_k_has(const meta::MetaLogDocument& doc, std::string_view tmpl)
+{
+    return std::ranges::any_of(doc.stats.top_k,
+                               [&](const auto& entry) { return entry.template_str == tmpl; });
+}
+} // namespace
+
+TEST(ReservoirTest, RareErrorAdmittedBelowTopK)
+{
+    auto rare{make_event("connection refused to db", insight::LogLevel::Error)};
+    const auto doc{run_with_rare_event(rare, /*top_k=*/3, /*reservoir_size=*/8)};
+
+    EXPECT_FALSE(top_k_has(doc, "connection refused to db"))
+        << "the rare error is below top_k by frequency";
+    ASSERT_TRUE(reservoir_has(doc, "connection refused to db"))
+        << "F1: a rare severe event must survive in the salience reservoir, not the tail";
+    for (const auto& entry : doc.stats.reservoir)
+        if (entry.template_str == "connection refused to db")
+        {
+            EXPECT_GT(entry.salience, 0U);
+            EXPECT_EQ(entry.dominant_level, insight::LogLevel::Error);
+        }
+}
+
+TEST(ReservoirTest, TerminatorRoleIsSalient)
+{
+    auto rare{make_event("##[error]Process completed with exit code 2.", insight::LogLevel::Error)};
+    rare.structural_role = insight::StructuralRole::Terminator;
+    const auto doc{run_with_rare_event(rare, 3, 8)};
+    ASSERT_TRUE(reservoir_has(doc, "##[error]Process completed with exit code 2."));
+}
+
+TEST(ReservoirTest, RareBenignNotAdmitted)
+{
+    // A rare INFO line with no failure signal scores 0 — benign rarity is chaff,
+    // never admitted (the cache-shard-481 case).
+    auto rare{make_event("Downloading cache shard chunk", insight::LogLevel::Info)};
+    const auto doc{run_with_rare_event(rare, 3, 8)};
+    EXPECT_FALSE(reservoir_has(doc, "Downloading cache shard chunk"))
+        << "rarity must never gate a benign template into the reservoir";
+}
+
+TEST(ReservoirTest, DisabledByDefault)
+{
+    auto rare{make_event("connection refused to db", insight::LogLevel::Error)};
+    const auto doc{run_with_rare_event(rare, 3, /*reservoir_size=*/0)};
+    EXPECT_TRUE(doc.stats.reservoir.empty()) << "reservoir_size=0 → pure-frequency retention";
+}
+
+TEST(ReservoirTest, TailExcludesReservoirMembers)
+{
+    auto rare{make_event("connection refused to db", insight::LogLevel::Error)};
+    const auto with_reservoir{run_with_rare_event(rare, 3, 8)};
+    const auto without_reservoir{run_with_rare_event(rare, 3, 0)};
+    // The admitted template moves out of the tail residual into the reservoir.
+    EXPECT_EQ(with_reservoir.stats.tail_unique + with_reservoir.stats.reservoir.size(),
+              without_reservoir.stats.tail_unique)
+        << "tail must shrink by exactly the reservoir count (no double-counting)";
+}
+
 } // namespace
 
 // NOLINTEND
