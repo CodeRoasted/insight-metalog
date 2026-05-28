@@ -704,23 +704,43 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end)
                                   return lhs.salience > rhs.salience;
                               return ordered[lhs.index].first < ordered[rhs.index].first;
                           });
-        const auto m{std::min(config_.reservoir_size, candidates.size())};
-        stats.reservoir.reserve(m);
-        for (std::size_t j = 0; j < m; ++j)
+        // Admit in salience order, up to M total, capping exemplars PER KIND
+        // (structural_role × dominant_level) for diversity (F10). A "kind" key
+        // packs the two small enums into one integer for a cheap counter map.
+        const auto kind_key{[](StructuralRole role, std::optional<LogLevel> level) noexcept
+                            {
+                                const auto lvl{level ? static_cast<std::uint16_t>(*level)
+                                                     : std::uint16_t{0xFFU}};
+                                return static_cast<std::uint16_t>(
+                                    (static_cast<std::uint16_t>(role) << 8U) | lvl);
+                            }};
+        std::unordered_map<std::uint16_t, std::size_t> per_kind;
+        stats.reservoir.reserve(std::min(config_.reservoir_size, candidates.size()));
+        for (const auto& candidate : candidates)
         {
-            const auto idx{candidates[j].index};
-            const Bucket& bucket{*ordered[idx].second};
+            if (stats.reservoir.size() >= config_.reservoir_size)
+                break;
+            const Bucket& bucket{*ordered[candidate.index].second};
+            const auto level{dominant_level_of(bucket.level_counts)};
+            const auto role{dominant_role_of(bucket.role_counts)};
+            if (config_.reservoir_per_kind_cap > 0)
+            {
+                auto& kind_count{per_kind[kind_key(role, level)]};
+                if (kind_count >= config_.reservoir_per_kind_cap)
+                    continue; // this kind is already covered — keep M for other kinds
+                ++kind_count;
+            }
             ReservoirEntry entry;
-            entry.template_id = ordered[idx].first;
+            entry.template_id = ordered[candidate.index].first;
             if (config_.template_emission == TemplateEmissionMode::Inline)
                 entry.template_str = bucket.template_str;
             entry.count = bucket.count;
             entry.frequency = total > 0.0 ? static_cast<double>(bucket.count) / total : 0.0;
-            entry.dominant_level = dominant_level_of(bucket.level_counts);
-            entry.structural_role = dominant_role_of(bucket.role_counts);
-            entry.salience = candidates[j].salience;
+            entry.dominant_level = level;
+            entry.structural_role = role;
+            entry.salience = candidate.salience;
             stats.reservoir.push_back(std::move(entry));
-            reserved.insert(ordered[idx].first);
+            reserved.insert(ordered[candidate.index].first);
         }
     }
 

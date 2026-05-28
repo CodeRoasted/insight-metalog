@@ -1160,6 +1160,63 @@ TEST(ReservoirTest, TailExcludesReservoirMembers)
         << "tail must shrink by exactly the reservoir count (no double-counting)";
 }
 
+// F10: without a per-kind cap, the highest-salience failure CLASS monopolises the
+// reservoir and crowds out a distinct (lower-salience) failure. The diversity cap
+// bounds exemplars per (structural_role × dominant_level) kind to preserve coverage.
+TEST(ReservoirTest, DiversityCapCoversDistinctKinds)
+{
+    const auto build_doc{[](std::size_t per_kind_cap)
+                         {
+                             meta::MetaLogEngine engine{meta::MetaLogConfig{
+                                 .top_k_size = 3,
+                                 .reservoir_size = 3,
+                                 .reservoir_per_kind_cap = per_kind_cap,
+                                 .emit_stability = false}};
+                             engine.open_window(std::chrono::system_clock::time_point{});
+                             for (int rep = 0; rep < 100; ++rep)
+                             {
+                                 engine.ingest_event(make_event("alpha steady event"));
+                                 engine.ingest_event(make_event("beta steady event"));
+                                 engine.ingest_event(make_event("gamma steady event"));
+                             }
+                             // Kind A: many high-salience Error variants of ONE failure class.
+                             for (int n = 0; n < 9; ++n)
+                                 engine.ingest_event(make_event(
+                                     "test_query_" + std::to_string(n) + " FAILED",
+                                     insight::LogLevel::Error));
+                             // Kind B: a distinct, lower-salience failure (Warn).
+                             engine.ingest_event(
+                                 make_event("deprecated config option used", insight::LogLevel::Warn));
+                             return engine.close_window(std::chrono::system_clock::time_point{} +
+                                                        std::chrono::seconds{60});
+                         }};
+    const auto has_warn_kind{[](const meta::MetaLogDocument& doc)
+                             {
+                                 return std::ranges::any_of(doc.stats.reservoir,
+                                                            [](const auto& e) {
+                                                                return e.dominant_level ==
+                                                                       insight::LogLevel::Warn;
+                                                            });
+                             }};
+    const auto error_kind_count{[](const meta::MetaLogDocument& doc)
+                                {
+                                    return std::ranges::count_if(
+                                        doc.stats.reservoir, [](const auto& e) {
+                                            return e.dominant_level == insight::LogLevel::Error;
+                                        });
+                                }};
+
+    const auto uncapped{build_doc(0)};
+    EXPECT_EQ(error_kind_count(uncapped), 3)
+        << "without a cap, M fills with the highest-salience failure class";
+    EXPECT_FALSE(has_warn_kind(uncapped)) << "the distinct kind is crowded out";
+
+    const auto capped{build_doc(2)};
+    EXPECT_LE(error_kind_count(capped), 2) << "F10: the kind is capped to ≤2 exemplars";
+    EXPECT_TRUE(has_warn_kind(capped))
+        << "F10: the cap preserves a reservoir slot for the distinct failure kind";
+}
+
 } // namespace
 
 // NOLINTEND

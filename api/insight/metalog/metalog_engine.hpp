@@ -291,6 +291,12 @@ struct MetaLogConfig
     // behaviour). Streaming funds M by shrinking top_k (~64); batch sets it large.
     std::size_t reservoir_size{0};
 
+    // Reservoir diversity cap (F10): max exemplars admitted per "kind"
+    // (structural_role × dominant_level), so M optimises COVERAGE of distinct
+    // salient kinds over depth — otherwise M fills with variants of one failure
+    // (test_query_0/_1/… FAILED) and crowds out a different failure. 0 = no cap.
+    std::size_t reservoir_per_kind_cap{0};
+
     // Order of n-gram emitted in the behaviour block. Spec emits a
     // single order per document. Must be 2 or 3.
     std::size_t ngram_size{2};
