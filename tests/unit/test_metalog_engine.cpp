@@ -1398,6 +1398,35 @@ TEST(ReservoirTest, DiversityCapCoversDistinctKinds)
         << "F10: the cap preserves a reservoir slot for the distinct failure kind";
 }
 
+// SPEC §3.7.2 normative MUST: salience admission is salience-ranked with a
+// deterministic **tie-break by template_id**, so a given input under a given
+// retention_profile yields a bit-identical reservoir. Two templates with equal
+// salience (same level, same count, no other axis differentiating) admitted into
+// a 1-slot reservoir: the smaller template_id wins.
+TEST(ReservoirTest, TieBreakByTemplateIdAtEqualSalience)
+{
+    meta::MetaLogEngine engine{meta::MetaLogConfig{
+        .top_k_size = 0,     // every template is a reservoir candidate
+        .reservoir_size = 1, // exactly one slot — the tie must be broken
+    }};
+    const auto start{std::chrono::system_clock::now()};
+    engine.open_window(start);
+    // Two Error-level templates, count 1 each, no failure-lexicon words and no
+    // structural surprise/novelty: salience comes purely from level → identical.
+    engine.ingest_event(make_event("alpha", insight::LogLevel::Error));
+    engine.ingest_event(make_event("beta", insight::LogLevel::Error));
+    const auto doc{engine.close_window(start + std::chrono::seconds(60))};
+
+    ASSERT_EQ(doc.stats.reservoir.size(), 1U);
+    const auto tid_alpha{meta::MetaLogEngine::compute_template_id("alpha")};
+    const auto tid_beta{meta::MetaLogEngine::compute_template_id("beta")};
+    ASSERT_NE(tid_alpha, tid_beta);
+    EXPECT_EQ(doc.stats.reservoir[0].template_id, std::min(tid_alpha, tid_beta))
+        << "§3.7.2: at equal salience, the smaller template_id wins (got "
+        << doc.stats.reservoir[0].template_id << "; min(tid_alpha,tid_beta)="
+        << std::min(tid_alpha, tid_beta) << ")";
+}
+
 // ── §15 re-derivation coordinate ──────────────────────────────────────────────
 
 TEST(ReDerivationCoordinate, AbsentWithoutSourceRef)
