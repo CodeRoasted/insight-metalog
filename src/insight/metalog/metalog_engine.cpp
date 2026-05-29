@@ -658,7 +658,7 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end)
         throw std::logic_error{"MetaLogEngine::close_window called before open_window"};
 
     MetaLogDocument doc;
-    doc.metalog_version = "0.2.0";
+    doc.metalog_version = "0.5.0";
     doc.producer.version = config_.producer_version;
     doc.source = source_;
 
@@ -1179,7 +1179,7 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end)
 
 // ── JSON serialiser (glaze, DTO layer) ─────────────────────────
 //
-// Serialization is a thin DTO mirroring the MetaLog v0.2.0 envelope: each
+// Serialization is a thin DTO mirroring the MetaLog v0.5.0 envelope: each
 // DTO field name IS the JSON key, so the struct declaration reads as the
 // schema and glaze reflects it with zero stringly-typed mapping. The domain
 // types stay free of any serialization concern.

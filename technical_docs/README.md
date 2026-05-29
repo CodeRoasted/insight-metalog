@@ -6,7 +6,7 @@ Cross-repo status, package pins, and planning live in the parent docs: [../../te
 
 ## Read Order
 
-1. [metalog.md](phases/metalog.md) — MetaLog v0.2.0 producer lifecycle, document structure, `compose()`, `diff()`, and the `MetaLogEngine` API.
+1. [metalog.md](phases/metalog.md) — MetaLog v0.5.0 producer lifecycle, document structure, `compose()`, `diff()`, and the `MetaLogEngine` API.
 
 ## Pipeline Position
 

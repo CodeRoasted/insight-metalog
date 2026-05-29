@@ -1,6 +1,6 @@
 // NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns
-// Unit tests for the v0.2.0 spec-conformant MetaLogEngine.
+// Unit tests for the v0.5.0 spec-conformant MetaLogEngine.
 
 #include <chrono>
 #include <cmath>

@@ -9,7 +9,7 @@ class InsightMetalogConan(ConanFile):
     name = "insight_metalog"
     version = "1.3.8"
     package_type = "library"
-    description = "MetaLog spec v0.2.0 producer: bounded statistical fingerprint of a window of log behaviour, with behavior, stability, diff/compose, and HLL cardinality blocks (https://github.com/CodeRoasted/metalog-spec)."
+    description = "MetaLog spec v0.5.0 producer: bounded statistical fingerprint of a window of log behaviour, with behavior, stability, diff/compose, and HLL cardinality blocks (https://github.com/CodeRoasted/metalog-spec)."
     settings = "os", "arch", "compiler", "build_type"
 
     options = {

@@ -31,8 +31,8 @@ TEST(InsightMetaLogPackage, ProducesSpecConformantDocument)
     engine.ingest_event(ev_b);
 
     auto doc{engine.close_window(start + std::chrono::minutes(5))};
-    EXPECT_EQ(doc.metalog_version, "0.2.0");
-    EXPECT_EQ(doc.producer.version, "0.2.0");
+    EXPECT_EQ(doc.metalog_version, "0.5.0");
+    EXPECT_EQ(doc.producer.version, "0.5.0");
     EXPECT_EQ(doc.window.lines_observed, 3U);
     EXPECT_EQ(doc.stats.unique_templates, 2U);
     EXPECT_EQ(doc.stats.top_k.size(), 2U);
@@ -54,7 +54,7 @@ TEST(InsightMetaLogPackage, ProducesSpecConformantDocument)
     auto parsed = glz::read_json<glz::generic>(serialized);
     ASSERT_TRUE(parsed.has_value()) << "serialised output did not parse: " << serialized;
     auto& json = *parsed;
-    EXPECT_EQ(json["metalog_version"].get<std::string>(), "0.2.0") << serialized;
+    EXPECT_EQ(json["metalog_version"].get<std::string>(), "0.5.0") << serialized;
     EXPECT_EQ(json["stats"]["top_k"][0]["count"].get<double>(), 2.0) << serialized;
     EXPECT_TRUE(json["stats"]["top_k"][0]["template_id"].get<std::string>().starts_with("h:"))
         << serialized;

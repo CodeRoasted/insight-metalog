@@ -1,10 +1,10 @@
 #pragma once
 
-// MetaLog v0.2.0 spec-conformant producer.
+// MetaLog v0.5.0 spec-conformant producer.
 //
-// Spec: https://github.com/CodeRoasted/metalog-spec (tag v0.2.0).
+// Spec: https://github.com/CodeRoasted/metalog-spec (tag v0.5.0).
 //
-// v0.2.0 additions over 0.1.x:
+// v0.5.0 additions over 0.1.x:
 //   * top-level `templates` dedup map (SPEC §3.4).
 //   * behaviour fields `dominant_path`, `branching`, `graph_edge_count`
 //     (SPEC §4).
@@ -69,7 +69,7 @@
 namespace insight::metalog
 {
 
-// ── Spec envelope (mirrors v0.2.0 schema) ──────────────────────
+// ── Spec envelope (mirrors v0.5.0 schema) ──────────────────────
 
 // Per-template per-wildcard-position value frequency table.
 //
@@ -242,7 +242,7 @@ struct WindowBlock
 struct ProducerBlock
 {
     std::string name{"insight"};
-    std::string version{"0.2.0"};
+    std::string version{"0.5.0"};
     std::string implementation_uri{"https://github.com/CodeRoasted/insight"};
 };
 
@@ -319,7 +319,7 @@ struct ProvenanceEntry
 
 struct MetaLogDocument
 {
-    std::string metalog_version{"0.2.0"};
+    std::string metalog_version{"0.5.0"};
     ProducerBlock producer{};
     WindowBlock window{};
     SourceBlock source{};
@@ -403,7 +403,7 @@ struct MetaLogConfig
     std::size_t dominant_path_max_steps{kDefaultDominantPathMaxSteps};
 
     // Reported as producer.version in the envelope.
-    std::string producer_version{"0.2.0"};
+    std::string producer_version{"0.5.0"};
 
     // Re-derivation source (SPEC §15). When set, close_window stamps a coordinate
     // on the document (source_ref + the window's event-time bounds). The engine does
@@ -700,7 +700,7 @@ class MetaLogEngine
 };
 
 // Free serialiser. Produces a serialised JSON document conforming to the
-// v0.2.0 MetaLog envelope.
+// v0.5.0 MetaLog envelope.
 //
 // Output is canonical and restrictive: empty/default optional fields are
 // OMITTED, never emitted as empty/zero/false (one document -> one byte

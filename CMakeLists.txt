@@ -1,5 +1,5 @@
 ###########################################################
-#  insight_metalog — MetaLog v0.2.0 spec-conformant producer.
+#  insight_metalog — MetaLog v0.5.0 spec-conformant producer.
 #  Spec: https://github.com/CodeRoasted/metalog-spec
 ###########################################################
 cmake_minimum_required(VERSION 3.28)
