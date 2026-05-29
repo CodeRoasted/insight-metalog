@@ -131,14 +131,36 @@ constexpr std::uint64_t kMinSurpriseEdgeObservations{2};
     return 0U;       // common transition — on the expected flow
 }
 
+// Self-novelty band (0..100): how late a template first appeared within the
+// window, from its first-seen ordinal over the window's line count. A template
+// present from the start (first_seen ≈ 0) scores 0; one that EMERGED late scores
+// high. Self-relative (I3) and re-derivable from provenance — NOT a baseline diff.
+// Same recurrence floor as structural_surprise: a single late event is a
+// window-boundary artifact, not an emergence, so require count >= 2. Integer-only
+// (cross-multiply, I5). Capped at 60 — softer than severity/structure, since
+// late-emergence is suggestive, not intrinsically severe.
+[[nodiscard]] std::uint32_t novelty_band(std::uint64_t first_seen_index, std::uint64_t lines,
+                                         std::uint64_t count) noexcept
+{
+    if (count < kMinSurpriseEdgeObservations || lines == 0U)
+        return 0U;
+    if (first_seen_index * 10U > lines * 9U)
+        return 60U; // first seen in the last 10% of the window
+    if (first_seen_index * 4U > lines * 3U)
+        return 40U; // last 25%
+    if (first_seen_index * 2U > lines)
+        return 20U; // last 50%
+    return 0U;       // present from the first half — not an emergence
+}
+
 // Deterministic, quantized salience (Salience epic §5.1: (severity ⊕
-// structural_surprise) ⊗ rarity; novelty deferred to a later increment). Integer
-// math only — no float in this retention-content path (I5). Returns 0 for a
-// non-salient template (so rare-benign noise never enters the reservoir).
+// structural_surprise ⊕ novelty) ⊗ rarity). Integer math only — no float in this
+// retention-content path (I5). Returns 0 for a non-salient template (so rare-benign
+// noise never enters the reservoir).
 [[nodiscard]] std::uint32_t salience_score(std::optional<LogLevel> level, StructuralRole role,
                                            std::string_view tmpl, std::uint64_t count,
-                                           std::uint64_t lines,
-                                           std::uint32_t structural_surprise) noexcept
+                                           std::uint64_t lines, std::uint32_t structural_surprise,
+                                           std::uint32_t novelty) noexcept
 {
     // severity 0..100, multi-signal max (robust to any single signal missing).
     std::uint32_t severity{0};
@@ -163,10 +185,11 @@ constexpr std::uint64_t kMinSurpriseEdgeObservations{2};
     }
     if (looks_like_failure(tmpl))
         severity = std::max<std::uint32_t>(severity, 70U);
-    // structural_surprise is a peer severity axis: a benign Info line reached only
-    // via a rare off-path transition is salient as a STRUCTURE anomaly even though
-    // its level/lexicon severity is 0.
-    severity = std::max(severity, structural_surprise);
+    // structural_surprise and novelty are peer severity axes: a benign Info line is
+    // salient if it is reached only via a rare off-path transition (STRUCTURE) or if
+    // it just EMERGED late in the window (TIME), even when its level/lexicon
+    // severity is 0. Soft max — robust to any single axis being absent.
+    severity = std::max({severity, structural_surprise, novelty});
     if (severity == 0U)
         return 0U; // not salient — rarity must never gate a benign template in
 
@@ -400,8 +423,13 @@ void MetaLogEngine::migrate_bucket(const std::string& from_content_id,
     buckets_.erase(from_it);
 
     Bucket& dst{buckets_[to_content_id]};
+    const bool dst_existed{dst.count > 0};
     dst.template_str.assign(new_template_str.begin(), new_template_str.end());
     dst.count += moved.count;
+    // Earliest occurrence wins: an evolved cluster keeps its true debut ordinal so
+    // novelty doesn't read it as "newly emerged" just because its content_id changed.
+    dst.first_seen_index =
+        dst_existed ? std::min(dst.first_seen_index, moved.first_seen_index) : moved.first_seen_index;
     for (const auto& [level, level_count] : moved.level_counts)
         dst.level_counts[level] += level_count;
     for (const auto& [role, role_count] : moved.role_counts)
@@ -450,7 +478,10 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
     auto [bucket_it, inserted]{buckets_.try_emplace(*lookup.content_id)};
     auto& bucket{bucket_it->second};
     if (inserted)
+    {
         bucket.template_str.assign(event.template_str.begin(), event.template_str.end());
+        bucket.first_seen_index = lines_observed_; // ordinal of this first occurrence
+    }
     ++bucket.count;
     ++bucket.level_counts[event.level];
     ++bucket.role_counts[event.structural_role]; // F12 announced role → salience
@@ -778,18 +809,22 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end)
             std::size_t index;
             std::uint32_t salience;
             std::uint32_t structural_surprise;
+            std::uint32_t novelty;
         };
         std::vector<Candidate> candidates;
         for (std::size_t i = k; i < ordered.size(); ++i)
         {
             const Bucket& bucket{*ordered[i].second};
             const auto surprise{surprise_of(ordered[i].first)};
+            const auto novelty{novelty_band(bucket.first_seen_index, lines_observed_, bucket.count)};
             const auto sal{salience_score(dominant_level_of(bucket.level_counts),
                                           dominant_role_of(bucket.role_counts), bucket.template_str,
-                                          bucket.count, lines_observed_, surprise)};
+                                          bucket.count, lines_observed_, surprise, novelty)};
             if (sal > 0U)
-                candidates.push_back(
-                    Candidate{.index = i, .salience = sal, .structural_surprise = surprise});
+                candidates.push_back(Candidate{.index = i,
+                                               .salience = sal,
+                                               .structural_surprise = surprise,
+                                               .novelty = novelty});
         }
         std::ranges::sort(candidates,
                           [&ordered](const Candidate& lhs, const Candidate& rhs)
@@ -833,6 +868,7 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end)
             entry.dominant_level = level;
             entry.structural_role = role;
             entry.structural_surprise = candidate.structural_surprise;
+            entry.novelty = candidate.novelty;
             entry.salience = candidate.salience;
             stats.reservoir.push_back(std::move(entry));
             reserved.insert(ordered[candidate.index].first);

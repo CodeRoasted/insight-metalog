@@ -1187,6 +1187,45 @@ TEST(ReservoirTest, StructuralSurpriseAdmitsRecurringOffPathBranch)
         }
 }
 
+// 2d-ii self-novelty (epic §5.1/§5.2): a benign INFO template that emerges LATE
+// in the window (recurring, count >= 2) is retained even though severity AND
+// structural_surprise score it 0. Isolation: the late template SELF-LOOPS, so its
+// max incoming transition probability is 1.0 → structural_surprise 0; it is benign
+// Info → severity 0. Only the self-novelty axis (late first-seen) can retain it.
+TEST(ReservoirTest, NoveltyAdmitsLateEmergingBenignTemplate)
+{
+    meta::MetaLogEngine engine{
+        meta::MetaLogConfig{.top_k_size = 3, .reservoir_size = 8, .emit_stability = false}};
+    engine.open_window(std::chrono::system_clock::time_point{});
+    // Steady bed present from the very start (first-seen ≈ 0 → no novelty).
+    for (int rep = 0; rep < 100; ++rep)
+    {
+        engine.ingest_event(make_event("alpha steady event"));
+        engine.ingest_event(make_event("beta steady event"));
+        engine.ingest_event(make_event("gamma steady event"));
+    }
+    // A benign Info template that only STARTS near the end and recurs (self-loops):
+    // late first-seen (≈0.98), count 5 ≥ 2, self-loop p=1.0 → structural_surprise 0.
+    for (int rep = 0; rep < 5; ++rep)
+        engine.ingest_event(make_event("cache warmer started", insight::LogLevel::Info));
+    const auto doc{engine.close_window(std::chrono::system_clock::time_point{} +
+                                       std::chrono::seconds{60})};
+
+    EXPECT_FALSE(top_k_has(doc, "cache warmer started")) << "the late template is below top_k";
+    ASSERT_TRUE(reservoir_has(doc, "cache warmer started"))
+        << "self-novelty must retain a benign template that emerged late in the window";
+    for (const auto& entry : doc.stats.reservoir)
+        if (entry.template_str == "cache warmer started")
+        {
+            EXPECT_GT(entry.novelty, 0U)
+                << "retention must be attributed to novelty, not severity/structure";
+            EXPECT_EQ(entry.structural_surprise, 0U)
+                << "the self-loop makes it structurally expected — novelty is the only axis";
+            EXPECT_EQ(entry.dominant_level, insight::LogLevel::Info);
+            EXPECT_GT(entry.salience, 0U);
+        }
+}
+
 TEST(ReservoirTest, DisabledByDefault)
 {
     auto rare{make_event("connection refused to db", insight::LogLevel::Error)};

@@ -129,9 +129,17 @@ struct ReservoirEntry
     // alternate cache path") that severity⊗rarity alone would drop. Attribution:
     // a nonzero value here on a non-severe entry explains the retention.
     std::uint32_t structural_surprise{0};
+    // Self-novelty band (0..100): how late this template first appeared within the
+    // document's own span (first-seen position over lines_observed). >0 means it
+    // EMERGED during the window (recurring, count >= 2) rather than being present
+    // from the start — the axis that retains a benign template that just started
+    // happening (a new Info line) which severity/structure would drop. Self-relative
+    // (I3), re-derivable on compose() from merged provenance; NOT "absent from a
+    // baseline" (that is consumer-side diff / the pyramid's multi-horizon novelty).
+    std::uint32_t novelty{0};
     // Quantized salience score (deterministic, integer; I5). Higher = more
-    // salient. (severity ⊕ structural_surprise) ⊗ rarity, where severity folds
-    // level · failure-lexicon · structural_role.
+    // salient. (severity ⊕ structural_surprise ⊕ novelty) ⊗ rarity, where severity
+    // folds level · failure-lexicon · structural_role.
     std::uint32_t salience{0};
 };
 
@@ -517,6 +525,11 @@ class MetaLogEngine
     {
         std::string template_str;
         std::uint64_t count{0};
+        // Ordinal of the event at which this template was first seen in the window
+        // (== lines_observed_ before that event). Feeds the self-novelty axis: a
+        // high value means the template EMERGED late (first-seen near lines_observed).
+        // Preserved as the minimum across Drain cluster migration (earliest wins).
+        std::uint64_t first_seen_index{0};
         std::unordered_map<LogLevel, std::uint64_t> level_counts;
         // Announced structural roles seen for this template (F12 → salience).
         // Dominant role feeds the salience severity signal (Terminator = severe).
