@@ -1453,15 +1453,18 @@ TEST(ReDerivationCoordinate, StampsWindowEventTimeBounds)
     const auto doc{engine.close_window(end)};
 
     ASSERT_TRUE(doc.coordinate.has_value());
-    EXPECT_EQ(doc.coordinate->source_ref.resolver_kind, "logcraft");
-    EXPECT_EQ(doc.coordinate->source_ref.handle, "scenario#seed=7");
+    // §15.2 RAW coordinate: source_ref + bounds present, children absent.
+    ASSERT_TRUE(doc.coordinate->source_ref.has_value());
+    EXPECT_EQ(doc.coordinate->source_ref->resolver_kind, "logcraft");
+    EXPECT_EQ(doc.coordinate->source_ref->handle, "scenario#seed=7");
+    ASSERT_TRUE(doc.coordinate->bounds.has_value());
     // Bounds are the window's EVENT-TIME integer ticks, exactly (§15.3).
-    EXPECT_EQ(doc.coordinate->bounds.start_tick,
+    EXPECT_EQ(doc.coordinate->bounds->start_tick,
               static_cast<std::uint64_t>(start.time_since_epoch().count()));
-    EXPECT_EQ(doc.coordinate->bounds.end_tick,
+    EXPECT_EQ(doc.coordinate->bounds->end_tick,
               static_cast<std::uint64_t>(end.time_since_epoch().count()));
     EXPECT_EQ(doc.coordinate->canonicalization_version, "canon-1");
-    EXPECT_FALSE(doc.coordinate->children.has_value()) << "a leaf coordinate has no children";
+    EXPECT_FALSE(doc.coordinate->children.has_value()) << "a raw coordinate has no children";
 }
 
 TEST(ReDerivationCoordinate, SerialisesCoordinate)
@@ -1530,15 +1533,51 @@ TEST(ReDerivationCoordinate, ComposeCoordinateIsSetOfChildrenNotCoarseBound)
 
     const auto composed{meta::compose(lhs, rhs)};
     ASSERT_TRUE(composed.coordinate.has_value());
-    EXPECT_EQ(composed.coordinate->source_ref.resolver_kind, "composed")
-        << "a composed coordinate resolves via children, not a single source";
+    // §15.2 COMPOSED coordinate: source_ref + bounds ABSENT (no sentinel — §15.2
+    // explicitly forbids them on composed); children present, addressing raw kids.
+    EXPECT_FALSE(composed.coordinate->source_ref.has_value())
+        << "a composed coordinate MUST NOT carry source_ref (§15.2)";
+    EXPECT_FALSE(composed.coordinate->bounds.has_value())
+        << "a composed coordinate MUST NOT carry bounds (§15.2) — children are authoritative";
     ASSERT_TRUE(composed.coordinate->children.has_value());
     ASSERT_EQ(composed.coordinate->children->size(), 2U) << "the set of the two raw children (§15.5)";
-    EXPECT_EQ((*composed.coordinate->children)[0].source_ref.handle, "scenario#seed=1");
-    EXPECT_EQ((*composed.coordinate->children)[1].source_ref.handle, "scenario#seed=2");
-    // §15.5: never a coarse single [first,last] bound on the composed node.
-    EXPECT_EQ(composed.coordinate->bounds.start_tick, 0U);
-    EXPECT_EQ(composed.coordinate->bounds.end_tick, 0U);
+    // Each child is a RAW coordinate addressing the input — source_ref + bounds set.
+    ASSERT_TRUE((*composed.coordinate->children)[0].source_ref.has_value());
+    EXPECT_EQ((*composed.coordinate->children)[0].source_ref->handle, "scenario#seed=1");
+    ASSERT_TRUE((*composed.coordinate->children)[1].source_ref.has_value());
+    EXPECT_EQ((*composed.coordinate->children)[1].source_ref->handle, "scenario#seed=2");
+}
+
+// Wire-level XOR (§15.2 encoding note): a composed coordinate's JSON has `children`
+// and MUST NOT carry `source_ref` or `bounds` (no sentinel emission).
+TEST(ReDerivationCoordinate, ComposedSerialisesAsChildrenOnlyXOR)
+{
+    const auto build{[](std::string handle, insight::Timestamp start)
+                     {
+                         meta::MetaLogConfig cfg{.top_k_size = 8};
+                         cfg.source_ref =
+                             meta::SourceRef{.resolver_kind = "logcraft", .handle = std::move(handle)};
+                         meta::MetaLogEngine engine{cfg};
+                         engine.open_window(start);
+                         engine.ingest_event(make_event("alpha"));
+                         return engine.close_window(start + std::chrono::seconds(30));
+                     }};
+    const auto t0{std::chrono::system_clock::now()};
+    const auto composed{
+        meta::compose(build("seed=1", t0), build("seed=2", t0 + std::chrono::seconds(30)))};
+    const std::string json{meta::to_json(composed)};
+
+    const auto parsed{glz::read_json<glz::generic>(json)};
+    ASSERT_TRUE(parsed.has_value()) << "serialised composed doc did not parse: " << json;
+    ASSERT_TRUE((*parsed).contains("coordinate")) << json;
+    auto& coord{(*parsed)["coordinate"]};
+    EXPECT_TRUE(coord.contains("children")) << "composed coordinate must carry children\n" << json;
+    EXPECT_FALSE(coord.contains("source_ref"))
+        << "§15.2: composed coordinate MUST NOT carry source_ref\n"
+        << json;
+    EXPECT_FALSE(coord.contains("bounds"))
+        << "§15.2: composed coordinate MUST NOT carry bounds (no sentinel)\n"
+        << json;
 }
 
 } // namespace

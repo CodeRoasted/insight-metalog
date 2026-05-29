@@ -676,10 +676,12 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end)
     // §15.3). Descriptive metadata only — it is never read by any compute below.
     if (config_.source_ref)
     {
+        // §15.2 RAW coordinate: source_ref + bounds present, children absent.
         ReDerivationCoordinate coord;
         coord.source_ref = *config_.source_ref;
-        coord.bounds = {static_cast<std::uint64_t>(window_start_->time_since_epoch().count()),
-                        static_cast<std::uint64_t>(end.time_since_epoch().count())};
+        coord.bounds =
+            EventTimeBounds{static_cast<std::uint64_t>(window_start_->time_since_epoch().count()),
+                            static_cast<std::uint64_t>(end.time_since_epoch().count())};
         coord.canonicalization_version = config_.canonicalization_version;
         doc.coordinate = std::move(coord);
     }
@@ -1324,8 +1326,11 @@ struct Bounds
 
 struct Coordinate
 {
-    SourceRef source_ref;
-    Bounds bounds;
+    // §15.2 XOR: a raw coordinate has source_ref + bounds (children absent); a
+    // composed coordinate has children only. skip_null_members omits whichever
+    // group is absent — consumers discriminate by the presence of `children`.
+    std::optional<SourceRef> source_ref;
+    std::optional<Bounds> bounds;
     std::optional<std::string> canonicalization_version;
     std::optional<std::string> config_hash;
     std::optional<std::vector<Coordinate>> children;
@@ -1460,8 +1465,10 @@ dto::Source make_source(const SourceBlock& src)
 dto::Coordinate make_coordinate(const ReDerivationCoordinate& coord)
 {
     dto::Coordinate out;
-    out.source_ref = {coord.source_ref.resolver_kind, coord.source_ref.handle};
-    out.bounds = {coord.bounds.start_tick, coord.bounds.end_tick};
+    if (coord.source_ref)
+        out.source_ref = dto::SourceRef{coord.source_ref->resolver_kind, coord.source_ref->handle};
+    if (coord.bounds)
+        out.bounds = dto::Bounds{coord.bounds->start_tick, coord.bounds->end_tick};
     out.canonicalization_version = coord.canonicalization_version;
     out.config_hash = coord.config_hash;
     if (coord.children)
@@ -2002,10 +2009,10 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
     collect_leaves(rhs);
     if (!child_coords.empty())
     {
+        // §15.2 COMPOSED coordinate: children present, source_ref + bounds ABSENT
+        // (no sentinel — §15.2 explicitly forbids them). Consumers discriminate by
+        // the presence of `children`.
         ReDerivationCoordinate composed;
-        // A "composed" marker, not a resolvable leaf: consumers resolve via children.
-        // bounds stay {0,0} deliberately — §15.5 forbids a coarse composed bound.
-        composed.source_ref = SourceRef{.resolver_kind = "composed", .handle = {}};
         composed.children = std::move(child_coords);
         out.coordinate = std::move(composed);
     }

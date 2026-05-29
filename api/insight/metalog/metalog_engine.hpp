@@ -285,15 +285,20 @@ struct EventTimeBounds
 
 struct ReDerivationCoordinate
 {
-    SourceRef source_ref;
-    EventTimeBounds bounds;
+    // §15.2: a coordinate is XOR — either RAW (source_ref + bounds set, children
+    // absent) or COMPOSED (children set, source_ref + bounds absent). Sentinel
+    // values on composed coordinates are explicitly forbidden by §15.2 (encoding
+    // note). Consumers discriminate by the presence of `children`.
+    std::optional<SourceRef> source_ref;       // RAW only
+    std::optional<EventTimeBounds> bounds;     // RAW only
     // Guarantee-2 (fingerprint reproduction) aids — optional (§15.1-2): canon output
-    // depends on canon code + config, not just raw bytes.
+    // depends on canon code + config, not just raw bytes. May appear on EITHER kind.
     std::optional<std::string> canonicalization_version;
     std::optional<std::string> config_hash;
-    // Composed documents ONLY (§15.5): the SET of raw children's coordinates. A
-    // composed coordinate resolves via its children, never via a single coarse
-    // [first,last] bound (which over-claims across gaps/shards/sources).
+    // Composed documents ONLY (§15.5): the non-empty SET of raw (or recursively
+    // composed) children's coordinates. A composed coordinate resolves via its
+    // children — never via a coarse [first, last] bound (which over-claims across
+    // gaps / shards / sources).
     std::optional<std::vector<ReDerivationCoordinate>> children;
     [[nodiscard]] bool operator==(const ReDerivationCoordinate&) const noexcept = default;
 };
