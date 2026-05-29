@@ -191,7 +191,7 @@ constexpr std::uint64_t kMinSurpriseEdgeObservations{2};
     // severity is 0. Soft max — robust to any single axis being absent.
     severity = std::max({severity, structural_surprise, novelty});
     if (severity == 0U)
-        return 0U; // not salient — rarity must never gate a benign template in
+        return 0U; // not salient — rarity must never gate a benign template in (SPEC §3.7.2)
 
     // rarity modulation (a modulator, never a gate): rare → amplify, frequent →
     // damp toward baseline. Integer thresholds on count·N vs lines (no float).
@@ -670,6 +670,11 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end)
     doc.window.duration_seconds = delta < 0 ? 0 : static_cast<std::uint64_t>(delta);
     doc.window.lines_observed = lines_observed_;
 
+    // §2.4 processing identifiers: opaque names of the contract the document was
+    // produced under. Stamped from config; gate compose()/diff comparability.
+    doc.canonicalization_version = config_.canonicalization_version;
+    doc.retention_profile = config_.retention_profile;
+
     // §15 re-derivation coordinate: when a source_ref is configured, stamp the
     // window's EVENT-TIME bounds as integer ticks (no float; bit-identical across
     // replays since the bounds come from the deterministic event timestamps — I5,
@@ -842,6 +847,9 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end)
                                                .structural_surprise = surprise,
                                                .novelty = novelty});
         }
+        // SPEC §3.7.2 normative MUST: salience-ranked admission with a deterministic
+        // **tie-break by template_id**, so a given input under a matching retention_profile
+        // yields a bit-identical reservoir. Pinned by ReservoirTest.TieBreakByTemplateIdAtEqualSalience.
         std::ranges::sort(candidates,
                           [&ordered](const Candidate& lhs, const Candidate& rhs)
                           {
@@ -904,7 +912,7 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end)
     for (std::size_t i = k; i < ordered.size(); ++i)
     {
         if (reserved.contains(ordered[i].first))
-            continue; // promoted to the reservoir — not part of the tail residual
+            continue; // promoted to the reservoir — excluded from tail aggregates (SPEC §3.7.3)
         const auto c = ordered[i].second->count;
         tail_count += c;
         if (c > tail_max)
@@ -1362,6 +1370,8 @@ struct Document
     std::optional<Behavior> behavior;
     std::optional<Stability> stability;
     std::optional<std::vector<Provenance>> provenance;
+    std::optional<std::string> canonicalization_version; // §2.4 processing identifiers
+    std::optional<std::string> retention_profile;
     std::optional<Coordinate> coordinate; // §15 re-derivation coordinate
 };
 
@@ -1594,6 +1604,8 @@ dto::Document make_document(const MetaLogDocument& doc)
         }
         out.provenance = std::move(prov);
     }
+    out.canonicalization_version = doc.canonicalization_version;
+    out.retention_profile = doc.retention_profile;
     if (doc.coordinate)
         out.coordinate = make_coordinate(*doc.coordinate);
     return out;
@@ -1771,13 +1783,123 @@ void aggregate_reservoir(std::unordered_map<std::string, std::uint64_t>& counts,
             levels.emplace(e.template_id, e.dominant_level);
     }
 }
+
+// §2.4 comparability gate. When both sides carry the identifier, the values MUST
+// be equal; throwing satisfies the spec's "MUST fail" branch. When one side omits
+// it, the operation MAY proceed (the consumer should treat the result with
+// caution); see check_processing_identifier_gate's callers for the carry rule.
+void check_processing_identifier_gate(const std::optional<std::string>& lhs,
+                                      const std::optional<std::string>& rhs,
+                                      std::string_view field, std::string_view op)
+{
+    if (lhs && rhs && *lhs != *rhs)
+        throw std::invalid_argument{
+            std::string{"metalog::"} + std::string{op} + ": incompatible " + std::string{field} +
+            " — \"" + *lhs + "\" vs \"" + *rhs + "\" (SPEC §2.4 comparability gate)"};
+}
+
+// §3.5 / §12.1 compose-carry of param_histograms. For each (template_id,
+// param_index) in both inputs: union value_counts (sum on matching keys),
+// truncate to the cap (top-N by count, deterministic tie-break by key),
+// total = a.total + b.total, recompute entropy_bits over the merged counts,
+// approximate_cardinality = max (HLL sketch is not in the doc — we don't have
+// the registers to union; max is the spec's conservative fallback). For a slot
+// present in only ONE input we carry it unchanged (§12.1: MAY carry or omit).
+[[nodiscard]] std::vector<FieldHistogram>
+merge_field_histograms(const std::vector<FieldHistogram>& lhs,
+                       const std::vector<FieldHistogram>& rhs, std::size_t cap)
+{
+    std::unordered_map<std::uint32_t, const FieldHistogram*> lhs_index;
+    lhs_index.reserve(lhs.size());
+    for (const auto& fh : lhs)
+        lhs_index.emplace(fh.param_index, &fh);
+
+    std::vector<FieldHistogram> out;
+    out.reserve(lhs.size() + rhs.size());
+    std::unordered_set<std::uint32_t> seen;
+    seen.reserve(rhs.size());
+
+    for (const auto& b : rhs)
+    {
+        seen.insert(b.param_index);
+        const auto found{lhs_index.find(b.param_index)};
+        if (found == lhs_index.end())
+        {
+            out.push_back(b);
+            continue;
+        }
+        const FieldHistogram& a{*found->second};
+        FieldHistogram merged;
+        merged.param_index = b.param_index;
+        merged.total = a.total + b.total;
+        std::unordered_map<std::string, std::uint64_t> values;
+        values.reserve(a.value_counts.size() + b.value_counts.size());
+        for (const auto& [v, c] : a.value_counts)
+            values[v] += c;
+        for (const auto& [v, c] : b.value_counts)
+            values[v] += c;
+        if (cap > 0 && values.size() > cap)
+        {
+            std::vector<std::pair<std::string, std::uint64_t>> sorted(values.begin(), values.end());
+            std::ranges::partial_sort(sorted, sorted.begin() + static_cast<std::ptrdiff_t>(cap),
+                                      [](const auto& x, const auto& y)
+                                      {
+                                          if (x.second != y.second)
+                                              return x.second > y.second;
+                                          return x.first < y.first; // deterministic tie-break
+                                      });
+            values.clear();
+            values.reserve(cap);
+            for (std::size_t i{0}; i < cap; ++i)
+                values.emplace(std::move(sorted[i].first), sorted[i].second);
+        }
+        std::vector<std::uint64_t> counts;
+        counts.reserve(values.size());
+        for (const auto& [v, c] : values)
+            counts.push_back(c);
+        merged.value_counts = std::move(values);
+        merged.entropy_bits = shannon_entropy_bits(counts, merged.total);
+        merged.approximate_cardinality =
+            std::max(a.approximate_cardinality, b.approximate_cardinality);
+        out.push_back(std::move(merged));
+    }
+    for (const auto& a : lhs)
+        if (!seen.contains(a.param_index))
+            out.push_back(a);
+    std::ranges::sort(out, [](const auto& x, const auto& y)
+                     { return x.param_index < y.param_index; });
+    return out;
+}
+
+// Carry an identifier into a compose() output only when BOTH inputs supplied it
+// (and matched — already checked). When only one side has it, omitting from the
+// output is honest: the merged document covers an input under an unstated
+// contract; consumers see the absence rather than an over-claim.
+[[nodiscard]] std::optional<std::string>
+carry_processing_identifier(const std::optional<std::string>& lhs,
+                            const std::optional<std::string>& rhs)
+{
+    return (lhs && rhs && *lhs == *rhs) ? lhs : std::nullopt;
+}
+
 } // namespace
 
 MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
 {
+    // §2.4 gate fires BEFORE any merging — incompatible inputs MUST fail loudly,
+    // not produce a hybrid document the consumer can't reason about.
+    check_processing_identifier_gate(lhs.canonicalization_version, rhs.canonicalization_version,
+                                     "canonicalization_version", "compose");
+    check_processing_identifier_gate(lhs.retention_profile, rhs.retention_profile,
+                                     "retention_profile", "compose");
+
     MetaLogDocument out;
     out.metalog_version = lhs.metalog_version;
     out.producer = lhs.producer;
+    out.canonicalization_version =
+        carry_processing_identifier(lhs.canonicalization_version, rhs.canonicalization_version);
+    out.retention_profile =
+        carry_processing_identifier(lhs.retention_profile, rhs.retention_profile);
     out.window.start_iso = iso_min(lhs.window.start_iso, rhs.window.start_iso);
     out.window.end_iso = iso_max(lhs.window.end_iso, rhs.window.end_iso);
     out.window.lines_observed = lhs.window.lines_observed + rhs.window.lines_observed;
@@ -1813,6 +1935,20 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
                           return a.first < b.first;
                       });
 
+    // Index each input's top_k by template_id for the §3.5 / §12.1
+    // param_histograms compose-carry below.
+    const auto build_topk_index{[](const MetaLogDocument& doc) {
+        std::unordered_map<std::string, const TopKEntry*> index;
+        index.reserve(doc.stats.top_k.size());
+        for (const auto& entry : doc.stats.top_k)
+            index.emplace(entry.template_id, &entry);
+        return index;
+    }};
+    const auto lhs_topk{build_topk_index(lhs)};
+    const auto rhs_topk{build_topk_index(rhs)};
+    static constexpr std::size_t kComposeHistogramCap{
+        MetaLogConfig::kDefaultMaxHistogramValues};
+
     const auto k{std::min(out.stats.top_k_size, ordered.size())};
     out.stats.top_k.reserve(k);
     const double total_lines = static_cast<double>(out.window.lines_observed);
@@ -1826,12 +1962,25 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
         e.frequency = total_lines > 0.0 ? static_cast<double>(e.count) / total_lines : 0.0;
         if (auto l{levels.find(e.template_id)}; l != levels.end())
             e.dominant_level = l->second;
+        // §3.5 / §12.1 compose-visible param_histograms. Look up the matching
+        // entries in each input and merge per-param; one-sided is carried; entirely
+        // absent → no histograms (consistent with the cap being a no-op when input
+        // producers didn't emit any). Closes the F8/F2-value compose gap.
+        const auto lhs_entry_it{lhs_topk.find(e.template_id)};
+        const auto rhs_entry_it{rhs_topk.find(e.template_id)};
+        const std::vector<FieldHistogram> empty{};
+        const auto& lhs_hists{lhs_entry_it != lhs_topk.end() ? lhs_entry_it->second->field_histograms
+                                                             : empty};
+        const auto& rhs_hists{rhs_entry_it != rhs_topk.end() ? rhs_entry_it->second->field_histograms
+                                                             : empty};
+        if (!lhs_hists.empty() || !rhs_hists.empty())
+            e.field_histograms = merge_field_histograms(lhs_hists, rhs_hists, kComposeHistogramCap);
         out.stats.top_k.push_back(std::move(e));
     }
 
     out.stats.unique_templates = ordered.size();
 
-    // ── Salience reservoir re-derivation (F8) ──
+    // ── Salience reservoir re-derivation (F8; SPEC §3.7.3 / §12.1) ──
     // Carry the rare-salient templates through composition instead of dropping them
     // into the tail (the multi-scale gap: composed/pyramid baselines were blind to a
     // lone fatal / off-path branch). Candidates are templates that were salient in
@@ -1933,7 +2082,7 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
     for (std::size_t i = k; i < ordered.size(); ++i)
     {
         if (reserved.contains(ordered[i].first))
-            continue; // promoted to the reservoir — not part of the tail residual
+            continue; // promoted to the reservoir — excluded from tail aggregates (SPEC §3.7.3)
         const auto c = ordered[i].second;
         tail_count += c;
         if (c > tail_max)
@@ -2100,6 +2249,14 @@ namespace
 
 MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current)
 {
+    // §2.4 comparability gate (§13): a diff across mismatched processing contracts
+    // is not meaningful — the documents fingerprint different rules. MUST fail.
+    check_processing_identifier_gate(previous.canonicalization_version,
+                                     current.canonicalization_version,
+                                     "canonicalization_version", "diff");
+    check_processing_identifier_gate(previous.retention_profile, current.retention_profile,
+                                     "retention_profile", "diff");
+
     MetaLogDiff out;
     out.previous.window_start_iso = previous.window.start_iso;
     out.previous.window_end_iso = previous.window.end_iso;

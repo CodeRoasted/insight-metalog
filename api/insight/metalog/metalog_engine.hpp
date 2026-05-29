@@ -328,6 +328,11 @@ struct MetaLogDocument
     std::optional<StabilityBlock> stability;
     std::map<std::string, std::string> templates; // optional dedup map (SPEC §3.4)
     std::optional<std::vector<ProvenanceEntry>> provenance; // absent unless composed (SPEC §12.4)
+    // Processing-identifier strings (SPEC §2.4). Opaque names of the contract
+    // under which the document was produced; gate `compose()` / diff
+    // comparability (§13). Set from MetaLogConfig at close_window.
+    std::optional<std::string> canonicalization_version;
+    std::optional<std::string> retention_profile;
     // Re-derivation coordinate (SPEC §15). Present whenever the producer was
     // configured with a source_ref; a composed document carries `children` instead
     // of addressing a single source. Absent otherwise.
@@ -408,10 +413,15 @@ struct MetaLogConfig
     // no coordinate emitted (the conservative default; e.g. the line-agnostic diff).
     std::optional<SourceRef> source_ref;
 
-    // Optional guarantee-2 aid (§15.1-2): the semantic canonicalization-rules
-    // version stamped into the coordinate so the SAME fingerprint is re-derivable.
-    // Not a binary build id. Unset = raw-recovery (guarantee-1) only.
+    // Opaque processing-identifier strings (SPEC §2.4) — name the CONTRACT the
+    // document was produced under. Stamped onto MetaLogDocument at close_window;
+    // gate `compose()` / diff comparability (§13). The `canonicalization_version`
+    // also serves as the guarantee-2 aid stamped into a re-derivation coordinate
+    // (§15.1-2). The `retention_profile` names the retention parameters in effect
+    // (top_k size, reservoir admission weights/size/diversity caps, salience
+    // arithmetic — §3.1 / §3.7); MUST be bumped when any of those change.
     std::optional<std::string> canonicalization_version;
+    std::optional<std::string> retention_profile;
 
     // Max number of wildcard positions to histogram per top_k entry.
     // 0 = disabled (default — zero overhead on the ingest_event hot path;
