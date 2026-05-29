@@ -2169,6 +2169,9 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
                 fhd.current_entropy_bits = curr_fh.entropy_bits;
                 fhd.js_divergence = histogram_js(prev_fh->value_counts, prev_fh->total,
                                                  curr_fh.value_counts, curr_fh.total);
+                // Per-side sample size backing the JS estimate (confidence basis).
+                fhd.previous_sample_count = prev_fh->total;
+                fhd.current_sample_count = curr_fh.total;
                 // Cardinality tracking: propagate HLL estimates when both sides have them.
                 fhd.previous_cardinality = prev_fh->approximate_cardinality;
                 fhd.current_cardinality = curr_fh.approximate_cardinality;

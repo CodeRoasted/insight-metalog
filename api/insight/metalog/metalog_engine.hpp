@@ -413,6 +413,15 @@ struct FieldHistogramDelta
     double js_divergence{0.0};
     double previous_entropy_bits{0.0};
     double current_entropy_bits{0.0};
+    // Per-side observation count backing each distribution (FieldHistogram::total).
+    // This is the sample size the JS divergence is estimated from — the basis for
+    // a consumer's confidence gate (min-sample floor): a high JS over a handful of
+    // observations is sampling noise, not a regime shift. Distinct from cardinality
+    // (number of DISTINCT values) and from the template's stream share (population
+    // proportion). May exceed sum(value_counts) when high-cardinality values were
+    // not retained individually.
+    std::uint64_t previous_sample_count{0};
+    std::uint64_t current_sample_count{0};
     // Cardinality tracking (SPEC §3.5.2). Zero when either document did not
     // provide approximate_cardinality for this slot.
     std::uint64_t previous_cardinality{0};
