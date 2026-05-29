@@ -1213,6 +1213,32 @@ struct TopKEntry
     };
 };
 
+// Salience reservoir entry (Tier 2, F1). Self-describing: carries WHY it was kept
+// (salience + the per-axis bands) so a consumer/explainer can attribute it without
+// the producer. Emitted under `compose()` and serialise→reparse (F8).
+struct ReservoirEntry
+{
+    std::string template_id;
+    std::uint64_t count{0};
+    double frequency{0.0};
+    std::optional<std::string> tmpl;             // key "template"; omitted when empty
+    std::optional<std::string> level;            // spec level string; omitted when absent
+    std::optional<std::string> structural_role;  // omitted when None
+    std::uint32_t structural_surprise{0};
+    std::uint32_t novelty{0};
+    std::uint32_t salience{0};
+
+    struct glaze
+    {
+        using T = ReservoirEntry;
+        static constexpr auto value = glz::object(
+            "template_id", &T::template_id, "count", &T::count, "frequency", &T::frequency,
+            "template", &T::tmpl, "level", &T::level, "structural_role", &T::structural_role,
+            "structural_surprise", &T::structural_surprise, "novelty", &T::novelty, "salience",
+            &T::salience);
+    };
+};
+
 struct Stats
 {
     std::uint64_t unique_templates{0};
@@ -1222,6 +1248,8 @@ struct Stats
     std::vector<TopKEntry> top_k;
     std::optional<double> entropy_bits;
     std::optional<TailSummary> tail_summary;
+    // Omitted when the reservoir is empty (disabled / nothing salient below top_k).
+    std::optional<std::vector<ReservoirEntry>> reservoir;
 };
 
 struct NGramEntry
@@ -1415,6 +1443,33 @@ dto::Document make_document(const MetaLogDocument& doc)
         out.stats.tail_summary = dto::TailSummary{doc.stats.tail_summary->tail_template_count,
                                                   doc.stats.tail_summary->tail_entropy_bits,
                                                   doc.stats.tail_summary->tail_max_rate};
+
+    // Salience reservoir (F8): part of the external contract so a serialised metalog
+    // document carries the rare-salient templates (and why they were kept). Omitted
+    // when empty.
+    if (!doc.stats.reservoir.empty())
+    {
+        std::vector<dto::ReservoirEntry> rows;
+        rows.reserve(doc.stats.reservoir.size());
+        for (const auto& entry : doc.stats.reservoir)
+        {
+            dto::ReservoirEntry row;
+            row.template_id = entry.template_id;
+            row.count = entry.count;
+            row.frequency = entry.frequency;
+            if (!entry.template_str.empty())
+                row.tmpl = entry.template_str;
+            if (entry.dominant_level)
+                row.level = level_to_spec_string(*entry.dominant_level);
+            if (entry.structural_role != StructuralRole::None)
+                row.structural_role = std::string{to_string(entry.structural_role)};
+            row.structural_surprise = entry.structural_surprise;
+            row.novelty = entry.novelty;
+            row.salience = entry.salience;
+            rows.push_back(std::move(row));
+        }
+        out.stats.reservoir = std::move(rows);
+    }
 
     if (doc.behavior)
     {
@@ -1618,6 +1673,26 @@ void aggregate_top_k(std::unordered_map<std::string, std::uint64_t>& counts,
         if (!templates.contains(tid))
             templates.emplace(tid, tstr);
 }
+
+// Fold a document's RESERVOIR mass into the same maps (F8). A template is disjoint
+// across top_k/reservoir within one document, so this never double-counts an input;
+// across inputs a template that is top_k in one and reservoir in the other gets its
+// full merged count. Lets the composed top_k ranking and the re-derived reservoir
+// see the rare-salient templates' counts, which `aggregate_top_k` alone misses.
+void aggregate_reservoir(std::unordered_map<std::string, std::uint64_t>& counts,
+                         std::unordered_map<std::string, std::string>& templates,
+                         std::unordered_map<std::string, std::optional<LogLevel>>& levels,
+                         const MetaLogDocument& doc)
+{
+    for (const auto& e : doc.stats.reservoir)
+    {
+        counts[e.template_id] += e.count;
+        if (!e.template_str.empty() && !templates.contains(e.template_id))
+            templates.emplace(e.template_id, e.template_str);
+        if (e.dominant_level && !levels.contains(e.template_id))
+            levels.emplace(e.template_id, e.dominant_level);
+    }
+}
 } // namespace
 
 MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
@@ -1646,6 +1721,8 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
     std::unordered_map<std::string, std::optional<LogLevel>> levels;
     aggregate_top_k(counts, templates, levels, lhs);
     aggregate_top_k(counts, templates, levels, rhs);
+    aggregate_reservoir(counts, templates, levels, lhs);
+    aggregate_reservoir(counts, templates, levels, rhs);
 
     out.stats.top_k_size = lhs.stats.top_k_size;
 
@@ -1675,6 +1752,101 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
     }
 
     out.stats.unique_templates = ordered.size();
+
+    // ── Salience reservoir re-derivation (F8) ──
+    // Carry the rare-salient templates through composition instead of dropping them
+    // into the tail (the multi-scale gap: composed/pyramid baselines were blind to a
+    // lone fatal / off-path branch). Candidates are templates that were salient in
+    // EITHER input's reservoir and did not rise into the composed top_k by frequency.
+    // structural_surprise/novelty carry through as the max across inputs; salience is
+    // RE-DERIVED over the merged count + composed line total (rarity shifts on merge),
+    // so the ranking reflects the composed window, not either input's. Bounded by the
+    // inputs' (already diversity-capped) reservoirs.
+    std::unordered_set<std::string> reserved;
+    {
+        struct SalienceInfo
+        {
+            std::uint32_t structural_surprise{0};
+            std::uint32_t novelty{0};
+            StructuralRole role{StructuralRole::None};
+        };
+        std::unordered_map<std::string, SalienceInfo> sal_info;
+        const auto absorb_reservoir{[&](const MetaLogDocument& doc)
+                                    {
+                                        for (const auto& e : doc.stats.reservoir)
+                                        {
+                                            auto& info{sal_info[e.template_id]};
+                                            info.structural_surprise = std::max(
+                                                info.structural_surprise, e.structural_surprise);
+                                            info.novelty = std::max(info.novelty, e.novelty);
+                                            if (info.role == StructuralRole::None)
+                                                info.role = e.structural_role;
+                                        }
+                                    }};
+        absorb_reservoir(lhs);
+        absorb_reservoir(rhs);
+
+        std::unordered_set<std::string> topk_ids;
+        topk_ids.reserve(out.stats.top_k.size());
+        for (const auto& e : out.stats.top_k)
+            topk_ids.insert(e.template_id);
+
+        struct ResCand
+        {
+            std::string template_id;
+            std::uint32_t salience;
+            std::uint32_t structural_surprise;
+            std::uint32_t novelty;
+        };
+        std::vector<ResCand> res_cands;
+        for (const auto& [tid, info] : sal_info)
+        {
+            if (topk_ids.contains(tid))
+                continue; // rose into top_k by merged frequency — not a reservoir entry
+            const auto cit{counts.find(tid)};
+            const std::uint64_t cnt{cit != counts.end() ? cit->second : 0};
+            const auto lit{levels.find(tid)};
+            const std::optional<LogLevel> lvl{lit != levels.end() ? lit->second : std::nullopt};
+            const auto tit{templates.find(tid)};
+            const std::string_view tstr{tit != templates.end() ? std::string_view{tit->second}
+                                                               : std::string_view{}};
+            const auto sal{salience_score(lvl, info.role, tstr, cnt, out.window.lines_observed,
+                                          info.structural_surprise, info.novelty)};
+            if (sal > 0U)
+                res_cands.push_back(ResCand{.template_id = tid,
+                                            .salience = sal,
+                                            .structural_surprise = info.structural_surprise,
+                                            .novelty = info.novelty});
+        }
+        std::ranges::sort(res_cands,
+                          [](const ResCand& a, const ResCand& b)
+                          {
+                              if (a.salience != b.salience)
+                                  return a.salience > b.salience;
+                              return a.template_id < b.template_id;
+                          });
+        out.stats.reservoir.reserve(res_cands.size());
+        for (const auto& cand : res_cands)
+        {
+            ReservoirEntry entry;
+            entry.template_id = cand.template_id;
+            if (auto t{templates.find(cand.template_id)}; t != templates.end())
+                entry.template_str = t->second;
+            const auto cit{counts.find(cand.template_id)};
+            entry.count = cit != counts.end() ? cit->second : 0;
+            entry.frequency =
+                total_lines > 0.0 ? static_cast<double>(entry.count) / total_lines : 0.0;
+            if (auto l{levels.find(cand.template_id)}; l != levels.end())
+                entry.dominant_level = l->second;
+            entry.structural_role = sal_info[cand.template_id].role;
+            entry.structural_surprise = cand.structural_surprise;
+            entry.novelty = cand.novelty;
+            entry.salience = cand.salience;
+            out.stats.reservoir.push_back(std::move(entry));
+            reserved.insert(cand.template_id);
+        }
+    }
+
     std::uint64_t tail_count = 0;
     std::uint64_t tail_max = 0;
     std::vector<std::uint64_t> tail_counts;
@@ -1682,6 +1854,8 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
         tail_counts.reserve(ordered.size() - k);
     for (std::size_t i = k; i < ordered.size(); ++i)
     {
+        if (reserved.contains(ordered[i].first))
+            continue; // promoted to the reservoir — not part of the tail residual
         const auto c = ordered[i].second;
         tail_count += c;
         if (c > tail_max)
@@ -1690,7 +1864,8 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
     }
     out.stats.tail_count =
         tail_count + lhs.stats.tail_count + rhs.stats.tail_count; // approximate (SPEC §12.3)
-    out.stats.tail_unique = ordered.size() > k ? ordered.size() - k : 0;
+    // Excludes templates promoted into the reservoir (not double-counted in the tail).
+    out.stats.tail_unique = static_cast<std::uint64_t>(tail_counts.size());
 
     // SPEC §3.6 + §12.3: tail_summary is recomputed from the merged
     // tail directly (not aggregated from inputs) so it stays exact for
@@ -1737,11 +1912,14 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
     out.provenance = std::move(prov);
 
     // Behavior: best-effort merge of top_ngrams by summing counts on
-    // identical sequences. Branching/dominant_path/graph_edge_count
-    // would require recomputing from the merged transition graph,
-    // which we do not have post-aggregation; we drop them rather than
-    // emit stale values. Producers needing fresh behaviour on a
-    // composed document SHOULD re-ingest from raw sources.
+    // identical sequences. Branching/dominant_path/graph_edge_count are
+    // intentionally NOT re-derived here: structural signals are diffed at
+    // RAW pyramid scales (raw_strides), never against composed baselines, so
+    // recomputing them on a composed document would add an unconsumed (and
+    // potentially misleading) view. The rare-salient STRUCTURE that must
+    // survive composition rides the reservoir above (structural_surprise is
+    // carried per entry), which is what closes the multi-scale gap (F8).
+    // Producers needing a full fresh graph on a composed document re-ingest raw.
     if (lhs.behavior || rhs.behavior)
     {
         BehaviorBlock bh;

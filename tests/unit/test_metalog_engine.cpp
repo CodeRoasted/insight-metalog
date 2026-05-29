@@ -1226,6 +1226,103 @@ TEST(ReservoirTest, NoveltyAdmitsLateEmergingBenignTemplate)
         }
 }
 
+// F8: the reservoir is part of the external JSON contract, so a serialised metalog
+// document carries the rare-salient templates (and WHY they were kept) — without it
+// a stored/transmitted document loses them and cross-process diffability breaks.
+TEST(ReservoirTest, SerialisedToJsonWithAttribution)
+{
+    auto rare{make_event("connection refused to db", insight::LogLevel::Error)};
+    const auto doc{run_with_rare_event(rare, /*top_k=*/3, /*reservoir_size=*/8)};
+    ASSERT_FALSE(doc.stats.reservoir.empty());
+
+    const std::string json = meta::to_json(doc);
+    auto parsed = glz::read_json<glz::generic>(json);
+    ASSERT_TRUE(parsed.has_value()) << "serialised output did not parse: " << json;
+    ASSERT_TRUE((*parsed)["stats"].contains("reservoir")) << json;
+    auto& reservoir = (*parsed)["stats"]["reservoir"];
+    ASSERT_TRUE(reservoir.is_array()) << json;
+    ASSERT_FALSE(reservoir.get_array().empty()) << json;
+    auto& entry = reservoir.get_array().front();
+    // Self-describing: the per-axis bands + salience travel with the entry.
+    EXPECT_TRUE(entry.contains("template_id")) << json;
+    EXPECT_TRUE(entry.contains("salience")) << json;
+    EXPECT_TRUE(entry.contains("structural_surprise")) << json;
+    EXPECT_TRUE(entry.contains("novelty")) << json;
+    EXPECT_TRUE(entry.contains("level")) << json; // the rare event is Error
+}
+
+// An empty reservoir is OMITTED from the JSON (restrictive emit) — streams with the
+// reservoir disabled stay byte-identical to the pre-F8 contract.
+TEST(ReservoirTest, EmptyReservoirOmittedFromJson)
+{
+    meta::MetaLogEngine engine{meta::MetaLogConfig{.top_k_size = 8, .reservoir_size = 0}};
+    const auto t0{std::chrono::system_clock::now()};
+    engine.open_window(t0);
+    for (int i = 0; i < 10; ++i)
+        engine.ingest_event(make_event("steady"));
+    const auto doc{engine.close_window(t0 + std::chrono::seconds(1))};
+    const std::string json = meta::to_json(doc);
+    auto parsed = glz::read_json<glz::generic>(json);
+    ASSERT_TRUE(parsed.has_value()) << json;
+    EXPECT_FALSE((*parsed)["stats"].contains("reservoir")) << json;
+}
+
+// F8: compose() carries the reservoir (and its structural_surprise) instead of
+// dropping rare-salient templates into the tail — so composed / pyramid-baseline
+// documents are NOT blind to a lone fatal / off-path branch at long horizons.
+TEST(ReservoirTest, SurvivesComposeWithStructuralSurprise)
+{
+    const auto t0{std::chrono::system_clock::now()};
+    // lhs: a recurring off-path branch X (benign Info, structural_surprise > 0).
+    meta::MetaLogEngine eng_l{
+        meta::MetaLogConfig{.top_k_size = 3, .reservoir_size = 8, .emit_stability = false}};
+    eng_l.open_window(t0);
+    for (int rep = 0; rep < 100; ++rep)
+    {
+        eng_l.ingest_event(make_event("alpha request received"));
+        eng_l.ingest_event(make_event("beta verify token"));
+        eng_l.ingest_event(make_event("gamma response sent"));
+    }
+    for (int rep = 0; rep < 3; ++rep)
+    {
+        eng_l.ingest_event(make_event("alpha request received"));
+        eng_l.ingest_event(make_event("beta verify token"));
+        eng_l.ingest_event(make_event("took alternate cache path", insight::LogLevel::Info));
+        eng_l.ingest_event(make_event("gamma response sent"));
+    }
+    const auto lhs{eng_l.close_window(t0 + std::chrono::seconds{60})};
+    ASSERT_TRUE(reservoir_has(lhs, "took alternate cache path"));
+    std::uint32_t lhs_surprise{0};
+    for (const auto& e : lhs.stats.reservoir)
+        if (e.template_str == "took alternate cache path")
+            lhs_surprise = e.structural_surprise;
+    ASSERT_GT(lhs_surprise, 0U);
+
+    // rhs: a plain benign bed — no salient templates of its own.
+    meta::MetaLogEngine eng_r{
+        meta::MetaLogConfig{.top_k_size = 3, .reservoir_size = 8, .emit_stability = false}};
+    eng_r.open_window(t0);
+    for (int rep = 0; rep < 100; ++rep)
+    {
+        eng_r.ingest_event(make_event("alpha request received"));
+        eng_r.ingest_event(make_event("beta verify token"));
+        eng_r.ingest_event(make_event("gamma response sent"));
+    }
+    const auto rhs{eng_r.close_window(t0 + std::chrono::seconds{60})};
+
+    const auto composed{meta::compose(lhs, rhs)};
+    EXPECT_FALSE(top_k_has(composed, "took alternate cache path"))
+        << "the branch is still below top_k after merge";
+    ASSERT_TRUE(reservoir_has(composed, "took alternate cache path"))
+        << "F8: compose() must carry the rare-salient template, not drop it to the tail";
+    for (const auto& e : composed.stats.reservoir)
+        if (e.template_str == "took alternate cache path")
+        {
+            EXPECT_GT(e.structural_surprise, 0U) << "structural_surprise must persist through compose";
+            EXPECT_GT(e.salience, 0U);
+        }
+}
+
 TEST(ReservoirTest, DisabledByDefault)
 {
     auto rare{make_event("connection refused to db", insight::LogLevel::Error)};
