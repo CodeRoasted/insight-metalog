@@ -1398,6 +1398,120 @@ TEST(ReservoirTest, DiversityCapCoversDistinctKinds)
         << "F10: the cap preserves a reservoir slot for the distinct failure kind";
 }
 
+// ── §15 re-derivation coordinate ──────────────────────────────────────────────
+
+TEST(ReDerivationCoordinate, AbsentWithoutSourceRef)
+{
+    meta::MetaLogEngine engine{meta::MetaLogConfig{.top_k_size = 8}};
+    const auto start{std::chrono::system_clock::now()};
+    engine.open_window(start);
+    engine.ingest_event(make_event("alpha"));
+    const auto doc{engine.close_window(start + std::chrono::seconds(60))};
+    EXPECT_FALSE(doc.coordinate.has_value())
+        << "no source_ref configured → no coordinate (the conservative default)";
+}
+
+TEST(ReDerivationCoordinate, StampsWindowEventTimeBounds)
+{
+    meta::MetaLogConfig cfg{.top_k_size = 8};
+    cfg.source_ref = meta::SourceRef{.resolver_kind = "logcraft", .handle = "scenario#seed=7"};
+    cfg.canonicalization_version = "canon-1";
+    meta::MetaLogEngine engine{cfg};
+    const auto start{std::chrono::system_clock::now()};
+    const auto end{start + std::chrono::seconds(60)};
+    engine.open_window(start);
+    engine.ingest_event(make_event("alpha"));
+    const auto doc{engine.close_window(end)};
+
+    ASSERT_TRUE(doc.coordinate.has_value());
+    EXPECT_EQ(doc.coordinate->source_ref.resolver_kind, "logcraft");
+    EXPECT_EQ(doc.coordinate->source_ref.handle, "scenario#seed=7");
+    // Bounds are the window's EVENT-TIME integer ticks, exactly (§15.3).
+    EXPECT_EQ(doc.coordinate->bounds.start_tick,
+              static_cast<std::uint64_t>(start.time_since_epoch().count()));
+    EXPECT_EQ(doc.coordinate->bounds.end_tick,
+              static_cast<std::uint64_t>(end.time_since_epoch().count()));
+    EXPECT_EQ(doc.coordinate->canonicalization_version, "canon-1");
+    EXPECT_FALSE(doc.coordinate->children.has_value()) << "a leaf coordinate has no children";
+}
+
+TEST(ReDerivationCoordinate, SerialisesCoordinate)
+{
+    meta::MetaLogConfig cfg{.top_k_size = 8};
+    cfg.source_ref = meta::SourceRef{.resolver_kind = "logcraft", .handle = "h"};
+    meta::MetaLogEngine engine{cfg};
+    const auto start{std::chrono::system_clock::now()};
+    engine.open_window(start);
+    engine.ingest_event(make_event("alpha"));
+    const std::string json{meta::to_json(engine.close_window(start + std::chrono::seconds(1)))};
+
+    const auto parsed{glz::read_json<glz::generic>(json)};
+    ASSERT_TRUE(parsed.has_value()) << "serialised output did not parse: " << json;
+    ASSERT_TRUE((*parsed).contains("coordinate")) << json;
+    auto& coord{(*parsed)["coordinate"]};
+    EXPECT_TRUE(coord.contains("source_ref")) << json;
+    EXPECT_TRUE(coord.contains("bounds")) << json;
+    EXPECT_TRUE(coord["bounds"].contains("start_tick")) << json;
+    EXPECT_TRUE(coord["bounds"].contains("end_tick")) << json;
+}
+
+TEST(ReDerivationCoordinate, ReservoirEntryCarriesWithinWindowOrdinal)
+{
+    meta::MetaLogConfig cfg{.top_k_size = 2, .reservoir_size = 8};
+    cfg.source_ref = meta::SourceRef{.resolver_kind = "logcraft", .handle = "h"};
+    meta::MetaLogEngine engine{cfg};
+    const auto start{std::chrono::system_clock::now()};
+    engine.open_window(start);
+    // 20 benign events fill top_k; the rare error first appears at ordinal 20.
+    for (int i = 0; i < 10; ++i)
+    {
+        engine.ingest_event(make_event("alpha"));
+        engine.ingest_event(make_event("beta"));
+    }
+    engine.ingest_event(make_event("connection refused to db", insight::LogLevel::Error));
+    const auto doc{engine.close_window(start + std::chrono::seconds(60))};
+
+    bool found{false};
+    for (const auto& entry : doc.stats.reservoir)
+        if (entry.template_str == "connection refused to db")
+        {
+            found = true;
+            ASSERT_TRUE(entry.within_window_ordinal.has_value())
+                << "§15.4 sub-coordinate must be populated when a coordinate is configured";
+            EXPECT_EQ(*entry.within_window_ordinal, 20U) << "first-seen ordinal after 20 benign events";
+        }
+    ASSERT_TRUE(found) << "the rare error must be retained in the reservoir";
+}
+
+TEST(ReDerivationCoordinate, ComposeCoordinateIsSetOfChildrenNotCoarseBound)
+{
+    const auto build{[](std::string handle, insight::Timestamp start)
+                     {
+                         meta::MetaLogConfig cfg{.top_k_size = 8};
+                         cfg.source_ref =
+                             meta::SourceRef{.resolver_kind = "logcraft", .handle = std::move(handle)};
+                         meta::MetaLogEngine engine{cfg};
+                         engine.open_window(start);
+                         engine.ingest_event(make_event("alpha"));
+                         return engine.close_window(start + std::chrono::seconds(30));
+                     }};
+    const auto t0{std::chrono::system_clock::now()};
+    const auto lhs{build("scenario#seed=1", t0)};
+    const auto rhs{build("scenario#seed=2", t0 + std::chrono::seconds(30))};
+
+    const auto composed{meta::compose(lhs, rhs)};
+    ASSERT_TRUE(composed.coordinate.has_value());
+    EXPECT_EQ(composed.coordinate->source_ref.resolver_kind, "composed")
+        << "a composed coordinate resolves via children, not a single source";
+    ASSERT_TRUE(composed.coordinate->children.has_value());
+    ASSERT_EQ(composed.coordinate->children->size(), 2U) << "the set of the two raw children (§15.5)";
+    EXPECT_EQ((*composed.coordinate->children)[0].source_ref.handle, "scenario#seed=1");
+    EXPECT_EQ((*composed.coordinate->children)[1].source_ref.handle, "scenario#seed=2");
+    // §15.5: never a coarse single [first,last] bound on the composed node.
+    EXPECT_EQ(composed.coordinate->bounds.start_tick, 0U);
+    EXPECT_EQ(composed.coordinate->bounds.end_tick, 0U);
+}
+
 } // namespace
 
 // NOLINTEND

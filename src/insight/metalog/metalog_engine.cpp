@@ -670,6 +670,20 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end)
     doc.window.duration_seconds = delta < 0 ? 0 : static_cast<std::uint64_t>(delta);
     doc.window.lines_observed = lines_observed_;
 
+    // §15 re-derivation coordinate: when a source_ref is configured, stamp the
+    // window's EVENT-TIME bounds as integer ticks (no float; bit-identical across
+    // replays since the bounds come from the deterministic event timestamps — I5,
+    // §15.3). Descriptive metadata only — it is never read by any compute below.
+    if (config_.source_ref)
+    {
+        ReDerivationCoordinate coord;
+        coord.source_ref = *config_.source_ref;
+        coord.bounds = {static_cast<std::uint64_t>(window_start_->time_since_epoch().count()),
+                        static_cast<std::uint64_t>(end.time_since_epoch().count())};
+        coord.canonicalization_version = config_.canonicalization_version;
+        doc.coordinate = std::move(coord);
+    }
+
     // Sort buckets by count desc, template_id asc for determinism.
     std::vector<std::pair<std::string, const Bucket*>> ordered;
     ordered.reserve(buckets_.size());
@@ -870,6 +884,11 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end)
             entry.structural_surprise = candidate.structural_surprise;
             entry.novelty = candidate.novelty;
             entry.salience = candidate.salience;
+            // §15.4 sub-coordinate: re-express the reconciled first-seen ordinal,
+            // bounded by M. Only when a coordinate is configured (it is a sub-part
+            // of the document coordinate; meaningless without one).
+            if (config_.source_ref)
+                entry.within_window_ordinal = bucket.first_seen_index;
             stats.reservoir.push_back(std::move(entry));
             reserved.insert(ordered[candidate.index].first);
         }
@@ -1227,6 +1246,7 @@ struct ReservoirEntry
     std::uint32_t structural_surprise{0};
     std::uint32_t novelty{0};
     std::uint32_t salience{0};
+    std::optional<std::uint64_t> within_window_ordinal; // §15.4 sub-coordinate; omit when absent
 
     struct glaze
     {
@@ -1235,7 +1255,7 @@ struct ReservoirEntry
             "template_id", &T::template_id, "count", &T::count, "frequency", &T::frequency,
             "template", &T::tmpl, "level", &T::level, "structural_role", &T::structural_role,
             "structural_surprise", &T::structural_surprise, "novelty", &T::novelty, "salience",
-            &T::salience);
+            &T::salience, "within_window_ordinal", &T::within_window_ordinal);
     };
 };
 
@@ -1287,6 +1307,30 @@ struct Stability
     double stability_score{1.0};
 };
 
+// Re-derivation coordinate wire shape (SPEC §15). Field names == JSON keys via
+// reflection; optionals + skip_null_members omit guarantee-2 aids / children when
+// absent. Recursive: a composed coordinate carries the set of child coordinates.
+struct SourceRef
+{
+    std::string resolver_kind;
+    std::string handle;
+};
+
+struct Bounds
+{
+    std::uint64_t start_tick{0};
+    std::uint64_t end_tick{0};
+};
+
+struct Coordinate
+{
+    SourceRef source_ref;
+    Bounds bounds;
+    std::optional<std::string> canonicalization_version;
+    std::optional<std::string> config_hash;
+    std::optional<std::vector<Coordinate>> children;
+};
+
 struct ProvenanceWindow
 {
     std::string start;
@@ -1299,6 +1343,7 @@ struct Provenance
     std::optional<Source> source; // omitted when empty
     std::uint64_t lines_observed{0};
     std::optional<std::string> document_id;
+    std::optional<Coordinate> coordinate; // §15.5 — the raw child's coordinate
 };
 
 struct Document
@@ -1312,6 +1357,7 @@ struct Document
     std::optional<Behavior> behavior;
     std::optional<Stability> stability;
     std::optional<std::vector<Provenance>> provenance;
+    std::optional<Coordinate> coordinate; // §15 re-derivation coordinate
 };
 
 // ── Diff DTO (SPEC §13) ──
@@ -1409,6 +1455,26 @@ dto::Source make_source(const SourceBlock& src)
     return !src.service && !src.fleet && !src.host_count && !src.host && src.tags.empty();
 }
 
+// Map a domain re-derivation coordinate to its wire shape (§15), recursing into
+// composed children.
+dto::Coordinate make_coordinate(const ReDerivationCoordinate& coord)
+{
+    dto::Coordinate out;
+    out.source_ref = {coord.source_ref.resolver_kind, coord.source_ref.handle};
+    out.bounds = {coord.bounds.start_tick, coord.bounds.end_tick};
+    out.canonicalization_version = coord.canonicalization_version;
+    out.config_hash = coord.config_hash;
+    if (coord.children)
+    {
+        std::vector<dto::Coordinate> kids;
+        kids.reserve(coord.children->size());
+        for (const auto& child : *coord.children)
+            kids.push_back(make_coordinate(child));
+        out.children = std::move(kids);
+    }
+    return out;
+}
+
 dto::Document make_document(const MetaLogDocument& doc)
 {
     dto::Document out;
@@ -1466,6 +1532,7 @@ dto::Document make_document(const MetaLogDocument& doc)
             row.structural_surprise = entry.structural_surprise;
             row.novelty = entry.novelty;
             row.salience = entry.salience;
+            row.within_window_ordinal = entry.within_window_ordinal;
             rows.push_back(std::move(row));
         }
         out.stats.reservoir = std::move(rows);
@@ -1514,10 +1581,14 @@ dto::Document make_document(const MetaLogDocument& doc)
                 row.source = make_source(p.source);
             row.lines_observed = p.lines_observed;
             row.document_id = p.document_id;
+            if (p.coordinate)
+                row.coordinate = make_coordinate(*p.coordinate);
             prov.push_back(std::move(row));
         }
         out.provenance = std::move(prov);
     }
+    if (doc.coordinate)
+        out.coordinate = make_coordinate(*doc.coordinate);
     return out;
 }
 
@@ -1905,11 +1976,39 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
     if (prov.empty())
     {
         prov.push_back({lhs.window.start_iso, lhs.window.end_iso, lhs.source,
-                        lhs.window.lines_observed, std::nullopt});
+                        lhs.window.lines_observed, std::nullopt, lhs.coordinate});
         prov.push_back({rhs.window.start_iso, rhs.window.end_iso, rhs.source,
-                        rhs.window.lines_observed, std::nullopt});
+                        rhs.window.lines_observed, std::nullopt, rhs.coordinate});
     }
     out.provenance = std::move(prov);
+
+    // §15.5 re-derivation coordinate on a composed document: the SET of its raw
+    // children's coordinates — never a coarse single [first,last] bound. Flatten
+    // each input to leaves (a composed input contributes its own children), so the
+    // composed coordinate always resolves to raw children, never an intermediate.
+    std::vector<ReDerivationCoordinate> child_coords;
+    const auto collect_leaves{[&child_coords](const MetaLogDocument& doc)
+                              {
+                                  if (!doc.coordinate)
+                                      return;
+                                  if (doc.coordinate->children)
+                                      child_coords.insert(child_coords.end(),
+                                                          doc.coordinate->children->begin(),
+                                                          doc.coordinate->children->end());
+                                  else
+                                      child_coords.push_back(*doc.coordinate);
+                              }};
+    collect_leaves(lhs);
+    collect_leaves(rhs);
+    if (!child_coords.empty())
+    {
+        ReDerivationCoordinate composed;
+        // A "composed" marker, not a resolvable leaf: consumers resolve via children.
+        // bounds stay {0,0} deliberately — §15.5 forbids a coarse composed bound.
+        composed.source_ref = SourceRef{.resolver_kind = "composed", .handle = {}};
+        composed.children = std::move(child_coords);
+        out.coordinate = std::move(composed);
+    }
 
     // Behavior: best-effort merge of top_ngrams by summing counts on
     // identical sequences. Branching/dominant_path/graph_edge_count are

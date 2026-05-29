@@ -141,6 +141,12 @@ struct ReservoirEntry
     // salient. (severity ⊕ structural_surprise ⊕ novelty) ⊗ rarity, where severity
     // folds level · failure-lexicon · structural_role.
     std::uint32_t salience{0};
+    // §15.4 sub-coordinate (guarantee-2 aid): the reconciled first-seen ordinal of
+    // this template within the window (== Bucket::first_seen_index), bounded by the
+    // reservoir size. Populated only when a re-derivation coordinate is configured;
+    // a reservoir entry is a canon artifact, so locating its raw needs raw-recovery
+    // (§15.1-1) then re-canonicalization (§15.1-2). Never a per-line coordinate.
+    std::optional<std::uint64_t> within_window_ordinal;
 };
 
 // Per-node branching statistics (MetaLog SPEC §4.2).
@@ -251,6 +257,47 @@ struct SourceBlock
     [[nodiscard]] bool operator==(const SourceBlock&) const noexcept = default;
 };
 
+// Re-derivation coordinate (SPEC §15): makes a window addressable back to its
+// source so `raw(window) = replay(source, bounds)` with no raw buffering, and every
+// finding is citable/verifiable. DESCRIPTIVE metadata only — bit-identical across
+// replays (I5) and MUST NOT feed any deterministic-content / retention / salience
+// compute (§15.6). Present on a document only when a `source_ref` is configured.
+struct SourceRef
+{
+    // Selects the resolver (e.g. "logcraft" replay, a CI-artifact kind). Opaque to
+    // the spec; a producer MUST NOT assume a particular resolver.
+    std::string resolver_kind;
+    // Opaque, resolvable handle — meaning defined by the environment (a replay
+    // source key, an immutable artifact URI, an otel_trace ref, …).
+    std::string handle;
+    [[nodiscard]] bool operator==(const SourceRef&) const noexcept = default;
+};
+
+struct EventTimeBounds
+{
+    // The window is [start_tick, end_tick) in EVENT-TIME integer ticks. Integers
+    // (no float) and bit-identical across replays (§15.3). Window membership MUST be
+    // by event-time only — never the global sequence counter or replay depth.
+    std::uint64_t start_tick{0};
+    std::uint64_t end_tick{0};
+    [[nodiscard]] bool operator==(const EventTimeBounds&) const noexcept = default;
+};
+
+struct ReDerivationCoordinate
+{
+    SourceRef source_ref;
+    EventTimeBounds bounds;
+    // Guarantee-2 (fingerprint reproduction) aids — optional (§15.1-2): canon output
+    // depends on canon code + config, not just raw bytes.
+    std::optional<std::string> canonicalization_version;
+    std::optional<std::string> config_hash;
+    // Composed documents ONLY (§15.5): the SET of raw children's coordinates. A
+    // composed coordinate resolves via its children, never via a single coarse
+    // [first,last] bound (which over-claims across gaps/shards/sources).
+    std::optional<std::vector<ReDerivationCoordinate>> children;
+    [[nodiscard]] bool operator==(const ReDerivationCoordinate&) const noexcept = default;
+};
+
 // Provenance entry recording one input that fed a composed document
 // (SPEC §12.4).
 struct ProvenanceEntry
@@ -260,6 +307,9 @@ struct ProvenanceEntry
     SourceBlock source;
     std::uint64_t lines_observed{0};
     std::optional<std::string> document_id;
+    // The input's own re-derivation coordinate (§15.5), so a composed document's
+    // coordinate resolves to this raw child. Absent when the input had none.
+    std::optional<ReDerivationCoordinate> coordinate;
 };
 
 struct MetaLogDocument
@@ -273,6 +323,10 @@ struct MetaLogDocument
     std::optional<StabilityBlock> stability;
     std::map<std::string, std::string> templates; // optional dedup map (SPEC §3.4)
     std::optional<std::vector<ProvenanceEntry>> provenance; // absent unless composed (SPEC §12.4)
+    // Re-derivation coordinate (SPEC §15). Present whenever the producer was
+    // configured with a source_ref; a composed document carries `children` instead
+    // of addressing a single source. Absent otherwise.
+    std::optional<ReDerivationCoordinate> coordinate;
 };
 
 // ── Producer configuration ─────────────────────────────────────
@@ -340,6 +394,19 @@ struct MetaLogConfig
 
     // Reported as producer.version in the envelope.
     std::string producer_version{"0.2.0"};
+
+    // Re-derivation source (SPEC §15). When set, close_window stamps a coordinate
+    // on the document (source_ref + the window's event-time bounds). The engine does
+    // NOT derive its own source — the producer/ingest layer sets this (e.g. the
+    // LogCraft harness sets {resolver_kind="logcraft", handle=scenario+seed}; a CI
+    // run sets {resolver_kind=<artifact-kind>, handle=<artifact URI>}). Unset =
+    // no coordinate emitted (the conservative default; e.g. the line-agnostic diff).
+    std::optional<SourceRef> source_ref;
+
+    // Optional guarantee-2 aid (§15.1-2): the semantic canonicalization-rules
+    // version stamped into the coordinate so the SAME fingerprint is re-derivable.
+    // Not a binary build id. Unset = raw-recovery (guarantee-1) only.
+    std::optional<std::string> canonicalization_version;
 
     // Max number of wildcard positions to histogram per top_k entry.
     // 0 = disabled (default — zero overhead on the ingest_event hot path;
