@@ -6,8 +6,7 @@
 //
 // v0.2.0 additions over 0.1.x:
 //   * top-level `templates` dedup map (SPEC §3.4).
-//   * behaviour fields `dominant_path`, `branching`,
-//     `sessions_observed`, `session_aware`, `graph_edge_count`
+//   * behaviour fields `dominant_path`, `branching`, `graph_edge_count`
 //     (SPEC §4).
 //   * free functions `compose(a, b)` (SPEC §12) and `diff(prev, cur)`
 //     producing a `MetaLogDiff` (SPEC §13).
@@ -62,7 +61,6 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 #include "insight/core/types.hpp"
@@ -207,8 +205,6 @@ struct BehaviorBlock
     std::optional<std::uint64_t> graph_edge_count;
     std::optional<std::vector<std::string>> dominant_path;  // absent when not computed
     std::optional<std::vector<BranchingEntry>> branching;   // absent when not computed
-    std::optional<std::uint64_t> sessions_observed;
-    bool session_aware{false};
 };
 
 struct StabilityBlock
@@ -591,13 +587,6 @@ class MetaLogEngine
     std::unordered_map<std::string, std::uint64_t> prev_freq_;
     std::uint64_t prev_total_{0};
     std::optional<std::string> prev_window_end_iso_;
-
-    // Set of distinct session keys observed in the current window.
-    // Hot path adds at most one insert per event when `event.session_key != 0`.
-    // When all events have session_key == 0 (the default for tokenizers
-    // that haven't opted in to MetaLog SPEC §14), this set stays empty
-    // and the cost is one predicted-not-taken branch per ingest.
-    std::unordered_set<SessionID> sessions_seen_;
 
     // HyperLogLog sketches for approximate cardinality per (template, param_index).
     // Pimpl to avoid exposing HLL internals in the public header.

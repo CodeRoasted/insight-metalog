@@ -331,7 +331,6 @@ void MetaLogEngine::open_window(Timestamp start)
     recent_.fill(0);
     ngram_counts_.clear();
     ngram_total_ = 0;
-    sessions_seen_.clear();
     hll_state_->reset();
     // NOTE: prev_freq_ / prev_window_end_iso_ are NOT cleared here —
     // they are the cross-window state that feeds the stability block.
@@ -483,12 +482,6 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
             hll_state_->add(*lookup.content_id, pi, val);
         }
     }
-
-    // Cheap session tracking: one predicted-not-taken branch when all
-    // events have session_key == 0 (the historical, session-agnostic
-    // tokenizer output). Any non-zero key opts in to SPEC §14.
-    if (event.session_key != 0) [[unlikely]]
-        sessions_seen_.insert(event.session_key);
 
     // n-gram update. Bigram needs >=1 prior id; trigram needs >=2.
     if (config_.ngram_size == 2 && recent_filled_ >= 1)
@@ -1049,13 +1042,6 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end)
             bh.dominant_path = std::move(path);
         }
 
-        // ── sessions (SPEC §4.3) ──
-        if (!sessions_seen_.empty())
-        {
-            bh.sessions_observed = sessions_seen_.size();
-            bh.session_aware = false; // engine does not yet partition n-grams
-        }
-
         doc.behavior = std::move(bh);
     }
 
@@ -1122,7 +1108,6 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end)
     recent_.fill(0);
     ngram_counts_.clear();
     ngram_total_ = 0;
-    sessions_seen_.clear();
 
     return doc;
 }
@@ -1226,8 +1211,6 @@ struct Behavior
     std::optional<std::uint64_t> graph_edge_count;
     std::optional<std::vector<std::string>> dominant_path;
     std::optional<std::vector<BranchingEntry>> branching;
-    std::optional<std::uint64_t> sessions_observed;
-    std::optional<bool> session_aware; // omitted when false
 };
 
 struct Stability
@@ -1417,9 +1400,6 @@ dto::Document make_document(const MetaLogDocument& doc)
                 rows.push_back({b.template_id, b.fanout, b.total_outgoing, b.entropy_bits});
             out_bh.branching = std::move(rows);
         }
-        out_bh.sessions_observed = bh.sessions_observed;
-        if (bh.session_aware)
-            out_bh.session_aware = true;
         out.behavior = std::move(out_bh);
     }
 
@@ -1769,23 +1749,6 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
         if (entries.size() > bh.top_ngrams_size)
             entries.resize(bh.top_ngrams_size);
         bh.top_ngrams = std::move(entries);
-        // sessions_observed: sum if both present (best-effort upper bound).
-        std::uint64_t sessions = 0;
-        bool any_sessions = false;
-        if (lhs.behavior && lhs.behavior->sessions_observed)
-        {
-            sessions += *lhs.behavior->sessions_observed;
-            any_sessions = true;
-        }
-        if (rhs.behavior && rhs.behavior->sessions_observed)
-        {
-            sessions += *rhs.behavior->sessions_observed;
-            any_sessions = true;
-        }
-        if (any_sessions)
-            bh.sessions_observed = sessions;
-        bh.session_aware = (lhs.behavior && lhs.behavior->session_aware) ||
-                           (rhs.behavior && rhs.behavior->session_aware);
         out.behavior = std::move(bh);
     }
 
