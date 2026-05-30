@@ -1230,12 +1230,16 @@ struct TailSummary
 // at the serialization boundary. approximate_cardinality is omitted when 0
 // (== not computed). Reflected (no glaze meta): member names are the wire keys,
 // matching $defs/param_histogram exactly.
+//
+// entropy_bits is intentionally NOT on the wire (§3.5 MUST NOT). It is the only
+// float this field would carry and is losslessly derivable from value_counts, so
+// omitting it keeps param_histograms integer-only: deterministic by construction,
+// with no dependency on float-hardening (ROADMAP #12), at zero information loss.
 struct ParamHistogram
 {
     std::uint32_t param_index{0};
     std::map<std::string, std::uint64_t> value_counts;
     std::uint64_t total{0};
-    double entropy_bits{0.0};
     std::optional<std::uint64_t> approximate_cardinality; // omit when 0 (not computed)
 };
 
@@ -1556,7 +1560,6 @@ dto::Document make_document(const MetaLogDocument& doc)
                 ph.param_index = fh.param_index;
                 ph.value_counts = {fh.value_counts.begin(), fh.value_counts.end()};
                 ph.total = fh.total;
-                ph.entropy_bits = fh.entropy_bits;
                 if (fh.approximate_cardinality > 0)
                     ph.approximate_cardinality = fh.approximate_cardinality;
                 hists.push_back(std::move(ph));

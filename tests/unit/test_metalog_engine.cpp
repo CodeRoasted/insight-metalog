@@ -814,6 +814,17 @@ TEST(FieldHistogramSerializationTest, ValueCountsEmittedKeySorted)
     EXPECT_LT(pos_a, pos_m) << "value_counts must serialise key-sorted (§15.6).\n" << json;
     EXPECT_LT(pos_m, pos_z) << "value_counts must serialise key-sorted (§15.6).\n" << json;
 
+    // §3.5 MUST NOT: no entropy_bits (a float, derivable from value_counts). Every
+    // emitted field is integer-TYPED — param_index, value_counts counts, total, and
+    // the HLL approximate_cardinality (=3 distinct values here) — so no float lands
+    // on the wire. Pin the exact shape (key-sorted value_counts).
+    EXPECT_NE(json.find("\"param_histograms\":[{\"param_index\":0,\"value_counts\":"
+                        "{\"aaa_alpha\":1,\"mmm_mango\":1,\"zzz_zebra\":1},\"total\":3,"
+                        "\"approximate_cardinality\":3}]"),
+              std::string::npos)
+        << "param_histograms must serialise integer-only & key-sorted (no entropy_bits).\n"
+        << json;
+
     EXPECT_EQ(meta::to_json(doc), json) << "serialisation must be byte-identical on repeat.";
 }
 
