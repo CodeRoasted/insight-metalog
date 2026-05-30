@@ -1231,10 +1231,15 @@ struct TailSummary
 // (== not computed). Reflected (no glaze meta): member names are the wire keys,
 // matching $defs/param_histogram exactly.
 //
-// entropy_bits is intentionally NOT on the wire (§3.5 MUST NOT). It is the only
-// float this field would carry and is losslessly derivable from value_counts, so
-// omitting it keeps param_histograms integer-only: deterministic by construction,
-// with no dependency on float-hardening (ROADMAP #12), at zero information loss.
+// entropy_bits is intentionally NOT on the wire (§3.5 MUST NOT): it is losslessly
+// derivable from value_counts, so dropping it keeps the DISTRIBUTION fields
+// (param_index / value_counts / total) integer and genuinely cross-machine
+// bit-identical — independent of float-hardening (ROADMAP #12).
+// approximate_cardinality stays (it is the UNCAPPED distinct count, NOT derivable
+// from the capped value_counts) but is uint64-typed yet HLL-float-derived: it is
+// deterministic under same-machine replay (v1's pairwise batch), while its
+// cross-machine bit-identity rides #12. Any cross-build / history signal derived
+// from it is therefore #12-gated — tracked in ROADMAP #12.
 struct ParamHistogram
 {
     std::uint32_t param_index{0};
