@@ -1223,6 +1223,22 @@ struct TailSummary
     double tail_max_rate{0.0};
 };
 
+// Per-wildcard-position value-count histogram (SPEC §3.5). value_counts is a
+// std::map so glaze emits it KEY-SORTED — the §15.6 replay bit-identity
+// requirement; the domain FieldHistogram::value_counts is an unordered_map whose
+// iteration order is not portable across runs/impls, so it is copied into a map
+// at the serialization boundary. approximate_cardinality is omitted when 0
+// (== not computed). Reflected (no glaze meta): member names are the wire keys,
+// matching $defs/param_histogram exactly.
+struct ParamHistogram
+{
+    std::uint32_t param_index{0};
+    std::map<std::string, std::uint64_t> value_counts;
+    std::uint64_t total{0};
+    double entropy_bits{0.0};
+    std::optional<std::uint64_t> approximate_cardinality; // omit when 0 (not computed)
+};
+
 struct TopKEntry
 {
     std::string template_id;
@@ -1230,15 +1246,20 @@ struct TopKEntry
     double frequency{0.0};
     std::optional<std::string> tmpl;  // key "template"; omitted when empty
     std::optional<std::string> level; // spec level string; omitted when absent
+    // SPEC §3.5 per-param histograms. Present only when the producer enabled
+    // max_param_histograms (batch / full-fidelity path); omitted otherwise
+    // (skip_null_members), so default and streaming documents are byte-unchanged.
+    std::optional<std::vector<ParamHistogram>> param_histograms;
 
-    // glaze rename: `tmpl` -> "template" (a C++ keyword), every other field
-    // by reflection. field_histograms is internal and excluded by omission.
+    // glaze rename: `tmpl` -> "template" (a C++ keyword), every other field by
+    // reflection.
     struct glaze
     {
         using T = TopKEntry;
         static constexpr auto value =
             glz::object("template_id", &T::template_id, "count", &T::count, "frequency",
-                        &T::frequency, "template", &T::tmpl, "level", &T::level);
+                        &T::frequency, "template", &T::tmpl, "level", &T::level,
+                        "param_histograms", &T::param_histograms);
     };
 };
 
@@ -1520,6 +1541,28 @@ dto::Document make_document(const MetaLogDocument& doc)
             row.tmpl = entry.template_str;
         if (entry.dominant_level)
             row.level = level_to_spec_string(*entry.dominant_level);
+        // SPEC §3.5: per-param histograms (batch / full-fidelity path). Empty
+        // unless the producer enabled max_param_histograms. field_histograms is
+        // materialised in param_index order (close_window), so the slot order is
+        // already deterministic; value_counts is copied into a std::map so the
+        // wire is key-sorted (§15.6).
+        if (!entry.field_histograms.empty())
+        {
+            std::vector<dto::ParamHistogram> hists;
+            hists.reserve(entry.field_histograms.size());
+            for (const auto& fh : entry.field_histograms)
+            {
+                dto::ParamHistogram ph;
+                ph.param_index = fh.param_index;
+                ph.value_counts = {fh.value_counts.begin(), fh.value_counts.end()};
+                ph.total = fh.total;
+                ph.entropy_bits = fh.entropy_bits;
+                if (fh.approximate_cardinality > 0)
+                    ph.approximate_cardinality = fh.approximate_cardinality;
+                hists.push_back(std::move(ph));
+            }
+            row.param_histograms = std::move(hists);
+        }
         out.stats.top_k.push_back(std::move(row));
     }
     if (doc.stats.tail_summary)
