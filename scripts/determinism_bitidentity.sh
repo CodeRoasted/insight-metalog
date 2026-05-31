@@ -14,6 +14,9 @@
 # Exit non-zero on any divergence. clang uses -D__cpp_concepts=202002L purely to
 # work around the clang18<->libstdc++13 std::expected gate (a feature-test macro;
 # zero effect on float codegen).
+#
+# Set F5_REQUIRE_COMPILERS="g++ clang++" (CI) to fail unless every listed compiler
+# actually built — otherwise a clang-only break would pass on the g++ builds alone.
 set -uo pipefail
 META="$(cd "$(dirname "$0")/.." && pwd)"
 CC="$META/build/compile_commands.json"
@@ -78,6 +81,20 @@ for cxx in g++ clang++; do
   done; done
 done
 [ "${#builds[@]}" -gt 0 ] || { echo "no builds succeeded"; exit 1; }
+
+# Gate-integrity guard. F5_REQUIRE_COMPILERS lists compilers that MUST each have
+# produced at least one successful build (e.g. "g++ clang++" in CI). Without it a
+# clang-only compile break — like the glaze anon-namespace regression — would
+# pass silently on the g++ builds alone, leaving a hollow green gate. Local proxy
+# runs leave it unset and degrade to whatever compilers are installed.
+for req in ${F5_REQUIRE_COMPILERS:-}; do
+  pfx="${req//+/p}_"
+  printf '%s\n' "${builds[@]}" | grep -q "^$pfx" || {
+    echo "GATE INTEGRITY FAIL: required compiler '$req' produced no successful build"
+    echo "  — the gate would be hollow (cross-compiler property unverified). See build logs above."
+    exit 3
+  }
+done
 
 for tag in "${builds[@]}"; do
   : >"$WORK/$tag.out"
