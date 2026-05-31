@@ -2,7 +2,8 @@
 #include "insight/metalog/metalog_engine.hpp"
 
 #include "hll.hpp"
-#include "insight/math/det_math.hpp" // F5: deterministic fixed-point log2/ln
+#include "insight/math/det_math.hpp"        // F5: deterministic fixed-point log2/ln
+#include "insight/utils/failure_lexicon.hpp" // F7: token-aware failure lexicon (shared w/ canon)
 
 #include <algorithm>
 #include <array>
@@ -73,33 +74,15 @@ StructuralRole dominant_role_of(const std::unordered_map<StructuralRole, std::ui
     return best;
 }
 
-// Case-insensitive substring search; `needle` must be lowercase.
-[[nodiscard]] bool contains_ci(std::string_view hay, std::string_view needle) noexcept
-{
-    if (needle.empty() || hay.size() < needle.size())
-        return false;
-    const auto lower{[](char chr) noexcept
-                     { return chr >= 'A' && chr <= 'Z' ? static_cast<char>(chr - 'A' + 'a') : chr; }};
-    for (std::size_t start{0}; start + needle.size() <= hay.size(); ++start)
-    {
-        std::size_t off{0};
-        for (; off < needle.size(); ++off)
-            if (lower(hay[start + off]) != needle[off])
-                break;
-        if (off == needle.size())
-            return true;
-    }
-    return false;
-}
-
 // The "looks-like-failure" lexicon (F7) — a secondary severity signal for lines
 // whose level/role did not already mark them (e.g. a raw `FAILED`/`Traceback`).
+// Token-aware (insight::utils::contains_failure_cue): a failure word must be a
+// standalone token or a CamelCase `…Error`/`…Exception` type — NOT a substring
+// buried in a path/identifier (`Writing tsc-error-report.json`), which used to
+// inflate severity and crowd the salience reservoir with benign lines.
 [[nodiscard]] bool looks_like_failure(std::string_view tmpl) noexcept
 {
-    return contains_ci(tmpl, "error") || contains_ci(tmpl, "fatal") ||
-           contains_ci(tmpl, "exception") || contains_ci(tmpl, "panic") ||
-           contains_ci(tmpl, "traceback") || contains_ci(tmpl, "failed") ||
-           contains_ci(tmpl, "segmentation fault");
+    return insight::utils::contains_failure_cue(tmpl);
 }
 
 // A structural branch must recur to be trusted: a transition observed ONCE is
@@ -186,6 +169,13 @@ constexpr std::uint64_t kMinSurpriseEdgeObservations{2};
     }
     if (looks_like_failure(tmpl))
         severity = std::max<std::uint32_t>(severity, 70U);
+    // Severity-confidence tiers run declared > level-keyword > token-lexicon. A
+    // DECLARED failure marker (StructuralRole::Terminator, e.g. `##[error]`) would
+    // be the highest tier, but it is intentionally NOT gated here: canon already
+    // lifts such announced markers to LogLevel::Error, so the level input above
+    // captures them. Promote Terminator to its own tier only if a level-escaping
+    // marker surfaces in real logs (a non-zero-exit Terminator with no level
+    // keyword); until then it is redundant. (Daidalos, 2026-05-31.)
     // structural_surprise and novelty are peer severity axes: a benign Info line is
     // salient if it is reached only via a rare off-path transition (STRUCTURE) or if
     // it just EMERGED late in the window (TIME), even when its level/lexicon

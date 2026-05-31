@@ -1279,6 +1279,18 @@ TEST(ReservoirTest, RareBenignNotAdmitted)
         << "rarity must never gate a benign template into the reservoir";
 }
 
+// F7 token-awareness: a benign INFO line whose text merely CONTAINS a failure word
+// inside a token (a filename) must score 0 — the F7 lexicon used to fire on the
+// embedded "error" via raw substring, inflating severity and admitting the benign
+// line to the reservoir. It must be treated exactly like RareBenignNotAdmitted.
+TEST(ReservoirTest, RareBenignWithEmbeddedFailureSubstringNotAdmitted)
+{
+    auto rare{make_event("Writing tsc-error-report.json", insight::LogLevel::Info)};
+    const auto doc{run_with_rare_event(rare, 3, 8)};
+    EXPECT_FALSE(reservoir_has(doc, "Writing tsc-error-report.json"))
+        << "F7 must not read 'error' inside a filename token as a failure cue";
+}
+
 // 2d structural_surprise (epic §5.1): a benign INFO template that severity⊗rarity
 // scores 0 IS retained when it is reached only via a RECURRING low-probability
 // transition off the dominant path. Distinct from RareBenignNotAdmitted: there the
