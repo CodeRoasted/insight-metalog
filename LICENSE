@@ -1,0 +1,23 @@
+Business Source License 1.1 — Parameters
+
+Licensor:             CodeRoast SAS
+Licensed Work:        insight_metalog (the MetaLog reference implementation)
+                      The Licensed Work is (c) 2026 CodeRoast SAS.
+Additional Use Grant: You may make production use of the Licensed Work,
+                      provided you do not offer it to third parties as a
+                      hosted or managed service whose primary value is the
+                      functionality of the Licensed Work and that competes
+                      with a CodeRoast SAS commercial offering.
+Change Date:          Four years from the date each version of the Licensed
+                      Work is first published.
+Change License:       Apache License, Version 2.0
+
+-------------------------------------------------------------------------------
+NOTE (not part of the license grant): The full, canonical Business Source
+License 1.1 terms (the standard body that accompanies the Parameters above)
+are NOT reproduced here and MUST be appended verbatim, unmodified, from the
+official source — https://mariadb.com/bsl11 — before insight-metalog is
+published publicly. This file currently carries only the Licensor-specific
+Parameters; it is not yet a self-contained license. See
+technical_docs/product/open_source_strategy.md (§3.2).
+-------------------------------------------------------------------------------
