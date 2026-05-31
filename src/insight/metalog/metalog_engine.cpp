@@ -2,6 +2,7 @@
 #include "insight/metalog/metalog_engine.hpp"
 
 #include "hll.hpp"
+#include "insight/math/det_math.hpp" // F5: deterministic fixed-point log2/ln
 
 #include <algorithm>
 #include <array>
@@ -248,16 +249,19 @@ double shannon_entropy_bits(const std::vector<std::uint64_t>& counts, std::uint6
 {
     if (total == 0)
         return 0.0;
-    const double inv_total = 1.0 / static_cast<double>(total);
-    double h = 0.0;
+    // F5-M1/M2: H = (Σ cᵢ·(log2(total) − log2(cᵢ))) / total, accumulated as an
+    // exact __int128 over the integer/count domain (no libm, order-independent),
+    // converted to double by one exact divide. Deterministic cross-machine.
+    insight::det::FixedReducer reducer;
+    const std::int64_t log2_total{insight::det::det_log2_fixed(total)};
     for (auto c : counts)
     {
         if (c == 0)
             continue;
-        const double p = static_cast<double>(c) * inv_total;
-        h -= p * std::log2(p);
+        reducer.add_fixed(static_cast<__int128>(c) *
+                          (log2_total - insight::det::det_log2_fixed(c)));
     }
-    return h;
+    return reducer.normalized_bits(static_cast<std::int64_t>(total));
 }
 
 } // namespace
@@ -557,34 +561,63 @@ DivergenceResult divergences(const std::unordered_map<std::string, std::uint64_t
                              const std::unordered_map<std::string, std::uint64_t>& prev,
                              std::uint64_t prev_total)
 {
-    std::unordered_set<std::string> keys;
+    // Union of keys, in a defined (sorted) order — F5-M2. Pointers into the maps
+    // (no string copies). Integer accumulation below is order-invariant anyway,
+    // but the explicit order keeps the contract clear and avoids iterating an
+    // unordered container for output.
+    std::vector<const std::string*> keys;
     keys.reserve(cur.size() + prev.size());
     for (const auto& kv : cur)
-        keys.insert(kv.first);
+        keys.push_back(&kv.first);
     for (const auto& kv : prev)
-        keys.insert(kv.first);
+        if (!cur.contains(kv.first))
+            keys.push_back(&kv.first);
     if (keys.empty() || cur_total == 0 || prev_total == 0)
         return {0.0, 0.0};
+    std::ranges::sort(keys, [](const std::string* lhs, const std::string* rhs)
+                      { return *lhs < *rhs; });
 
-    const double alpha = 1.0;
-    const auto k{static_cast<double>(keys.size())};
-    const double cur_denom = static_cast<double>(cur_total) + (alpha * k);
-    const double prev_denom = static_cast<double>(prev_total) + (alpha * k);
+    // Laplace smoothing (alpha = 1): with k = |union|, the smoothed frequencies
+    // p = (cn+1)/cur_denom and q = (pn+1)/prev_denom are ratios of INTEGERS
+    // (cur_denom = cur_total + k, prev_denom = prev_total + k are integers), so
+    // every log2 is a det_log2_fixed difference and the reductions stay exact in
+    // the integer/fixed-point domain (F5-M1/M2). One exact divide per output.
+    //   KL = (1/cur_denom)·Σ (cn+1)·[log2((cn+1)·prev_denom) − log2((pn+1)·cur_denom)]
+    //   JS = ½·[ (1/cur_denom)·Σ(cn+1)·L_p + (1/prev_denom)·Σ(pn+1)·L_q ], where
+    //        D   = (cn+1)·prev_denom + (pn+1)·cur_denom   (= 2·cur_denom·prev_denom·m)
+    //        L_p = log2(2·(cn+1)·prev_denom) − log2(D)     (= log2(p/m))
+    //        L_q = log2(2·(pn+1)·cur_denom)  − log2(D)     (= log2(q/m))
+    const std::uint64_t k{keys.size()};
+    const std::uint64_t cur_denom{cur_total + k};
+    const std::uint64_t prev_denom{prev_total + k};
 
-    double kl = 0.0;
-    double js = 0.0;
-    for (const auto& key : keys)
+    __int128 kl_acc{0};
+    __int128 js_p_acc{0};
+    __int128 js_q_acc{0};
+    for (const std::string* keyp : keys)
     {
-        const auto cur_it{cur.find(key)};
-        const auto prev_it{prev.find(key)};
-        const double cn = (cur_it == cur.end() ? 0.0 : static_cast<double>(cur_it->second));
-        const double pn = (prev_it == prev.end() ? 0.0 : static_cast<double>(prev_it->second));
-        const double p = (cn + alpha) / cur_denom;
-        const double q = (pn + alpha) / prev_denom;
-        const double m = 0.5 * (p + q);
-        kl += p * std::log2(p / q);
-        js += 0.5 * ((p * std::log2(p / m)) + (q * std::log2(q / m)));
+        const auto cur_it{cur.find(*keyp)};
+        const auto prev_it{prev.find(*keyp)};
+        const std::uint64_t pnum{(cur_it == cur.end() ? 0U : cur_it->second) + 1U};  // cn + alpha
+        const std::uint64_t qnum{(prev_it == prev.end() ? 0U : prev_it->second) + 1U}; // pn + alpha
+        const std::uint64_t p_arg{pnum * prev_denom};
+        const std::uint64_t q_arg{qnum * cur_denom};
+        const std::uint64_t divergence_d{p_arg + q_arg};
+        const std::int64_t log2_d{insight::det::det_log2_fixed(divergence_d)};
+        kl_acc += static_cast<__int128>(pnum) *
+                  (insight::det::det_log2_fixed(p_arg) - insight::det::det_log2_fixed(q_arg));
+        js_p_acc += static_cast<__int128>(pnum) *
+                    (insight::det::det_log2_fixed(2U * p_arg) - log2_d);
+        js_q_acc += static_cast<__int128>(qnum) *
+                    (insight::det::det_log2_fixed(2U * q_arg) - log2_d);
     }
+    double kl{insight::det::fixed_to_double(
+        insight::det::round_div(kl_acc, static_cast<std::int64_t>(cur_denom)))};
+    const std::int64_t js_p_q{
+        insight::det::round_div(js_p_acc, static_cast<std::int64_t>(cur_denom))};
+    const std::int64_t js_q_q{
+        insight::det::round_div(js_q_acc, static_cast<std::int64_t>(prev_denom))};
+    double js{0.5 * insight::det::fixed_to_double(js_p_q + js_q_q)};
     // NOLINTNEXTLINE(readability-use-std-min-max)
     if (kl < 0.0)
         kl = 0.0;
@@ -621,32 +654,49 @@ double histogram_js(const std::unordered_map<std::string, std::uint64_t>& prev,
     if (prev_total == 0 || curr_total == 0)
         return 0.0;
 
-    std::unordered_set<std::string> keys;
+    // Union keys in sorted order (F5-M2); integer-domain JS via det_log2_fixed,
+    // identical Laplace-smoothed convention as divergences() (F5-M1/M2).
+    std::vector<const std::string*> keys;
     keys.reserve(prev.size() + curr.size());
-    for (const auto& [k, _] : prev)
-        keys.insert(k);
-    for (const auto& [k, _] : curr)
-        keys.insert(k);
+    for (const auto& [key, _] : prev)
+        keys.push_back(&key);
+    for (const auto& [key, _] : curr)
+        if (!prev.contains(key))
+            keys.push_back(&key);
     if (keys.empty())
         return 0.0;
+    std::ranges::sort(keys, [](const std::string* lhs, const std::string* rhs)
+                      { return *lhs < *rhs; });
 
-    const double alpha = 1.0;
-    const double k = static_cast<double>(keys.size());
-    const double p_denom = static_cast<double>(prev_total) + alpha * k;
-    const double c_denom = static_cast<double>(curr_total) + alpha * k;
+    const std::uint64_t k{keys.size()};
+    const std::uint64_t p_denom{prev_total + k};
+    const std::uint64_t c_denom{curr_total + k};
 
-    double js = 0.0;
-    for (const auto& key : keys)
+    // js = ½·[ (1/p_denom)·Σ(pn+1)·L_p + (1/c_denom)·Σ(cn+1)·L_c ], with
+    //   D   = (pn+1)·c_denom + (cn+1)·p_denom
+    //   L_p = log2(2·(pn+1)·c_denom) − log2(D)
+    //   L_c = log2(2·(cn+1)·p_denom) − log2(D)
+    __int128 prev_acc{0};
+    __int128 curr_acc{0};
+    for (const std::string* keyp : keys)
     {
-        const auto p_it = prev.find(key);
-        const auto c_it = curr.find(key);
-        const double pn = p_it == prev.end() ? 0.0 : static_cast<double>(p_it->second);
-        const double cn = c_it == curr.end() ? 0.0 : static_cast<double>(c_it->second);
-        const double p = (pn + alpha) / p_denom;
-        const double c = (cn + alpha) / c_denom;
-        const double m = 0.5 * (p + c);
-        js += 0.5 * ((p * std::log2(p / m)) + (c * std::log2(c / m)));
+        const auto p_it{prev.find(*keyp)};
+        const auto c_it{curr.find(*keyp)};
+        const std::uint64_t pnum{(p_it == prev.end() ? 0U : p_it->second) + 1U};
+        const std::uint64_t cnum{(c_it == curr.end() ? 0U : c_it->second) + 1U};
+        const std::uint64_t p_arg{pnum * c_denom};
+        const std::uint64_t c_arg{cnum * p_denom};
+        const std::int64_t log2_d{insight::det::det_log2_fixed(p_arg + c_arg)};
+        prev_acc += static_cast<__int128>(pnum) *
+                    (insight::det::det_log2_fixed(2U * p_arg) - log2_d);
+        curr_acc += static_cast<__int128>(cnum) *
+                    (insight::det::det_log2_fixed(2U * c_arg) - log2_d);
     }
+    const std::int64_t prev_q{
+        insight::det::round_div(prev_acc, static_cast<std::int64_t>(p_denom))};
+    const std::int64_t curr_q{
+        insight::det::round_div(curr_acc, static_cast<std::int64_t>(c_denom))};
+    const double js{0.5 * insight::det::fixed_to_double(prev_q + curr_q)};
     return std::clamp(js, 0.0, 1.0);
 }
 
@@ -1024,16 +1074,17 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end)
                 entry.total_outgoing = total;
                 if (total > 0)
                 {
-                    const double inv = 1.0 / static_cast<double>(total);
-                    double h = 0.0;
+                    // F5-M1/M2: branching entropy in the exact integer/count domain.
+                    insight::det::FixedReducer reducer;
+                    const std::int64_t log2_total{insight::det::det_log2_fixed(total)};
                     for (const auto& [_, c] : row)
                     {
                         if (c == 0)
                             continue;
-                        const double p = static_cast<double>(c) * inv;
-                        h -= p * std::log2(p);
+                        reducer.add_fixed(static_cast<__int128>(c) *
+                                          (log2_total - insight::det::det_log2_fixed(c)));
                     }
-                    entry.entropy_bits = h;
+                    entry.entropy_bits = reducer.normalized_bits(static_cast<std::int64_t>(total));
                 }
                 branching_rows.push_back(std::move(entry));
             }
