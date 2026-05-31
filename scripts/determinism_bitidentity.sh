@@ -1,22 +1,24 @@
 #!/usr/bin/env bash
-# F5 standing gate — cross-machine bit-identity proxy for the MetaLog document.
+# Determinism gate — cross-compiler bit-identity of the MetaLog document.
 #
 # Compiles scripts/determinism_fixture.cpp (canon + metalog, self-contained)
 # across the gcc x clang x -O{0,2,3} x -ffp-contract={off,fast} matrix — the
-# divergence sources F5 hardens against (libm, FMA, reassociation, opt level) —
-# runs each build on a fixed corpus, and asserts the serialized document is
-# byte-identical across every build. This is the local proxy for the cross-arch
-# CI matrix (x64 + arm); the in-suite DeterminismGate golden test pins the same
-# artifact per build. See technical_docs/architecture/insight_determinism_model.md.
+# divergence sources hardened against (libm, FMA, reassociation, opt level) —
+# runs each build on the committed corpus under scripts/determinism_corpus/, and
+# asserts the serialized document is byte-identical across every build. It is the
+# cross-compiler proxy for the cross-arch (x64 + arm) gate; the in-suite
+# DeterminismGate golden test pins the same artifact per build. Run locally or via
+# the superproject CI (.github/workflows/determinism-gate.yml).
+# See technical_docs/architecture/insight_determinism_model.md.
 #
 # Build flags/includes are read from the package's compile_commands.json, so dep
-# versions/paths track the real build (run `malf test` once first to populate it).
+# versions/paths track the real build (run `malf build` once first to populate it).
 # Exit non-zero on any divergence. clang uses -D__cpp_concepts=202002L purely to
 # work around the clang18<->libstdc++13 std::expected gate (a feature-test macro;
 # zero effect on float codegen).
 #
-# Set F5_REQUIRE_COMPILERS="g++ clang++" (CI) to fail unless every listed compiler
-# actually built — otherwise a clang-only break would pass on the g++ builds alone.
+# Set DETERMINISM_REQUIRE_COMPILERS="g++ clang++" (CI) to fail unless every listed
+# compiler actually built — else a clang-only break would pass on the g++ builds alone.
 set -uo pipefail
 META="$(cd "$(dirname "$0")/.." && pwd)"
 CC="$META/build/compile_commands.json"
@@ -63,8 +65,10 @@ done
 LIBS="-Wl,--start-group $LIBS -Wl,--end-group -pthread"
 
 SRCS="$(find "$CANON/src" "$META/src" -name '*.cpp')"
-CORPUS="$(ls "$CANON"/data/logs/loghub/*.log 2>/dev/null | sort | head -3)"
-[ -n "$CORPUS" ] || { echo "no corpus under $CANON/data/logs/loghub"; exit 1; }
+# Committed, license-clean, hermetic corpus (no external dataset / network). Local
+# and CI tokenize the identical input, so a local PASS guarantees the CI corpus.
+CORPUS="$(ls "$META"/scripts/determinism_corpus/*.log 2>/dev/null | sort)"
+[ -n "$CORPUS" ] || { echo "no corpus under $META/scripts/determinism_corpus"; exit 1; }
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 echo "canon=$CANON  libs=$(echo $LIBS | grep -o '/[^ ]*\.a' | wc -l)  corpus=$(echo "$CORPUS" | wc -l) files"
 
@@ -82,12 +86,12 @@ for cxx in g++ clang++; do
 done
 [ "${#builds[@]}" -gt 0 ] || { echo "no builds succeeded"; exit 1; }
 
-# Gate-integrity guard. F5_REQUIRE_COMPILERS lists compilers that MUST each have
-# produced at least one successful build (e.g. "g++ clang++" in CI). Without it a
+# Gate-integrity guard. DETERMINISM_REQUIRE_COMPILERS lists compilers that MUST each
+# have produced at least one successful build (e.g. "g++ clang++" in CI). Without it a
 # clang-only compile break — like the glaze anon-namespace regression — would
 # pass silently on the g++ builds alone, leaving a hollow green gate. Local proxy
 # runs leave it unset and degrade to whatever compilers are installed.
-for req in ${F5_REQUIRE_COMPILERS:-}; do
+for req in ${DETERMINISM_REQUIRE_COMPILERS:-}; do
   pfx="${req//+/p}_"
   printf '%s\n' "${builds[@]}" | grep -q "^$pfx" || {
     echo "GATE INTEGRITY FAIL: required compiler '$req' produced no successful build"

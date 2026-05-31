@@ -1,0 +1,48 @@
+2026-05-31T08:00:01Z INFO request method=GET path=/api/users/1000 status=200 latency_ms=5 req_id=00000000
+2026-05-31T08:01:02Z INFO request method=POST path=/api/orders status=201 latency_ms=21 req_id=f1bbcd88
+2026-05-31T08:02:03Z DEBUG db query=select_orders duration_ms=15 rows=2
+2026-05-31T08:03:04Z INFO cache key=session:1021 hit=true
+2026-05-31T08:04:01Z INFO request method=GET path=/api/users/1028 status=200 latency_ms=17 req_id=78dde6c4
+2026-05-31T08:05:02Z INFO request method=POST path=/api/orders status=201 latency_ms=33 req_id=6a99b44c
+2026-05-31T08:06:03Z DEBUG db query=select_orders duration_ms=21 rows=6
+2026-05-31T08:07:04Z INFO cache key=session:1049 hit=true
+2026-05-31T08:08:01Z INFO request method=GET path=/api/users/1006 status=200 latency_ms=29 req_id=f1bbcd88
+2026-05-31T08:09:02Z INFO request method=POST path=/api/orders status=201 latency_ms=45 req_id=e3779b10
+2026-05-31T08:10:03Z DEBUG db query=select_orders duration_ms=7 rows=10
+2026-05-31T08:11:04Z INFO cache key=session:1027 hit=true
+2026-05-31T08:12:01Z INFO request method=GET path=/api/users/1034 status=200 latency_ms=41 req_id=6a99b44c
+2026-05-31T08:13:02Z INFO request method=POST path=/api/orders status=201 latency_ms=17 req_id=5c5581d4
+2026-05-31T08:14:03Z DEBUG db query=select_orders duration_ms=13 rows=14
+2026-05-31T08:15:04Z INFO cache key=session:1005 hit=true
+2026-05-31T08:16:01Z INFO request method=GET path=/api/users/1012 status=200 latency_ms=13 req_id=e3779b10
+2026-05-31T08:17:02Z INFO request method=POST path=/api/orders status=201 latency_ms=29 req_id=d5336898
+2026-05-31T08:18:03Z DEBUG db query=select_orders duration_ms=19 rows=1
+2026-05-31T08:19:04Z INFO cache key=session:1033 hit=true
+2026-05-31T08:20:01Z INFO request method=GET path=/api/users/1040 status=200 latency_ms=25 req_id=5c5581d4
+2026-05-31T08:21:02Z INFO request method=POST path=/api/orders status=201 latency_ms=41 req_id=4e114f5c
+2026-05-31T08:22:03Z DEBUG db query=select_orders duration_ms=5 rows=5
+2026-05-31T08:23:04Z INFO cache key=session:1011 hit=true
+2026-05-31T09:00:01Z ERROR upstream timeout service=payments after_ms=80 req_id=cdab8924
+2026-05-31T09:01:02Z WARN slow request path=/api/report latency_ms=103 req_id=6be302d5
+2026-05-31T09:02:03Z ERROR request method=GET path=/api/users/1014 status=500 latency_ms=126 req_id=0a1a7c86
+2026-05-31T09:03:01Z ERROR upstream timeout service=payments after_ms=149 req_id=a851f637
+2026-05-31T09:04:02Z WARN slow request path=/api/report latency_ms=172 req_id=46896fe8
+2026-05-31T09:05:03Z ERROR request method=GET path=/api/users/1035 status=500 latency_ms=195 req_id=e4c0e999
+2026-05-31T09:06:01Z ERROR upstream timeout service=payments after_ms=218 req_id=82f8634a
+2026-05-31T09:07:02Z WARN slow request path=/api/report latency_ms=241 req_id=212fdcfb
+2026-05-31T09:08:03Z ERROR request method=GET path=/api/users/1006 status=500 latency_ms=264 req_id=bf6756ac
+2026-05-31T09:09:01Z ERROR upstream timeout service=payments after_ms=287 req_id=5d9ed05d
+2026-05-31T09:10:02Z WARN slow request path=/api/report latency_ms=310 req_id=fbd64a0e
+2026-05-31T09:11:03Z ERROR request method=GET path=/api/users/1027 status=500 latency_ms=333 req_id=9a0dc3bf
+2026-05-31T09:12:01Z ERROR upstream timeout service=payments after_ms=356 req_id=38453d70
+2026-05-31T09:13:02Z WARN slow request path=/api/report latency_ms=379 req_id=d67cb721
+2026-05-31T09:14:03Z ERROR request method=GET path=/api/users/1048 status=500 latency_ms=102 req_id=74b430d2
+2026-05-31T09:15:01Z ERROR upstream timeout service=payments after_ms=125 req_id=12ebaa83
+2026-05-31T09:16:02Z WARN slow request path=/api/report latency_ms=148 req_id=b1232434
+2026-05-31T09:17:03Z ERROR request method=GET path=/api/users/1019 status=500 latency_ms=171 req_id=4f5a9de5
+2026-05-31T09:18:01Z ERROR upstream timeout service=payments after_ms=194 req_id=ed921796
+2026-05-31T09:19:02Z WARN slow request path=/api/report latency_ms=217 req_id=8bc99147
+2026-05-31T09:20:03Z ERROR request method=GET path=/api/users/1040 status=500 latency_ms=240 req_id=2a010af8
+2026-05-31T09:21:01Z ERROR upstream timeout service=payments after_ms=263 req_id=c83884a9
+2026-05-31T09:22:02Z WARN slow request path=/api/report latency_ms=286 req_id=666ffe5a
+2026-05-31T09:23:03Z ERROR request method=GET path=/api/users/1011 status=500 latency_ms=309 req_id=04a7780b
