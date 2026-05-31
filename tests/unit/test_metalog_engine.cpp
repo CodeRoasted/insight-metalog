@@ -10,6 +10,7 @@
 
 #include <glaze/glaze.hpp>
 #include <gtest/gtest.h>
+#include <picosha2.h>
 
 #include "insight/metalog/metalog_engine.hpp"
 #include "insight/tokenization/canonical_event.hpp"
@@ -1925,6 +1926,66 @@ TEST(ReDerivationCoordinate, ComposedSerialisesAsChildrenOnlyXOR)
     EXPECT_FALSE(coord.contains("bounds"))
         << "§15.2: composed coordinate MUST NOT carry bounds (no sentinel)\n"
         << json;
+}
+
+// ── F5.4 standing gate: full-document cross-machine bit-identity golden ────────
+// The permanent determinism fixture (alongside S15Conformance). A fixed two-window
+// scenario drives every F5 float path — entropy, KL/JS/stability, branching
+// entropy, per-param histograms, HLL approximate_cardinality — and the SHA-256 of
+// the serialised documents is FROZEN. Any architecture/compiler MUST reproduce the
+// exact bytes; a mismatch is a cross-machine determinism regression. Re-derive the
+// golden ONLY for an intentional contract change — and it must then hold across the
+// cross-arch CI matrix (.github/workflows/determinism.yml; determinism_model.md).
+TEST(DeterminismGate, FullDocumentByteIdentityGolden)
+{
+    meta::MetaLogConfig cfg;
+    cfg.max_param_histograms = 3; // emit_stability defaults true
+    meta::MetaLogEngine engine{cfg};
+    using Clock = std::chrono::system_clock;
+    const Clock::time_point t0{std::chrono::seconds{1700000000}};
+    const Clock::time_point t1{std::chrono::seconds{1700000060}};
+    const Clock::time_point t2{std::chrono::seconds{1700000120}};
+
+    const auto ingest_window = [&engine](int err_modulus)
+    {
+        for (int i = 0; i < 300; ++i)
+        {
+            const std::string path{"/api/r" + std::to_string(i % 7)};
+            const bool err{i % err_modulus == 0};
+            auto event{ParamEvent::make("GET <*> -> <*>", {path, err ? "500" : "200"},
+                                        err ? insight::LogLevel::Error : insight::LogLevel::Info)};
+            engine.ingest_event(event.event);
+        }
+        for (int i = 0; i < 60; ++i)
+        {
+            auto event{ParamEvent::make("worker <*> step <*>",
+                                        {std::to_string(i % 11), std::to_string(i % 3)})};
+            engine.ingest_event(event.event);
+        }
+        auto fatal{ParamEvent::make("disk <*> failed", {"sda1"}, insight::LogLevel::Fatal)};
+        engine.ingest_event(fatal.event);
+    };
+
+    engine.open_window(t0);
+    ingest_window(5); // window 1: ~20% errors
+    const auto doc1{engine.close_window(t1)};
+    engine.open_window(t1);
+    ingest_window(2); // window 2: ~50% errors → divergence / stability vs window 1
+    const auto doc2{engine.close_window(t2)};
+
+    const std::string combined{meta::to_json(doc1) + "\n" + meta::to_json(doc2)};
+    const std::string digest{picosha2::hash256_hex_string(combined)};
+
+    // Frozen 2026-05-31. The same value must hold on every compiler/architecture
+    // (verified across the F5 gcc×clang×-O×-ffp-contract matrix; F5.2 proved the
+    // full document is byte-identical across all 12 builds).
+    constexpr std::string_view kGolden{
+        "798463355d66ec7a42a455118dd2cf530f9e1b56ebd3eef37a7814c640a4919f"};
+    EXPECT_EQ(digest, kGolden)
+        << "MetaLog document determinism golden mismatch — a cross-machine bit-identity "
+           "regression, OR an intentional contract change needing the golden re-derived "
+           "(and re-verified across the cross-arch CI matrix).\nDOC:\n"
+        << combined;
 }
 
 } // namespace

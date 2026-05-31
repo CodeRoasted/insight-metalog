@@ -77,6 +77,7 @@ if(INSIGHT_METALOG_BUILD_TESTS)
         target_link_libraries(insight_metalog_tests PRIVATE
             insight_metalog
             glaze::glaze
+            picosha2::picosha2   # F5.4: SHA-256 for the document determinism golden
             GTest::gtest
             GTest::gtest_main
         )
