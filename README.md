@@ -21,6 +21,10 @@ Raw logs
 > tokenizer facade, producing the canonical event representation — then Sequence — event ordering,
 > n-gram model, transition graph.
 
+## Determinism
+
+A MetaLog document is a **deterministic** function of its input window — the same canonical events produce a byte-identical fingerprint, and `compose()` / `diff()` are deterministic too, so *same inputs ⇒ same diff* on any machine (bit-identity is a standing golden-hash gate, built on canon's `det_math`). This is the **format** link of the pipeline's end-to-end determinism: content (`insight-canon`) → transport (`coderoast-ipc`) → format (`insight-metalog`).
+
 ## Package
 
 | Field | Value |
