@@ -780,7 +780,7 @@ void MetaLogEngine::build_branching(BehaviorBlock& behavior, const WindowAnalysi
         entry.template_id = content_templates_by_internal_id_[from];
         entry.fanout = row.size();
         std::uint64_t total = 0;
-        for (const auto& [_, count] : row)
+        for (const auto& [_sinked, count] : row)
             total += count;
         entry.total_outgoing = total;
         if (total > 0)
@@ -788,7 +788,7 @@ void MetaLogEngine::build_branching(BehaviorBlock& behavior, const WindowAnalysi
             // Branching entropy in the exact integer/count domain.
             insight::det::FixedReducer reducer;
             const std::int64_t log2_total{insight::det::det_log2_fixed(total)};
-            for (const auto& [_, count] : row)
+            for (const auto& [_sinked, count] : row)
             {
                 if (count == 0)
                     continue;
