@@ -11,15 +11,15 @@ namespace insight::metalog::detail
 std::string format_rfc3339_utc(Timestamp timestamp)
 {
     const auto secs{std::chrono::time_point_cast<std::chrono::seconds>(timestamp)};
-    const std::time_t tt{std::chrono::system_clock::to_time_t(secs)};
-    std::tm tm{};
+    const std::time_t epoch_time{std::chrono::system_clock::to_time_t(secs)};
+    std::tm utc_tm{};
 #if defined(_WIN32)
-    gmtime_s(&tm, &tt);
+    gmtime_s(&utc_tm, &epoch_time);
 #else
-    gmtime_r(&tt, &tm);
+    gmtime_r(&epoch_time, &utc_tm);
 #endif
     std::ostringstream oss;
-    oss << std::put_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
+    oss << std::put_time(&utc_tm, "%Y-%m-%dT%H:%M:%SZ");
     return oss.str();
 }
 

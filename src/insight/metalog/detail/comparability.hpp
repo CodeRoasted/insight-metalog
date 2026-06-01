@@ -19,12 +19,12 @@ namespace insight::metalog::detail
 // caution); see callers for the carry rule.
 inline void check_processing_identifier_gate(const std::optional<std::string>& lhs,
                                              const std::optional<std::string>& rhs,
-                                             std::string_view field, std::string_view op)
+                                             std::string_view field, std::string_view operation)
 {
     if (lhs && rhs && *lhs != *rhs)
-        throw std::invalid_argument{std::string{"metalog::"} + std::string{op} + ": incompatible " +
-                                    std::string{field} + " — \"" + *lhs + "\" vs \"" + *rhs +
-                                    "\" (SPEC §2.4 comparability gate)"};
+        throw std::invalid_argument{std::string{"metalog::"} + std::string{operation} +
+                                    ": incompatible " + std::string{field} + " — \"" + *lhs +
+                                    "\" vs \"" + *rhs + "\" (SPEC §2.4 comparability gate)"};
 }
 
 // Carry an identifier into a compose() output only when BOTH inputs supplied it

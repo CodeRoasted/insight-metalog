@@ -26,6 +26,41 @@ namespace
 // sample is unreliable. Requiring ≥2 observations means "this off-path branch
 // recurred — it is a real alternate path, not noise."
 constexpr std::uint64_t kMinSurpriseEdgeObservations{2};
+
+// ── Salience band ladder (0..100) ──────────────────────────────────────────
+// One ladder shared by the severity (level/role/failure-cue), structural-surprise
+// and self-novelty axes, so they are peer signals: Warn 30 … Error 80 … Fatal 100.
+constexpr std::uint32_t kBandFatal{100U};
+constexpr std::uint32_t kBandStrongOffPath{90U}; // surprise: p < 2%
+constexpr std::uint32_t kBandTerminator{90U};    // declared terminator role
+constexpr std::uint32_t kBandError{80U};
+constexpr std::uint32_t kBandOffPath{75U};     // surprise: p < 5%
+constexpr std::uint32_t kBandFailureCue{70U};  // token-lexicon failure word
+constexpr std::uint32_t kBandNoveltyLate{60U}; // first seen in the last 10%
+constexpr std::uint32_t kBandUncommon{50U};    // surprise: p < 10%
+constexpr std::uint32_t kBandNoveltyMid{40U};  // last 25%
+constexpr std::uint32_t kBandWarn{30U};
+constexpr std::uint32_t kBandSomewhatRare{25U}; // surprise: p < 20%
+constexpr std::uint32_t kBandNoveltyEarly{20U}; // last 50%
+
+// surprise_band inverse-probability thresholds: edge_count·K < outgoing ⇔ p < 1/K.
+constexpr std::uint64_t kInvProb2Pct{50U};
+constexpr std::uint64_t kInvProb5Pct{20U};
+constexpr std::uint64_t kInvProb10Pct{10U};
+constexpr std::uint64_t kInvProb20Pct{5U};
+
+// novelty_band position thresholds: first_seen·Num > lines·Den ⇔ position > Den/Num.
+constexpr std::uint64_t kNoveltyLast10Num{10U};
+constexpr std::uint64_t kNoveltyLast10Den{9U};
+
+// rarity modulation values and count·N < lines thresholds (smaller share = rarer).
+constexpr std::uint32_t kRarityRare{100U};    // < 0.1%
+constexpr std::uint32_t kRarityUncommon{90U}; // < 1%
+constexpr std::uint32_t kRarityCommon{60U};   // < 10%
+constexpr std::uint32_t kRarityFrequent{30U}; // >= 10% — likely known/baseline
+constexpr std::uint64_t kRarityTenthPct{1000U};
+constexpr std::uint64_t kRarityOnePct{100U};
+constexpr std::uint64_t kRarityTenPct{10U};
 } // namespace
 
 std::optional<LogLevel> dominant_level_of(const std::unordered_map<LogLevel, std::uint64_t>& levels)
@@ -67,15 +102,15 @@ std::uint32_t surprise_band(std::uint64_t edge_count, std::uint64_t source_outgo
 {
     if (edge_count < kMinSurpriseEdgeObservations || source_outgoing == 0U)
         return 0U;
-    if (edge_count * 50U < source_outgoing)
-        return 90U; // p < 2%   — strongly off-path
-    if (edge_count * 20U < source_outgoing)
-        return 75U; // p < 5%
-    if (edge_count * 10U < source_outgoing)
-        return 50U; // p < 10%
-    if (edge_count * 5U < source_outgoing)
-        return 25U; // p < 20%
-    return 0U;      // common transition — on the expected flow
+    if (edge_count * kInvProb2Pct < source_outgoing)
+        return kBandStrongOffPath;
+    if (edge_count * kInvProb5Pct < source_outgoing)
+        return kBandOffPath;
+    if (edge_count * kInvProb10Pct < source_outgoing)
+        return kBandUncommon;
+    if (edge_count * kInvProb20Pct < source_outgoing)
+        return kBandSomewhatRare;
+    return 0U; // common transition — on the expected flow
 }
 
 // Self-novelty band (0..100): how late a template first appeared within the
@@ -91,13 +126,13 @@ std::uint32_t novelty_band(std::uint64_t first_seen_index, std::uint64_t lines,
 {
     if (count < kMinSurpriseEdgeObservations || lines == 0U)
         return 0U;
-    if (first_seen_index * 10U > lines * 9U)
-        return 60U; // first seen in the last 10% of the window
+    if (first_seen_index * kNoveltyLast10Num > lines * kNoveltyLast10Den)
+        return kBandNoveltyLate; // first seen in the last 10% of the window
     if (first_seen_index * 4U > lines * 3U)
-        return 40U; // last 25%
+        return kBandNoveltyMid; // last 25%
     if (first_seen_index * 2U > lines)
-        return 20U; // last 50%
-    return 0U;      // present from the first half — not an emergence
+        return kBandNoveltyEarly; // last 50%
+    return 0U;                    // present from the first half — not an emergence
 }
 
 std::uint32_t salience_score(std::optional<LogLevel> level, StructuralRole role,
@@ -107,26 +142,26 @@ std::uint32_t salience_score(std::optional<LogLevel> level, StructuralRole role,
     // severity 0..100, multi-signal max (robust to any single signal missing).
     std::uint32_t severity{0};
     if (role == StructuralRole::Terminator)
-        severity = std::max<std::uint32_t>(severity, 90U);
+        severity = std::max(severity, kBandTerminator);
     if (level)
     {
         switch (*level)
         {
         case LogLevel::Fatal:
-            severity = std::max<std::uint32_t>(severity, 100U);
+            severity = std::max(severity, kBandFatal);
             break;
         case LogLevel::Error:
-            severity = std::max<std::uint32_t>(severity, 80U);
+            severity = std::max(severity, kBandError);
             break;
         case LogLevel::Warn:
-            severity = std::max<std::uint32_t>(severity, 30U);
+            severity = std::max(severity, kBandWarn);
             break;
         default:
             break;
         }
     }
     if (looks_like_failure(tmpl))
-        severity = std::max<std::uint32_t>(severity, 70U);
+        severity = std::max(severity, kBandFailureCue);
     // Severity-confidence tiers run declared > level-keyword > token-lexicon. A
     // DECLARED failure marker (StructuralRole::Terminator, e.g. `##[error]`) would
     // be the highest tier, but it is intentionally NOT gated here: canon already
@@ -144,17 +179,17 @@ std::uint32_t salience_score(std::optional<LogLevel> level, StructuralRole role,
 
     // rarity modulation (a modulator, never a gate): rare → amplify, frequent →
     // damp toward baseline. Integer thresholds on count·N vs lines (no float).
-    std::uint32_t rarity{100U};
+    std::uint32_t rarity{kRarityRare};
     if (lines > 0)
     {
-        if (count * 1000U < lines)
-            rarity = 100U; // < 0.1%  — rare
-        else if (count * 100U < lines)
-            rarity = 90U; // < 1%
-        else if (count * 10U < lines)
-            rarity = 60U; // < 10%
+        if (count * kRarityTenthPct < lines)
+            rarity = kRarityRare;
+        else if (count * kRarityOnePct < lines)
+            rarity = kRarityUncommon;
+        else if (count * kRarityTenPct < lines)
+            rarity = kRarityCommon;
         else
-            rarity = 30U; // frequent — likely known/baseline
+            rarity = kRarityFrequent;
     }
     return severity * rarity; // 0..10000
 }

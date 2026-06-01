@@ -35,42 +35,42 @@ namespace
 {
 // Compare ISO 8601 lexicographically — valid for fixed-format
 // RFC 3339 UTC strings as we emit (always Z, fixed widths).
-[[nodiscard]] const std::string& iso_min(const std::string& a, const std::string& b)
+[[nodiscard]] const std::string& iso_min(const std::string& lhs, const std::string& rhs)
 {
-    if (a.empty())
-        return b;
-    if (b.empty())
-        return a;
-    return a < b ? a : b;
+    if (lhs.empty())
+        return rhs;
+    if (rhs.empty())
+        return lhs;
+    return lhs < rhs ? lhs : rhs;
 }
-[[nodiscard]] const std::string& iso_max(const std::string& a, const std::string& b)
+[[nodiscard]] const std::string& iso_max(const std::string& lhs, const std::string& rhs)
 {
-    if (a.empty())
-        return b;
-    if (b.empty())
-        return a;
-    return a > b ? a : b;
+    if (lhs.empty())
+        return rhs;
+    if (rhs.empty())
+        return lhs;
+    return lhs > rhs ? lhs : rhs;
 }
 
-SourceBlock common_source(const SourceBlock& a, const SourceBlock& b)
+SourceBlock common_source(const SourceBlock& lhs, const SourceBlock& rhs)
 {
-    if (a == b)
-        return a;
+    if (lhs == rhs)
+        return lhs;
     SourceBlock out;
-    if (a.fleet == b.fleet)
-        out.fleet = a.fleet;
-    if (a.service == b.service)
-        out.service = a.service;
-    if (a.host == b.host)
-        out.host = a.host;
+    if (lhs.fleet == rhs.fleet)
+        out.fleet = lhs.fleet;
+    if (lhs.service == rhs.service)
+        out.service = lhs.service;
+    if (lhs.host == rhs.host)
+        out.host = lhs.host;
     // host_count: sum if both present; otherwise leave unset.
-    if (a.host_count && b.host_count)
-        out.host_count = *a.host_count + *b.host_count;
+    if (lhs.host_count && rhs.host_count)
+        out.host_count = *lhs.host_count + *rhs.host_count;
     // tags: keep entries present and equal in both.
-    for (const auto& [k, v] : a.tags)
+    for (const auto& [k, v] : lhs.tags)
     {
-        auto it{b.tags.find(k)};
-        if (it != b.tags.end() && it->second == v)
+        auto iter{rhs.tags.find(k)};
+        if (iter != rhs.tags.end() && iter->second == v)
             out.tags.emplace(k, v);
     }
     return out;
@@ -81,13 +81,13 @@ void aggregate_top_k(std::unordered_map<std::string, std::uint64_t>& counts,
                      std::unordered_map<std::string, std::optional<LogLevel>>& levels,
                      const MetaLogDocument& doc)
 {
-    for (const auto& e : doc.stats.top_k)
+    for (const auto& entry : doc.stats.top_k)
     {
-        counts[e.template_id] += e.count;
-        if (!e.template_str.empty() && !templates.contains(e.template_id))
-            templates.emplace(e.template_id, e.template_str);
-        if (e.dominant_level && !levels.contains(e.template_id))
-            levels.emplace(e.template_id, e.dominant_level);
+        counts[entry.template_id] += entry.count;
+        if (!entry.template_str.empty() && !templates.contains(entry.template_id))
+            templates.emplace(entry.template_id, entry.template_str);
+        if (entry.dominant_level && !levels.contains(entry.template_id))
+            levels.emplace(entry.template_id, entry.dominant_level);
     }
     for (const auto& [tid, tstr] : doc.templates)
         if (!templates.contains(tid))
@@ -104,13 +104,13 @@ void aggregate_reservoir(std::unordered_map<std::string, std::uint64_t>& counts,
                          std::unordered_map<std::string, std::optional<LogLevel>>& levels,
                          const MetaLogDocument& doc)
 {
-    for (const auto& e : doc.stats.reservoir)
+    for (const auto& entry : doc.stats.reservoir)
     {
-        counts[e.template_id] += e.count;
-        if (!e.template_str.empty() && !templates.contains(e.template_id))
-            templates.emplace(e.template_id, e.template_str);
-        if (e.dominant_level && !levels.contains(e.template_id))
-            levels.emplace(e.template_id, e.dominant_level);
+        counts[entry.template_id] += entry.count;
+        if (!entry.template_str.empty() && !templates.contains(entry.template_id))
+            templates.emplace(entry.template_id, entry.template_str);
+        if (entry.dominant_level && !levels.contains(entry.template_id))
+            levels.emplace(entry.template_id, entry.dominant_level);
     }
 }
 
@@ -127,42 +127,42 @@ merge_field_histograms(const std::vector<FieldHistogram>& lhs,
 {
     std::unordered_map<std::uint32_t, const FieldHistogram*> lhs_index;
     lhs_index.reserve(lhs.size());
-    for (const auto& fh : lhs)
-        lhs_index.emplace(fh.param_index, &fh);
+    for (const auto& hist : lhs)
+        lhs_index.emplace(hist.param_index, &hist);
 
     std::vector<FieldHistogram> out;
     out.reserve(lhs.size() + rhs.size());
     std::unordered_set<std::uint32_t> seen;
     seen.reserve(rhs.size());
 
-    for (const auto& b : rhs)
+    for (const auto& rhs_hist : rhs)
     {
-        seen.insert(b.param_index);
-        const auto found{lhs_index.find(b.param_index)};
+        seen.insert(rhs_hist.param_index);
+        const auto found{lhs_index.find(rhs_hist.param_index)};
         if (found == lhs_index.end())
         {
-            out.push_back(b);
+            out.push_back(rhs_hist);
             continue;
         }
-        const FieldHistogram& a{*found->second};
+        const FieldHistogram& lhs_hist{*found->second};
         FieldHistogram merged;
-        merged.param_index = b.param_index;
-        merged.total = a.total + b.total;
+        merged.param_index = rhs_hist.param_index;
+        merged.total = lhs_hist.total + rhs_hist.total;
         std::unordered_map<std::string, std::uint64_t> values;
-        values.reserve(a.value_counts.size() + b.value_counts.size());
-        for (const auto& [v, c] : a.value_counts)
+        values.reserve(lhs_hist.value_counts.size() + rhs_hist.value_counts.size());
+        for (const auto& [v, c] : lhs_hist.value_counts)
             values[v] += c;
-        for (const auto& [v, c] : b.value_counts)
+        for (const auto& [v, c] : rhs_hist.value_counts)
             values[v] += c;
         if (cap > 0 && values.size() > cap)
         {
             std::vector<std::pair<std::string, std::uint64_t>> sorted(values.begin(), values.end());
             std::ranges::partial_sort(sorted, sorted.begin() + static_cast<std::ptrdiff_t>(cap),
-                                      [](const auto& x, const auto& y)
+                                      [](const auto& lhs, const auto& rhs)
                                       {
-                                          if (x.second != y.second)
-                                              return x.second > y.second;
-                                          return x.first < y.first; // deterministic tie-break
+                                          if (lhs.second != rhs.second)
+                                              return lhs.second > rhs.second;
+                                          return lhs.first < rhs.first; // deterministic tie-break
                                       });
             values.clear();
             values.reserve(cap);
@@ -176,14 +176,14 @@ merge_field_histograms(const std::vector<FieldHistogram>& lhs,
         merged.value_counts = std::move(values);
         merged.entropy_bits = shannon_entropy_bits(counts, merged.total);
         merged.approximate_cardinality =
-            std::max(a.approximate_cardinality, b.approximate_cardinality);
+            std::max(lhs_hist.approximate_cardinality, rhs_hist.approximate_cardinality);
         out.push_back(std::move(merged));
     }
-    for (const auto& a : lhs)
-        if (!seen.contains(a.param_index))
-            out.push_back(a);
-    std::ranges::sort(out,
-                      [](const auto& x, const auto& y) { return x.param_index < y.param_index; });
+    for (const auto& lhs_hist : lhs)
+        if (!seen.contains(lhs_hist.param_index))
+            out.push_back(lhs_hist);
+    std::ranges::sort(out, [](const auto& lhs, const auto& rhs)
+                      { return lhs.param_index < rhs.param_index; });
     return out;
 }
 
@@ -211,11 +211,11 @@ void aggregate_and_order(ComposeState& state, const MetaLogDocument& lhs,
 
     state.ordered.assign(state.counts.begin(), state.counts.end());
     std::ranges::sort(state.ordered,
-                      [](const auto& a, const auto& b)
+                      [](const auto& lhs, const auto& rhs)
                       {
-                          if (a.second != b.second)
-                              return a.second > b.second;
-                          return a.first < b.first;
+                          if (lhs.second != rhs.second)
+                              return lhs.second > rhs.second;
+                          return lhs.first < rhs.first;
                       });
 }
 
@@ -239,135 +239,154 @@ void build_composed_top_k(MetaLogDocument& out, const ComposeState& state,
     const auto rhs_topk{build_topk_index(rhs)};
     static constexpr std::size_t kComposeHistogramCap{MetaLogConfig::kDefaultMaxHistogramValues};
 
-    const auto k{std::min(out.stats.top_k_size, ordered.size())};
-    out.stats.top_k.reserve(k);
+    const auto top_k_cut{std::min(out.stats.top_k_size, ordered.size())};
+    out.stats.top_k.reserve(top_k_cut);
     const auto total_lines = static_cast<double>(out.window.lines_observed);
-    for (std::size_t i = 0; i < k; ++i)
+    for (std::size_t i = 0; i < top_k_cut; ++i)
     {
-        TopKEntry e;
-        e.template_id = ordered[i].first;
-        if (auto t{templates.find(e.template_id)}; t != templates.end())
-            e.template_str = t->second; // preserved when at least one input had it inline
-        e.count = ordered[i].second;
-        e.frequency = total_lines > 0.0 ? static_cast<double>(e.count) / total_lines : 0.0;
-        if (auto l{levels.find(e.template_id)}; l != levels.end())
-            e.dominant_level = l->second;
+        TopKEntry entry;
+        entry.template_id = ordered[i].first;
+        if (auto tmpl{templates.find(entry.template_id)}; tmpl != templates.end())
+            entry.template_str = tmpl->second; // preserved when at least one input had it inline
+        entry.count = ordered[i].second;
+        entry.frequency = total_lines > 0.0 ? static_cast<double>(entry.count) / total_lines : 0.0;
+        if (auto level_it{levels.find(entry.template_id)}; level_it != levels.end())
+            entry.dominant_level = level_it->second;
         // §3.5 / §12.1 compose-visible param_histograms. Look up the matching
         // entries in each input and merge per-param; one-sided is carried; entirely
         // absent → no histograms (consistent with the cap being a no-op when input
         // producers didn't emit any). Closes the F8/F2-value compose gap.
-        const auto lhs_entry_it{lhs_topk.find(e.template_id)};
-        const auto rhs_entry_it{rhs_topk.find(e.template_id)};
+        const auto lhs_entry_it{lhs_topk.find(entry.template_id)};
+        const auto rhs_entry_it{rhs_topk.find(entry.template_id)};
         const std::vector<FieldHistogram> empty{};
         const auto& lhs_hists{
             lhs_entry_it != lhs_topk.end() ? lhs_entry_it->second->field_histograms : empty};
         const auto& rhs_hists{
             rhs_entry_it != rhs_topk.end() ? rhs_entry_it->second->field_histograms : empty};
         if (!lhs_hists.empty() || !rhs_hists.empty())
-            e.field_histograms = merge_field_histograms(lhs_hists, rhs_hists, kComposeHistogramCap);
-        out.stats.top_k.push_back(std::move(e));
+            entry.field_histograms =
+                merge_field_histograms(lhs_hists, rhs_hists, kComposeHistogramCap);
+        out.stats.top_k.push_back(std::move(entry));
     }
 }
 
-// Salience reservoir re-derivation (F8; SPEC §3.7.3 / §12.1). Carry the
-// rare-salient templates through composition instead of dropping them into the
-// tail (the multi-scale gap: composed/pyramid baselines were blind to a lone
-// fatal / off-path branch). Candidates are templates that were salient in EITHER
-// input's reservoir and did not rise into the composed top_k by frequency.
-// structural_surprise/novelty carry through as the max across inputs; salience is
-// RE-DERIVED over the merged count + composed line total (rarity shifts on merge),
-// so the ranking reflects the composed window, not either input's. Bounded by the
-// inputs' (already diversity-capped) reservoirs.
-void rederive_reservoir(MetaLogDocument& out, ComposeState& state, const MetaLogDocument& lhs,
-                        const MetaLogDocument& rhs)
+// Per-template salience inputs carried across compose: the max structural-surprise
+// and novelty seen in either input's reservoir, plus the first structural role.
+struct ComposeSalienceInfo
+{
+    std::uint32_t structural_surprise{0};
+    std::uint32_t novelty{0};
+    StructuralRole role{StructuralRole::None};
+};
+
+// A below-composed-top_k template ranked for the re-derived reservoir.
+struct ComposeReservoirCandidate
+{
+    std::string template_id;
+    std::uint32_t salience;
+    std::uint32_t structural_surprise;
+    std::uint32_t novelty;
+    StructuralRole role;
+};
+
+// Rank the templates salient in EITHER input's reservoir that did NOT rise into the
+// composed top_k: fold both reservoirs into per-template salience inputs, then
+// RE-DERIVE salience over the merged count + composed line total (rarity shifts on
+// merge), so the ranking reflects the composed window, not either input's.
+std::vector<ComposeReservoirCandidate>
+collect_compose_reservoir_candidates(const MetaLogDocument& out, const ComposeState& state,
+                                     const MetaLogDocument& lhs, const MetaLogDocument& rhs)
 {
     const auto& counts = state.counts;
     const auto& levels = state.levels;
     const auto& templates = state.templates;
+
+    std::unordered_map<std::string, ComposeSalienceInfo> sal_info;
+    const auto absorb_reservoir{[&](const MetaLogDocument& doc)
+                                {
+                                    for (const auto& entry : doc.stats.reservoir)
+                                    {
+                                        auto& info{sal_info[entry.template_id]};
+                                        info.structural_surprise = std::max(
+                                            info.structural_surprise, entry.structural_surprise);
+                                        info.novelty = std::max(info.novelty, entry.novelty);
+                                        if (info.role == StructuralRole::None)
+                                            info.role = entry.structural_role;
+                                    }
+                                }};
+    absorb_reservoir(lhs);
+    absorb_reservoir(rhs);
+
+    std::unordered_set<std::string> topk_ids;
+    topk_ids.reserve(out.stats.top_k.size());
+    for (const auto& entry : out.stats.top_k)
+        topk_ids.insert(entry.template_id);
+
+    std::vector<ComposeReservoirCandidate> res_cands;
+    for (const auto& [tid, info] : sal_info)
+    {
+        if (topk_ids.contains(tid))
+            continue; // rose into top_k by merged frequency — not a reservoir entry
+        const auto cit{counts.find(tid)};
+        const std::uint64_t cnt{cit != counts.end() ? cit->second : 0};
+        const auto lit{levels.find(tid)};
+        const std::optional<LogLevel> lvl{lit != levels.end() ? lit->second : std::nullopt};
+        const auto tit{templates.find(tid)};
+        const std::string_view tstr{tit != templates.end() ? std::string_view{tit->second}
+                                                           : std::string_view{}};
+        const auto sal{salience_score(lvl, info.role, tstr, cnt, out.window.lines_observed,
+                                      info.structural_surprise, info.novelty)};
+        if (sal > 0U)
+            res_cands.push_back(
+                ComposeReservoirCandidate{.template_id = tid,
+                                          .salience = sal,
+                                          .structural_surprise = info.structural_surprise,
+                                          .novelty = info.novelty,
+                                          .role = info.role});
+    }
+    return res_cands;
+}
+
+// Salience reservoir re-derivation (F8; SPEC §3.7.3 / §12.1). Carry the rare-salient
+// templates through composition instead of dropping them into the tail (the
+// multi-scale gap: composed/pyramid baselines were blind to a lone fatal / off-path
+// branch). Bounded by the inputs' (already diversity-capped) reservoirs; admitted in
+// salience order with a deterministic template_id tie-break.
+void rederive_reservoir(MetaLogDocument& out, ComposeState& state, const MetaLogDocument& lhs,
+                        const MetaLogDocument& rhs)
+{
+    const auto& counts = state.counts;
+    const auto& templates = state.templates;
+    const auto& levels = state.levels;
     auto& reserved = state.reserved;
     const auto total_lines = static_cast<double>(out.window.lines_observed);
+
+    auto res_cands = collect_compose_reservoir_candidates(out, state, lhs, rhs);
+    std::ranges::sort(res_cands,
+                      [](const ComposeReservoirCandidate& lhs, const ComposeReservoirCandidate& rhs)
+                      {
+                          if (lhs.salience != rhs.salience)
+                              return lhs.salience > rhs.salience;
+                          return lhs.template_id < rhs.template_id;
+                      });
+    out.stats.reservoir.reserve(res_cands.size());
+    for (const auto& cand : res_cands)
     {
-        struct SalienceInfo
-        {
-            std::uint32_t structural_surprise{0};
-            std::uint32_t novelty{0};
-            StructuralRole role{StructuralRole::None};
-        };
-        std::unordered_map<std::string, SalienceInfo> sal_info;
-        const auto absorb_reservoir{[&](const MetaLogDocument& doc)
-                                    {
-                                        for (const auto& e : doc.stats.reservoir)
-                                        {
-                                            auto& info{sal_info[e.template_id]};
-                                            info.structural_surprise = std::max(
-                                                info.structural_surprise, e.structural_surprise);
-                                            info.novelty = std::max(info.novelty, e.novelty);
-                                            if (info.role == StructuralRole::None)
-                                                info.role = e.structural_role;
-                                        }
-                                    }};
-        absorb_reservoir(lhs);
-        absorb_reservoir(rhs);
-
-        std::unordered_set<std::string> topk_ids;
-        topk_ids.reserve(out.stats.top_k.size());
-        for (const auto& e : out.stats.top_k)
-            topk_ids.insert(e.template_id);
-
-        struct ResCand
-        {
-            std::string template_id;
-            std::uint32_t salience;
-            std::uint32_t structural_surprise;
-            std::uint32_t novelty;
-        };
-        std::vector<ResCand> res_cands;
-        for (const auto& [tid, info] : sal_info)
-        {
-            if (topk_ids.contains(tid))
-                continue; // rose into top_k by merged frequency — not a reservoir entry
-            const auto cit{counts.find(tid)};
-            const std::uint64_t cnt{cit != counts.end() ? cit->second : 0};
-            const auto lit{levels.find(tid)};
-            const std::optional<LogLevel> lvl{lit != levels.end() ? lit->second : std::nullopt};
-            const auto tit{templates.find(tid)};
-            const std::string_view tstr{tit != templates.end() ? std::string_view{tit->second}
-                                                               : std::string_view{}};
-            const auto sal{salience_score(lvl, info.role, tstr, cnt, out.window.lines_observed,
-                                          info.structural_surprise, info.novelty)};
-            if (sal > 0U)
-                res_cands.push_back(ResCand{.template_id = tid,
-                                            .salience = sal,
-                                            .structural_surprise = info.structural_surprise,
-                                            .novelty = info.novelty});
-        }
-        std::ranges::sort(res_cands,
-                          [](const ResCand& a, const ResCand& b)
-                          {
-                              if (a.salience != b.salience)
-                                  return a.salience > b.salience;
-                              return a.template_id < b.template_id;
-                          });
-        out.stats.reservoir.reserve(res_cands.size());
-        for (const auto& cand : res_cands)
-        {
-            ReservoirEntry entry;
-            entry.template_id = cand.template_id;
-            if (auto t{templates.find(cand.template_id)}; t != templates.end())
-                entry.template_str = t->second;
-            const auto cit{counts.find(cand.template_id)};
-            entry.count = cit != counts.end() ? cit->second : 0;
-            entry.frequency =
-                total_lines > 0.0 ? static_cast<double>(entry.count) / total_lines : 0.0;
-            if (auto l{levels.find(cand.template_id)}; l != levels.end())
-                entry.dominant_level = l->second;
-            entry.structural_role = sal_info[cand.template_id].role;
-            entry.structural_surprise = cand.structural_surprise;
-            entry.novelty = cand.novelty;
-            entry.salience = cand.salience;
-            out.stats.reservoir.push_back(std::move(entry));
-            reserved.insert(cand.template_id);
-        }
+        ReservoirEntry entry;
+        entry.template_id = cand.template_id;
+        if (auto tmpl{templates.find(cand.template_id)}; tmpl != templates.end())
+            entry.template_str = tmpl->second;
+        const auto cit{counts.find(cand.template_id)};
+        entry.count = cit != counts.end() ? cit->second : 0;
+        entry.frequency = total_lines > 0.0 ? static_cast<double>(entry.count) / total_lines : 0.0;
+        if (auto level_it{levels.find(cand.template_id)}; level_it != levels.end())
+            entry.dominant_level = level_it->second;
+        entry.structural_role = cand.role;
+        entry.structural_surprise = cand.structural_surprise;
+        entry.novelty = cand.novelty;
+        entry.salience = cand.salience;
+        out.stats.reservoir.push_back(std::move(entry));
+        reserved.insert(cand.template_id);
     }
 }
 
@@ -378,21 +397,21 @@ void build_composed_tail(MetaLogDocument& out, const ComposeState& state,
 {
     const auto& ordered = state.ordered;
     const auto& reserved = state.reserved;
-    const auto k{std::min(out.stats.top_k_size, ordered.size())};
+    const auto top_k_cut{std::min(out.stats.top_k_size, ordered.size())};
     std::uint64_t tail_count = 0;
     std::uint64_t tail_max = 0;
     std::vector<std::uint64_t> tail_counts;
-    if (ordered.size() > k)
-        tail_counts.reserve(ordered.size() - k);
-    for (std::size_t i = k; i < ordered.size(); ++i)
+    if (ordered.size() > top_k_cut)
+        tail_counts.reserve(ordered.size() - top_k_cut);
+    for (std::size_t i = top_k_cut; i < ordered.size(); ++i)
     {
         if (reserved.contains(ordered[i].first))
             continue; // promoted to the reservoir — excluded from tail aggregates (SPEC §3.7.3)
-        const auto c = ordered[i].second;
-        tail_count += c;
-        if (c > tail_max)
-            tail_max = c;
-        tail_counts.push_back(c);
+        const auto count = ordered[i].second;
+        tail_count += count;
+        if (count > tail_max)
+            tail_max = count;
+        tail_counts.push_back(count);
     }
     out.stats.tail_count =
         tail_count + lhs.stats.tail_count + rhs.stats.tail_count; // approximate (SPEC §12.3)
@@ -407,17 +426,17 @@ void build_composed_tail(MetaLogDocument& out, const ComposeState& state,
     // concentrated is the visible tail vs the lumped residuals".
     if (out.stats.tail_unique > 0 && out.window.lines_observed > 0)
     {
-        TailSummary ts;
-        ts.tail_template_count = out.stats.tail_unique;
+        TailSummary summary;
+        summary.tail_template_count = out.stats.tail_unique;
         std::vector<std::uint64_t> entropy_counts = tail_counts;
         const std::uint64_t residual = lhs.stats.tail_count + rhs.stats.tail_count;
         if (residual > 0)
             entropy_counts.push_back(residual);
         const std::uint64_t denom = tail_count + residual;
-        ts.tail_entropy_bits = shannon_entropy_bits(entropy_counts, denom);
-        ts.tail_max_rate =
+        summary.tail_entropy_bits = shannon_entropy_bits(entropy_counts, denom);
+        summary.tail_max_rate =
             static_cast<double>(tail_max) / static_cast<double>(out.window.lines_observed);
-        out.stats.tail_summary = ts;
+        out.stats.tail_summary = summary;
     }
 }
 
@@ -481,22 +500,22 @@ std::optional<BehaviorBlock> merge_behavior(const MetaLogDocument& lhs, const Me
 {
     if (!lhs.behavior && !rhs.behavior)
         return std::nullopt;
-    BehaviorBlock bh;
-    bh.ngram_size = lhs.behavior ? lhs.behavior->ngram_size : rhs.behavior->ngram_size;
-    bh.top_ngrams_size =
+    BehaviorBlock behavior;
+    behavior.ngram_size = lhs.behavior ? lhs.behavior->ngram_size : rhs.behavior->ngram_size;
+    behavior.top_ngrams_size =
         lhs.behavior ? lhs.behavior->top_ngrams_size : rhs.behavior->top_ngrams_size;
     std::map<std::vector<std::string>, std::uint64_t> seq_counts;
     std::map<std::vector<std::string>, double> seq_prob_sum;
     std::map<std::vector<std::string>, std::uint64_t> seq_prob_n;
-    auto absorb = [&](const std::optional<BehaviorBlock>& b)
+    auto absorb = [&](const std::optional<BehaviorBlock>& block)
     {
-        if (!b)
+        if (!block)
             return;
-        for (const auto& e : b->top_ngrams)
+        for (const auto& entry : block->top_ngrams)
         {
-            seq_counts[e.sequence] += e.count;
-            seq_prob_sum[e.sequence] += e.probability * static_cast<double>(e.count);
-            seq_prob_n[e.sequence] += e.count;
+            seq_counts[entry.sequence] += entry.count;
+            seq_prob_sum[entry.sequence] += entry.probability * static_cast<double>(entry.count);
+            seq_prob_n[entry.sequence] += entry.count;
         }
     };
     absorb(lhs.behavior);
@@ -505,24 +524,25 @@ std::optional<BehaviorBlock> merge_behavior(const MetaLogDocument& lhs, const Me
     entries.reserve(seq_counts.size());
     for (auto& [seq, c] : seq_counts)
     {
-        NGramEntry e;
-        e.sequence = seq;
-        e.count = c;
-        const auto n{seq_prob_n[seq]};
-        e.probability = n > 0 ? seq_prob_sum[seq] / static_cast<double>(n) : 0.0;
-        entries.push_back(std::move(e));
+        NGramEntry entry;
+        entry.sequence = seq;
+        entry.count = c;
+        const auto sample_count{seq_prob_n[seq]};
+        entry.probability =
+            sample_count > 0 ? seq_prob_sum[seq] / static_cast<double>(sample_count) : 0.0;
+        entries.push_back(std::move(entry));
     }
     std::ranges::sort(entries,
-                      [](const NGramEntry& a, const NGramEntry& b)
+                      [](const NGramEntry& lhs, const NGramEntry& rhs)
                       {
-                          if (a.count != b.count)
-                              return a.count > b.count;
-                          return a.sequence < b.sequence;
+                          if (lhs.count != rhs.count)
+                              return lhs.count > rhs.count;
+                          return lhs.sequence < rhs.sequence;
                       });
-    if (entries.size() > bh.top_ngrams_size)
-        entries.resize(bh.top_ngrams_size);
-    bh.top_ngrams = std::move(entries);
-    return bh;
+    if (entries.size() > behavior.top_ngrams_size)
+        entries.resize(behavior.top_ngrams_size);
+    behavior.top_ngrams = std::move(entries);
+    return behavior;
 }
 
 } // namespace

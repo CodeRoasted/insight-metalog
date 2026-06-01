@@ -63,16 +63,19 @@ std::string MetaLogEngine::compute_template_id(std::string_view canonical_templa
     picosha2::hash256(canonical_template.begin(), canonical_template.end(), digest.begin(),
                       digest.end());
 
+    // Spec §3.2: id = "h:" + lower_hex of the first 16 SHA-256 bytes (32 hex chars).
+    constexpr std::size_t kTemplateIdBytes{16};
+    constexpr unsigned kNibbleMask{0xFU};
     static constexpr std::array<char, 16> kHex{'0', '1', '2', '3', '4', '5', '6', '7',
                                                '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
     std::string out;
-    out.reserve(2 + 32);
+    out.reserve(2 + 2 * kTemplateIdBytes); // "h:" + two hex chars per byte
     out.append("h:");
-    for (std::size_t i = 0; i < 16; ++i)
+    for (std::size_t i = 0; i < kTemplateIdBytes; ++i)
     {
         const auto byte{static_cast<unsigned>(digest[i])};
-        out.push_back(kHex[(byte >> 4) & 0xF]);
-        out.push_back(kHex[byte & 0xF]);
+        out.push_back(kHex[(byte >> 4) & kNibbleMask]);
+        out.push_back(kHex[byte & kNibbleMask]);
     }
     return out;
 }
@@ -93,21 +96,21 @@ struct MetaLogEngine::HllState
         sketches.clear();
     }
 
-    void add(const std::string& content_id, std::size_t pi, std::string_view value)
+    void add(const std::string& content_id, std::size_t param_index, std::string_view value)
     {
-        auto& v = sketches[content_id];
-        if (v.size() <= pi)
-            v.resize(pi + 1);
-        v[pi].add(value);
+        auto& slots = sketches[content_id];
+        if (slots.size() <= param_index)
+            slots.resize(param_index + 1);
+        slots[param_index].add(value);
     }
 
     [[nodiscard]] std::uint64_t estimate(const std::string& content_id,
-                                         std::size_t pi) const noexcept
+                                         std::size_t param_index) const noexcept
     {
-        const auto it = sketches.find(content_id);
-        if (it == sketches.end() || pi >= it->second.size())
+        const auto found = sketches.find(content_id);
+        if (found == sketches.end() || param_index >= found->second.size())
             return 0;
-        return it->second[pi].estimate();
+        return found->second[param_index].estimate();
     }
 };
 
@@ -285,13 +288,13 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
     // predicted-not-taken branch; zero extra work on the hot path.
     if (config_.max_param_histograms > 0 && !event.params.empty())
     {
-        const std::size_t n{std::min(config_.max_param_histograms, event.params.size())};
-        if (bucket.param_value_counts.size() < n)
+        const std::size_t param_count{std::min(config_.max_param_histograms, event.params.size())};
+        if (bucket.param_value_counts.size() < param_count)
         {
-            bucket.param_value_counts.resize(n);
-            bucket.param_totals.resize(n, 0);
+            bucket.param_value_counts.resize(param_count);
+            bucket.param_totals.resize(param_count, 0);
         }
-        for (std::size_t pi{0}; pi < n; ++pi)
+        for (std::size_t pi{0}; pi < param_count; ++pi)
         {
             ++bucket.param_totals[pi];
             auto& vcounts{bucket.param_value_counts[pi]};
@@ -475,24 +478,25 @@ std::uint32_t MetaLogEngine::surprise_of(const WindowAnalysis& analysis,
 {
     if (analysis.incoming_surprise.empty())
         return 0U;
-    const auto it{content_template_index_.find(content_id)};
-    if (it == content_template_index_.end() || it->second >= analysis.incoming_surprise.size())
+    const auto found{content_template_index_.find(content_id)};
+    if (found == content_template_index_.end() ||
+        found->second >= analysis.incoming_surprise.size())
         return 0U;
-    return analysis.incoming_surprise[it->second];
+    return analysis.incoming_surprise[found->second];
 }
 
 void MetaLogEngine::build_top_k(MetaLogDocument& doc, const WindowAnalysis& analysis) const
 {
     const auto& ordered = analysis.ordered;
-    const auto k = analysis.k;
+    const auto top_k_cut = analysis.k;
     const auto total{static_cast<double>(lines_observed_)};
 
     StatsBlock& stats = doc.stats;
     stats.unique_templates = ordered.size();
     stats.top_k_size = config_.top_k_size;
-    stats.top_k.reserve(k);
+    stats.top_k.reserve(top_k_cut);
 
-    for (std::size_t i = 0; i < k; ++i)
+    for (std::size_t i = 0; i < top_k_cut; ++i)
     {
         TopKEntry entry;
         entry.template_id = ordered[i].first;
@@ -507,25 +511,25 @@ void MetaLogEngine::build_top_k(MetaLogDocument& doc, const WindowAnalysis& anal
         // Per-param field histograms — only when enabled.
         if (config_.max_param_histograms > 0)
         {
-            const auto& b{*ordered[i].second};
+            const auto& bucket{*ordered[i].second};
             const auto& content_id{ordered[i].first};
-            for (std::size_t pi{0}; pi < b.param_value_counts.size(); ++pi)
+            for (std::size_t pi{0}; pi < bucket.param_value_counts.size(); ++pi)
             {
-                FieldHistogram fh;
-                fh.param_index = static_cast<std::uint32_t>(pi);
-                fh.value_counts = b.param_value_counts[pi];
-                fh.total = b.param_totals[pi];
+                FieldHistogram hist;
+                hist.param_index = static_cast<std::uint32_t>(pi);
+                hist.value_counts = bucket.param_value_counts[pi];
+                hist.total = bucket.param_totals[pi];
                 // Shannon entropy over the tracked values.
                 // Note: when total > sum(value_counts) (cap was hit),
                 // entropy is slightly under-estimated — known limitation.
                 std::vector<std::uint64_t> vcounts;
-                vcounts.reserve(fh.value_counts.size());
-                for (const auto& [v, c] : fh.value_counts)
+                vcounts.reserve(hist.value_counts.size());
+                for (const auto& [v, c] : hist.value_counts)
                     vcounts.push_back(c);
-                fh.entropy_bits = shannon_entropy_bits(vcounts, fh.total);
+                hist.entropy_bits = shannon_entropy_bits(vcounts, hist.total);
                 // HLL approximate cardinality (SPEC §3.5).
-                fh.approximate_cardinality = hll_state_->estimate(content_id, pi);
-                entry.field_histograms.push_back(std::move(fh));
+                hist.approximate_cardinality = hll_state_->estimate(content_id, pi);
+                entry.field_histograms.push_back(std::move(hist));
             }
         }
 
@@ -554,9 +558,9 @@ std::vector<MetaLogEngine::ReservoirCandidate>
 MetaLogEngine::collect_reservoir_candidates(const WindowAnalysis& analysis) const
 {
     const auto& ordered = analysis.ordered;
-    const auto k = analysis.k;
+    const auto top_k_cut = analysis.k;
     std::vector<ReservoirCandidate> candidates;
-    for (std::size_t i = k; i < ordered.size(); ++i)
+    for (std::size_t i = top_k_cut; i < ordered.size(); ++i)
     {
         const Bucket& bucket{*ordered[i].second};
         const auto surprise{surprise_of(analysis, ordered[i].first)};
@@ -594,11 +598,13 @@ void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& ana
     // Admit in salience order, up to M total, capping exemplars PER KIND
     // (structural_role × dominant_level) for diversity (F10). A "kind" key
     // packs the two small enums into one integer for a cheap counter map.
+    constexpr unsigned kKindRoleShift{8U};
     const auto kind_key{
         [](StructuralRole role, std::optional<LogLevel> level) noexcept
         {
             const auto lvl{level ? static_cast<std::uint16_t>(*level) : std::uint16_t{0xFFU}};
-            return static_cast<std::uint16_t>((static_cast<std::uint16_t>(role) << 8U) | lvl);
+            return static_cast<std::uint16_t>((static_cast<std::uint16_t>(role) << kKindRoleShift) |
+                                              lvl);
         }};
     std::unordered_map<std::uint16_t, std::size_t> per_kind;
     stats.reservoir.reserve(std::min(config_.reservoir_size, candidates.size()));
@@ -641,22 +647,22 @@ void MetaLogEngine::build_tail_and_entropy(MetaLogDocument& doc, const WindowAna
                                            const std::unordered_set<std::string>& reserved) const
 {
     const auto& ordered = analysis.ordered;
-    const auto k = analysis.k;
+    const auto top_k_cut = analysis.k;
     StatsBlock& stats = doc.stats;
     std::uint64_t tail_count = 0;
     std::uint64_t tail_max = 0;
     std::vector<std::uint64_t> tail_counts;
-    if (ordered.size() > k)
-        tail_counts.reserve(ordered.size() - k);
-    for (std::size_t i = k; i < ordered.size(); ++i)
+    if (ordered.size() > top_k_cut)
+        tail_counts.reserve(ordered.size() - top_k_cut);
+    for (std::size_t i = top_k_cut; i < ordered.size(); ++i)
     {
         if (reserved.contains(ordered[i].first))
             continue; // promoted to the reservoir — excluded from tail aggregates (SPEC §3.7.3)
-        const auto c = ordered[i].second->count;
-        tail_count += c;
-        if (c > tail_max)
-            tail_max = c;
-        tail_counts.push_back(c);
+        const auto count = ordered[i].second->count;
+        tail_count += count;
+        if (count > tail_max)
+            tail_max = count;
+        tail_counts.push_back(count);
     }
     stats.tail_count = tail_count;
     stats.tail_unique = static_cast<std::uint64_t>(tail_counts.size());
@@ -667,11 +673,12 @@ void MetaLogEngine::build_tail_and_entropy(MetaLogDocument& doc, const WindowAna
     // collapses cleanly toward 0 bits.
     if (stats.tail_unique > 0 && lines_observed_ > 0)
     {
-        TailSummary ts;
-        ts.tail_template_count = stats.tail_unique;
-        ts.tail_entropy_bits = shannon_entropy_bits(tail_counts, tail_count);
-        ts.tail_max_rate = static_cast<double>(tail_max) / static_cast<double>(lines_observed_);
-        stats.tail_summary = ts;
+        TailSummary summary;
+        summary.tail_template_count = stats.tail_unique;
+        summary.tail_entropy_bits = shannon_entropy_bits(tail_counts, tail_count);
+        summary.tail_max_rate =
+            static_cast<double>(tail_max) / static_cast<double>(lines_observed_);
+        stats.tail_summary = summary;
     }
 
     // entropy_bits over the full (untruncated) template distribution.
@@ -679,8 +686,8 @@ void MetaLogEngine::build_tail_and_entropy(MetaLogDocument& doc, const WindowAna
     {
         std::vector<std::uint64_t> counts;
         counts.reserve(ordered.size());
-        for (const auto& kv : ordered)
-            counts.push_back(kv.second->count);
+        for (const auto& entry : ordered)
+            counts.push_back(entry.second->count);
         stats.entropy_bits = shannon_entropy_bits(counts, lines_observed_);
     }
 }
@@ -691,25 +698,25 @@ void MetaLogEngine::build_behavior(MetaLogDocument& doc, const WindowAnalysis& a
     if (config_.top_ngrams_size == 0 || ngram_total_ == 0)
         return;
 
-    BehaviorBlock bh;
-    bh.ngram_size = config_.ngram_size;
-    bh.top_ngrams_size = config_.top_ngrams_size;
-    build_top_ngrams(bh);
+    BehaviorBlock behavior;
+    behavior.ngram_size = config_.ngram_size;
+    behavior.top_ngrams_size = config_.top_ngrams_size;
+    build_top_ngrams(behavior);
 
     // graph_edge_count: count(A→B) edges from the transition view (reused from
     // analyze_window; reaching here guarantees `transitions` is populated).
     std::uint64_t edge_count = 0;
     for (const auto& [from, row] : analysis.transitions)
         edge_count += row.size();
-    bh.graph_edge_count = edge_count;
+    behavior.graph_edge_count = edge_count;
 
-    build_branching(bh, analysis);
-    build_dominant_path(bh, analysis);
-    doc.behavior = std::move(bh);
+    build_branching(behavior, analysis);
+    build_dominant_path(behavior, analysis);
+    doc.behavior = std::move(behavior);
 }
 
 // top_ngrams (SPEC §4): the highest-count n-grams with p(last | prefix).
-void MetaLogEngine::build_top_ngrams(BehaviorBlock& bh) const
+void MetaLogEngine::build_top_ngrams(BehaviorBlock& behavior) const
 {
     std::unordered_map<NGramKey, std::uint64_t, NGramKeyHash> prefix_totals;
     prefix_totals.reserve(ngram_counts_.size());
@@ -738,8 +745,9 @@ void MetaLogEngine::build_top_ngrams(BehaviorBlock& bh) const
         for (std::size_t index = 0; index < prefix_size; ++index)
             prefix.ids[index] = key.ids[index];
         const auto prefix_it{prefix_totals.find(prefix)};
-        const auto pt{prefix_it == prefix_totals.end() ? 0 : prefix_it->second};
-        entry.probability = pt > 0 ? static_cast<double>(count) / static_cast<double>(pt) : 0.0;
+        const auto prefix_total{prefix_it == prefix_totals.end() ? 0 : prefix_it->second};
+        entry.probability =
+            prefix_total > 0 ? static_cast<double>(count) / static_cast<double>(prefix_total) : 0.0;
         entries.push_back(std::move(entry));
     }
     std::ranges::sort(entries,
@@ -751,11 +759,11 @@ void MetaLogEngine::build_top_ngrams(BehaviorBlock& bh) const
                       });
     if (entries.size() > config_.top_ngrams_size)
         entries.resize(config_.top_ngrams_size);
-    bh.top_ngrams = std::move(entries);
+    behavior.top_ngrams = std::move(entries);
 }
 
 // branching (SPEC §4.2): per-source fanout + outgoing-transition entropy.
-void MetaLogEngine::build_branching(BehaviorBlock& bh, const WindowAnalysis& analysis) const
+void MetaLogEngine::build_branching(BehaviorBlock& behavior, const WindowAnalysis& analysis) const
 {
     if (config_.top_branching_size == 0)
         return;
@@ -790,21 +798,22 @@ void MetaLogEngine::build_branching(BehaviorBlock& bh, const WindowAnalysis& ana
         branching_rows.push_back(std::move(entry));
     }
     std::ranges::sort(branching_rows,
-                      [](const BranchingEntry& l, const BranchingEntry& r)
+                      [](const BranchingEntry& lhs, const BranchingEntry& rhs)
                       {
-                          if (l.entropy_bits != r.entropy_bits)
-                              return l.entropy_bits > r.entropy_bits;
-                          if (l.total_outgoing != r.total_outgoing)
-                              return l.total_outgoing > r.total_outgoing;
-                          return l.template_id < r.template_id;
+                          if (lhs.entropy_bits != rhs.entropy_bits)
+                              return lhs.entropy_bits > rhs.entropy_bits;
+                          if (lhs.total_outgoing != rhs.total_outgoing)
+                              return lhs.total_outgoing > rhs.total_outgoing;
+                          return lhs.template_id < rhs.template_id;
                       });
     if (branching_rows.size() > config_.top_branching_size)
         branching_rows.resize(config_.top_branching_size);
-    bh.branching = std::move(branching_rows);
+    behavior.branching = std::move(branching_rows);
 }
 
 // dominant_path (SPEC §4.1): greedy highest-count walk from the busiest template.
-void MetaLogEngine::build_dominant_path(BehaviorBlock& bh, const WindowAnalysis& analysis) const
+void MetaLogEngine::build_dominant_path(BehaviorBlock& behavior,
+                                        const WindowAnalysis& analysis) const
 {
     if (config_.dominant_path_max_steps == 0 || buckets_.empty())
         return;
@@ -843,7 +852,7 @@ void MetaLogEngine::build_dominant_path(BehaviorBlock& bh, const WindowAnalysis&
             current = best_to;
         }
     }
-    bh.dominant_path = std::move(path);
+    behavior.dominant_path = std::move(path);
 }
 
 // Highest-count template (ties → lower internal id) — the dominant_path start node.
@@ -883,21 +892,21 @@ void MetaLogEngine::build_stability(MetaLogDocument& doc, const WindowAnalysis& 
         const auto [kl, js]{divergences(cur_freq, lines_observed_, prev_freq_, prev_total_)};
         const auto [added, gone]{new_and_vanished(cur_freq, prev_freq_)};
 
-        StabilityBlock sb;
-        sb.previous_window_end_iso = *prev_window_end_iso_;
-        sb.kl_divergence = kl;
-        sb.js_divergence = js;
-        sb.new_templates = added;
-        sb.vanished_templates = gone;
-        sb.stability_score = 1.0 - js;
+        StabilityBlock stability;
+        stability.previous_window_end_iso = *prev_window_end_iso_;
+        stability.kl_divergence = kl;
+        stability.js_divergence = js;
+        stability.new_templates = added;
+        stability.vanished_templates = gone;
+        stability.stability_score = 1.0 - js;
         // NOLINTNEXTLINE(readability-use-std-min-max) — hot path: defensive clamp
         // [0,1] in the common case
-        if (sb.stability_score < 0.0)
-            sb.stability_score = 0.0;
+        if (stability.stability_score < 0.0)
+            stability.stability_score = 0.0;
         // NOLINTNEXTLINE(readability-use-std-min-max) — hot path: defensive clamp
-        if (sb.stability_score > 1.0)
-            sb.stability_score = 1.0;
-        doc.stability = std::move(sb);
+        if (stability.stability_score > 1.0)
+            stability.stability_score = 1.0;
+        doc.stability = std::move(stability);
     }
 }
 

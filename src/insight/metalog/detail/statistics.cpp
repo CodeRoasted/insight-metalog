@@ -7,6 +7,12 @@
 namespace insight::metalog::detail
 {
 
+namespace
+{
+// Jensen-Shannon is the average of the two directional KL terms: js = ½(D_p + D_q).
+constexpr double kJsSymmetryFactor{0.5};
+} // namespace
+
 double shannon_entropy_bits(const std::vector<std::uint64_t>& counts, std::uint64_t total)
 {
     if (total == 0)
@@ -16,12 +22,12 @@ double shannon_entropy_bits(const std::vector<std::uint64_t>& counts, std::uint6
     // converted to double by one exact divide. Deterministic cross-machine.
     insight::det::FixedReducer reducer;
     const std::int64_t log2_total{insight::det::det_log2_fixed(total)};
-    for (auto c : counts)
+    for (auto count : counts)
     {
-        if (c == 0)
+        if (count == 0)
             continue;
-        reducer.add_fixed(static_cast<__int128>(c) *
-                          (log2_total - insight::det::det_log2_fixed(c)));
+        reducer.add_fixed(static_cast<__int128>(count) *
+                          (log2_total - insight::det::det_log2_fixed(count)));
     }
     return reducer.normalized_bits(static_cast<std::int64_t>(total));
 }
@@ -37,29 +43,30 @@ DivergenceResult divergences(const std::unordered_map<std::string, std::uint64_t
     // unordered container for output.
     std::vector<const std::string*> keys;
     keys.reserve(cur.size() + prev.size());
-    for (const auto& kv : cur)
-        keys.push_back(&kv.first);
-    for (const auto& kv : prev)
-        if (!cur.contains(kv.first))
-            keys.push_back(&kv.first);
+    for (const auto& entry : cur)
+        keys.push_back(&entry.first);
+    for (const auto& entry : prev)
+        if (!cur.contains(entry.first))
+            keys.push_back(&entry.first);
     if (keys.empty() || cur_total == 0 || prev_total == 0)
         return {0.0, 0.0};
     std::ranges::sort(keys,
                       [](const std::string* lhs, const std::string* rhs) { return *lhs < *rhs; });
 
-    // Laplace smoothing (alpha = 1): with k = |union|, the smoothed frequencies
-    // p = (cn+1)/cur_denom and q = (pn+1)/prev_denom are ratios of INTEGERS
-    // (cur_denom = cur_total + k, prev_denom = prev_total + k are integers), so
-    // every log2 is a det_log2_fixed difference and the reductions stay exact in
-    // the integer/fixed-point domain (F5-M1/M2). One exact divide per output.
+    // Laplace smoothing (alpha = 1): with key_count = |union|, the smoothed
+    // frequencies p = (cn+1)/cur_denom and q = (pn+1)/prev_denom are ratios of
+    // INTEGERS (cur_denom = cur_total + key_count, prev_denom = prev_total +
+    // key_count are integers), so every log2 is a det_log2_fixed difference and the
+    // reductions stay exact in the integer/fixed-point domain (F5-M1/M2). One exact
+    // divide per output.
     //   KL = (1/cur_denom)·Σ (cn+1)·[log2((cn+1)·prev_denom) − log2((pn+1)·cur_denom)]
     //   JS = ½·[ (1/cur_denom)·Σ(cn+1)·L_p + (1/prev_denom)·Σ(pn+1)·L_q ], where
     //        D   = (cn+1)·prev_denom + (pn+1)·cur_denom   (= 2·cur_denom·prev_denom·m)
     //        L_p = log2(2·(cn+1)·prev_denom) − log2(D)     (= log2(p/m))
     //        L_q = log2(2·(pn+1)·cur_denom)  − log2(D)     (= log2(q/m))
-    const std::uint64_t k{keys.size()};
-    const std::uint64_t cur_denom{cur_total + k};
-    const std::uint64_t prev_denom{prev_total + k};
+    const std::uint64_t key_count{keys.size()};
+    const std::uint64_t cur_denom{cur_total + key_count};
+    const std::uint64_t prev_denom{prev_total + key_count};
 
     __int128 kl_acc{0};
     __int128 js_p_acc{0};
@@ -81,18 +88,18 @@ DivergenceResult divergences(const std::unordered_map<std::string, std::uint64_t
         js_q_acc +=
             static_cast<__int128>(qnum) * (insight::det::det_log2_fixed(2U * q_arg) - log2_d);
     }
-    double kl{insight::det::fixed_to_double(
+    double kl_value{insight::det::fixed_to_double(
         insight::det::round_div(kl_acc, static_cast<std::int64_t>(cur_denom)))};
     const std::int64_t js_p_q{
         insight::det::round_div(js_p_acc, static_cast<std::int64_t>(cur_denom))};
     const std::int64_t js_q_q{
         insight::det::round_div(js_q_acc, static_cast<std::int64_t>(prev_denom))};
-    double js{0.5 * insight::det::fixed_to_double(js_p_q + js_q_q)};
+    double js_value{kJsSymmetryFactor * insight::det::fixed_to_double(js_p_q + js_q_q)};
     // NOLINTNEXTLINE(readability-use-std-min-max)
-    if (kl < 0.0)
-        kl = 0.0;
-    js = std::clamp(js, 0.0, 1.0);
-    return {.kl = kl, .js = js};
+    if (kl_value < 0.0)
+        kl_value = 0.0;
+    js_value = std::clamp(js_value, 0.0, 1.0);
+    return {.kl = kl_value, .js = js_value};
 }
 
 std::pair<std::uint64_t, std::uint64_t>
@@ -101,11 +108,11 @@ new_and_vanished(const std::unordered_map<std::string, std::uint64_t>& cur,
 {
     std::uint64_t added = 0;
     std::uint64_t gone = 0;
-    for (const auto& kv : cur)
-        if (!prev.contains(kv.first))
+    for (const auto& entry : cur)
+        if (!prev.contains(entry.first))
             ++added;
-    for (const auto& kv : prev)
-        if (!cur.contains(kv.first))
+    for (const auto& entry : prev)
+        if (!cur.contains(entry.first))
             ++gone;
     return {added, gone};
 }
@@ -132,9 +139,9 @@ double histogram_js(const std::unordered_map<std::string, std::uint64_t>& prev,
     std::ranges::sort(keys,
                       [](const std::string* lhs, const std::string* rhs) { return *lhs < *rhs; });
 
-    const std::uint64_t k{keys.size()};
-    const std::uint64_t p_denom{prev_total + k};
-    const std::uint64_t c_denom{curr_total + k};
+    const std::uint64_t key_count{keys.size()};
+    const std::uint64_t p_denom{prev_total + key_count};
+    const std::uint64_t c_denom{curr_total + key_count};
 
     // js = ½·[ (1/p_denom)·Σ(pn+1)·L_p + (1/c_denom)·Σ(cn+1)·L_c ], with
     //   D   = (pn+1)·c_denom + (cn+1)·p_denom
@@ -160,8 +167,8 @@ double histogram_js(const std::unordered_map<std::string, std::uint64_t>& prev,
         insight::det::round_div(prev_acc, static_cast<std::int64_t>(p_denom))};
     const std::int64_t curr_q{
         insight::det::round_div(curr_acc, static_cast<std::int64_t>(c_denom))};
-    const double js{0.5 * insight::det::fixed_to_double(prev_q + curr_q)};
-    return std::clamp(js, 0.0, 1.0);
+    const double js_value{kJsSymmetryFactor * insight::det::fixed_to_double(prev_q + curr_q)};
+    return std::clamp(js_value, 0.0, 1.0);
 }
 
 } // namespace insight::metalog::detail

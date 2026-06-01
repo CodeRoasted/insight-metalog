@@ -381,15 +381,15 @@ dto::TopKEntry make_top_k_entry(const TopKEntry& entry)
     {
         std::vector<dto::ParamHistogram> hists;
         hists.reserve(entry.field_histograms.size());
-        for (const auto& fh : entry.field_histograms)
+        for (const auto& hist : entry.field_histograms)
         {
-            dto::ParamHistogram ph;
-            ph.param_index = fh.param_index;
-            ph.value_counts = {fh.value_counts.begin(), fh.value_counts.end()};
-            ph.total = fh.total;
-            if (fh.approximate_cardinality > 0)
-                ph.approximate_cardinality = fh.approximate_cardinality;
-            hists.push_back(std::move(ph));
+            dto::ParamHistogram param_hist;
+            param_hist.param_index = hist.param_index;
+            param_hist.value_counts = {hist.value_counts.begin(), hist.value_counts.end()};
+            param_hist.total = hist.total;
+            if (hist.approximate_cardinality > 0)
+                param_hist.approximate_cardinality = hist.approximate_cardinality;
+            hists.push_back(std::move(param_hist));
         }
         row.param_histograms = std::move(hists);
     }
@@ -445,23 +445,24 @@ dto::Stats make_stats(const StatsBlock& stats)
     return out;
 }
 
-dto::Behavior make_behavior(const BehaviorBlock& bh)
+dto::Behavior make_behavior(const BehaviorBlock& behavior)
 {
     dto::Behavior out_bh;
-    out_bh.ngram_size = bh.ngram_size;
-    out_bh.top_ngrams_size = bh.top_ngrams_size;
-    out_bh.top_ngrams.reserve(bh.top_ngrams.size());
-    for (const auto& ng : bh.top_ngrams)
-        out_bh.top_ngrams.push_back({ng.sequence, ng.count, ng.probability});
-    out_bh.graph_edge_count = bh.graph_edge_count;
-    if (bh.dominant_path && !bh.dominant_path->empty())
-        out_bh.dominant_path = *bh.dominant_path;
-    if (bh.branching && !bh.branching->empty())
+    out_bh.ngram_size = behavior.ngram_size;
+    out_bh.top_ngrams_size = behavior.top_ngrams_size;
+    out_bh.top_ngrams.reserve(behavior.top_ngrams.size());
+    for (const auto& ngram : behavior.top_ngrams)
+        out_bh.top_ngrams.push_back({ngram.sequence, ngram.count, ngram.probability});
+    out_bh.graph_edge_count = behavior.graph_edge_count;
+    if (behavior.dominant_path && !behavior.dominant_path->empty())
+        out_bh.dominant_path = *behavior.dominant_path;
+    if (behavior.branching && !behavior.branching->empty())
     {
         std::vector<dto::BranchingEntry> rows;
-        rows.reserve(bh.branching->size());
-        for (const auto& b : *bh.branching)
-            rows.push_back({b.template_id, b.fanout, b.total_outgoing, b.entropy_bits});
+        rows.reserve(behavior.branching->size());
+        for (const auto& branch : *behavior.branching)
+            rows.push_back(
+                {branch.template_id, branch.fanout, branch.total_outgoing, branch.entropy_bits});
         out_bh.branching = std::move(rows);
     }
     return out_bh;
@@ -471,16 +472,16 @@ std::vector<dto::Provenance> make_provenance(const std::vector<ProvenanceEntry>&
 {
     std::vector<dto::Provenance> prov;
     prov.reserve(provenance.size());
-    for (const auto& p : provenance)
+    for (const auto& entry : provenance)
     {
         dto::Provenance row;
-        row.window = {p.window_start_iso, p.window_end_iso};
-        if (!source_is_empty(p.source))
-            row.source = make_source(p.source);
-        row.lines_observed = p.lines_observed;
-        row.document_id = p.document_id;
-        if (p.coordinate)
-            row.coordinate = make_coordinate(*p.coordinate);
+        row.window = {entry.window_start_iso, entry.window_end_iso};
+        if (!source_is_empty(entry.source))
+            row.source = make_source(entry.source);
+        row.lines_observed = entry.lines_observed;
+        row.document_id = entry.document_id;
+        if (entry.coordinate)
+            row.coordinate = make_coordinate(*entry.coordinate);
         prov.push_back(std::move(row));
     }
     return prov;
@@ -501,10 +502,11 @@ dto::Document make_document(const MetaLogDocument& doc)
         out.behavior = make_behavior(*doc.behavior);
     if (doc.stability)
     {
-        const auto& sb = *doc.stability;
+        const auto& stability = *doc.stability;
         out.stability =
-            dto::Stability{sb.previous_window_end_iso, sb.kl_divergence,      sb.js_divergence,
-                           sb.new_templates,           sb.vanished_templates, sb.stability_score};
+            dto::Stability{stability.previous_window_end_iso, stability.kl_divergence,
+                           stability.js_divergence,           stability.new_templates,
+                           stability.vanished_templates,      stability.stability_score};
     }
     if (doc.provenance && !doc.provenance->empty())
         out.provenance = make_provenance(*doc.provenance);
@@ -520,66 +522,67 @@ dto::DocRef make_doc_ref(const DocumentRef& ref)
     return {{ref.window_start_iso, ref.window_end_iso}, ref.document_id};
 }
 
-dto::Diff make_diff(const MetaLogDiff& d)
+dto::Diff make_diff(const MetaLogDiff& diff)
 {
     dto::Diff out;
-    out.diff_version = d.diff_version;
-    out.previous = make_doc_ref(d.previous);
-    out.current = make_doc_ref(d.current);
-    out.kl_divergence = d.kl_divergence;
-    out.js_divergence = d.js_divergence;
-    out.stability_score = d.stability_score;
+    out.diff_version = diff.diff_version;
+    out.previous = make_doc_ref(diff.previous);
+    out.current = make_doc_ref(diff.current);
+    out.kl_divergence = diff.kl_divergence;
+    out.js_divergence = diff.js_divergence;
+    out.stability_score = diff.stability_score;
 
-    if (!d.template_deltas.empty())
+    if (!diff.template_deltas.empty())
     {
         std::vector<dto::TemplateDelta> deltas;
-        deltas.reserve(d.template_deltas.size());
-        for (const auto& t : d.template_deltas)
-            deltas.push_back({t.template_id, t.previous_count, t.current_count, t.delta,
-                              t.previous_frequency, t.current_frequency});
+        deltas.reserve(diff.template_deltas.size());
+        for (const auto& template_delta : diff.template_deltas)
+            deltas.push_back({template_delta.template_id, template_delta.previous_count,
+                              template_delta.current_count, template_delta.delta,
+                              template_delta.previous_frequency, template_delta.current_frequency});
         out.template_deltas = std::move(deltas);
     }
-    if (!d.new_templates.empty())
-        out.new_templates = d.new_templates;
-    if (!d.vanished_templates.empty())
-        out.vanished_templates = d.vanished_templates;
-    if (!d.branching_delta.empty())
+    if (!diff.new_templates.empty())
+        out.new_templates = diff.new_templates;
+    if (!diff.vanished_templates.empty())
+        out.vanished_templates = diff.vanished_templates;
+    if (!diff.branching_delta.empty())
     {
         std::vector<dto::BranchingDelta> deltas;
-        deltas.reserve(d.branching_delta.size());
-        for (const auto& b : d.branching_delta)
-            deltas.push_back(
-                {b.template_id, b.previous_entropy_bits, b.current_entropy_bits, b.delta_bits});
+        deltas.reserve(diff.branching_delta.size());
+        for (const auto& branch_delta : diff.branching_delta)
+            deltas.push_back({branch_delta.template_id, branch_delta.previous_entropy_bits,
+                              branch_delta.current_entropy_bits, branch_delta.delta_bits});
         out.branching_delta = std::move(deltas);
     }
-    if (d.ngram_delta)
+    if (diff.ngram_delta)
     {
-        dto::NGramDelta nd;
-        nd.ngram_size = d.ngram_delta->ngram_size;
-        if (!d.ngram_delta->new_ngrams.empty())
-            nd.new_ngrams = d.ngram_delta->new_ngrams;
-        if (!d.ngram_delta->vanished_ngrams.empty())
-            nd.vanished_ngrams = d.ngram_delta->vanished_ngrams;
-        if (!d.ngram_delta->rate_changed.empty())
+        dto::NGramDelta ngram_delta;
+        ngram_delta.ngram_size = diff.ngram_delta->ngram_size;
+        if (!diff.ngram_delta->new_ngrams.empty())
+            ngram_delta.new_ngrams = diff.ngram_delta->new_ngrams;
+        if (!diff.ngram_delta->vanished_ngrams.empty())
+            ngram_delta.vanished_ngrams = diff.ngram_delta->vanished_ngrams;
+        if (!diff.ngram_delta->rate_changed.empty())
         {
             std::vector<dto::NGramRateChange> changes;
-            changes.reserve(d.ngram_delta->rate_changed.size());
-            for (const auto& r : d.ngram_delta->rate_changed)
-                changes.push_back(
-                    {r.sequence, r.previous_probability, r.current_probability, r.delta});
-            nd.rate_changed = std::move(changes);
+            changes.reserve(diff.ngram_delta->rate_changed.size());
+            for (const auto& rate_change : diff.ngram_delta->rate_changed)
+                changes.push_back({rate_change.sequence, rate_change.previous_probability,
+                                   rate_change.current_probability, rate_change.delta});
+            ngram_delta.rate_changed = std::move(changes);
         }
-        out.ngram_delta = std::move(nd);
+        out.ngram_delta = std::move(ngram_delta);
     }
-    if (d.tail_delta)
+    if (diff.tail_delta)
     {
-        const auto& t = *d.tail_delta;
+        const auto& tail = *diff.tail_delta;
         out.tail_delta =
-            dto::TailDelta{t.previous_tail_template_count, t.current_tail_template_count,
-                           t.tail_template_count_delta,    t.previous_tail_entropy_bits,
-                           t.current_tail_entropy_bits,    t.tail_entropy_bits_delta,
-                           t.previous_tail_max_rate,       t.current_tail_max_rate,
-                           t.tail_max_rate_delta};
+            dto::TailDelta{tail.previous_tail_template_count, tail.current_tail_template_count,
+                           tail.tail_template_count_delta,    tail.previous_tail_entropy_bits,
+                           tail.current_tail_entropy_bits,    tail.tail_entropy_bits_delta,
+                           tail.previous_tail_max_rate,       tail.current_tail_max_rate,
+                           tail.tail_max_rate_delta};
     }
     return out;
 }
