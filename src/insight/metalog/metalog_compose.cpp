@@ -67,11 +67,11 @@ SourceBlock common_source(const SourceBlock& lhs, const SourceBlock& rhs)
     if (lhs.host_count && rhs.host_count)
         out.host_count = *lhs.host_count + *rhs.host_count;
     // tags: keep entries present and equal in both.
-    for (const auto& [k, v] : lhs.tags)
+    for (const auto& [key, value] : lhs.tags)
     {
-        auto iter{rhs.tags.find(k)};
-        if (iter != rhs.tags.end() && iter->second == v)
-            out.tags.emplace(k, v);
+        auto iter{rhs.tags.find(key)};
+        if (iter != rhs.tags.end() && iter->second == value)
+            out.tags.emplace(key, value);
     }
     return out;
 }
@@ -150,10 +150,10 @@ merge_field_histograms(const std::vector<FieldHistogram>& lhs,
         merged.total = lhs_hist.total + rhs_hist.total;
         std::unordered_map<std::string, std::uint64_t> values;
         values.reserve(lhs_hist.value_counts.size() + rhs_hist.value_counts.size());
-        for (const auto& [v, c] : lhs_hist.value_counts)
-            values[v] += c;
-        for (const auto& [v, c] : rhs_hist.value_counts)
-            values[v] += c;
+        for (const auto& [value, count] : lhs_hist.value_counts)
+            values[value] += count;
+        for (const auto& [value, count] : rhs_hist.value_counts)
+            values[value] += count;
         if (cap > 0 && values.size() > cap)
         {
             std::vector<std::pair<std::string, std::uint64_t>> sorted(values.begin(), values.end());
@@ -171,8 +171,8 @@ merge_field_histograms(const std::vector<FieldHistogram>& lhs,
         }
         std::vector<std::uint64_t> counts;
         counts.reserve(values.size());
-        for (const auto& [v, c] : values)
-            counts.push_back(c);
+        for (const auto& [value, count] : values)
+            counts.push_back(count);
         merged.value_counts = std::move(values);
         merged.entropy_bits = shannon_entropy_bits(counts, merged.total);
         merged.approximate_cardinality =
@@ -522,11 +522,11 @@ std::optional<BehaviorBlock> merge_behavior(const MetaLogDocument& lhs, const Me
     absorb(rhs.behavior);
     std::vector<NGramEntry> entries;
     entries.reserve(seq_counts.size());
-    for (auto& [seq, c] : seq_counts)
+    for (auto& [seq, count] : seq_counts)
     {
         NGramEntry entry;
         entry.sequence = seq;
-        entry.count = c;
+        entry.count = count;
         const auto sample_count{seq_prob_n[seq]};
         entry.probability =
             sample_count > 0 ? seq_prob_sum[seq] / static_cast<double>(sample_count) : 0.0;

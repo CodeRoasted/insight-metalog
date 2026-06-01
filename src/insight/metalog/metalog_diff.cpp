@@ -54,10 +54,10 @@ void diff_template_deltas(MetaLogDiff& out,
 {
     std::unordered_set<std::string> all_ids;
     all_ids.reserve(prev_counts.size() + cur_counts.size());
-    for (const auto& [k, _] : prev_counts)
-        all_ids.insert(k);
-    for (const auto& [k, _] : cur_counts)
-        all_ids.insert(k);
+    for (const auto& [key, _] : prev_counts)
+        all_ids.insert(key);
+    for (const auto& [key, _] : cur_counts)
+        all_ids.insert(key);
     out.template_deltas.reserve(all_ids.size());
     for (const auto& template_id : all_ids)
     {
@@ -108,10 +108,10 @@ void diff_branching_delta(MetaLogDiff& out, const MetaLogDocument& previous,
         for (const auto& branch : *current.behavior->branching)
             cur_h[branch.template_id] = branch.entropy_bits;
         std::unordered_set<std::string> ids;
-        for (const auto& [k, _] : prev_h)
-            ids.insert(k);
-        for (const auto& [k, _] : cur_h)
-            ids.insert(k);
+        for (const auto& [key, _] : prev_h)
+            ids.insert(key);
+        for (const auto& [key, _] : cur_h)
+            ids.insert(key);
         out.branching_delta.reserve(ids.size());
         for (const auto& template_id : ids)
         {
@@ -155,14 +155,14 @@ void diff_ngram_delta(MetaLogDiff& out, const MetaLogDocument& previous,
     for (const auto& [seq, _] : prev_p)
         if (!cur_p.contains(seq))
             ngram_delta.vanished_ngrams.push_back(seq);
-    for (const auto& [seq, cp] : cur_p)
+    for (const auto& [seq, cur_prob] : cur_p)
     {
         auto pp_it{prev_p.find(seq)};
         if (pp_it == prev_p.end())
             continue;
-        const double delta = cp - pp_it->second;
+        const double delta = cur_prob - pp_it->second;
         if (std::abs(delta) > 0.0)
-            ngram_delta.rate_changed.push_back({seq, pp_it->second, cp, delta});
+            ngram_delta.rate_changed.push_back({seq, pp_it->second, cur_prob, delta});
     }
     std::ranges::sort(ngram_delta.rate_changed,
                       [](const NGramRateChange& lhs, const NGramRateChange& rhs)
@@ -293,13 +293,13 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
     const auto prev_freqs = freqs_of(previous);
     const auto cur_freqs = freqs_of(current);
 
-    const auto [kl, js] = divergences(cur_counts, current.window.lines_observed, prev_counts,
-                                      previous.window.lines_observed);
+    const auto [kl_value, js_value] = divergences(cur_counts, current.window.lines_observed,
+                                                  prev_counts, previous.window.lines_observed);
     if (current.window.lines_observed > 0 && previous.window.lines_observed > 0)
     {
-        out.kl_divergence = kl;
-        out.js_divergence = js;
-        out.stability_score = std::clamp(1.0 - js, 0.0, 1.0);
+        out.kl_divergence = kl_value;
+        out.js_divergence = js_value;
+        out.stability_score = std::clamp(1.0 - js_value, 0.0, 1.0);
     }
 
     diff_template_deltas(out, prev_counts, cur_counts, prev_freqs, cur_freqs);

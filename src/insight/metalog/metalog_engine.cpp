@@ -69,7 +69,7 @@ std::string MetaLogEngine::compute_template_id(std::string_view canonical_templa
     static constexpr std::array<char, 16> kHex{'0', '1', '2', '3', '4', '5', '6', '7',
                                                '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
     std::string out;
-    out.reserve(2 + 2 * kTemplateIdBytes); // "h:" + two hex chars per byte
+    out.reserve(2 + (2 * kTemplateIdBytes)); // "h:" + two hex chars per byte
     out.append("h:");
     for (std::size_t i = 0; i < kTemplateIdBytes; ++i)
     {
@@ -452,18 +452,18 @@ void MetaLogEngine::build_transition_graph(WindowAnalysis& analysis) const
     for (const auto& [from, row] : transitions)
     {
         std::uint64_t outgoing{0};
-        for (const auto& [to, count] : row)
+        for (const auto& [to_id, count] : row)
             outgoing += count;
         if (outgoing == 0U)
             continue;
-        for (const auto& [to, count] : row)
+        for (const auto& [to_id, count] : row)
         {
-            if (to >= node_count)
+            if (to_id >= node_count)
                 continue;
-            if (count * best_t[to] > best_c[to] * outgoing)
+            if (count * best_t[to_id] > best_c[to_id] * outgoing)
             {
-                best_c[to] = count;
-                best_t[to] = outgoing;
+                best_c[to_id] = count;
+                best_t[to_id] = outgoing;
             }
         }
     }
@@ -524,8 +524,8 @@ void MetaLogEngine::build_top_k(MetaLogDocument& doc, const WindowAnalysis& anal
                 // entropy is slightly under-estimated — known limitation.
                 std::vector<std::uint64_t> vcounts;
                 vcounts.reserve(hist.value_counts.size());
-                for (const auto& [v, c] : hist.value_counts)
-                    vcounts.push_back(c);
+                for (const auto& [value, count] : hist.value_counts)
+                    vcounts.push_back(count);
                 hist.entropy_bits = shannon_entropy_bits(vcounts, hist.total);
                 // HLL approximate cardinality (SPEC §3.5).
                 hist.approximate_cardinality = hll_state_->estimate(content_id, pi);
@@ -660,6 +660,8 @@ void MetaLogEngine::build_tail_and_entropy(MetaLogDocument& doc, const WindowAna
             continue; // promoted to the reservoir — excluded from tail aggregates (SPEC §3.7.3)
         const auto count = ordered[i].second->count;
         tail_count += count;
+        // — hot path: defensive clamp
+        // NOLINTNEXTLINE(readability-use-std-min-max)
         if (count > tail_max)
             tail_max = count;
         tail_counts.push_back(count);
@@ -778,20 +780,20 @@ void MetaLogEngine::build_branching(BehaviorBlock& behavior, const WindowAnalysi
         entry.template_id = content_templates_by_internal_id_[from];
         entry.fanout = row.size();
         std::uint64_t total = 0;
-        for (const auto& [_, c] : row)
-            total += c;
+        for (const auto& [_, count] : row)
+            total += count;
         entry.total_outgoing = total;
         if (total > 0)
         {
             // F5-M1/M2: branching entropy in the exact integer/count domain.
             insight::det::FixedReducer reducer;
             const std::int64_t log2_total{insight::det::det_log2_fixed(total)};
-            for (const auto& [_, c] : row)
+            for (const auto& [_, count] : row)
             {
-                if (c == 0)
+                if (count == 0)
                     continue;
-                reducer.add_fixed(static_cast<__int128>(c) *
-                                  (log2_total - insight::det::det_log2_fixed(c)));
+                reducer.add_fixed(static_cast<__int128>(count) *
+                                  (log2_total - insight::det::det_log2_fixed(count)));
             }
             entry.entropy_bits = reducer.normalized_bits(static_cast<std::int64_t>(total));
         }
@@ -835,12 +837,12 @@ void MetaLogEngine::build_dominant_path(BehaviorBlock& behavior,
                 break;
             InternalTemplateID best_to{0};
             std::uint64_t best_to_count{0};
-            for (const auto& [to, c] : row_it->second)
+            for (const auto& [to_id, count] : row_it->second)
             {
-                if (c > best_to_count || (c == best_to_count && to < best_to))
+                if (count > best_to_count || (count == best_to_count && to_id < best_to))
                 {
-                    best_to_count = c;
-                    best_to = to;
+                    best_to_count = count;
+                    best_to = to_id;
                 }
             }
             if (seen.contains(best_to))
@@ -889,18 +891,19 @@ void MetaLogEngine::build_stability(MetaLogDocument& doc, const WindowAnalysis& 
         for (const auto& [tid, bucket] : buckets_)
             cur_freq.emplace(tid, bucket.count);
 
-        const auto [kl, js]{divergences(cur_freq, lines_observed_, prev_freq_, prev_total_)};
+        const auto [kl_value,
+                    js_value]{divergences(cur_freq, lines_observed_, prev_freq_, prev_total_)};
         const auto [added, gone]{new_and_vanished(cur_freq, prev_freq_)};
 
         StabilityBlock stability;
         stability.previous_window_end_iso = *prev_window_end_iso_;
-        stability.kl_divergence = kl;
-        stability.js_divergence = js;
+        stability.kl_divergence = kl_value;
+        stability.js_divergence = js_value;
         stability.new_templates = added;
         stability.vanished_templates = gone;
-        stability.stability_score = 1.0 - js;
-        // NOLINTNEXTLINE(readability-use-std-min-max) — hot path: defensive clamp
-        // [0,1] in the common case
+        stability.stability_score = 1.0 - js_value;
+        // — hot path: defensive clamp [0,1] in the common case
+        // NOLINTNEXTLINE(readability-use-std-min-max)
         if (stability.stability_score < 0.0)
             stability.stability_score = 0.0;
         // NOLINTNEXTLINE(readability-use-std-min-max) — hot path: defensive clamp
