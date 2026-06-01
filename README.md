@@ -30,7 +30,7 @@ A MetaLog document is a **deterministic** function of its input window — the s
 | Field | Value |
 |---|---|
 | Conan name | `insight_metalog` |
-| Version | `1.4.0` |
+| Version | `1.4.1` |
 | Spec conformance | MetaLog v0.5.0 |
 | Visibility | CodeRoast-owned package |
 
