@@ -1,5 +1,5 @@
 // NOLINTBEGIN
-// MetaLog v0.2.0 compression benchmark.
+// MetaLog v0.5.0 compression benchmark.
 //
 // This is the byte-budget anchor for Phase 3. It synthesises a window
 // of CanonicalEvents with a Zipf-ish template distribution, runs them
@@ -77,8 +77,7 @@ void run_once(const SyntheticCorpus& corpus, std::size_t n_events,
     }
 
     auto doc{engine.close_window(t0 + std::chrono::seconds(60))};
-    auto json = to_json(doc);
-    const std::string serialized{json.dump()};
+    const std::string serialized{to_json(doc)};
     out_bytes = serialized.size();
     out_lines = doc.window.lines_observed;
     out_unique = doc.stats.unique_templates;

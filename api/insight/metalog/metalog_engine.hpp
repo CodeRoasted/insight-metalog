@@ -1,13 +1,12 @@
 #pragma once
 
-// MetaLog v0.2.0 spec-conformant producer.
+// MetaLog v0.5.0 spec-conformant producer.
 //
-// Spec: https://github.com/CodeRoasted/metalog-spec (tag v0.2.0).
+// Spec: https://github.com/CodeRoasted/metalog-spec (tag v0.5.0).
 //
-// v0.2.0 additions over 0.1.x:
+// v0.5.0 additions over 0.1.x:
 //   * top-level `templates` dedup map (SPEC §3.4).
-//   * behaviour fields `dominant_path`, `branching`,
-//     `sessions_observed`, `session_aware`, `graph_edge_count`
+//   * behaviour fields `dominant_path`, `branching`, `graph_edge_count`
 //     (SPEC §4).
 //   * free functions `compose(a, b)` (SPEC §12) and `diff(prev, cur)`
 //     producing a `MetaLogDiff` (SPEC §13).
@@ -71,7 +70,7 @@
 namespace insight::metalog
 {
 
-// ── Spec envelope (mirrors v0.2.0 schema) ──────────────────────
+// ── Spec envelope (mirrors v0.5.0 schema) ──────────────────────
 
 // Per-template per-wildcard-position value frequency table.
 //
@@ -108,6 +107,47 @@ struct TopKEntry
     std::optional<LogLevel> dominant_level;
     // Empty unless MetaLogConfig::max_param_histograms > 0.
     std::vector<FieldHistogram> field_histograms;
+};
+
+// Salience Reservoir entry (Tier 2, Salience epic §5 L1 / flaw F1). A template
+// retained by intrinsic SALIENCE rather than frequency — where a rare-but-severe
+// event (a lone fatal) survives the bounded fingerprint instead of collapsing
+// into the tail. Self-describing: carries why it was kept (salience + the inputs)
+// so a consumer/explainer can attribute it. Disjoint from top_k (a template here
+// did NOT make top_k by frequency); excluded from the tail residual.
+struct ReservoirEntry
+{
+    std::string template_id;
+    std::string template_str; // per template_emission mode, like TopKEntry
+    std::uint64_t count{0};
+    double frequency{0.0};
+    std::optional<LogLevel> dominant_level;
+    StructuralRole structural_role{StructuralRole::None};
+    // Structural-surprise band (0..100): how off-path this template is, derived
+    // from the lowest-probability incoming transition in the behavior graph. >0
+    // means the template was reached only via a rare transition off the dominant
+    // path — the axis that retains a benign-but-anomalous event (an Info "took
+    // alternate cache path") that severity⊗rarity alone would drop. Attribution:
+    // a nonzero value here on a non-severe entry explains the retention.
+    std::uint32_t structural_surprise{0};
+    // Self-novelty band (0..100): how late this template first appeared within the
+    // document's own span (first-seen position over lines_observed). >0 means it
+    // EMERGED during the window (recurring, count >= 2) rather than being present
+    // from the start — the axis that retains a benign template that just started
+    // happening (a new Info line) which severity/structure would drop. Self-relative
+    // (I3), re-derivable on compose() from merged provenance; NOT "absent from a
+    // baseline" (that is consumer-side diff / the pyramid's multi-horizon novelty).
+    std::uint32_t novelty{0};
+    // Quantized salience score (deterministic, integer; I5). Higher = more
+    // salient. (severity ⊕ structural_surprise ⊕ novelty) ⊗ rarity, where severity
+    // folds level · failure-lexicon · structural_role.
+    std::uint32_t salience{0};
+    // §15.4 sub-coordinate (guarantee-2 aid): the reconciled first-seen ordinal of
+    // this template within the window (== Bucket::first_seen_index), bounded by the
+    // reservoir size. Populated only when a re-derivation coordinate is configured;
+    // a reservoir entry is a canon artifact, so locating its raw needs raw-recovery
+    // (§15.1-1) then re-canonicalization (§15.1-2). Never a per-line coordinate.
+    std::optional<std::uint64_t> within_window_ordinal;
 };
 
 // Per-node branching statistics (MetaLog SPEC §4.2).
@@ -157,6 +197,10 @@ struct StatsBlock
     // signal. Present when there is at least one template in the tail
     // (tail_unique > 0); absent otherwise.
     std::optional<TailSummary> tail_summary;
+    // Salience Reservoir (Tier 2, F1). Salient templates retained below top_k.
+    // Empty unless MetaLogConfig::reservoir_size > 0. The tail residual excludes
+    // these (a promoted template is not double-counted in the omitted mass).
+    std::vector<ReservoirEntry> reservoir;
 };
 
 // One n-gram row in the behaviour block. `sequence` holds the
@@ -174,10 +218,8 @@ struct BehaviorBlock
     std::vector<NGramEntry> top_ngrams;
     std::size_t top_ngrams_size{0};
     std::optional<std::uint64_t> graph_edge_count;
-    std::optional<std::vector<std::string>> dominant_path;  // absent when not computed
-    std::optional<std::vector<BranchingEntry>> branching;   // absent when not computed
-    std::optional<std::uint64_t> sessions_observed;
-    bool session_aware{false};
+    std::optional<std::vector<std::string>> dominant_path; // absent when not computed
+    std::optional<std::vector<BranchingEntry>> branching;  // absent when not computed
 };
 
 struct StabilityBlock
@@ -201,7 +243,7 @@ struct WindowBlock
 struct ProducerBlock
 {
     std::string name{"insight"};
-    std::string version{"0.2.0"};
+    std::string version{"0.5.0"};
     std::string implementation_uri{"https://github.com/CodeRoasted/insight"};
 };
 
@@ -216,6 +258,52 @@ struct SourceBlock
     [[nodiscard]] bool operator==(const SourceBlock&) const noexcept = default;
 };
 
+// Re-derivation coordinate (SPEC §15): makes a window addressable back to its
+// source so `raw(window) = replay(source, bounds)` with no raw buffering, and every
+// finding is citable/verifiable. DESCRIPTIVE metadata only — bit-identical across
+// replays (I5) and MUST NOT feed any deterministic-content / retention / salience
+// compute (§15.6). Present on a document only when a `source_ref` is configured.
+struct SourceRef
+{
+    // Selects the resolver (e.g. "logcraft" replay, a CI-artifact kind). Opaque to
+    // the spec; a producer MUST NOT assume a particular resolver.
+    std::string resolver_kind;
+    // Opaque, resolvable handle — meaning defined by the environment (a replay
+    // source key, an immutable artifact URI, an otel_trace ref, …).
+    std::string handle;
+    [[nodiscard]] bool operator==(const SourceRef&) const noexcept = default;
+};
+
+struct EventTimeBounds
+{
+    // The window is [start_tick, end_tick) in EVENT-TIME integer ticks. Integers
+    // (no float) and bit-identical across replays (§15.3). Window membership MUST be
+    // by event-time only — never the global sequence counter or replay depth.
+    std::uint64_t start_tick{0};
+    std::uint64_t end_tick{0};
+    [[nodiscard]] bool operator==(const EventTimeBounds&) const noexcept = default;
+};
+
+struct ReDerivationCoordinate
+{
+    // §15.2: a coordinate is XOR — either RAW (source_ref + bounds set, children
+    // absent) or COMPOSED (children set, source_ref + bounds absent). Sentinel
+    // values on composed coordinates are explicitly forbidden by §15.2 (encoding
+    // note). Consumers discriminate by the presence of `children`.
+    std::optional<SourceRef> source_ref;   // RAW only
+    std::optional<EventTimeBounds> bounds; // RAW only
+    // Guarantee-2 (fingerprint reproduction) aids — optional (§15.1-2): canon output
+    // depends on canon code + config, not just raw bytes. May appear on EITHER kind.
+    std::optional<std::string> canonicalization_version;
+    std::optional<std::string> config_hash;
+    // Composed documents ONLY (§15.5): the non-empty SET of raw (or recursively
+    // composed) children's coordinates. A composed coordinate resolves via its
+    // children — never via a coarse [first, last] bound (which over-claims across
+    // gaps / shards / sources).
+    std::optional<std::vector<ReDerivationCoordinate>> children;
+    [[nodiscard]] bool operator==(const ReDerivationCoordinate&) const noexcept = default;
+};
+
 // Provenance entry recording one input that fed a composed document
 // (SPEC §12.4).
 struct ProvenanceEntry
@@ -225,19 +313,31 @@ struct ProvenanceEntry
     SourceBlock source;
     std::uint64_t lines_observed{0};
     std::optional<std::string> document_id;
+    // The input's own re-derivation coordinate (§15.5), so a composed document's
+    // coordinate resolves to this raw child. Absent when the input had none.
+    std::optional<ReDerivationCoordinate> coordinate;
 };
 
 struct MetaLogDocument
 {
-    std::string metalog_version{"0.2.0"};
+    std::string metalog_version{"0.5.0"};
     ProducerBlock producer{};
     WindowBlock window{};
     SourceBlock source{};
     StatsBlock stats{};
     std::optional<BehaviorBlock> behavior;
     std::optional<StabilityBlock> stability;
-    std::map<std::string, std::string> templates; // optional dedup map (SPEC §3.4)
+    std::map<std::string, std::string> templates;           // optional dedup map (SPEC §3.4)
     std::optional<std::vector<ProvenanceEntry>> provenance; // absent unless composed (SPEC §12.4)
+    // Processing-identifier strings (SPEC §2.4). Opaque names of the contract
+    // under which the document was produced; gate `compose()` / diff
+    // comparability (§13). Set from MetaLogConfig at close_window.
+    std::optional<std::string> canonicalization_version;
+    std::optional<std::string> retention_profile;
+    // Re-derivation coordinate (SPEC §15). Present whenever the producer was
+    // configured with a source_ref; a composed document carries `children` instead
+    // of addressing a single source. Absent otherwise.
+    std::optional<ReDerivationCoordinate> coordinate;
 };
 
 // ── Producer configuration ─────────────────────────────────────
@@ -262,6 +362,17 @@ struct MetaLogConfig
     // tail_count / tail_unique. Default 64 (~10 KB envelope per spec
     // §11). Set to 0 to skip top_k emission entirely (still bounded).
     std::size_t top_k_size{kDefaultTopKSize};
+
+    // Salience Reservoir size M (Tier 2, F1): max templates retained by salience
+    // below top_k. 0 = disabled (default — pure frequency retention, pre-Phase-2
+    // behaviour). Streaming funds M by shrinking top_k (~64); batch sets it large.
+    std::size_t reservoir_size{0};
+
+    // Reservoir diversity cap (F10): max exemplars admitted per "kind"
+    // (structural_role × dominant_level), so M optimises COVERAGE of distinct
+    // salient kinds over depth — otherwise M fills with variants of one failure
+    // (test_query_0/_1/… FAILED) and crowds out a different failure. 0 = no cap.
+    std::size_t reservoir_per_kind_cap{0};
 
     // Order of n-gram emitted in the behaviour block. Spec emits a
     // single order per document. Must be 2 or 3.
@@ -293,7 +404,25 @@ struct MetaLogConfig
     std::size_t dominant_path_max_steps{kDefaultDominantPathMaxSteps};
 
     // Reported as producer.version in the envelope.
-    std::string producer_version{"0.2.0"};
+    std::string producer_version{"0.5.0"};
+
+    // Re-derivation source (SPEC §15). When set, close_window stamps a coordinate
+    // on the document (source_ref + the window's event-time bounds). The engine does
+    // NOT derive its own source — the producer/ingest layer sets this (e.g. the
+    // LogCraft harness sets {resolver_kind="logcraft", handle=scenario+seed}; a CI
+    // run sets {resolver_kind=<artifact-kind>, handle=<artifact URI>}). Unset =
+    // no coordinate emitted (the conservative default; e.g. the line-agnostic diff).
+    std::optional<SourceRef> source_ref;
+
+    // Opaque processing-identifier strings (SPEC §2.4) — name the CONTRACT the
+    // document was produced under. Stamped onto MetaLogDocument at close_window;
+    // gate `compose()` / diff comparability (§13). The `canonicalization_version`
+    // also serves as the guarantee-2 aid stamped into a re-derivation coordinate
+    // (§15.1-2). The `retention_profile` names the retention parameters in effect
+    // (top_k size, reservoir admission weights/size/diversity caps, salience
+    // arithmetic — §3.1 / §3.7); MUST be bumped when any of those change.
+    std::optional<std::string> canonicalization_version;
+    std::optional<std::string> retention_profile;
 
     // Max number of wildcard positions to histogram per top_k entry.
     // 0 = disabled (default — zero overhead on the ingest_event hot path;
@@ -367,6 +496,15 @@ struct FieldHistogramDelta
     double js_divergence{0.0};
     double previous_entropy_bits{0.0};
     double current_entropy_bits{0.0};
+    // Per-side observation count backing each distribution (FieldHistogram::total).
+    // This is the sample size the JS divergence is estimated from — the basis for
+    // a consumer's confidence gate (min-sample floor): a high JS over a handful of
+    // observations is sampling noise, not a regime shift. Distinct from cardinality
+    // (number of DISTINCT values) and from the template's stream share (population
+    // proportion). May exceed sum(value_counts) when high-cardinality values were
+    // not retained individually.
+    std::uint64_t previous_sample_count{0};
+    std::uint64_t current_sample_count{0};
     // Cardinality tracking (SPEC §3.5.2). Zero when either document did not
     // provide approximate_cardinality for this slot.
     std::uint64_t previous_cardinality{0};
@@ -479,7 +617,15 @@ class MetaLogEngine
     {
         std::string template_str;
         std::uint64_t count{0};
+        // Ordinal of the event at which this template was first seen in the window
+        // (== lines_observed_ before that event). Feeds the self-novelty axis: a
+        // high value means the template EMERGED late (first-seen near lines_observed).
+        // Preserved as the minimum across Drain cluster migration (earliest wins).
+        std::uint64_t first_seen_index{0};
         std::unordered_map<LogLevel, std::uint64_t> level_counts;
+        // Announced structural roles seen for this template (F12 → salience).
+        // Dominant role feeds the salience severity signal (Terminator = severe).
+        std::unordered_map<StructuralRole, std::uint64_t> role_counts;
         // Per-param value histograms; index i == CanonicalEvent::params[i].
         // Populated only when config_.max_param_histograms > 0.
         std::vector<std::unordered_map<std::string, std::uint64_t>> param_value_counts;
@@ -521,6 +667,61 @@ class MetaLogEngine
                         std::string_view new_template_str);
     void account_ngram(const NGramKey& key);
 
+    // Cold-path scratch computed once per close_window and consumed by the
+    // build_* steps below: the count-sorted bucket view, the template transition
+    // graph, and the per-template structural-surprise band. RAII — owned by a
+    // local in close_window, released when that scope ends. (`k` is the resolved
+    // top_k cut, min(top_k_size, ordered.size()).)
+    struct WindowAnalysis
+    {
+        std::vector<std::pair<std::string, const Bucket*>> ordered;
+        std::unordered_map<InternalTemplateID,
+                           std::unordered_map<InternalTemplateID, std::uint64_t>>
+            transitions;
+        std::vector<std::uint32_t> incoming_surprise; // indexed by internal id; 0 = on-path/root
+        std::size_t k{0};
+    };
+
+    // A below-top_k template that scored a non-zero salience; `index` points into
+    // WindowAnalysis::ordered. Collected, then admitted to the reservoir in
+    // salience order (tie-break by template_id) under the size + per-kind caps.
+    struct ReservoirCandidate
+    {
+        std::size_t index;
+        std::uint32_t salience;
+        std::uint32_t structural_surprise;
+        std::uint32_t novelty;
+    };
+
+    // close_window is an orchestrator over these single-responsibility steps; each
+    // is a verbatim slice of the former monolith, so the produced document is
+    // bit-identical (gated by DeterminismGate). const steps read window state and
+    // write the document; the two non-const steps carry/clear cross-window state.
+    [[nodiscard]] WindowAnalysis analyze_window() const;
+    void build_transition_graph(WindowAnalysis& analysis) const;
+    [[nodiscard]] std::uint32_t surprise_of(const WindowAnalysis& analysis,
+                                            const std::string& content_id) const noexcept;
+    void stamp_envelope(MetaLogDocument& doc, Timestamp start, Timestamp end) const;
+    void build_top_k(MetaLogDocument& doc, const WindowAnalysis& analysis) const;
+    void build_reservoir(MetaLogDocument& doc, const WindowAnalysis& analysis,
+                         std::unordered_set<std::string>& reserved) const;
+    [[nodiscard]] std::vector<ReservoirCandidate>
+    collect_reservoir_candidates(const WindowAnalysis& analysis) const;
+    void admit_reservoir(StatsBlock& stats, const WindowAnalysis& analysis,
+                         std::vector<ReservoirCandidate>& candidates,
+                         std::unordered_set<std::string>& reserved) const;
+    void build_tail_and_entropy(MetaLogDocument& doc, const WindowAnalysis& analysis,
+                                const std::unordered_set<std::string>& reserved) const;
+    void build_behavior(MetaLogDocument& doc, const WindowAnalysis& analysis) const;
+    void build_top_ngrams(BehaviorBlock& behavior) const;
+    void build_branching(BehaviorBlock& behavior, const WindowAnalysis& analysis) const;
+    void build_dominant_path(BehaviorBlock& behavior, const WindowAnalysis& analysis) const;
+    [[nodiscard]] InternalTemplateID dominant_path_start() const;
+    void build_stability(MetaLogDocument& doc, const WindowAnalysis& analysis) const;
+    void stash_prev_window(const MetaLogDocument& doc);
+    void build_templates_map(MetaLogDocument& doc) const;
+    void reset_window_state();
+
     MetaLogConfig config_{};
     SourceBlock source_{};
     std::optional<Timestamp> window_start_;
@@ -547,13 +748,6 @@ class MetaLogEngine
     std::uint64_t prev_total_{0};
     std::optional<std::string> prev_window_end_iso_;
 
-    // Set of distinct session keys observed in the current window.
-    // Hot path adds at most one insert per event when `event.session_key != 0`.
-    // When all events have session_key == 0 (the default for tokenizers
-    // that haven't opted in to MetaLog SPEC §14), this set stays empty
-    // and the cost is one predicted-not-taken branch per ingest.
-    std::unordered_set<SessionID> sessions_seen_;
-
     // HyperLogLog sketches for approximate cardinality per (template, param_index).
     // Pimpl to avoid exposing HLL internals in the public header.
     // Defined in metalog_engine.cpp; reset at open_window(), snapshotted at close_window().
@@ -562,7 +756,7 @@ class MetaLogEngine
 };
 
 // Free serialiser. Produces a serialised JSON document conforming to the
-// v0.2.0 MetaLog envelope.
+// v0.5.0 MetaLog envelope.
 //
 // Output is canonical and restrictive: empty/default optional fields are
 // OMITTED, never emitted as empty/zero/false (one document -> one byte

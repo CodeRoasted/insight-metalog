@@ -7,9 +7,10 @@ required_conan_version = ">=2.28"
 
 class InsightMetalogConan(ConanFile):
     name = "insight_metalog"
-    version = "1.3.8"
+    version = "1.4.0"
+    license = "BUSL-1.1"
     package_type = "library"
-    description = "MetaLog spec v0.2.0 producer: bounded statistical fingerprint of a window of log behaviour, with behavior, stability, diff/compose, and HLL cardinality blocks (https://github.com/CodeRoasted/metalog-spec)."
+    description = "MetaLog spec v0.5.0 producer: bounded statistical fingerprint of a window of log behaviour, with behavior, stability, diff/compose, and HLL cardinality blocks (https://github.com/CodeRoasted/metalog-spec)."
     settings = "os", "arch", "compiler", "build_type"
 
     options = {
@@ -39,8 +40,8 @@ class InsightMetalogConan(ConanFile):
     def requirements(self):
         # insight_canon provides logging and types; transitive headers needed.
         # Don't use transitive_libs since it pulls in spdlog which is header-only.
-        self.requires("insight_canon/1.3.8", transitive_headers=True)
-        # glaze is the JSON serializer, used only in metalog_engine.cpp and never
+        self.requires("insight_canon/1.4.0", transitive_headers=True)
+        # glaze is the JSON serializer, used only in metalog_serialize.cpp and never
         # in a public header — a private, non-propagated build dependency.
         self.requires("glaze/7.4.0", visible=False)
         self.requires("picosha2/1.0.0")

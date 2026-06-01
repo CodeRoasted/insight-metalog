@@ -5,9 +5,10 @@
 
 #include <array>
 #include <bit>
-#include <cmath>
 #include <cstdint>
 #include <string_view>
+
+#include "insight/math/det_math.hpp" // F5-M5: deterministic ln, no libm
 
 namespace insight::metalog::detail
 {
@@ -40,25 +41,45 @@ class HyperLogLog
 
     [[nodiscard]] std::uint64_t estimate() const noexcept
     {
-        double sum = 0.0;
-        int zeros = 0;
+        // F5-M5: the harmonic sum Σ 2^(−rⱼ) is an EXACT dyadic fixed-point sum.
+        // Registers are integers in [0, 64−kPrecision+1] = [0, 51], so each term
+        // 2^(−reg) is an exact power of two; accumulating 2^(kHllFrac−reg) in
+        // __int128 has no rounding and no order dependence (unlike the prior
+        // double Σ std::ldexp, which dropped low-order terms). No libm.
+        constexpr int kHllFrac{52}; // > max register value (51) → every term exact
+        unsigned __int128 sum_fixed{0};
+        int zeros{0};
         for (auto reg : regs_)
         {
-            sum += std::ldexp(1.0, -static_cast<int>(reg));
+            sum_fixed += static_cast<unsigned __int128>(1) << (kHllFrac - static_cast<int>(reg));
             if (reg == 0)
                 ++zeros;
         }
-        constexpr double alpha = 0.7213 / (1.0 + (1.079 / static_cast<double>(kNumRegisters)));
-        const double raw =
-            alpha * static_cast<double>(kNumRegisters) * static_cast<double>(kNumRegisters) / sum;
 
-        // Small-range correction (linear counting).
-        constexpr double kHllSmallRangeCorrection{2.5};
-        if (zeros > 0 && raw < kHllSmallRangeCorrection * static_cast<double>(kNumRegisters))
-            return static_cast<std::uint64_t>(
-                static_cast<double>(kNumRegisters) *
-                std::log(static_cast<double>(kNumRegisters) / static_cast<double>(zeros)));
+        // raw = α·m²/S = (α·m²·2^kHllFrac) / S_fixed. The numerator is α's mantissa
+        // scaled by exact powers of two → an EXACT, compiler-identical double;
+        // the conversion to __int128 is exact, and one integer divide yields raw.
+        constexpr double kAlpha{0.7213 / (1.0 + (1.079 / static_cast<double>(kNumRegisters)))};
+        const double raw_numerator{kAlpha * static_cast<double>(kNumRegisters) *
+                                   static_cast<double>(kNumRegisters) *
+                                   static_cast<double>(std::uint64_t{1} << kHllFrac)};
+        // sum_fixed > 0 always: regs_ is a fixed, compile-time-non-empty std::array
+        // (kNumRegisters > 0) and every term 1<<(kHllFrac-reg) is >= 2, so the loop
+        // above accumulates a strictly positive sum. The analyzer cannot prove the
+        // range-for executes; this divide is never by zero.
+        // NOLINTNEXTLINE(clang-analyzer-core.DivideZero)
+        const unsigned __int128 raw{static_cast<unsigned __int128>(raw_numerator) / sum_fixed};
 
+        // Small-range correction (linear counting): m·ln(m/zeros), via det_ln.
+        constexpr std::uint64_t kSmallRangeThreshold{(5U * kNumRegisters) / 2U}; // 2.5·m
+        if (zeros > 0 && raw < kSmallRangeThreshold)
+        {
+            // ln(m/zeros) = ln(m) − ln(zeros), each in Qk; m·(…) then >> kFracBits.
+            const __int128 linear{static_cast<__int128>(kNumRegisters) *
+                                  (insight::det::det_ln_fixed(kNumRegisters) -
+                                   insight::det::det_ln_fixed(static_cast<std::uint64_t>(zeros)))};
+            return static_cast<std::uint64_t>(linear >> insight::det::kFracBits);
+        }
         return static_cast<std::uint64_t>(raw);
     }
 
