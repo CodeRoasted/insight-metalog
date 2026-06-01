@@ -2,7 +2,7 @@
 #include "insight/metalog/metalog_engine.hpp"
 
 #include "hll.hpp"
-#include "insight/math/det_math.hpp"        // F5: deterministic fixed-point log2/ln
+#include "insight/math/det_math.hpp"         // F5: deterministic fixed-point log2/ln
 #include "insight/utils/failure_lexicon.hpp" // F7: token-aware failure lexicon (shared w/ canon)
 
 #include <algorithm>
@@ -112,7 +112,7 @@ constexpr std::uint64_t kMinSurpriseEdgeObservations{2};
         return 50U; // p < 10%
     if (edge_count * 5U < source_outgoing)
         return 25U; // p < 20%
-    return 0U;       // common transition — on the expected flow
+    return 0U;      // common transition — on the expected flow
 }
 
 // Self-novelty band (0..100): how late a template first appeared within the
@@ -134,7 +134,7 @@ constexpr std::uint64_t kMinSurpriseEdgeObservations{2};
         return 40U; // last 25%
     if (first_seen_index * 2U > lines)
         return 20U; // last 50%
-    return 0U;       // present from the first half — not an emergence
+    return 0U;      // present from the first half — not an emergence
 }
 
 // Deterministic, quantized salience (Salience epic §5.1: (severity ⊕
@@ -422,8 +422,8 @@ void MetaLogEngine::migrate_bucket(const std::string& from_content_id,
     dst.count += moved.count;
     // Earliest occurrence wins: an evolved cluster keeps its true debut ordinal so
     // novelty doesn't read it as "newly emerged" just because its content_id changed.
-    dst.first_seen_index =
-        dst_existed ? std::min(dst.first_seen_index, moved.first_seen_index) : moved.first_seen_index;
+    dst.first_seen_index = dst_existed ? std::min(dst.first_seen_index, moved.first_seen_index)
+                                       : moved.first_seen_index;
     for (const auto& [level, level_count] : moved.level_counts)
         dst.level_counts[level] += level_count;
     for (const auto& [role, role_count] : moved.role_counts)
@@ -564,8 +564,8 @@ DivergenceResult divergences(const std::unordered_map<std::string, std::uint64_t
             keys.push_back(&kv.first);
     if (keys.empty() || cur_total == 0 || prev_total == 0)
         return {0.0, 0.0};
-    std::ranges::sort(keys, [](const std::string* lhs, const std::string* rhs)
-                      { return *lhs < *rhs; });
+    std::ranges::sort(keys,
+                      [](const std::string* lhs, const std::string* rhs) { return *lhs < *rhs; });
 
     // Laplace smoothing (alpha = 1): with k = |union|, the smoothed frequencies
     // p = (cn+1)/cur_denom and q = (pn+1)/prev_denom are ratios of INTEGERS
@@ -588,7 +588,7 @@ DivergenceResult divergences(const std::unordered_map<std::string, std::uint64_t
     {
         const auto cur_it{cur.find(*keyp)};
         const auto prev_it{prev.find(*keyp)};
-        const std::uint64_t pnum{(cur_it == cur.end() ? 0U : cur_it->second) + 1U};  // cn + alpha
+        const std::uint64_t pnum{(cur_it == cur.end() ? 0U : cur_it->second) + 1U};    // cn + alpha
         const std::uint64_t qnum{(prev_it == prev.end() ? 0U : prev_it->second) + 1U}; // pn + alpha
         const std::uint64_t p_arg{pnum * prev_denom};
         const std::uint64_t q_arg{qnum * cur_denom};
@@ -596,10 +596,10 @@ DivergenceResult divergences(const std::unordered_map<std::string, std::uint64_t
         const std::int64_t log2_d{insight::det::det_log2_fixed(divergence_d)};
         kl_acc += static_cast<__int128>(pnum) *
                   (insight::det::det_log2_fixed(p_arg) - insight::det::det_log2_fixed(q_arg));
-        js_p_acc += static_cast<__int128>(pnum) *
-                    (insight::det::det_log2_fixed(2U * p_arg) - log2_d);
-        js_q_acc += static_cast<__int128>(qnum) *
-                    (insight::det::det_log2_fixed(2U * q_arg) - log2_d);
+        js_p_acc +=
+            static_cast<__int128>(pnum) * (insight::det::det_log2_fixed(2U * p_arg) - log2_d);
+        js_q_acc +=
+            static_cast<__int128>(qnum) * (insight::det::det_log2_fixed(2U * q_arg) - log2_d);
     }
     double kl{insight::det::fixed_to_double(
         insight::det::round_div(kl_acc, static_cast<std::int64_t>(cur_denom)))};
@@ -655,8 +655,8 @@ double histogram_js(const std::unordered_map<std::string, std::uint64_t>& prev,
             keys.push_back(&key);
     if (keys.empty())
         return 0.0;
-    std::ranges::sort(keys, [](const std::string* lhs, const std::string* rhs)
-                      { return *lhs < *rhs; });
+    std::ranges::sort(keys,
+                      [](const std::string* lhs, const std::string* rhs) { return *lhs < *rhs; });
 
     const std::uint64_t k{keys.size()};
     const std::uint64_t p_denom{prev_total + k};
@@ -677,10 +677,10 @@ double histogram_js(const std::unordered_map<std::string, std::uint64_t>& prev,
         const std::uint64_t p_arg{pnum * c_denom};
         const std::uint64_t c_arg{cnum * p_denom};
         const std::int64_t log2_d{insight::det::det_log2_fixed(p_arg + c_arg)};
-        prev_acc += static_cast<__int128>(pnum) *
-                    (insight::det::det_log2_fixed(2U * p_arg) - log2_d);
-        curr_acc += static_cast<__int128>(cnum) *
-                    (insight::det::det_log2_fixed(2U * c_arg) - log2_d);
+        prev_acc +=
+            static_cast<__int128>(pnum) * (insight::det::det_log2_fixed(2U * p_arg) - log2_d);
+        curr_acc +=
+            static_cast<__int128>(cnum) * (insight::det::det_log2_fixed(2U * c_arg) - log2_d);
     }
     const std::int64_t prev_q{
         insight::det::round_div(prev_acc, static_cast<std::int64_t>(p_denom))};
@@ -877,7 +877,8 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end)
         {
             const Bucket& bucket{*ordered[i].second};
             const auto surprise{surprise_of(ordered[i].first)};
-            const auto novelty{novelty_band(bucket.first_seen_index, lines_observed_, bucket.count)};
+            const auto novelty{
+                novelty_band(bucket.first_seen_index, lines_observed_, bucket.count)};
             const auto sal{salience_score(dominant_level_of(bucket.level_counts),
                                           dominant_role_of(bucket.role_counts), bucket.template_str,
                                           bucket.count, lines_observed_, surprise, novelty)};
@@ -889,7 +890,8 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end)
         }
         // SPEC §3.7.2 normative MUST: salience-ranked admission with a deterministic
         // **tie-break by template_id**, so a given input under a matching retention_profile
-        // yields a bit-identical reservoir. Pinned by ReservoirTest.TieBreakByTemplateIdAtEqualSalience.
+        // yields a bit-identical reservoir. Pinned by
+        // ReservoirTest.TieBreakByTemplateIdAtEqualSalience.
         std::ranges::sort(candidates,
                           [&ordered](const Candidate& lhs, const Candidate& rhs)
                           {
@@ -900,13 +902,12 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end)
         // Admit in salience order, up to M total, capping exemplars PER KIND
         // (structural_role × dominant_level) for diversity (F10). A "kind" key
         // packs the two small enums into one integer for a cheap counter map.
-        const auto kind_key{[](StructuralRole role, std::optional<LogLevel> level) noexcept
-                            {
-                                const auto lvl{level ? static_cast<std::uint16_t>(*level)
-                                                     : std::uint16_t{0xFFU}};
-                                return static_cast<std::uint16_t>(
-                                    (static_cast<std::uint16_t>(role) << 8U) | lvl);
-                            }};
+        const auto kind_key{
+            [](StructuralRole role, std::optional<LogLevel> level) noexcept
+            {
+                const auto lvl{level ? static_cast<std::uint16_t>(*level) : std::uint16_t{0xFFU}};
+                return static_cast<std::uint16_t>((static_cast<std::uint16_t>(role) << 8U) | lvl);
+            }};
         std::unordered_map<std::uint16_t, std::size_t> per_kind;
         stats.reservoir.reserve(std::min(config_.reservoir_size, candidates.size()));
         for (const auto& candidate : candidates)
@@ -1306,10 +1307,9 @@ struct TopKEntry
     struct glaze
     {
         using T = TopKEntry;
-        static constexpr auto value =
-            glz::object("template_id", &T::template_id, "count", &T::count, "frequency",
-                        &T::frequency, "template", &T::tmpl, "level", &T::level,
-                        "param_histograms", &T::param_histograms);
+        static constexpr auto value = glz::object(
+            "template_id", &T::template_id, "count", &T::count, "frequency", &T::frequency,
+            "template", &T::tmpl, "level", &T::level, "param_histograms", &T::param_histograms);
     };
 };
 
@@ -1321,9 +1321,9 @@ struct ReservoirEntry
     std::string template_id;
     std::uint64_t count{0};
     double frequency{0.0};
-    std::optional<std::string> tmpl;             // key "template"; omitted when empty
-    std::optional<std::string> level;            // spec level string; omitted when absent
-    std::optional<std::string> structural_role;  // omitted when None
+    std::optional<std::string> tmpl;            // key "template"; omitted when empty
+    std::optional<std::string> level;           // spec level string; omitted when absent
+    std::optional<std::string> structural_role; // omitted when None
     std::uint32_t structural_surprise{0};
     std::uint32_t novelty{0};
     std::uint32_t salience{0};
@@ -1673,9 +1673,9 @@ dto::Document make_document(const MetaLogDocument& doc)
     if (doc.stability)
     {
         const auto& sb = *doc.stability;
-        out.stability = dto::Stability{sb.previous_window_end_iso, sb.kl_divergence,
-                                       sb.js_divergence,           sb.new_templates,
-                                       sb.vanished_templates,      sb.stability_score};
+        out.stability =
+            dto::Stability{sb.previous_window_end_iso, sb.kl_divergence,      sb.js_divergence,
+                           sb.new_templates,           sb.vanished_templates, sb.stability_score};
     }
 
     if (doc.provenance && !doc.provenance->empty())
@@ -1762,12 +1762,12 @@ dto::Diff make_diff(const MetaLogDiff& d)
     if (d.tail_delta)
     {
         const auto& t = *d.tail_delta;
-        out.tail_delta = dto::TailDelta{
-            t.previous_tail_template_count, t.current_tail_template_count,
-            t.tail_template_count_delta,    t.previous_tail_entropy_bits,
-            t.current_tail_entropy_bits,    t.tail_entropy_bits_delta,
-            t.previous_tail_max_rate,       t.current_tail_max_rate,
-            t.tail_max_rate_delta};
+        out.tail_delta =
+            dto::TailDelta{t.previous_tail_template_count, t.current_tail_template_count,
+                           t.tail_template_count_delta,    t.previous_tail_entropy_bits,
+                           t.current_tail_entropy_bits,    t.tail_entropy_bits_delta,
+                           t.previous_tail_max_rate,       t.current_tail_max_rate,
+                           t.tail_max_rate_delta};
     }
     return out;
 }
@@ -1881,13 +1881,13 @@ void aggregate_reservoir(std::unordered_map<std::string, std::uint64_t>& counts,
 // it, the operation MAY proceed (the consumer should treat the result with
 // caution); see check_processing_identifier_gate's callers for the carry rule.
 void check_processing_identifier_gate(const std::optional<std::string>& lhs,
-                                      const std::optional<std::string>& rhs,
-                                      std::string_view field, std::string_view op)
+                                      const std::optional<std::string>& rhs, std::string_view field,
+                                      std::string_view op)
 {
     if (lhs && rhs && *lhs != *rhs)
-        throw std::invalid_argument{
-            std::string{"metalog::"} + std::string{op} + ": incompatible " + std::string{field} +
-            " — \"" + *lhs + "\" vs \"" + *rhs + "\" (SPEC §2.4 comparability gate)"};
+        throw std::invalid_argument{std::string{"metalog::"} + std::string{op} + ": incompatible " +
+                                    std::string{field} + " — \"" + *lhs + "\" vs \"" + *rhs +
+                                    "\" (SPEC §2.4 comparability gate)"};
 }
 
 // §3.5 / §12.1 compose-carry of param_histograms. For each (template_id,
@@ -1958,8 +1958,8 @@ merge_field_histograms(const std::vector<FieldHistogram>& lhs,
     for (const auto& a : lhs)
         if (!seen.contains(a.param_index))
             out.push_back(a);
-    std::ranges::sort(out, [](const auto& x, const auto& y)
-                     { return x.param_index < y.param_index; });
+    std::ranges::sort(out,
+                      [](const auto& x, const auto& y) { return x.param_index < y.param_index; });
     return out;
 }
 
@@ -2029,17 +2029,17 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
 
     // Index each input's top_k by template_id for the §3.5 / §12.1
     // param_histograms compose-carry below.
-    const auto build_topk_index{[](const MetaLogDocument& doc) {
-        std::unordered_map<std::string, const TopKEntry*> index;
-        index.reserve(doc.stats.top_k.size());
-        for (const auto& entry : doc.stats.top_k)
-            index.emplace(entry.template_id, &entry);
-        return index;
-    }};
+    const auto build_topk_index{[](const MetaLogDocument& doc)
+                                {
+                                    std::unordered_map<std::string, const TopKEntry*> index;
+                                    index.reserve(doc.stats.top_k.size());
+                                    for (const auto& entry : doc.stats.top_k)
+                                        index.emplace(entry.template_id, &entry);
+                                    return index;
+                                }};
     const auto lhs_topk{build_topk_index(lhs)};
     const auto rhs_topk{build_topk_index(rhs)};
-    static constexpr std::size_t kComposeHistogramCap{
-        MetaLogConfig::kDefaultMaxHistogramValues};
+    static constexpr std::size_t kComposeHistogramCap{MetaLogConfig::kDefaultMaxHistogramValues};
 
     const auto k{std::min(out.stats.top_k_size, ordered.size())};
     out.stats.top_k.reserve(k);
@@ -2061,10 +2061,10 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
         const auto lhs_entry_it{lhs_topk.find(e.template_id)};
         const auto rhs_entry_it{rhs_topk.find(e.template_id)};
         const std::vector<FieldHistogram> empty{};
-        const auto& lhs_hists{lhs_entry_it != lhs_topk.end() ? lhs_entry_it->second->field_histograms
-                                                             : empty};
-        const auto& rhs_hists{rhs_entry_it != rhs_topk.end() ? rhs_entry_it->second->field_histograms
-                                                             : empty};
+        const auto& lhs_hists{
+            lhs_entry_it != lhs_topk.end() ? lhs_entry_it->second->field_histograms : empty};
+        const auto& rhs_hists{
+            rhs_entry_it != rhs_topk.end() ? rhs_entry_it->second->field_histograms : empty};
         if (!lhs_hists.empty() || !rhs_hists.empty())
             e.field_histograms = merge_field_histograms(lhs_hists, rhs_hists, kComposeHistogramCap);
         out.stats.top_k.push_back(std::move(e));
@@ -2344,8 +2344,8 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
     // §2.4 comparability gate (§13): a diff across mismatched processing contracts
     // is not meaningful — the documents fingerprint different rules. MUST fail.
     check_processing_identifier_gate(previous.canonicalization_version,
-                                     current.canonicalization_version,
-                                     "canonicalization_version", "diff");
+                                     current.canonicalization_version, "canonicalization_version",
+                                     "diff");
     check_processing_identifier_gate(previous.retention_profile, current.retention_profile,
                                      "retention_profile", "diff");
 

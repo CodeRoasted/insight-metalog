@@ -862,29 +862,29 @@ TEST(FieldHistogramSerializationTest, BoundedDocumentOverhead)
     constexpr std::size_t kCodes{6};
     constexpr std::size_t kEventsPerTemplate{40};
 
-    const auto build{[&](std::size_t max_param_histograms)
-                     {
-                         meta::MetaLogEngine engine{meta::MetaLogConfig{
-                             .top_k_size = kTemplates,
-                             .max_param_histograms = max_param_histograms,
-                             .max_histogram_values = kMaxValues,
-                         }};
-                         const auto t0{std::chrono::system_clock::now()};
-                         engine.open_window(t0);
-                         for (std::size_t tmpl{0}; tmpl < kTemplates; ++tmpl)
-                         {
-                             const std::string tstr{"t" + std::to_string(tmpl) +
-                                                    " path=<*> code=<*>"};
-                             for (std::size_t ev{0}; ev < kEventsPerTemplate; ++ev)
-                             {
-                                 const std::string path{"/api/resource_" + std::to_string(ev % kPaths)};
-                                 const std::string code{std::to_string(200 + (ev % kCodes) * 100)};
-                                 auto pe{ParamEvent::make(tstr, {path, code})};
-                                 engine.ingest_event(pe.event);
-                             }
-                         }
-                         return engine.close_window(t0 + std::chrono::seconds(1));
-                     }};
+    const auto build{
+        [&](std::size_t max_param_histograms)
+        {
+            meta::MetaLogEngine engine{meta::MetaLogConfig{
+                .top_k_size = kTemplates,
+                .max_param_histograms = max_param_histograms,
+                .max_histogram_values = kMaxValues,
+            }};
+            const auto t0{std::chrono::system_clock::now()};
+            engine.open_window(t0);
+            for (std::size_t tmpl{0}; tmpl < kTemplates; ++tmpl)
+            {
+                const std::string tstr{"t" + std::to_string(tmpl) + " path=<*> code=<*>"};
+                for (std::size_t ev{0}; ev < kEventsPerTemplate; ++ev)
+                {
+                    const std::string path{"/api/resource_" + std::to_string(ev % kPaths)};
+                    const std::string code{std::to_string(200 + (ev % kCodes) * 100)};
+                    auto pe{ParamEvent::make(tstr, {path, code})};
+                    engine.ingest_event(pe.event);
+                }
+            }
+            return engine.close_window(t0 + std::chrono::seconds(1));
+        }};
 
     const auto doc_with{build(kMaxHist)};
     const auto doc_without{build(0)};
@@ -906,7 +906,8 @@ TEST(FieldHistogramSerializationTest, BoundedDocumentOverhead)
     // per "key":count JSON entry. Real overhead is far below this; the guard is
     // that param_histograms can never make the batch document unbounded.
     constexpr std::size_t kBytesPerValueEntryUpperBound{96};
-    const std::size_t cap_bound{top_k_count * kMaxHist * kMaxValues * kBytesPerValueEntryUpperBound};
+    const std::size_t cap_bound{top_k_count * kMaxHist * kMaxValues *
+                                kBytesPerValueEntryUpperBound};
     EXPECT_LE(overhead, cap_bound)
         << "param_histograms overhead must stay within the cap-derived bound. overhead=" << overhead
         << "B cap_bound=" << cap_bound << "B";
@@ -1215,8 +1216,8 @@ namespace
 {
 // Feed N frequent benign Info templates plus one rare event, with a small top_k
 // so the rare event is below it. Returns the closed document.
-meta::MetaLogDocument
-run_with_rare_event(const tok::CanonicalEvent& rare, std::size_t top_k, std::size_t reservoir_size)
+meta::MetaLogDocument run_with_rare_event(const tok::CanonicalEvent& rare, std::size_t top_k,
+                                          std::size_t reservoir_size)
 {
     meta::MetaLogEngine engine{meta::MetaLogConfig{
         .top_k_size = top_k, .reservoir_size = reservoir_size, .emit_stability = false}};
@@ -1318,8 +1319,8 @@ TEST(ReservoirTest, StructuralSurpriseAdmitsRecurringOffPathBranch)
         engine.ingest_event(make_event("took alternate cache path", insight::LogLevel::Info));
         engine.ingest_event(make_event("gamma response sent"));
     }
-    const auto doc{engine.close_window(std::chrono::system_clock::time_point{} +
-                                       std::chrono::seconds{60})};
+    const auto doc{
+        engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{60})};
 
     EXPECT_FALSE(top_k_has(doc, "took alternate cache path"))
         << "the branch is below top_k by frequency";
@@ -1357,8 +1358,8 @@ TEST(ReservoirTest, NoveltyAdmitsLateEmergingBenignTemplate)
     // late first-seen (≈0.98), count 5 ≥ 2, self-loop p=1.0 → structural_surprise 0.
     for (int rep = 0; rep < 5; ++rep)
         engine.ingest_event(make_event("cache warmer started", insight::LogLevel::Info));
-    const auto doc{engine.close_window(std::chrono::system_clock::time_point{} +
-                                       std::chrono::seconds{60})};
+    const auto doc{
+        engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{60})};
 
     EXPECT_FALSE(top_k_has(doc, "cache warmer started")) << "the late template is below top_k";
     ASSERT_TRUE(reservoir_has(doc, "cache warmer started"))
@@ -1467,7 +1468,8 @@ TEST(ReservoirTest, SurvivesComposeWithStructuralSurprise)
     for (const auto& e : composed.stats.reservoir)
         if (e.template_str == "took alternate cache path")
         {
-            EXPECT_GT(e.structural_surprise, 0U) << "structural_surprise must persist through compose";
+            EXPECT_GT(e.structural_surprise, 0U)
+                << "structural_surprise must persist through compose";
             EXPECT_GT(e.salience, 0U);
         }
 }
@@ -1495,46 +1497,42 @@ TEST(ReservoirTest, TailExcludesReservoirMembers)
 // bounds exemplars per (structural_role × dominant_level) kind to preserve coverage.
 TEST(ReservoirTest, DiversityCapCoversDistinctKinds)
 {
-    const auto build_doc{[](std::size_t per_kind_cap)
-                         {
-                             meta::MetaLogEngine engine{meta::MetaLogConfig{
-                                 .top_k_size = 3,
-                                 .reservoir_size = 3,
-                                 .reservoir_per_kind_cap = per_kind_cap,
-                                 .emit_stability = false}};
-                             engine.open_window(std::chrono::system_clock::time_point{});
-                             for (int rep = 0; rep < 100; ++rep)
-                             {
-                                 engine.ingest_event(make_event("alpha steady event"));
-                                 engine.ingest_event(make_event("beta steady event"));
-                                 engine.ingest_event(make_event("gamma steady event"));
-                             }
-                             // Kind A: many high-salience Error variants of ONE failure class.
-                             for (int n = 0; n < 9; ++n)
-                                 engine.ingest_event(make_event(
-                                     "test_query_" + std::to_string(n) + " FAILED",
-                                     insight::LogLevel::Error));
-                             // Kind B: a distinct, lower-salience failure (Warn).
-                             engine.ingest_event(
-                                 make_event("deprecated config option used", insight::LogLevel::Warn));
-                             return engine.close_window(std::chrono::system_clock::time_point{} +
-                                                        std::chrono::seconds{60});
-                         }};
-    const auto has_warn_kind{[](const meta::MetaLogDocument& doc)
-                             {
-                                 return std::ranges::any_of(doc.stats.reservoir,
-                                                            [](const auto& e) {
-                                                                return e.dominant_level ==
-                                                                       insight::LogLevel::Warn;
-                                                            });
-                             }};
-    const auto error_kind_count{[](const meta::MetaLogDocument& doc)
-                                {
-                                    return std::ranges::count_if(
-                                        doc.stats.reservoir, [](const auto& e) {
-                                            return e.dominant_level == insight::LogLevel::Error;
-                                        });
-                                }};
+    const auto build_doc{
+        [](std::size_t per_kind_cap)
+        {
+            meta::MetaLogEngine engine{meta::MetaLogConfig{.top_k_size = 3,
+                                                           .reservoir_size = 3,
+                                                           .reservoir_per_kind_cap = per_kind_cap,
+                                                           .emit_stability = false}};
+            engine.open_window(std::chrono::system_clock::time_point{});
+            for (int rep = 0; rep < 100; ++rep)
+            {
+                engine.ingest_event(make_event("alpha steady event"));
+                engine.ingest_event(make_event("beta steady event"));
+                engine.ingest_event(make_event("gamma steady event"));
+            }
+            // Kind A: many high-salience Error variants of ONE failure class.
+            for (int n = 0; n < 9; ++n)
+                engine.ingest_event(make_event("test_query_" + std::to_string(n) + " FAILED",
+                                               insight::LogLevel::Error));
+            // Kind B: a distinct, lower-salience failure (Warn).
+            engine.ingest_event(
+                make_event("deprecated config option used", insight::LogLevel::Warn));
+            return engine.close_window(std::chrono::system_clock::time_point{} +
+                                       std::chrono::seconds{60});
+        }};
+    const auto has_warn_kind{
+        [](const meta::MetaLogDocument& doc)
+        {
+            return std::ranges::any_of(doc.stats.reservoir, [](const auto& e)
+                                       { return e.dominant_level == insight::LogLevel::Warn; });
+        }};
+    const auto error_kind_count{
+        [](const meta::MetaLogDocument& doc)
+        {
+            return std::ranges::count_if(doc.stats.reservoir, [](const auto& e)
+                                         { return e.dominant_level == insight::LogLevel::Error; });
+        }};
 
     const auto uncapped{build_doc(0)};
     EXPECT_EQ(error_kind_count(uncapped), 3)
@@ -1572,8 +1570,8 @@ TEST(ReservoirTest, TieBreakByTemplateIdAtEqualSalience)
     ASSERT_NE(tid_alpha, tid_beta);
     EXPECT_EQ(doc.stats.reservoir[0].template_id, std::min(tid_alpha, tid_beta))
         << "§3.7.2: at equal salience, the smaller template_id wins (got "
-        << doc.stats.reservoir[0].template_id << "; min(tid_alpha,tid_beta)="
-        << std::min(tid_alpha, tid_beta) << ")";
+        << doc.stats.reservoir[0].template_id
+        << "; min(tid_alpha,tid_beta)=" << std::min(tid_alpha, tid_beta) << ")";
 }
 
 // ── §15 re-derivation coordinate ──────────────────────────────────────────────
@@ -1659,7 +1657,8 @@ TEST(ReDerivationCoordinate, ReservoirEntryCarriesWithinWindowOrdinal)
             found = true;
             ASSERT_TRUE(entry.within_window_ordinal.has_value())
                 << "§15.4 sub-coordinate must be populated when a coordinate is configured";
-            EXPECT_EQ(*entry.within_window_ordinal, 20U) << "first-seen ordinal after 20 benign events";
+            EXPECT_EQ(*entry.within_window_ordinal, 20U)
+                << "first-seen ordinal after 20 benign events";
         }
     ASSERT_TRUE(found) << "the rare error must be retained in the reservoir";
 }
@@ -1669,8 +1668,8 @@ TEST(ReDerivationCoordinate, ComposeCoordinateIsSetOfChildrenNotCoarseBound)
     const auto build{[](std::string handle, insight::Timestamp start)
                      {
                          meta::MetaLogConfig cfg{.top_k_size = 8};
-                         cfg.source_ref =
-                             meta::SourceRef{.resolver_kind = "logcraft", .handle = std::move(handle)};
+                         cfg.source_ref = meta::SourceRef{.resolver_kind = "logcraft",
+                                                          .handle = std::move(handle)};
                          meta::MetaLogEngine engine{cfg};
                          engine.open_window(start);
                          engine.ingest_event(make_event("alpha"));
@@ -1689,7 +1688,8 @@ TEST(ReDerivationCoordinate, ComposeCoordinateIsSetOfChildrenNotCoarseBound)
     EXPECT_FALSE(composed.coordinate->bounds.has_value())
         << "a composed coordinate MUST NOT carry bounds (§15.2) — children are authoritative";
     ASSERT_TRUE(composed.coordinate->children.has_value());
-    ASSERT_EQ(composed.coordinate->children->size(), 2U) << "the set of the two raw children (§15.5)";
+    ASSERT_EQ(composed.coordinate->children->size(), 2U)
+        << "the set of the two raw children (§15.5)";
     // Each child is a RAW coordinate addressing the input — source_ref + bounds set.
     ASSERT_TRUE((*composed.coordinate->children)[0].source_ref.has_value());
     EXPECT_EQ((*composed.coordinate->children)[0].source_ref->handle, "scenario#seed=1");
@@ -1701,8 +1701,9 @@ TEST(ReDerivationCoordinate, ComposeCoordinateIsSetOfChildrenNotCoarseBound)
 
 namespace
 {
-[[nodiscard]] meta::MetaLogDocument build_doc_with_identifiers(
-    const std::optional<std::string>& canon, const std::optional<std::string>& retention)
+[[nodiscard]] meta::MetaLogDocument
+build_doc_with_identifiers(const std::optional<std::string>& canon,
+                           const std::optional<std::string>& retention)
 {
     meta::MetaLogConfig cfg{.top_k_size = 8};
     cfg.canonicalization_version = canon;
@@ -1791,9 +1792,8 @@ namespace
 {
 [[nodiscard]] meta::MetaLogDocument
 make_doc_with_histogram(std::string_view template_id, std::uint32_t param_index,
-                        std::unordered_map<std::string, std::uint64_t> values,
-                        std::uint64_t total, std::uint64_t approximate_cardinality,
-                        std::uint64_t lines_observed)
+                        std::unordered_map<std::string, std::uint64_t> values, std::uint64_t total,
+                        std::uint64_t approximate_cardinality, std::uint64_t lines_observed)
 {
     meta::MetaLogDocument doc;
     doc.window.lines_observed = lines_observed;
@@ -1802,9 +1802,8 @@ make_doc_with_histogram(std::string_view template_id, std::uint32_t param_index,
     meta::TopKEntry entry;
     entry.template_id = std::string{template_id};
     entry.count = total;
-    entry.frequency = lines_observed > 0 ? static_cast<double>(total) /
-                                               static_cast<double>(lines_observed)
-                                         : 0.0;
+    entry.frequency =
+        lines_observed > 0 ? static_cast<double>(total) / static_cast<double>(lines_observed) : 0.0;
     meta::FieldHistogram fh;
     fh.param_index = param_index;
     fh.value_counts = std::move(values);
@@ -1818,8 +1817,7 @@ make_doc_with_histogram(std::string_view template_id, std::uint32_t param_index,
 
 TEST(ParamHistogramsCompose, MergesValueCountsAndTotalForSharedSlot)
 {
-    const auto lhs{make_doc_with_histogram("h:abc", 0,
-                                           {{"/api/users", 800}, {"/health", 200}},
+    const auto lhs{make_doc_with_histogram("h:abc", 0, {{"/api/users", 800}, {"/health", 200}},
                                            /*total=*/1100, /*card=*/1847, /*lines=*/2000)};
     const auto rhs{make_doc_with_histogram("h:abc", 0, {{"/api/users", 100}, {"/admin", 50}},
                                            /*total=*/200, /*card=*/50, /*lines=*/500)};
@@ -1915,8 +1913,8 @@ TEST(ReDerivationCoordinate, ComposedSerialisesAsChildrenOnlyXOR)
     const auto build{[](std::string handle, insight::Timestamp start)
                      {
                          meta::MetaLogConfig cfg{.top_k_size = 8};
-                         cfg.source_ref =
-                             meta::SourceRef{.resolver_kind = "logcraft", .handle = std::move(handle)};
+                         cfg.source_ref = meta::SourceRef{.resolver_kind = "logcraft",
+                                                          .handle = std::move(handle)};
                          meta::MetaLogEngine engine{cfg};
                          engine.open_window(start);
                          engine.ingest_event(make_event("alpha"));

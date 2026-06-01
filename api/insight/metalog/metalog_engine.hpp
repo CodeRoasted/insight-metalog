@@ -217,8 +217,8 @@ struct BehaviorBlock
     std::vector<NGramEntry> top_ngrams;
     std::size_t top_ngrams_size{0};
     std::optional<std::uint64_t> graph_edge_count;
-    std::optional<std::vector<std::string>> dominant_path;  // absent when not computed
-    std::optional<std::vector<BranchingEntry>> branching;   // absent when not computed
+    std::optional<std::vector<std::string>> dominant_path; // absent when not computed
+    std::optional<std::vector<BranchingEntry>> branching;  // absent when not computed
 };
 
 struct StabilityBlock
@@ -289,8 +289,8 @@ struct ReDerivationCoordinate
     // absent) or COMPOSED (children set, source_ref + bounds absent). Sentinel
     // values on composed coordinates are explicitly forbidden by §15.2 (encoding
     // note). Consumers discriminate by the presence of `children`.
-    std::optional<SourceRef> source_ref;       // RAW only
-    std::optional<EventTimeBounds> bounds;     // RAW only
+    std::optional<SourceRef> source_ref;   // RAW only
+    std::optional<EventTimeBounds> bounds; // RAW only
     // Guarantee-2 (fingerprint reproduction) aids — optional (§15.1-2): canon output
     // depends on canon code + config, not just raw bytes. May appear on EITHER kind.
     std::optional<std::string> canonicalization_version;
@@ -326,7 +326,7 @@ struct MetaLogDocument
     StatsBlock stats{};
     std::optional<BehaviorBlock> behavior;
     std::optional<StabilityBlock> stability;
-    std::map<std::string, std::string> templates; // optional dedup map (SPEC §3.4)
+    std::map<std::string, std::string> templates;           // optional dedup map (SPEC §3.4)
     std::optional<std::vector<ProvenanceEntry>> provenance; // absent unless composed (SPEC §12.4)
     // Processing-identifier strings (SPEC §2.4). Opaque names of the contract
     // under which the document was produced; gate `compose()` / diff

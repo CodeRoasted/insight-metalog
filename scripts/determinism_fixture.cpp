@@ -20,14 +20,23 @@
 
 int main(int argc, char** argv)
 {
-    if (argc < 2) { std::fprintf(stderr, "usage: determinism_fixture <corpus>\n"); return 2; }
+    if (argc < 2)
+    {
+        std::fprintf(stderr, "usage: determinism_fixture <corpus>\n");
+        return 2;
+    }
     std::ifstream in(argv[1], std::ios::binary);
-    if (!in) { std::fprintf(stderr, "cannot open %s\n", argv[1]); return 2; }
+    if (!in)
+    {
+        std::fprintf(stderr, "cannot open %s\n", argv[1]);
+        return 2;
+    }
     std::vector<std::string> lines;
     std::string line;
     while (std::getline(in, line))
     {
-        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
         lines.push_back(std::move(line));
         line.clear();
     }
@@ -39,7 +48,8 @@ int main(int argc, char** argv)
     std::vector<tk::CanonicalEvent> events;
     events.reserve(lines.size());
     for (const auto& raw : lines)
-        if (auto ev{tok.process_line(raw)}) events.push_back(*ev);
+        if (auto ev{tok.process_line(raw)})
+            events.push_back(*ev);
 
     ml::MetaLogConfig cfg;
     cfg.max_param_histograms = 3;
@@ -52,10 +62,12 @@ int main(int argc, char** argv)
     const std::size_t half{events.size() / 2};
 
     engine.open_window(t0);
-    for (std::size_t i = 0; i < half; ++i) engine.ingest_event(events[i]);
+    for (std::size_t i = 0; i < half; ++i)
+        engine.ingest_event(events[i]);
     const auto doc1{engine.close_window(t1)};
     engine.open_window(t1);
-    for (std::size_t i = half; i < events.size(); ++i) engine.ingest_event(events[i]);
+    for (std::size_t i = half; i < events.size(); ++i)
+        engine.ingest_event(events[i]);
     const auto doc2{engine.close_window(t2)};
 
     std::printf("%s\n%s\n", ml::to_json(doc1).c_str(), ml::to_json(doc2).c_str());
