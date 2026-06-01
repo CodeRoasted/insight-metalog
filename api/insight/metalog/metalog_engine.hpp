@@ -109,7 +109,7 @@ struct TopKEntry
     std::vector<FieldHistogram> field_histograms;
 };
 
-// Salience Reservoir entry (Tier 2, Salience epic §5 L1 / flaw F1). A template
+// Salience Reservoir entry (Tier 2). A template
 // retained by intrinsic SALIENCE rather than frequency — where a rare-but-severe
 // event (a lone fatal) survives the bounded fingerprint instead of collapsing
 // into the tail. Self-describing: carries why it was kept (salience + the inputs)
@@ -197,7 +197,7 @@ struct StatsBlock
     // signal. Present when there is at least one template in the tail
     // (tail_unique > 0); absent otherwise.
     std::optional<TailSummary> tail_summary;
-    // Salience Reservoir (Tier 2, F1). Salient templates retained below top_k.
+    // Salience Reservoir (Tier 2). Salient templates retained below top_k.
     // Empty unless MetaLogConfig::reservoir_size > 0. The tail residual excludes
     // these (a promoted template is not double-counted in the omitted mass).
     std::vector<ReservoirEntry> reservoir;
@@ -363,12 +363,12 @@ struct MetaLogConfig
     // §11). Set to 0 to skip top_k emission entirely (still bounded).
     std::size_t top_k_size{kDefaultTopKSize};
 
-    // Salience Reservoir size M (Tier 2, F1): max templates retained by salience
+    // Salience Reservoir size M (Tier 2): max templates retained by salience
     // below top_k. 0 = disabled (default — pure frequency retention, pre-Phase-2
     // behaviour). Streaming funds M by shrinking top_k (~64); batch sets it large.
     std::size_t reservoir_size{0};
 
-    // Reservoir diversity cap (F10): max exemplars admitted per "kind"
+    // Reservoir diversity cap: max exemplars admitted per "kind"
     // (structural_role × dominant_level), so M optimises COVERAGE of distinct
     // salient kinds over depth — otherwise M fills with variants of one failure
     // (test_query_0/_1/… FAILED) and crowds out a different failure. 0 = no cap.
@@ -623,7 +623,7 @@ class MetaLogEngine
         // Preserved as the minimum across Drain cluster migration (earliest wins).
         std::uint64_t first_seen_index{0};
         std::unordered_map<LogLevel, std::uint64_t> level_counts;
-        // Announced structural roles seen for this template (F12 → salience).
+        // Announced structural roles seen for this template (→ salience).
         // Dominant role feeds the salience severity signal (Terminator = severe).
         std::unordered_map<StructuralRole, std::uint64_t> role_counts;
         // Per-param value histograms; index i == CanonicalEvent::params[i].

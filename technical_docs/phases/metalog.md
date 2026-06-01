@@ -2,7 +2,7 @@
 
 Status: shipped. Package: `metalog/` (insight-metalog). Public API: `metalog/api/insight/metalog/metalog_engine.hpp`.
 
-insight-metalog is the compression layer and product wedge. It turns one bounded window of canonical events into a deterministic MetaLog v0.5.0 document, plus spec-level `compose()` and `diff()` helpers used by detection.
+insight-metalog is the compression layer. It turns one bounded window of canonical events into a deterministic MetaLog v0.5.0 document, plus spec-level `compose()` and `diff()` helpers used by detection.
 
 ## Input
 

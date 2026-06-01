@@ -1,6 +1,6 @@
 #pragma once
 
-// Salience scoring (Salience epic §5.1 / flaw F1): turning a template's level,
+// Salience scoring: turning a template's level,
 // structural role, structural-surprise and self-novelty into a deterministic,
 // integer-quantized salience used to admit rare-but-meaningful templates into the
 // reservoir. Single responsibility — the severity ⊕ surprise ⊕ novelty ⊗ rarity

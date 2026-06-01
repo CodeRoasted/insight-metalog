@@ -1207,7 +1207,7 @@ TEST(TailDeltaDiffTest, AbsentWhenEitherDocLacksTailSummary)
     EXPECT_FALSE(meta::diff(without_tail, with_tail).tail_delta.has_value());
 }
 
-// ── Salience Reservoir (Tier 2, F1) ──────────────────────────────────────────
+// ── Salience Reservoir (Tier 2) ──────────────────────────────────────────────
 //
 // A rare-but-severe template that falls below top_k by frequency must survive in
 // the reservoir (admitted by salience) instead of collapsing into the tail.
@@ -1253,7 +1253,7 @@ TEST(ReservoirTest, RareErrorAdmittedBelowTopK)
     EXPECT_FALSE(top_k_has(doc, "connection refused to db"))
         << "the rare error is below top_k by frequency";
     ASSERT_TRUE(reservoir_has(doc, "connection refused to db"))
-        << "F1: a rare severe event must survive in the salience reservoir, not the tail";
+        << "a rare severe event must survive in the salience reservoir, not the tail";
     for (const auto& entry : doc.stats.reservoir)
         if (entry.template_str == "connection refused to db")
         {
@@ -1280,8 +1280,8 @@ TEST(ReservoirTest, RareBenignNotAdmitted)
         << "rarity must never gate a benign template into the reservoir";
 }
 
-// F7 token-awareness: a benign INFO line whose text merely CONTAINS a failure word
-// inside a token (a filename) must score 0 — the F7 lexicon used to fire on the
+// Token-awareness: a benign INFO line whose text merely CONTAINS a failure word
+// inside a token (a filename) must score 0 — the lexicon used to fire on the
 // embedded "error" via raw substring, inflating severity and admitting the benign
 // line to the reservoir. It must be treated exactly like RareBenignNotAdmitted.
 TEST(ReservoirTest, RareBenignWithEmbeddedFailureSubstringNotAdmitted)
@@ -1289,7 +1289,7 @@ TEST(ReservoirTest, RareBenignWithEmbeddedFailureSubstringNotAdmitted)
     auto rare{make_event("Writing tsc-error-report.json", insight::LogLevel::Info)};
     const auto doc{run_with_rare_event(rare, 3, 8)};
     EXPECT_FALSE(reservoir_has(doc, "Writing tsc-error-report.json"))
-        << "F7 must not read 'error' inside a filename token as a failure cue";
+        << "the lexicon must not read 'error' inside a filename token as a failure cue";
 }
 
 // 2d structural_surprise (epic §5.1): a benign INFO template that severity⊗rarity
@@ -1376,7 +1376,7 @@ TEST(ReservoirTest, NoveltyAdmitsLateEmergingBenignTemplate)
         }
 }
 
-// F8: the reservoir is part of the external JSON contract, so a serialised metalog
+// The reservoir is part of the external JSON contract, so a serialised metalog
 // document carries the rare-salient templates (and WHY they were kept) — without it
 // a stored/transmitted document loses them and cross-process diffability breaks.
 TEST(ReservoirTest, SerialisedToJsonWithAttribution)
@@ -1402,7 +1402,7 @@ TEST(ReservoirTest, SerialisedToJsonWithAttribution)
 }
 
 // An empty reservoir is OMITTED from the JSON (restrictive emit) — streams with the
-// reservoir disabled stay byte-identical to the pre-F8 contract.
+// reservoir disabled stay byte-identical to the pre-reservoir contract.
 TEST(ReservoirTest, EmptyReservoirOmittedFromJson)
 {
     meta::MetaLogEngine engine{meta::MetaLogConfig{.top_k_size = 8, .reservoir_size = 0}};
@@ -1417,7 +1417,7 @@ TEST(ReservoirTest, EmptyReservoirOmittedFromJson)
     EXPECT_FALSE((*parsed)["stats"].contains("reservoir")) << json;
 }
 
-// F8: compose() carries the reservoir (and its structural_surprise) instead of
+// compose() carries the reservoir (and its structural_surprise) instead of
 // dropping rare-salient templates into the tail — so composed / pyramid-baseline
 // documents are NOT blind to a lone fatal / off-path branch at long horizons.
 TEST(ReservoirTest, SurvivesComposeWithStructuralSurprise)
@@ -1464,7 +1464,7 @@ TEST(ReservoirTest, SurvivesComposeWithStructuralSurprise)
     EXPECT_FALSE(top_k_has(composed, "took alternate cache path"))
         << "the branch is still below top_k after merge";
     ASSERT_TRUE(reservoir_has(composed, "took alternate cache path"))
-        << "F8: compose() must carry the rare-salient template, not drop it to the tail";
+        << "compose() must carry the rare-salient template, not drop it to the tail";
     for (const auto& e : composed.stats.reservoir)
         if (e.template_str == "took alternate cache path")
         {
@@ -1492,7 +1492,7 @@ TEST(ReservoirTest, TailExcludesReservoirMembers)
         << "tail must shrink by exactly the reservoir count (no double-counting)";
 }
 
-// F10: without a per-kind cap, the highest-salience failure CLASS monopolises the
+// Without a per-kind cap, the highest-salience failure CLASS monopolises the
 // reservoir and crowds out a distinct (lower-salience) failure. The diversity cap
 // bounds exemplars per (structural_role × dominant_level) kind to preserve coverage.
 TEST(ReservoirTest, DiversityCapCoversDistinctKinds)
@@ -1540,9 +1540,9 @@ TEST(ReservoirTest, DiversityCapCoversDistinctKinds)
     EXPECT_FALSE(has_warn_kind(uncapped)) << "the distinct kind is crowded out";
 
     const auto capped{build_doc(2)};
-    EXPECT_LE(error_kind_count(capped), 2) << "F10: the kind is capped to ≤2 exemplars";
+    EXPECT_LE(error_kind_count(capped), 2) << "the kind is capped to ≤2 exemplars";
     EXPECT_TRUE(has_warn_kind(capped))
-        << "F10: the cap preserves a reservoir slot for the distinct failure kind";
+        << "the cap preserves a reservoir slot for the distinct failure kind";
 }
 
 // SPEC §3.7.2 normative MUST: salience admission is salience-ranked with a
@@ -1938,9 +1938,9 @@ TEST(ReDerivationCoordinate, ComposedSerialisesAsChildrenOnlyXOR)
         << json;
 }
 
-// ── F5.4 standing gate: full-document cross-machine bit-identity golden ────────
+// ── Standing gate: full-document cross-machine bit-identity golden ────────────
 // The permanent determinism fixture (alongside S15Conformance). A fixed two-window
-// scenario drives every F5 float path — entropy, KL/JS/stability, branching
+// scenario drives every float path — entropy, KL/JS/stability, branching
 // entropy, per-param histograms, HLL approximate_cardinality — and the SHA-256 of
 // the serialised documents is FROZEN. Any architecture/compiler MUST reproduce the
 // exact bytes; a mismatch is a cross-machine determinism regression. Re-derive the
@@ -1987,7 +1987,7 @@ TEST(DeterminismGate, FullDocumentByteIdentityGolden)
     const std::string digest{picosha2::hash256_hex_string(combined)};
 
     // Frozen 2026-05-31. The same value must hold on every compiler/architecture
-    // (verified across the F5 gcc×clang×-O×-ffp-contract matrix; F5.2 proved the
+    // (verified across the gcc×clang×-O×-ffp-contract matrix, which proved the
     // full document is byte-identical across all 12 builds).
     constexpr std::string_view kGolden{
         "798463355d66ec7a42a455118dd2cf530f9e1b56ebd3eef37a7814c640a4919f"};

@@ -94,7 +94,7 @@ void aggregate_top_k(std::unordered_map<std::string, std::uint64_t>& counts,
             templates.emplace(tid, tstr);
 }
 
-// Fold a document's RESERVOIR mass into the same maps (F8). A template is disjoint
+// Fold a document's RESERVOIR mass into the same maps. A template is disjoint
 // across top_k/reservoir within one document, so this never double-counts an input;
 // across inputs a template that is top_k in one and reservoir in the other gets its
 // full merged count. Lets the composed top_k ranking and the re-derived reservoir
@@ -255,7 +255,7 @@ void build_composed_top_k(MetaLogDocument& out, const ComposeState& state,
         // §3.5 / §12.1 compose-visible param_histograms. Look up the matching
         // entries in each input and merge per-param; one-sided is carried; entirely
         // absent → no histograms (consistent with the cap being a no-op when input
-        // producers didn't emit any). Closes the F8/F2-value compose gap.
+        // producers didn't emit any). Closes the value-histogram compose gap.
         const auto lhs_entry_it{lhs_topk.find(entry.template_id)};
         const auto rhs_entry_it{rhs_topk.find(entry.template_id)};
         const std::vector<FieldHistogram> empty{};
@@ -347,7 +347,7 @@ collect_compose_reservoir_candidates(const MetaLogDocument& out, const ComposeSt
     return res_cands;
 }
 
-// Salience reservoir re-derivation (F8; SPEC §3.7.3 / §12.1). Carry the rare-salient
+// Salience reservoir re-derivation (SPEC §3.7.3 / §12.1). Carry the rare-salient
 // templates through composition instead of dropping them into the tail (the
 // multi-scale gap: composed/pyramid baselines were blind to a lone fatal / off-path
 // branch). Bounded by the inputs' (already diversity-capped) reservoirs; admitted in

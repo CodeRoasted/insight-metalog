@@ -21,7 +21,7 @@
 
 #include <picosha2.h>
 
-#include "insight/math/det_math.hpp" // F5: deterministic fixed-point log2/ln (branching entropy)
+#include "insight/math/det_math.hpp" // deterministic fixed-point log2/ln (branching entropy)
 
 #include "insight/metalog/detail/salience.hpp"
 #include "insight/metalog/detail/statistics.hpp"
@@ -280,7 +280,7 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
     }
     ++bucket.count;
     ++bucket.level_counts[event.level];
-    ++bucket.role_counts[event.structural_role]; // F12 announced role → salience
+    ++bucket.role_counts[event.structural_role]; // announced role → salience
     ++lines_observed_;
 
     // Per-param field histogram accumulation.
@@ -420,7 +420,7 @@ MetaLogEngine::WindowAnalysis MetaLogEngine::analyze_window() const
     return analysis;
 }
 
-// ── Transition graph + per-template structural surprise (2d, epic §5.1) ──
+// ── Transition graph + per-template structural surprise ──
 // Built once (cold path) from the accumulated n-grams, BEFORE reservoir selection
 // so structural_surprise can feed salience, then reused by the behavior block. A
 // template's structural_surprise is the surprise of its MOST-LIKELY incoming
@@ -540,7 +540,7 @@ void MetaLogEngine::build_top_k(MetaLogDocument& doc, const WindowAnalysis& anal
 void MetaLogEngine::build_reservoir(MetaLogDocument& doc, const WindowAnalysis& analysis,
                                     std::unordered_set<std::string>& reserved) const
 {
-    // ── Tier 2: Salience Reservoir (F1) ──
+    // ── Tier 2: Salience Reservoir ──
     // From the below-top_k templates, retain the most SALIENT (not the most
     // frequent) — this is where a rare-but-severe event (a lone fatal) survives
     // instead of collapsing into the tail. Disjoint from top_k by construction
@@ -577,7 +577,7 @@ MetaLogEngine::collect_reservoir_candidates(const WindowAnalysis& analysis) cons
 
 // Admit candidates to the reservoir in salience order (SPEC §3.7.2 MUST: tie-break
 // by template_id for a bit-identical reservoir), bounded by reservoir_size and the
-// per-kind (structural_role × dominant_level) diversity cap (F10).
+// per-kind (structural_role × dominant_level) diversity cap.
 void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& analysis,
                                     std::vector<ReservoirCandidate>& candidates,
                                     std::unordered_set<std::string>& reserved) const
@@ -596,7 +596,7 @@ void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& ana
                           return ordered[lhs.index].first < ordered[rhs.index].first;
                       });
     // Admit in salience order, up to M total, capping exemplars PER KIND
-    // (structural_role × dominant_level) for diversity (F10). A "kind" key
+    // (structural_role × dominant_level) for diversity. A "kind" key
     // packs the two small enums into one integer for a cheap counter map.
     constexpr unsigned kKindRoleShift{8U};
     const auto kind_key{
@@ -785,7 +785,7 @@ void MetaLogEngine::build_branching(BehaviorBlock& behavior, const WindowAnalysi
         entry.total_outgoing = total;
         if (total > 0)
         {
-            // F5-M1/M2: branching entropy in the exact integer/count domain.
+            // Branching entropy in the exact integer/count domain.
             insight::det::FixedReducer reducer;
             const std::int64_t log2_total{insight::det::det_log2_fixed(total)};
             for (const auto& [_, count] : row)

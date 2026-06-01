@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <string_view>
 
-#include "insight/math/det_math.hpp" // F5-M5: deterministic ln, no libm
+#include "insight/math/det_math.hpp" // deterministic ln, no libm
 
 namespace insight::metalog::detail
 {
@@ -41,7 +41,7 @@ class HyperLogLog
 
     [[nodiscard]] std::uint64_t estimate() const noexcept
     {
-        // F5-M5: the harmonic sum Σ 2^(−rⱼ) is an EXACT dyadic fixed-point sum.
+        // The harmonic sum Σ 2^(−rⱼ) is an EXACT dyadic fixed-point sum.
         // Registers are integers in [0, 64−kPrecision+1] = [0, 51], so each term
         // 2^(−reg) is an exact power of two; accumulating 2^(kHllFrac−reg) in
         // __int128 has no rounding and no order dependence (unlike the prior
