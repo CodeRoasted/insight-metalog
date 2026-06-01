@@ -41,7 +41,7 @@ target_link_libraries(insight_metalog
         picosha2::picosha2
 )
 
-# Float determinism (F5-M3): the MetaLog document is deterministic content, so
+# Float determinism: the MetaLog document is deterministic content, so
 # its math must be cross-machine bit-identical. Disable FMA contraction (no fused
 # a*b+c) — set explicitly here, not relying on transitive propagation from canon.
 # SSE (not x87) is the x86-64 ABI default; arm has no x87.
@@ -77,7 +77,7 @@ if(INSIGHT_METALOG_BUILD_TESTS)
         target_link_libraries(insight_metalog_tests PRIVATE
             insight_metalog
             glaze::glaze
-            picosha2::picosha2   # F5.4: SHA-256 for the document determinism golden
+            picosha2::picosha2   # SHA-256 for the document determinism golden
             GTest::gtest
             GTest::gtest_main
         )

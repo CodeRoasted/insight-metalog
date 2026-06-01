@@ -77,12 +77,12 @@ struct TailSummary
 // entropy_bits is intentionally NOT on the wire (§3.5 MUST NOT): it is losslessly
 // derivable from value_counts, so dropping it keeps the DISTRIBUTION fields
 // (param_index / value_counts / total) integer and genuinely cross-machine
-// bit-identical — independent of float-hardening (ROADMAP #12).
+// bit-identical — independent of float-hardening.
 // approximate_cardinality stays (it is the UNCAPPED distinct count, NOT derivable
 // from the capped value_counts) but is uint64-typed yet HLL-float-derived: it is
 // deterministic under same-machine replay (v1's pairwise batch), while its
-// cross-machine bit-identity rides #12. Any cross-build / history signal derived
-// from it is therefore #12-gated — tracked in ROADMAP #12.
+// cross-machine bit-identity is a separate guarantee not yet landed. Any
+// cross-build / history signal derived from it is therefore not yet cross-machine stable.
 struct ParamHistogram
 {
     std::uint32_t param_index{0};
@@ -114,9 +114,9 @@ struct TopKEntry
     };
 };
 
-// Salience reservoir entry (Tier 2, F1). Self-describing: carries WHY it was kept
+// Salience reservoir entry (Tier 2). Self-describing: carries WHY it was kept
 // (salience + the per-axis bands) so a consumer/explainer can attribute it without
-// the producer. Emitted under `compose()` and serialise→reparse (F8).
+// the producer. Emitted under `compose()` and serialise→reparse.
 struct ReservoirEntry
 {
     std::string template_id;
@@ -396,7 +396,7 @@ dto::TopKEntry make_top_k_entry(const TopKEntry& entry)
     return row;
 }
 
-// One salience-reservoir row (F8): the rare-salient template plus why it was kept.
+// One salience-reservoir row: the rare-salient template plus why it was kept.
 dto::ReservoirEntry make_reservoir_entry(const ReservoirEntry& entry)
 {
     dto::ReservoirEntry row;
@@ -431,7 +431,7 @@ dto::Stats make_stats(const StatsBlock& stats)
         out.tail_summary = dto::TailSummary{stats.tail_summary->tail_template_count,
                                             stats.tail_summary->tail_entropy_bits,
                                             stats.tail_summary->tail_max_rate};
-    // Salience reservoir (F8): part of the external contract so a serialised metalog
+    // Salience reservoir: part of the external contract so a serialised metalog
     // document carries the rare-salient templates (and why they were kept). Omitted
     // when empty.
     if (!stats.reservoir.empty())

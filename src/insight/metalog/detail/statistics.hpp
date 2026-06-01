@@ -3,7 +3,7 @@
 // Deterministic distribution statistics over template/value frequency maps:
 // Shannon entropy and the KL / Jensen-Shannon divergences. Single responsibility
 // — the integer/fixed-point math (via insight::det) that turns count maps into
-// the spec's bit fields. Cross-machine bit-identical (F5); shared by the engine
+// the spec's bit fields. Cross-machine bit-identical; shared by the engine
 // (close_window stability + entropies), compose, and diff.
 
 #include <cstdint>

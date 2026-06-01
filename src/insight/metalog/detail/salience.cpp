@@ -2,14 +2,14 @@
 
 #include <algorithm>
 
-#include "insight/utils/failure_lexicon.hpp" // F7: token-aware failure lexicon (shared w/ canon)
+#include "insight/utils/failure_lexicon.hpp" // token-aware failure lexicon (shared w/ canon)
 
 namespace insight::metalog::detail
 {
 
 namespace
 {
-// The "looks-like-failure" lexicon (F7) — a secondary severity signal for lines
+// The "looks-like-failure" lexicon — a secondary severity signal for lines
 // whose level/role did not already mark them (e.g. a raw `FAILED`/`Traceback`).
 // Token-aware (insight::utils::contains_failure_cue): a failure word must be a
 // standalone token or a CamelCase `…Error`/`…Exception` type — NOT a substring

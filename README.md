@@ -6,7 +6,7 @@
 
 It is the reference implementation of the open [MetaLog specification](https://github.com/CodeRoasted/metalog-spec) and the direct upstream of the detection layer in **insight-eidos**.
 
-Cross-repo package pins are tracked in [../technical_docs/compatibility_matrix.md](../technical_docs/compatibility_matrix.md), and planning lives in [../technical_docs/ROADMAP.md](../technical_docs/ROADMAP.md).
+The MetaLog format is published as an open specification at [CodeRoasted/metalog-spec](https://github.com/CodeRoasted/metalog-spec).
 
 ## Pipeline
 
@@ -21,12 +21,16 @@ Raw logs
 > tokenizer facade, producing the canonical event representation — then Sequence — event ordering,
 > n-gram model, transition graph.
 
+## Determinism
+
+A MetaLog document is a **deterministic** function of its input window — the same canonical events produce a byte-identical fingerprint, and `compose()` / `diff()` are deterministic too, so *same inputs ⇒ same diff* on any machine (bit-identity is a standing golden-hash gate, built on canon's `det_math`). This is the **format** link of the pipeline's end-to-end determinism: content (`insight-canon`) → transport (`coderoast-ipc`) → format (`insight-metalog`).
+
 ## Package
 
 | Field | Value |
 |---|---|
 | Conan name | `insight_metalog` |
-| Version | `1.3.8` |
+| Version | `1.4.0` |
 | Spec conformance | MetaLog v0.5.0 |
 | Visibility | CodeRoast-owned package |
 
@@ -86,4 +90,4 @@ MetaLog producer phase reference lives in [technical_docs/](technical_docs/READM
 
 ## License
 
-Planned source license for public launch: BUSL-1.1 (Business Source License 1.1), with `insight-canon` remaining Apache-2.0 and `insight-eidos` remaining closed source. Before public release, add the license file and recipe/package metadata so the repository state matches the strategy. See [insight-eidos/technical_docs/product/open_source_strategy.md](../insight-eidos/technical_docs/product/open_source_strategy.md) for rationale.
+Source license: BUSL-1.1 (Business Source License 1.1) — source-available, converting to an open license over time. The upstream tokenization layer `insight-canon` is Apache-2.0; the downstream detection layer `insight-eidos` is closed source. See [LICENSE](LICENSE).

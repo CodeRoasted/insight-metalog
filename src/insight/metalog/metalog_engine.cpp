@@ -21,7 +21,7 @@
 
 #include <picosha2.h>
 
-#include "insight/math/det_math.hpp" // F5: deterministic fixed-point log2/ln (branching entropy)
+#include "insight/math/det_math.hpp" // deterministic fixed-point log2/ln (branching entropy)
 
 #include "insight/metalog/detail/salience.hpp"
 #include "insight/metalog/detail/statistics.hpp"
@@ -69,7 +69,7 @@ std::string MetaLogEngine::compute_template_id(std::string_view canonical_templa
     static constexpr std::array<char, 16> kHex{'0', '1', '2', '3', '4', '5', '6', '7',
                                                '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
     std::string out;
-    out.reserve(2 + 2 * kTemplateIdBytes); // "h:" + two hex chars per byte
+    out.reserve(2 + (2 * kTemplateIdBytes)); // "h:" + two hex chars per byte
     out.append("h:");
     for (std::size_t i = 0; i < kTemplateIdBytes; ++i)
     {
@@ -280,7 +280,7 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
     }
     ++bucket.count;
     ++bucket.level_counts[event.level];
-    ++bucket.role_counts[event.structural_role]; // F12 announced role → salience
+    ++bucket.role_counts[event.structural_role]; // announced role → salience
     ++lines_observed_;
 
     // Per-param field histogram accumulation.
@@ -420,7 +420,7 @@ MetaLogEngine::WindowAnalysis MetaLogEngine::analyze_window() const
     return analysis;
 }
 
-// ── Transition graph + per-template structural surprise (2d, epic §5.1) ──
+// ── Transition graph + per-template structural surprise ──
 // Built once (cold path) from the accumulated n-grams, BEFORE reservoir selection
 // so structural_surprise can feed salience, then reused by the behavior block. A
 // template's structural_surprise is the surprise of its MOST-LIKELY incoming
@@ -452,18 +452,18 @@ void MetaLogEngine::build_transition_graph(WindowAnalysis& analysis) const
     for (const auto& [from, row] : transitions)
     {
         std::uint64_t outgoing{0};
-        for (const auto& [to, count] : row)
+        for (const auto& [to_id, count] : row)
             outgoing += count;
         if (outgoing == 0U)
             continue;
-        for (const auto& [to, count] : row)
+        for (const auto& [to_id, count] : row)
         {
-            if (to >= node_count)
+            if (to_id >= node_count)
                 continue;
-            if (count * best_t[to] > best_c[to] * outgoing)
+            if (count * best_t[to_id] > best_c[to_id] * outgoing)
             {
-                best_c[to] = count;
-                best_t[to] = outgoing;
+                best_c[to_id] = count;
+                best_t[to_id] = outgoing;
             }
         }
     }
@@ -524,8 +524,8 @@ void MetaLogEngine::build_top_k(MetaLogDocument& doc, const WindowAnalysis& anal
                 // entropy is slightly under-estimated — known limitation.
                 std::vector<std::uint64_t> vcounts;
                 vcounts.reserve(hist.value_counts.size());
-                for (const auto& [v, c] : hist.value_counts)
-                    vcounts.push_back(c);
+                for (const auto& [value, count] : hist.value_counts)
+                    vcounts.push_back(count);
                 hist.entropy_bits = shannon_entropy_bits(vcounts, hist.total);
                 // HLL approximate cardinality (SPEC §3.5).
                 hist.approximate_cardinality = hll_state_->estimate(content_id, pi);
@@ -540,7 +540,7 @@ void MetaLogEngine::build_top_k(MetaLogDocument& doc, const WindowAnalysis& anal
 void MetaLogEngine::build_reservoir(MetaLogDocument& doc, const WindowAnalysis& analysis,
                                     std::unordered_set<std::string>& reserved) const
 {
-    // ── Tier 2: Salience Reservoir (F1) ──
+    // ── Tier 2: Salience Reservoir ──
     // From the below-top_k templates, retain the most SALIENT (not the most
     // frequent) — this is where a rare-but-severe event (a lone fatal) survives
     // instead of collapsing into the tail. Disjoint from top_k by construction
@@ -577,7 +577,7 @@ MetaLogEngine::collect_reservoir_candidates(const WindowAnalysis& analysis) cons
 
 // Admit candidates to the reservoir in salience order (SPEC §3.7.2 MUST: tie-break
 // by template_id for a bit-identical reservoir), bounded by reservoir_size and the
-// per-kind (structural_role × dominant_level) diversity cap (F10).
+// per-kind (structural_role × dominant_level) diversity cap.
 void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& analysis,
                                     std::vector<ReservoirCandidate>& candidates,
                                     std::unordered_set<std::string>& reserved) const
@@ -596,7 +596,7 @@ void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& ana
                           return ordered[lhs.index].first < ordered[rhs.index].first;
                       });
     // Admit in salience order, up to M total, capping exemplars PER KIND
-    // (structural_role × dominant_level) for diversity (F10). A "kind" key
+    // (structural_role × dominant_level) for diversity. A "kind" key
     // packs the two small enums into one integer for a cheap counter map.
     constexpr unsigned kKindRoleShift{8U};
     const auto kind_key{
@@ -660,6 +660,8 @@ void MetaLogEngine::build_tail_and_entropy(MetaLogDocument& doc, const WindowAna
             continue; // promoted to the reservoir — excluded from tail aggregates (SPEC §3.7.3)
         const auto count = ordered[i].second->count;
         tail_count += count;
+        // — hot path: defensive clamp
+        // NOLINTNEXTLINE(readability-use-std-min-max)
         if (count > tail_max)
             tail_max = count;
         tail_counts.push_back(count);
@@ -778,20 +780,20 @@ void MetaLogEngine::build_branching(BehaviorBlock& behavior, const WindowAnalysi
         entry.template_id = content_templates_by_internal_id_[from];
         entry.fanout = row.size();
         std::uint64_t total = 0;
-        for (const auto& [_, c] : row)
-            total += c;
+        for (const auto& [_sinked, count] : row)
+            total += count;
         entry.total_outgoing = total;
         if (total > 0)
         {
-            // F5-M1/M2: branching entropy in the exact integer/count domain.
+            // Branching entropy in the exact integer/count domain.
             insight::det::FixedReducer reducer;
             const std::int64_t log2_total{insight::det::det_log2_fixed(total)};
-            for (const auto& [_, c] : row)
+            for (const auto& [_sinked, count] : row)
             {
-                if (c == 0)
+                if (count == 0)
                     continue;
-                reducer.add_fixed(static_cast<__int128>(c) *
-                                  (log2_total - insight::det::det_log2_fixed(c)));
+                reducer.add_fixed(static_cast<__int128>(count) *
+                                  (log2_total - insight::det::det_log2_fixed(count)));
             }
             entry.entropy_bits = reducer.normalized_bits(static_cast<std::int64_t>(total));
         }
@@ -835,12 +837,12 @@ void MetaLogEngine::build_dominant_path(BehaviorBlock& behavior,
                 break;
             InternalTemplateID best_to{0};
             std::uint64_t best_to_count{0};
-            for (const auto& [to, c] : row_it->second)
+            for (const auto& [to_id, count] : row_it->second)
             {
-                if (c > best_to_count || (c == best_to_count && to < best_to))
+                if (count > best_to_count || (count == best_to_count && to_id < best_to))
                 {
-                    best_to_count = c;
-                    best_to = to;
+                    best_to_count = count;
+                    best_to = to_id;
                 }
             }
             if (seen.contains(best_to))
@@ -889,18 +891,19 @@ void MetaLogEngine::build_stability(MetaLogDocument& doc, const WindowAnalysis& 
         for (const auto& [tid, bucket] : buckets_)
             cur_freq.emplace(tid, bucket.count);
 
-        const auto [kl, js]{divergences(cur_freq, lines_observed_, prev_freq_, prev_total_)};
+        const auto [kl_value,
+                    js_value]{divergences(cur_freq, lines_observed_, prev_freq_, prev_total_)};
         const auto [added, gone]{new_and_vanished(cur_freq, prev_freq_)};
 
         StabilityBlock stability;
         stability.previous_window_end_iso = *prev_window_end_iso_;
-        stability.kl_divergence = kl;
-        stability.js_divergence = js;
+        stability.kl_divergence = kl_value;
+        stability.js_divergence = js_value;
         stability.new_templates = added;
         stability.vanished_templates = gone;
-        stability.stability_score = 1.0 - js;
-        // NOLINTNEXTLINE(readability-use-std-min-max) — hot path: defensive clamp
-        // [0,1] in the common case
+        stability.stability_score = 1.0 - js_value;
+        // — hot path: defensive clamp [0,1] in the common case
+        // NOLINTNEXTLINE(readability-use-std-min-max)
         if (stability.stability_score < 0.0)
             stability.stability_score = 0.0;
         // NOLINTNEXTLINE(readability-use-std-min-max) — hot path: defensive clamp

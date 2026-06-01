@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-#include "insight/math/det_math.hpp" // F5: deterministic fixed-point log2/ln
+#include "insight/math/det_math.hpp" // deterministic fixed-point log2/ln
 
 namespace insight::metalog::detail
 {
@@ -17,7 +17,7 @@ double shannon_entropy_bits(const std::vector<std::uint64_t>& counts, std::uint6
 {
     if (total == 0)
         return 0.0;
-    // F5-M1/M2: H = (Σ cᵢ·(log2(total) − log2(cᵢ))) / total, accumulated as an
+    // H = (Σ cᵢ·(log2(total) − log2(cᵢ))) / total, accumulated as an
     // exact __int128 over the integer/count domain (no libm, order-independent),
     // converted to double by one exact divide. Deterministic cross-machine.
     insight::det::FixedReducer reducer;
@@ -37,7 +37,7 @@ DivergenceResult divergences(const std::unordered_map<std::string, std::uint64_t
                              const std::unordered_map<std::string, std::uint64_t>& prev,
                              std::uint64_t prev_total)
 {
-    // Union of keys, in a defined (sorted) order — F5-M2. Pointers into the maps
+    // Union of keys, in a defined (sorted) order. Pointers into the maps
     // (no string copies). Integer accumulation below is order-invariant anyway,
     // but the explicit order keeps the contract clear and avoids iterating an
     // unordered container for output.
@@ -57,7 +57,7 @@ DivergenceResult divergences(const std::unordered_map<std::string, std::uint64_t
     // frequencies p = (cn+1)/cur_denom and q = (pn+1)/prev_denom are ratios of
     // INTEGERS (cur_denom = cur_total + key_count, prev_denom = prev_total +
     // key_count are integers), so every log2 is a det_log2_fixed difference and the
-    // reductions stay exact in the integer/fixed-point domain (F5-M1/M2). One exact
+    // reductions stay exact in the integer/fixed-point domain. One exact
     // divide per output.
     //   KL = (1/cur_denom)·Σ (cn+1)·[log2((cn+1)·prev_denom) − log2((pn+1)·cur_denom)]
     //   JS = ½·[ (1/cur_denom)·Σ(cn+1)·L_p + (1/prev_denom)·Σ(pn+1)·L_q ], where
@@ -125,8 +125,8 @@ double histogram_js(const std::unordered_map<std::string, std::uint64_t>& prev,
     if (prev_total == 0 || curr_total == 0)
         return 0.0;
 
-    // Union keys in sorted order (F5-M2); integer-domain JS via det_log2_fixed,
-    // identical Laplace-smoothed convention as divergences() (F5-M1/M2).
+    // Union keys in sorted order; integer-domain JS via det_log2_fixed,
+    // identical Laplace-smoothed convention as divergences().
     std::vector<const std::string*> keys;
     keys.reserve(prev.size() + curr.size());
     for (const auto& [key, _] : prev)

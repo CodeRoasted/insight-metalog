@@ -1,10 +1,10 @@
-// F5 standing-gate fixture (cross-machine bit-identity proxy).
+// Standing-gate fixture (cross-machine bit-identity proxy).
 //
 // Tokenizes a corpus through canon, feeds two windows into MetaLog with
 // histograms + stability, and emits both full JSON documents. Built across the
 // gcc x clang x -O{0,2,3} x -ffp-contract={off,fast} matrix by
 // scripts/determinism_bitidentity.sh, the output must be byte-identical across
-// every build (the local proxy for cross-architecture determinism, F5). The
+// every build (the local proxy for cross-architecture determinism). The
 // in-suite DeterminismGate golden test pins the same artifact per build; this
 // fixture extends the check across compilers/flags. Timestamps are FIXED so only
 // computed content can differ between builds.
