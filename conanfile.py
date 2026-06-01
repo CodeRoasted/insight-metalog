@@ -41,7 +41,7 @@ class InsightMetalogConan(ConanFile):
         # insight_canon provides logging and types; transitive headers needed.
         # Don't use transitive_libs since it pulls in spdlog which is header-only.
         self.requires("insight_canon/1.4.0", transitive_headers=True)
-        # glaze is the JSON serializer, used only in metalog_engine.cpp and never
+        # glaze is the JSON serializer, used only in metalog_serialize.cpp and never
         # in a public header — a private, non-propagated build dependency.
         self.requires("glaze/7.4.0", visible=False)
         self.requires("picosha2/1.0.0")

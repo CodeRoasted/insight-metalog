@@ -63,6 +63,11 @@ class HyperLogLog
         const double raw_numerator{kAlpha * static_cast<double>(kNumRegisters) *
                                    static_cast<double>(kNumRegisters) *
                                    static_cast<double>(std::uint64_t{1} << kHllFrac)};
+        // sum_fixed > 0 always: regs_ is a fixed, compile-time-non-empty std::array
+        // (kNumRegisters > 0) and every term 1<<(kHllFrac-reg) is >= 2, so the loop
+        // above accumulates a strictly positive sum. The analyzer cannot prove the
+        // range-for executes; this divide is never by zero.
+        // NOLINTNEXTLINE(clang-analyzer-core.DivideZero)
         const unsigned __int128 raw{static_cast<unsigned __int128>(raw_numerator) / sum_fixed};
 
         // Small-range correction (linear counting): m·ln(m/zeros), via det_ln.

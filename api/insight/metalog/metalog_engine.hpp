@@ -61,6 +61,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "insight/core/types.hpp"
@@ -665,6 +666,61 @@ class MetaLogEngine
     void migrate_bucket(const std::string& from_content_id, const std::string& to_content_id,
                         std::string_view new_template_str);
     void account_ngram(const NGramKey& key);
+
+    // Cold-path scratch computed once per close_window and consumed by the
+    // build_* steps below: the count-sorted bucket view, the template transition
+    // graph, and the per-template structural-surprise band. RAII — owned by a
+    // local in close_window, released when that scope ends. (`k` is the resolved
+    // top_k cut, min(top_k_size, ordered.size()).)
+    struct WindowAnalysis
+    {
+        std::vector<std::pair<std::string, const Bucket*>> ordered;
+        std::unordered_map<InternalTemplateID,
+                           std::unordered_map<InternalTemplateID, std::uint64_t>>
+            transitions;
+        std::vector<std::uint32_t> incoming_surprise; // indexed by internal id; 0 = on-path/root
+        std::size_t k{0};
+    };
+
+    // A below-top_k template that scored a non-zero salience; `index` points into
+    // WindowAnalysis::ordered. Collected, then admitted to the reservoir in
+    // salience order (tie-break by template_id) under the size + per-kind caps.
+    struct ReservoirCandidate
+    {
+        std::size_t index;
+        std::uint32_t salience;
+        std::uint32_t structural_surprise;
+        std::uint32_t novelty;
+    };
+
+    // close_window is an orchestrator over these single-responsibility steps; each
+    // is a verbatim slice of the former monolith, so the produced document is
+    // bit-identical (gated by DeterminismGate). const steps read window state and
+    // write the document; the two non-const steps carry/clear cross-window state.
+    [[nodiscard]] WindowAnalysis analyze_window() const;
+    void build_transition_graph(WindowAnalysis& analysis) const;
+    [[nodiscard]] std::uint32_t surprise_of(const WindowAnalysis& analysis,
+                                            const std::string& content_id) const noexcept;
+    void stamp_envelope(MetaLogDocument& doc, Timestamp start, Timestamp end) const;
+    void build_top_k(MetaLogDocument& doc, const WindowAnalysis& analysis) const;
+    void build_reservoir(MetaLogDocument& doc, const WindowAnalysis& analysis,
+                         std::unordered_set<std::string>& reserved) const;
+    [[nodiscard]] std::vector<ReservoirCandidate>
+    collect_reservoir_candidates(const WindowAnalysis& analysis) const;
+    void admit_reservoir(StatsBlock& stats, const WindowAnalysis& analysis,
+                         std::vector<ReservoirCandidate>& candidates,
+                         std::unordered_set<std::string>& reserved) const;
+    void build_tail_and_entropy(MetaLogDocument& doc, const WindowAnalysis& analysis,
+                                const std::unordered_set<std::string>& reserved) const;
+    void build_behavior(MetaLogDocument& doc, const WindowAnalysis& analysis) const;
+    void build_top_ngrams(BehaviorBlock& behavior) const;
+    void build_branching(BehaviorBlock& behavior, const WindowAnalysis& analysis) const;
+    void build_dominant_path(BehaviorBlock& behavior, const WindowAnalysis& analysis) const;
+    [[nodiscard]] InternalTemplateID dominant_path_start() const;
+    void build_stability(MetaLogDocument& doc, const WindowAnalysis& analysis) const;
+    void stash_prev_window(const MetaLogDocument& doc);
+    void build_templates_map(MetaLogDocument& doc) const;
+    void reset_window_state();
 
     MetaLogConfig config_{};
     SourceBlock source_{};

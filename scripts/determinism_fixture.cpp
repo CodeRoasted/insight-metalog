@@ -9,8 +9,8 @@
 // fixture extends the check across compilers/flags. Timestamps are FIXED so only
 // computed content can differ between builds.
 #include <chrono>
-#include <cstdio>
 #include <fstream>
+#include <iostream>
 #include <string>
 #include <vector>
 
@@ -22,18 +22,18 @@ int main(int argc, char** argv)
 {
     if (argc < 2)
     {
-        std::fprintf(stderr, "usage: determinism_fixture <corpus>\n");
+        std::cerr << "usage: determinism_fixture <corpus>\n";
         return 2;
     }
-    std::ifstream in(argv[1], std::ios::binary);
-    if (!in)
+    std::ifstream input(argv[1], std::ios::binary);
+    if (!input)
     {
-        std::fprintf(stderr, "cannot open %s\n", argv[1]);
+        std::cerr << "cannot open " << argv[1] << "\n";
         return 2;
     }
     std::vector<std::string> lines;
     std::string line;
-    while (std::getline(in, line))
+    while (std::getline(input, line))
     {
         if (!line.empty() && line.back() == '\r')
             line.pop_back();
@@ -43,33 +43,34 @@ int main(int argc, char** argv)
 
     namespace tk = insight::tokenization;
     namespace ml = insight::metalog;
-    tk::ArenaAllocator arena{std::size_t{1} << 22};
+    constexpr std::size_t kArenaBytes{std::size_t{1} << 22};
+    tk::ArenaAllocator arena{kArenaBytes};
     tk::Tokenizer tok{arena};
     std::vector<tk::CanonicalEvent> events;
     events.reserve(lines.size());
     for (const auto& raw : lines)
-        if (auto ev{tok.process_line(raw)})
-            events.push_back(*ev);
+        if (auto event{tok.process_line(raw)})
+            events.push_back(*event);
 
     ml::MetaLogConfig cfg;
     cfg.max_param_histograms = 3;
     cfg.emit_stability = true;
     ml::MetaLogEngine engine{cfg};
     using Clock = std::chrono::system_clock;
-    const Clock::time_point t0{std::chrono::seconds{1700000000}};
-    const Clock::time_point t1{std::chrono::seconds{1700000060}};
-    const Clock::time_point t2{std::chrono::seconds{1700000120}};
+    const Clock::time_point window_start{std::chrono::seconds{1700000000}};
+    const Clock::time_point window_mid{std::chrono::seconds{1700000060}};
+    const Clock::time_point window_end{std::chrono::seconds{1700000120}};
     const std::size_t half{events.size() / 2};
 
-    engine.open_window(t0);
+    engine.open_window(window_start);
     for (std::size_t i = 0; i < half; ++i)
         engine.ingest_event(events[i]);
-    const auto doc1{engine.close_window(t1)};
-    engine.open_window(t1);
+    const auto doc1{engine.close_window(window_mid)};
+    engine.open_window(window_mid);
     for (std::size_t i = half; i < events.size(); ++i)
         engine.ingest_event(events[i]);
-    const auto doc2{engine.close_window(t2)};
+    const auto doc2{engine.close_window(window_end)};
 
-    std::printf("%s\n%s\n", ml::to_json(doc1).c_str(), ml::to_json(doc2).c_str());
+    std::cout << ml::to_json(doc1) << "\n" << ml::to_json(doc2) << "\n";
     return 0;
 }
