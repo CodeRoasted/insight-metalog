@@ -240,6 +240,18 @@ struct WindowBlock
     std::uint64_t lines_observed{0};
 };
 
+// Override for the REPORTED window bounds at close_window, decoupled from the
+// open/close machinery times (insight_determinism_model.md § Event-time, MUST 3).
+// A deterministic-batch caller supplies the input's parseable-timestamp envelope
+// ([min, max], or the epoch sentinel zero-width when a side has no parseable
+// timestamp) so the document's window reflects the log's own event-time span, not
+// an arrival/forward-filled time. Live callers omit it (bounds = open/close times).
+struct ReportedWindowBounds
+{
+    Timestamp start;
+    Timestamp end;
+};
+
 struct ProducerBlock
 {
     std::string name{"insight"};
@@ -603,7 +615,11 @@ class MetaLogEngine
     // After this call the engine returns to the "no open window"
     // state but retains the previous-window frequencies needed to
     // compute stability for the next window.
-    [[nodiscard]] MetaLogDocument close_window(Timestamp end);
+    // `reported_bounds`, when set, overrides ONLY the document's reported window
+    // start/end/duration (the deterministic parseable-ts envelope); the close
+    // `end` still drives window machinery. See ReportedWindowBounds.
+    [[nodiscard]] MetaLogDocument
+    close_window(Timestamp end, std::optional<ReportedWindowBounds> reported_bounds = std::nullopt);
 
     // Compute the spec-conformant template_id for a canonical template
     // string: "h:" + lower_hex(SHA-256(utf8)[0:16]).
@@ -701,7 +717,8 @@ class MetaLogEngine
     void build_transition_graph(WindowAnalysis& analysis) const;
     [[nodiscard]] std::uint32_t surprise_of(const WindowAnalysis& analysis,
                                             const std::string& content_id) const noexcept;
-    void stamp_envelope(MetaLogDocument& doc, Timestamp start, Timestamp end) const;
+    void stamp_envelope(MetaLogDocument& doc, Timestamp start, Timestamp end,
+                        std::optional<ReportedWindowBounds> reported_bounds) const;
     void build_top_k(MetaLogDocument& doc, const WindowAnalysis& analysis) const;
     void build_reservoir(MetaLogDocument& doc, const WindowAnalysis& analysis,
                          std::unordered_set<std::string>& reserved) const;

@@ -1,0 +1,10 @@
+Build started for commit a1b2c3d
+Restoring dependencies from cache
+Compiling module auth
+Compiling module billing
+Compiling module gateway
+warning: unused variable 'retry_count' in billing/charge.cpp
+Linking target service
+Running unit suite
+All 412 tests passed
+Build succeeded

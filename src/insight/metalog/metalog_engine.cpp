@@ -334,13 +334,14 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
         ++recent_filled_;
 }
 
-MetaLogDocument MetaLogEngine::close_window(Timestamp end)
+MetaLogDocument MetaLogEngine::close_window(Timestamp end,
+                                           std::optional<ReportedWindowBounds> reported_bounds)
 {
     if (!window_start_)
         throw std::logic_error{"MetaLogEngine::close_window called before open_window"};
 
     MetaLogDocument doc;
-    stamp_envelope(doc, *window_start_, end);
+    stamp_envelope(doc, *window_start_, end, reported_bounds);
 
     const WindowAnalysis analysis{analyze_window()};
     build_top_k(doc, analysis);
@@ -363,16 +364,22 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end)
 
 // Stamp the envelope: version/producer/source, window times + duration, the §2.4
 // processing identifiers, and the §15 re-derivation coordinate (when configured).
-void MetaLogEngine::stamp_envelope(MetaLogDocument& doc, Timestamp start, Timestamp end) const
+void MetaLogEngine::stamp_envelope(MetaLogDocument& doc, Timestamp start, Timestamp end,
+                                  std::optional<ReportedWindowBounds> reported_bounds) const
 {
     doc.metalog_version = "0.5.0";
     doc.producer.version = config_.producer_version;
     doc.source = source_;
 
-    doc.window.start_iso = format_rfc3339_utc(start);
-    doc.window.end_iso = format_rfc3339_utc(end);
+    // Reported bounds: the deterministic parseable-ts envelope when supplied (MUST 3),
+    // else the open/close machinery times. Duration tracks the reported span.
+    const Timestamp reported_start{reported_bounds ? reported_bounds->start : start};
+    const Timestamp reported_end{reported_bounds ? reported_bounds->end : end};
+    doc.window.start_iso = format_rfc3339_utc(reported_start);
+    doc.window.end_iso = format_rfc3339_utc(reported_end);
 
-    const auto delta{std::chrono::duration_cast<std::chrono::seconds>(end - start).count()};
+    const auto delta{
+        std::chrono::duration_cast<std::chrono::seconds>(reported_end - reported_start).count()};
     doc.window.duration_seconds = delta < 0 ? 0 : static_cast<std::uint64_t>(delta);
     doc.window.lines_observed = lines_observed_;
 

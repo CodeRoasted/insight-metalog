@@ -1,0 +1,7 @@
+Jan 15 10:00:00 web01 nginx[2451]: GET /api/users 200
+Jan 15 10:00:01 web01 nginx[2451]: GET /api/orders 200
+Jan 15 10:00:02 web01 app[1893]: cache warmed in 12ms
+Jan 15 10:00:03 web01 app[1893]: request completed
+Jan 15 10:00:04 web01 nginx[2451]: GET /api/users 500
+Jan 15 10:00:05 web01 app[1893]: upstream timeout on shard 3
+Jan 15 10:00:06 web01 app[1893]: request failed
