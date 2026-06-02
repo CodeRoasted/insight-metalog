@@ -50,3 +50,8 @@ bench_results/**
 /.vscode/
 **/.qmlls.ini
 *.pro.user*
+
+# Environment files (secrets)
+.env
+.env.local
+.env.*.local
