@@ -37,7 +37,7 @@ jobs:
       CONAN_HOME: ${{ github.workspace }}/.conan2
       CONAN_PROFILE: linux-gcc13-release
       INSIGHT_CANON_REPO: CodeRoasted/insight-canon
-      CR_PIN_INSIGHT_CANON: '1.4.1'
+      CR_PIN_INSIGHT_CANON: '1.4.2'
 
     steps:
       - name: Resolve tag
