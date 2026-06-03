@@ -13,12 +13,15 @@
 #
 # Build flags/includes are read from the package's compile_commands.json, so dep
 # versions/paths track the real build (run `malf build` once first to populate it).
-# Exit non-zero on any divergence. clang uses -D__cpp_concepts=202002L purely to
-# work around the clang18<->libstdc++13 std::expected gate (a feature-test macro;
-# zero effect on float codegen).
+# Exit non-zero on any divergence. clang gets -D__cpp_concepts=202002L defensively:
+# on clang < 21 + libstdc++ it satisfies the std::expected concepts gate; on the
+# clang-21 dev default it is a harmless redefinition (-Wno-builtin-macro-redefined
+# silences it). Either way it is a feature-test macro — zero effect on float codegen.
 #
 # Set DETERMINISM_REQUIRE_COMPILERS="g++ clang++" (CI) to fail unless every listed
 # compiler actually built — else a clang-only break would pass on the g++ builds alone.
+# Post dev-flip, CI pins clang++ -> clang-21 (the dev compiler), so the gate proves
+# gcc-13 (ship) ≡ clang-21 (dev) byte-identical on the real toolchains.
 set -uo pipefail
 META="$(cd "$(dirname "$0")/.." && pwd)"
 CC="$META/build/compile_commands.json"
