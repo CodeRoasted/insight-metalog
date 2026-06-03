@@ -1,7 +1,8 @@
 name: CI
 permissions:
   contents: read
-  pull-requests: read
+  pull-requests: write   # Sift dogfood: post/update the sticky comment (same-repo, private repo — no forks)
+  actions: write         # Sift dogfood: upload the baseline-log artifact (+ read for last-green resolution)
 
 on:
   workflow_dispatch:
@@ -54,10 +55,23 @@ jobs:
         run: |
           bash scripts/ci_fetch_conan_package.sh insight_canon "$CR_PIN_INSIGHT_CANON" "$INSIGHT_CANON_REPO"
 
+      - name: Start build-log capture (the conan-module step below appends; Sift diffs it)
+        run: truncate --size 0 "$GITHUB_WORKSPACE/build.log"
+
       - name: Build and test
         run: |
+          exec > >(tee -a "$GITHUB_WORKSPACE/build.log") 2>&1   # capture the conan-module output for the Sift dogfood
           conan create . \
             --profile:host="$CONAN_HOME/profiles/linux-gcc13-release" \
             --profile:build="$CONAN_HOME/profiles/linux-gcc13-release" \
             --build=missing \
             --build-test=missing
+
+      - name: Sift — structural diff of this run's build+test log (advisory)
+        if: ${{ always() }}
+        continue-on-error: true    # advisory: a Sift error must NEVER fail this build
+        uses: CodeRoasted/sift-action@v1
+        with:
+          log: build.log
+          fail-on: none
+          build-status: ${{ job.status == 'success' && 'green' || 'red' }}
