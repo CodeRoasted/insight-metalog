@@ -37,9 +37,16 @@ target_link_libraries(insight_metalog
     PUBLIC
         insight::canon
     PRIVATE
-        glaze::glaze
         picosha2::picosha2
 )
+
+# glaze (visible=False, header-only) must NOT reach the export interface
+# (§10.9 / glaze-gotchas #5): a PRIVATE link leaks it as $<LINK_ONLY:glaze::glaze>
+# into the NATIVE Targets.cmake → consumers' find_package(insight_metalog) under
+# cmake_find_mode=none then needs a glaze target they don't have. Pull just its
+# include dirs, build-only, so metalog's impl still compiles glaze's headers.
+target_include_directories(insight_metalog PRIVATE
+    $<BUILD_INTERFACE:$<TARGET_PROPERTY:glaze::glaze,INTERFACE_INCLUDE_DIRECTORIES>>)
 
 # Float determinism: the MetaLog document is deterministic content, so
 # its math must be cross-machine bit-identical. Disable FMA contraction (no fused
@@ -49,19 +56,63 @@ target_compile_options(insight_metalog PUBLIC
     $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>:-ffp-contract=off>
 )
 
+###########################################################
+#  Named-module wrapper (insight.metalog) — §8.1 (1.5.0)
+###########################################################
+# Re-exports insight_metalog's public surface (insight::metalog — 32 symbols:
+# MetaLogDocument/Diff/Engine/Config + the blocks + compose/diff/to_json) so
+# downstream (eidos) `import insight.metalog` instead of #include "insight/…".
+# The public api header textually pulls canon (types/canonical_event) → that
+# coupling stays textual in the wrapper stage (1.5.1 unwrap). The header does
+# NOT use glaze/picosha2 (impl-only), so the module needs neither. Links the lib
+# PUBLIC (api includes + canon, -ffp-contract=off); cxx_std_23 PUBLIC is §10.4.
+add_library(insight_metalog_module STATIC)
+target_sources(insight_metalog_module
+    PUBLIC
+        FILE_SET cxx_modules TYPE CXX_MODULES
+        BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/modules
+        FILES    ${CMAKE_CURRENT_SOURCE_DIR}/modules/insight_metalog.cppm
+)
+target_link_libraries(insight_metalog_module PUBLIC insight_metalog)
+target_compile_features(insight_metalog_module PUBLIC cxx_std_23)
+add_library(insight::metalog_module ALIAS insight_metalog_module)
+
+###########################################################
+#  Install rules  (used by `conan create`)
+###########################################################
 include(GNUInstallDirs)
-install(TARGETS insight_metalog
+# Library + module wrapper in ONE export set → single file-set owner (§10.5/§10.8).
+install(TARGETS insight_metalog insight_metalog_module
     EXPORT insight_metalogTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    FILE_SET cxx_modules DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/insight_metalog_modules
 )
 install(DIRECTORY api/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(EXPORT insight_metalogTargets
     NAMESPACE insight::
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/insight_metalog
 )
+
+###########################################################
+#  Cross-package module shipping (Argos — §10.7/§10.9)
+###########################################################
+# Ship the package's OWN cmake config (carries FILE_SET CXX_MODULES); conan
+# defers via cmake_find_mode=none. The config find_dependency()s canon + picosha2
+# (the export-visible link deps); glaze is deliberately ABSENT (build-only, above).
+export(EXPORT insight_metalogTargets
+    NAMESPACE insight::
+    FILE ${CMAKE_CURRENT_BINARY_DIR}/insight_metalogTargets.cmake)
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/insight_metalog-config.cmake
+"include(CMakeFindDependencyMacro)
+find_dependency(insight_canon)
+find_dependency(picosha2)
+include(\"\${CMAKE_CURRENT_LIST_DIR}/insight_metalogTargets.cmake\")
+")
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/insight_metalog-config.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/insight_metalog)
 
 if(INSIGHT_METALOG_BUILD_TESTS)
     file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS
