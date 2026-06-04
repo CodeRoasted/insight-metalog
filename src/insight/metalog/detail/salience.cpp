@@ -67,10 +67,27 @@ std::optional<LogLevel> dominant_level_of(const std::unordered_map<LogLevel, std
 {
     if (levels.empty())
         return std::nullopt;
+    // Severity rank for tie-breaking. Mirrors the LogLevel enum order
+    // (Trace<…<Fatal) EXCEPT Unknown — the highest enum value but a
+    // "couldn't classify" sentinel, not a severity, so it must LOSE ties to
+    // any real level rather than win them.
+    constexpr auto severity_rank{[](LogLevel level) noexcept -> int
+                                 { return level == LogLevel::Unknown
+                                              ? -1
+                                              : static_cast<int>(level); }};
     auto best_it{levels.begin()};
     for (auto it{std::next(levels.begin())}; it != levels.end(); ++it)
     {
-        if (it->second > best_it->second)
+        // Max count; ties broken by higher severity. The tie-break MUST be a
+        // pure function of the contents, not unordered_map iteration order —
+        // otherwise the dominant level (and thus the per-kind reservoir key)
+        // diverges across stdlibs: a tied INFO/ERROR template would resolve to
+        // INFO under one stdlib and ERROR under another, hiding a half-error
+        // endpoint AND breaking the diagonal. (Pinned by ReservoirDiversity_F10
+        // + DeterminismGate.FullDocumentByteIdentityGolden.)
+        if (it->second > best_it->second ||
+            (it->second == best_it->second &&
+             severity_rank(it->first) > severity_rank(best_it->first)))
             best_it = it;
     }
     return best_it->first;
@@ -82,7 +99,11 @@ StructuralRole dominant_role_of(const std::unordered_map<StructuralRole, std::ui
     std::uint64_t best_count{0};
     for (const auto& [role, count] : roles)
     {
-        if (count > best_count)
+        // Max count; ties broken by greater StructuralRole enum value, a pure
+        // function of the contents (not unordered_map iteration order) so the
+        // dominant role is stdlib-identical. Roles rarely tie per template,
+        // but determinism must not depend on that. [[transport-determinism-intra-window-order]]
+        if (count > best_count || (count == best_count && role > best))
         {
             best_count = count;
             best = role;

@@ -1986,11 +1986,17 @@ TEST(DeterminismGate, FullDocumentByteIdentityGolden)
     const std::string combined{meta::to_json(doc1) + "\n" + meta::to_json(doc2)};
     const std::string digest{picosha2::hash256_hex_string(combined)};
 
-    // Frozen 2026-05-31. The same value must hold on every compiler/architecture
-    // (verified across the gcc×clang×-O×-ffp-contract matrix, which proved the
-    // full document is byte-identical across all 12 builds).
+    // Re-derived 2026-06-04 (was 798463…, frozen 2026-05-31). The window-2 GET
+    // template is deliberately ~50% errors → a level-count TIE (150 INFO / 150
+    // ERROR). The old value encoded a non-deterministic tie result: dominant_level_of
+    // broke the tie by unordered_map iteration order, so the template resolved to
+    // INFO under libstdc++ but ERROR under libc++ — both a cross-stdlib determinism
+    // break AND a latent detection defect (a half-error endpoint hidden as INFO).
+    // dominant_level_of now breaks count ties by higher severity (ERROR here), a
+    // pure function of the contents. The same value must hold on every
+    // compiler/architecture (re-verify across the gcc×clang×-O×-ffp-contract matrix).
     constexpr std::string_view kGolden{
-        "798463355d66ec7a42a455118dd2cf530f9e1b56ebd3eef37a7814c640a4919f"};
+        "5782e79f6096cff581ab6c05ee9b08a3de4382702121db85578d68028816e279"};
     EXPECT_EQ(digest, kGolden)
         << "MetaLog document determinism golden mismatch — a cross-machine bit-identity "
            "regression, OR an intentional contract change needing the golden re-derived "
