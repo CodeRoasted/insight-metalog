@@ -1,7 +1,7 @@
 packages:
   insight_metalog:
     path: .
-    version: 1.4.3
+    version: 1.4.4
     public: true
     release: true
     depends: [insight_canon]
