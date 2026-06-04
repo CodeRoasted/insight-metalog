@@ -1,3 +1,4 @@
+import os
 from conan import ConanFile
 from conan.tools.cmake import CMake, CMakeDeps, CMakeToolchain
 
@@ -35,7 +36,7 @@ class InsightMetalogConan(ConanFile):
 
     def layout(self):
         self.cpp.source.includedirs = ["api"]
-        self.cpp.build.libdirs = ["build"]
+        self.cpp.build.libdirs = [os.environ.get("MALF_EDITABLE_BUILD_DIR", "build")]
 
     def requirements(self):
         # insight_canon provides logging and types; transitive headers needed.
