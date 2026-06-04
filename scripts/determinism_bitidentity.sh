@@ -13,15 +13,13 @@
 #
 # Build flags/includes are read from the package's compile_commands.json, so dep
 # versions/paths track the real build (run `malf build` once first to populate it).
-# Exit non-zero on any divergence. clang gets -D__cpp_concepts=202002L defensively:
-# on clang < 21 + libstdc++ it satisfies the std::expected concepts gate; on the
-# clang-21 dev default it is a harmless redefinition (-Wno-builtin-macro-redefined
-# silences it). Either way it is a feature-test macro — zero effect on float codegen.
+# Exit non-zero on any divergence. clang-21 (the dev default AND the bare `clang++`)
+# defines __cpp_concepts=202002 natively, so std::expected compiles with no macro hack.
 #
 # Set DETERMINISM_REQUIRE_COMPILERS="g++ clang++" (CI) to fail unless every listed
 # compiler actually built — else a clang-only break would pass on the g++ builds alone.
 # Post dev-flip, CI pins clang++ -> clang-21 (the dev compiler), so the gate proves
-# gcc-13 (ship) ≡ clang-21 (dev) byte-identical on the real toolchains.
+# gcc-15 (ship) ≡ clang-21 (dev) byte-identical on the real toolchains.
 set -uo pipefail
 META="$(cd "$(dirname "$0")/.." && pwd)"
 CC="$META/build/compile_commands.json"
@@ -79,9 +77,8 @@ builds=()
 for cxx in g++ clang++; do
   command -v "$cxx" >/dev/null || { echo "skip $cxx (not installed)"; continue; }
   for opt in -O0 -O2 -O3; do for fpc in off fast; do
-    tag="${cxx//+/p}_${opt#-}_${fpc}"; extra=""
-    [ "$cxx" = clang++ ] && extra="-D__cpp_concepts=202002L -Wno-builtin-macro-redefined"
-    if $cxx -std=c++23 "$opt" -ffp-contract="$fpc" $extra $DEFS $INCS $SRCS \
+    tag="${cxx//+/p}_${opt#-}_${fpc}"
+    if $cxx -std=c++23 "$opt" -ffp-contract="$fpc" $DEFS $INCS $SRCS \
         "$META/scripts/determinism_fixture.cpp" $LIBS -o "$WORK/$tag" 2>"$WORK/$tag.log"; then
       builds+=("$tag")
     else echo "BUILD FAIL: $tag"; tail -2 "$WORK/$tag.log" | sed 's/^/   /'; fi

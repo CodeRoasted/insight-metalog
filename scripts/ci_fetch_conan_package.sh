@@ -24,7 +24,7 @@
 #     repo's releases. On GitHub Actions, `secrets.GITHUB_TOKEN` is
 #     sufficient when both repos are in the same org and visibility
 #     permits; otherwise pass a fine-grained PAT via env.
-#   * Same `linux-gcc13-release` profile already present in CONAN_HOME
+#   * Same `linux-gcc15-release` profile already present in CONAN_HOME
 #     (otherwise the restored binary's settings won't match a consumer
 #     install resolving against a different profile sha).
 
