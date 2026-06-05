@@ -348,9 +348,11 @@ dto::Coordinate make_coordinate(const ReDerivationCoordinate& coord)
 {
     dto::Coordinate out;
     if (coord.source_ref)
-        out.source_ref = dto::SourceRef{coord.source_ref->resolver_kind, coord.source_ref->handle};
+        out.source_ref = dto::SourceRef{.resolver_kind = coord.source_ref->resolver_kind,
+                                        .handle = coord.source_ref->handle};
     if (coord.bounds)
-        out.bounds = dto::Bounds{coord.bounds->start_tick, coord.bounds->end_tick};
+        out.bounds =
+            dto::Bounds{.start_tick = coord.bounds->start_tick, .end_tick = coord.bounds->end_tick};
     out.canonicalization_version = coord.canonicalization_version;
     out.config_hash = coord.config_hash;
     if (coord.children)
@@ -428,9 +430,10 @@ dto::Stats make_stats(const StatsBlock& stats)
     for (const auto& entry : stats.top_k)
         out.top_k.push_back(make_top_k_entry(entry));
     if (stats.tail_summary)
-        out.tail_summary = dto::TailSummary{stats.tail_summary->tail_template_count,
-                                            stats.tail_summary->tail_entropy_bits,
-                                            stats.tail_summary->tail_max_rate};
+        out.tail_summary =
+            dto::TailSummary{.tail_template_count = stats.tail_summary->tail_template_count,
+                             .tail_entropy_bits = stats.tail_summary->tail_entropy_bits,
+                             .tail_max_rate = stats.tail_summary->tail_max_rate};
     // Salience reservoir: part of the external contract so a serialised metalog
     // document carries the rare-salient templates (and why they were kept). Omitted
     // when empty.
@@ -452,7 +455,8 @@ dto::Behavior make_behavior(const BehaviorBlock& behavior)
     out_bh.top_ngrams_size = behavior.top_ngrams_size;
     out_bh.top_ngrams.reserve(behavior.top_ngrams.size());
     for (const auto& ngram : behavior.top_ngrams)
-        out_bh.top_ngrams.push_back({ngram.sequence, ngram.count, ngram.probability});
+        out_bh.top_ngrams.push_back(
+            {.sequence = ngram.sequence, .count = ngram.count, .probability = ngram.probability});
     out_bh.graph_edge_count = behavior.graph_edge_count;
     if (behavior.dominant_path && !behavior.dominant_path->empty())
         out_bh.dominant_path = *behavior.dominant_path;
@@ -461,8 +465,10 @@ dto::Behavior make_behavior(const BehaviorBlock& behavior)
         std::vector<dto::BranchingEntry> rows;
         rows.reserve(behavior.branching->size());
         for (const auto& branch : *behavior.branching)
-            rows.push_back(
-                {branch.template_id, branch.fanout, branch.total_outgoing, branch.entropy_bits});
+            rows.push_back({.template_id = branch.template_id,
+                            .fanout = branch.fanout,
+                            .total_outgoing = branch.total_outgoing,
+                            .entropy_bits = branch.entropy_bits});
         out_bh.branching = std::move(rows);
     }
     return out_bh;
@@ -475,7 +481,7 @@ std::vector<dto::Provenance> make_provenance(const std::vector<ProvenanceEntry>&
     for (const auto& entry : provenance)
     {
         dto::Provenance row;
-        row.window = {entry.window_start_iso, entry.window_end_iso};
+        row.window = {.start = entry.window_start_iso, .end = entry.window_end_iso};
         if (!source_is_empty(entry.source))
             row.source = make_source(entry.source);
         row.lines_observed = entry.lines_observed;
@@ -491,9 +497,13 @@ dto::Document make_document(const MetaLogDocument& doc)
 {
     dto::Document out;
     out.metalog_version = doc.metalog_version;
-    out.producer = {doc.producer.name, doc.producer.version, doc.producer.implementation_uri};
-    out.window = {doc.window.start_iso, doc.window.end_iso, doc.window.duration_seconds,
-                  doc.window.lines_observed};
+    out.producer = {.name = doc.producer.name,
+                    .version = doc.producer.version,
+                    .implementation_uri = doc.producer.implementation_uri};
+    out.window = {.start = doc.window.start_iso,
+                  .end = doc.window.end_iso,
+                  .duration_seconds = doc.window.duration_seconds,
+                  .lines_observed = doc.window.lines_observed};
     out.source = make_source(doc.source);
     if (!doc.templates.empty())
         out.templates = doc.templates;
@@ -503,10 +513,12 @@ dto::Document make_document(const MetaLogDocument& doc)
     if (doc.stability)
     {
         const auto& stability = *doc.stability;
-        out.stability =
-            dto::Stability{stability.previous_window_end_iso, stability.kl_divergence,
-                           stability.js_divergence,           stability.new_templates,
-                           stability.vanished_templates,      stability.stability_score};
+        out.stability = dto::Stability{.previous_window_end = stability.previous_window_end_iso,
+                                       .kl_divergence = stability.kl_divergence,
+                                       .js_divergence = stability.js_divergence,
+                                       .new_templates = stability.new_templates,
+                                       .vanished_templates = stability.vanished_templates,
+                                       .stability_score = stability.stability_score};
     }
     if (doc.provenance && !doc.provenance->empty())
         out.provenance = make_provenance(*doc.provenance);
@@ -519,7 +531,8 @@ dto::Document make_document(const MetaLogDocument& doc)
 
 dto::DocRef make_doc_ref(const DocumentRef& ref)
 {
-    return {{ref.window_start_iso, ref.window_end_iso}, ref.document_id};
+    return {.window = {.start = ref.window_start_iso, .end = ref.window_end_iso},
+            .document_id = ref.document_id};
 }
 
 dto::Diff make_diff(const MetaLogDiff& diff)
@@ -537,9 +550,12 @@ dto::Diff make_diff(const MetaLogDiff& diff)
         std::vector<dto::TemplateDelta> deltas;
         deltas.reserve(diff.template_deltas.size());
         for (const auto& template_delta : diff.template_deltas)
-            deltas.push_back({template_delta.template_id, template_delta.previous_count,
-                              template_delta.current_count, template_delta.delta,
-                              template_delta.previous_frequency, template_delta.current_frequency});
+            deltas.push_back({.template_id = template_delta.template_id,
+                              .previous_count = template_delta.previous_count,
+                              .current_count = template_delta.current_count,
+                              .delta = template_delta.delta,
+                              .previous_frequency = template_delta.previous_frequency,
+                              .current_frequency = template_delta.current_frequency});
         out.template_deltas = std::move(deltas);
     }
     if (!diff.new_templates.empty())
@@ -551,8 +567,10 @@ dto::Diff make_diff(const MetaLogDiff& diff)
         std::vector<dto::BranchingDelta> deltas;
         deltas.reserve(diff.branching_delta.size());
         for (const auto& branch_delta : diff.branching_delta)
-            deltas.push_back({branch_delta.template_id, branch_delta.previous_entropy_bits,
-                              branch_delta.current_entropy_bits, branch_delta.delta_bits});
+            deltas.push_back({.template_id = branch_delta.template_id,
+                              .previous_entropy_bits = branch_delta.previous_entropy_bits,
+                              .current_entropy_bits = branch_delta.current_entropy_bits,
+                              .delta_bits = branch_delta.delta_bits});
         out.branching_delta = std::move(deltas);
     }
     if (diff.ngram_delta)
@@ -568,8 +586,10 @@ dto::Diff make_diff(const MetaLogDiff& diff)
             std::vector<dto::NGramRateChange> changes;
             changes.reserve(diff.ngram_delta->rate_changed.size());
             for (const auto& rate_change : diff.ngram_delta->rate_changed)
-                changes.push_back({rate_change.sequence, rate_change.previous_probability,
-                                   rate_change.current_probability, rate_change.delta});
+                changes.push_back({.sequence = rate_change.sequence,
+                                   .previous_probability = rate_change.previous_probability,
+                                   .current_probability = rate_change.current_probability,
+                                   .delta = rate_change.delta});
             ngram_delta.rate_changed = std::move(changes);
         }
         out.ngram_delta = std::move(ngram_delta);
@@ -578,11 +598,15 @@ dto::Diff make_diff(const MetaLogDiff& diff)
     {
         const auto& tail = *diff.tail_delta;
         out.tail_delta =
-            dto::TailDelta{tail.previous_tail_template_count, tail.current_tail_template_count,
-                           tail.tail_template_count_delta,    tail.previous_tail_entropy_bits,
-                           tail.current_tail_entropy_bits,    tail.tail_entropy_bits_delta,
-                           tail.previous_tail_max_rate,       tail.current_tail_max_rate,
-                           tail.tail_max_rate_delta};
+            dto::TailDelta{.previous_tail_template_count = tail.previous_tail_template_count,
+                           .current_tail_template_count = tail.current_tail_template_count,
+                           .tail_template_count_delta = tail.tail_template_count_delta,
+                           .previous_tail_entropy_bits = tail.previous_tail_entropy_bits,
+                           .current_tail_entropy_bits = tail.current_tail_entropy_bits,
+                           .tail_entropy_bits_delta = tail.tail_entropy_bits_delta,
+                           .previous_tail_max_rate = tail.previous_tail_max_rate,
+                           .current_tail_max_rate = tail.current_tail_max_rate,
+                           .tail_max_rate_delta = tail.tail_max_rate_delta};
     }
     return out;
 }

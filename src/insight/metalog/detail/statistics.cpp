@@ -49,7 +49,7 @@ DivergenceResult divergences(const std::unordered_map<std::string, std::uint64_t
         if (!cur.contains(entry.first))
             keys.push_back(&entry.first);
     if (keys.empty() || cur_total == 0 || prev_total == 0)
-        return {0.0, 0.0};
+        return {.kl = 0.0, .js = 0.0};
     std::ranges::sort(keys,
                       [](const std::string* lhs, const std::string* rhs) { return *lhs < *rhs; });
 
@@ -129,9 +129,9 @@ double histogram_js(const std::unordered_map<std::string, std::uint64_t>& prev,
     // identical Laplace-smoothed convention as divergences().
     std::vector<const std::string*> keys;
     keys.reserve(prev.size() + curr.size());
-    for (const auto& [key, _] : prev)
+    for (const auto& [key, _sink] : prev)
         keys.push_back(&key);
-    for (const auto& [key, _] : curr)
+    for (const auto& [key, _sink] : curr)
         if (!prev.contains(key))
             keys.push_back(&key);
     if (keys.empty())

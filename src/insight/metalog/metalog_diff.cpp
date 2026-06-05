@@ -54,9 +54,9 @@ void diff_template_deltas(MetaLogDiff& out,
 {
     std::unordered_set<std::string> all_ids;
     all_ids.reserve(prev_counts.size() + cur_counts.size());
-    for (const auto& [key, _] : prev_counts)
+    for (const auto& [key, _sink] : prev_counts)
         all_ids.insert(key);
-    for (const auto& [key, _] : cur_counts)
+    for (const auto& [key, _sink] : cur_counts)
         all_ids.insert(key);
     out.template_deltas.reserve(all_ids.size());
     for (const auto& template_id : all_ids)
@@ -108,9 +108,9 @@ void diff_branching_delta(MetaLogDiff& out, const MetaLogDocument& previous,
         for (const auto& branch : *current.behavior->branching)
             cur_h[branch.template_id] = branch.entropy_bits;
         std::unordered_set<std::string> ids;
-        for (const auto& [key, _] : prev_h)
+        for (const auto& [key, _sink] : prev_h)
             ids.insert(key);
-        for (const auto& [key, _] : cur_h)
+        for (const auto& [key, _sink] : cur_h)
             ids.insert(key);
         out.branching_delta.reserve(ids.size());
         for (const auto& template_id : ids)
@@ -149,10 +149,10 @@ void diff_ngram_delta(MetaLogDiff& out, const MetaLogDocument& previous,
     std::map<std::vector<std::string>, double> cur_p;
     for (const auto& entry : current.behavior->top_ngrams)
         cur_p[entry.sequence] = entry.probability;
-    for (const auto& [seq, _] : cur_p)
+    for (const auto& [seq, _sink] : cur_p)
         if (!prev_p.contains(seq))
             ngram_delta.new_ngrams.push_back(seq);
-    for (const auto& [seq, _] : prev_p)
+    for (const auto& [seq, _sink] : prev_p)
         if (!cur_p.contains(seq))
             ngram_delta.vanished_ngrams.push_back(seq);
     for (const auto& [seq, cur_prob] : cur_p)

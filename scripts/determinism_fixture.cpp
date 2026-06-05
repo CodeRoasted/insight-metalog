@@ -1,13 +1,14 @@
-// Standing-gate fixture (cross-machine bit-identity proxy).
+// NOLINTBEGIN Test
+//  Standing-gate fixture (cross-machine bit-identity proxy).
 //
-// Tokenizes a corpus through canon, feeds two windows into MetaLog with
-// histograms + stability, and emits both full JSON documents. Built across the
-// gcc x clang x -O{0,2,3} x -ffp-contract={off,fast} matrix by
-// scripts/determinism_bitidentity.sh, the output must be byte-identical across
-// every build (the local proxy for cross-architecture determinism). The
-// in-suite DeterminismGate golden test pins the same artifact per build; this
-// fixture extends the check across compilers/flags. Timestamps are FIXED so only
-// computed content can differ between builds.
+//  Tokenizes a corpus through canon, feeds two windows into MetaLog with
+//  histograms + stability, and emits both full JSON documents. Built across the
+//  gcc x clang x -O{0,2,3} x -ffp-contract={off,fast} matrix by
+//  scripts/determinism_bitidentity.sh, the output must be byte-identical across
+//  every build (the local proxy for cross-architecture determinism). The
+//  in-suite DeterminismGate golden test pins the same artifact per build; this
+//  fixture extends the check across compilers/flags. Timestamps are FIXED so only
+//  computed content can differ between builds.
 #include <chrono>
 #include <fstream>
 #include <iostream>
@@ -74,3 +75,5 @@ int main(int argc, char** argv)
     std::cout << ml::to_json(doc1) << "\n" << ml::to_json(doc2) << "\n";
     return 0;
 }
+
+// NOLINTEND Test

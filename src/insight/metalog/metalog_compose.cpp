@@ -409,6 +409,7 @@ void build_composed_tail(MetaLogDocument& out, const ComposeState& state,
             continue; // promoted to the reservoir — excluded from tail aggregates (SPEC §3.7.3)
         const auto count = ordered[i].second;
         tail_count += count;
+        // NOLINTNEXTLINE (readability-use-std-min-max) defensive clamp (hot path)
         if (count > tail_max)
             tail_max = count;
         tail_counts.push_back(count);
