@@ -335,7 +335,7 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
 }
 
 MetaLogDocument MetaLogEngine::close_window(Timestamp end,
-                                           std::optional<ReportedWindowBounds> reported_bounds)
+                                            std::optional<ReportedWindowBounds> reported_bounds)
 {
     if (!window_start_)
         throw std::logic_error{"MetaLogEngine::close_window called before open_window"};
@@ -365,7 +365,7 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end,
 // Stamp the envelope: version/producer/source, window times + duration, the §2.4
 // processing identifiers, and the §15 re-derivation coordinate (when configured).
 void MetaLogEngine::stamp_envelope(MetaLogDocument& doc, Timestamp start, Timestamp end,
-                                  std::optional<ReportedWindowBounds> reported_bounds) const
+                                   std::optional<ReportedWindowBounds> reported_bounds) const
 {
     doc.metalog_version = "0.5.0";
     doc.producer.version = config_.producer_version;

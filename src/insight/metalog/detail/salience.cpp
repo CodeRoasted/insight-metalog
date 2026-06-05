@@ -71,10 +71,9 @@ std::optional<LogLevel> dominant_level_of(const std::unordered_map<LogLevel, std
     // (Trace<…<Fatal) EXCEPT Unknown — the highest enum value but a
     // "couldn't classify" sentinel, not a severity, so it must LOSE ties to
     // any real level rather than win them.
-    constexpr auto severity_rank{[](LogLevel level) noexcept -> int
-                                 { return level == LogLevel::Unknown
-                                              ? -1
-                                              : static_cast<int>(level); }};
+    constexpr auto severity_rank{
+        [](LogLevel level) noexcept -> int
+        { return level == LogLevel::Unknown ? -1 : static_cast<int>(level); }};
     auto best_it{levels.begin()};
     for (auto it{std::next(levels.begin())}; it != levels.end(); ++it)
     {
