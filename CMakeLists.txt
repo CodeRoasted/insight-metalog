@@ -137,6 +137,15 @@ if(INSIGHT_METALOG_BUILD_TESTS)
         )
         include(GoogleTest)
         gtest_discover_tests(insight_metalog_tests)
+
+        # Module-import proof (§8.1 / cxx_modules_migration_contract §10.15): import
+        # the wrapper + exercise a src-defined fn → proves it is soundly importable,
+        # both toolchains. Links the MODULE target so CMake scans the .cppm.
+        add_executable(insight_metalog_module_test
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/module/test_metalog_module_import.cpp")
+        target_link_libraries(insight_metalog_module_test PRIVATE
+            insight_metalog_module GTest::gtest GTest::gtest_main)
+        gtest_discover_tests(insight_metalog_module_test)
     endif()
 endif()
 
