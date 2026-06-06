@@ -14,17 +14,11 @@
 // technical_docs/overview/architecture.md §6 and is aspirational; this bench
 // is what we measure against when we go after it.
 
-#include <chrono>
-#include <cstdint>
-#include <cstdio>
-#include <random>
-#include <string>
-#include <vector>
-
 #include <benchmark/benchmark.h>
 
-#include "insight/metalog/metalog_engine.hpp"
-#include "insight/tokenization/canonical_event.hpp"
+import std;
+import insight.metalog;
+import insight.canon;
 
 namespace
 {

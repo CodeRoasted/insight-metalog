@@ -1,31 +1,23 @@
+module;
+#include <picosha2.h>
+
+module insight.metalog;
+import insight.metalog.internal;
+import insight.metalog.api;
+import insight.canon;
+import insight.metalog.detail;
+
 // MetaLog producer engine (SPEC v0.5.0). The stateful streaming side: one window
 // of CanonicalEvents in (open_window / ingest_event) -> one bounded MetaLog
 // document out (close_window). Single responsibility — production; serialization,
 // compose and diff live in their own translation units, and the cross-cutting
 // statistics / salience / wire-format helpers live under detail/.
 
-#include "insight/metalog/metalog_engine.hpp"
 
-#include "hll.hpp"
 
-#include <algorithm>
-#include <array>
-#include <chrono>
-#include <cstdint>
-#include <memory>
-#include <stdexcept>
-#include <string>
-#include <unordered_map>
-#include <unordered_set>
-#include <utility>
 
-#include <picosha2.h>
 
-#include "insight/math/det_math.hpp" // deterministic fixed-point log2/ln (branching entropy)
 
-#include "insight/metalog/detail/salience.hpp"
-#include "insight/metalog/detail/statistics.hpp"
-#include "insight/metalog/detail/wire_format.hpp"
 
 namespace insight::metalog
 {

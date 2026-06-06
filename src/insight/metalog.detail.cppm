@@ -1,0 +1,276 @@
+// insight.metalog.detail — sealed internal (HLL, comparability, statistics, salience, wire_format).
+// EXPORTED so impl units import it; the facade does NOT re-export it. std via internal; canon (det_math,
+// types) via import insight.canon; metalog DTOs via import api.
+export module insight.metalog.detail;
+import insight.metalog.internal;
+import insight.metalog.api;
+import insight.canon;
+
+// ──────── from src/insight/metalog/hll.hpp ────────
+// HyperLogLog sketch with p=14 (m=16384 registers, ~1.5% standard error).
+// Zero-dependency implementation; FNV-1a + MurmurHash3 finalizer for hash.
+// Private to the metalog module — not part of the public API.
+
+
+
+export namespace insight::metalog::detail
+{
+
+class HyperLogLog
+{
+  public:
+    static constexpr std::uint8_t kPrecision = 14;
+    static constexpr std::size_t kNumRegisters{1U << kPrecision}; // 16384
+
+    HyperLogLog() noexcept
+    {
+        regs_.fill(0);
+    }
+
+    void add(std::string_view value) noexcept
+    {
+        const auto hash_val = hash64(value);
+        const auto idx = static_cast<std::size_t>(hash_val >> (64U - kPrecision));
+        // Remaining bits: shift left by kPrecision so we count leading zeros
+        // in the bottom (64-kPrecision) bits — map them to positions 1..50.
+        const auto hash_rem = hash_val << kPrecision;
+        // +1 because rho(hash_rem) counts from 1.
+        const auto rho = static_cast<std::uint8_t>(
+            (hash_rem == 0U) ? (64U - kPrecision + 1U) : (std::countl_zero(hash_rem) + 1U));
+        // NOLINTNEXTLINE(readability-use-std-min-max) — hot path
+        if (rho > regs_[idx])
+            regs_[idx] = rho;
+    }
+
+    [[nodiscard]] std::uint64_t estimate() const noexcept
+    {
+        // The harmonic sum Σ 2^(−rⱼ) is an EXACT dyadic fixed-point sum.
+        // Registers are integers in [0, 64−kPrecision+1] = [0, 51], so each term
+        // 2^(−reg) is an exact power of two; accumulating 2^(kHllFrac−reg) in
+        // __int128 has no rounding and no order dependence (unlike the prior
+        // double Σ std::ldexp, which dropped low-order terms). No libm.
+        constexpr int kHllFrac{52}; // > max register value (51) → every term exact
+        unsigned __int128 sum_fixed{0};
+        int zeros{0};
+        for (auto reg : regs_)
+        {
+            sum_fixed += static_cast<unsigned __int128>(1) << (kHllFrac - static_cast<int>(reg));
+            if (reg == 0)
+                ++zeros;
+        }
+
+        // raw = α·m²/S = (α·m²·2^kHllFrac) / S_fixed. The numerator is α's mantissa
+        // scaled by exact powers of two → an EXACT, compiler-identical double;
+        // the conversion to __int128 is exact, and one integer divide yields raw.
+        constexpr double kAlpha{0.7213 / (1.0 + (1.079 / static_cast<double>(kNumRegisters)))};
+        const double raw_numerator{kAlpha * static_cast<double>(kNumRegisters) *
+                                   static_cast<double>(kNumRegisters) *
+                                   static_cast<double>(std::uint64_t{1} << kHllFrac)};
+        // sum_fixed > 0 always: regs_ is a fixed, compile-time-non-empty std::array
+        // (kNumRegisters > 0) and every term 1<<(kHllFrac-reg) is >= 2, so the loop
+        // above accumulates a strictly positive sum. The analyzer cannot prove the
+        // range-for executes; this divide is never by zero.
+        // NOLINTNEXTLINE(clang-analyzer-core.DivideZero)
+        const unsigned __int128 raw{static_cast<unsigned __int128>(raw_numerator) / sum_fixed};
+
+        // Small-range correction (linear counting): m·ln(m/zeros), via det_ln.
+        constexpr std::uint64_t kSmallRangeThreshold{(5U * kNumRegisters) / 2U}; // 2.5·m
+        if (zeros > 0 && raw < kSmallRangeThreshold)
+        {
+            // ln(m/zeros) = ln(m) − ln(zeros), each in Qk; m·(…) then >> kFracBits.
+            const __int128 linear{static_cast<__int128>(kNumRegisters) *
+                                  (insight::det::det_ln_fixed(kNumRegisters) -
+                                   insight::det::det_ln_fixed(static_cast<std::uint64_t>(zeros)))};
+            return static_cast<std::uint64_t>(linear >> insight::det::kFracBits);
+        }
+        return static_cast<std::uint64_t>(raw);
+    }
+
+    void reset() noexcept
+    {
+        regs_.fill(0);
+    }
+
+  private:
+    std::array<std::uint8_t, kNumRegisters> regs_{};
+
+    [[nodiscard]] static std::uint64_t hash64(std::string_view str) noexcept
+    {
+        // FNV-1a 64-bit.
+        constexpr std::uint64_t kFnvOffsetBasis{0xcbf29ce484222325ULL};
+        constexpr std::uint64_t kFnvPrime{0x00000100000001b3ULL};
+        constexpr std::uint64_t kMurmurFinalMix1{0xff51afd7ed558ccdULL};
+        constexpr std::uint64_t kMurmurFinalMix2{0xc4ceb9fe1a85ec53ULL};
+        constexpr std::uint64_t kMixShift{33U};
+        std::uint64_t hash_acc = kFnvOffsetBasis;
+        for (const unsigned char byte : str)
+        {
+            hash_acc ^= static_cast<std::uint64_t>(byte);
+            hash_acc *= kFnvPrime;
+        }
+        // MurmurHash3 64-bit finalizer for better avalanche.
+        hash_acc ^= hash_acc >> kMixShift;
+        hash_acc *= kMurmurFinalMix1;
+        hash_acc ^= hash_acc >> kMixShift;
+        hash_acc *= kMurmurFinalMix2;
+        hash_acc ^= hash_acc >> kMixShift;
+        return hash_acc;
+    }
+};
+
+} // namespace insight::metalog::detail
+
+
+// ──────── from src/insight/metalog/detail/comparability.hpp ────────
+
+// SPEC §2.4 processing-identifier comparability gate: deciding whether two
+// documents may be composed / diffed, and which opaque contract identifier the
+// result may carry. Single responsibility — the gate predicate + the carry rule.
+// Header-only (two tiny pure functions); shared by compose and diff.
+
+
+export namespace insight::metalog::detail
+{
+
+// §2.4 comparability gate. When both sides carry the identifier, the values MUST
+// be equal; throwing satisfies the spec's "MUST fail" branch. When one side omits
+// it, the operation MAY proceed (the consumer should treat the result with
+// caution); see callers for the carry rule.
+inline void check_processing_identifier_gate(const std::optional<std::string>& lhs,
+                                             const std::optional<std::string>& rhs,
+                                             std::string_view field, std::string_view operation)
+{
+    if (lhs && rhs && *lhs != *rhs)
+        throw std::invalid_argument{std::string{"metalog::"} + std::string{operation} +
+                                    ": incompatible " + std::string{field} + " — \"" + *lhs +
+                                    "\" vs \"" + *rhs + "\" (SPEC §2.4 comparability gate)"};
+}
+
+// Carry an identifier into a compose() output only when BOTH inputs supplied it
+// (and matched — already checked). When only one side has it, omitting from the
+// output is honest: the merged document covers an input under an unstated
+// contract; consumers see the absence rather than an over-claim.
+[[nodiscard]] inline std::optional<std::string>
+carry_processing_identifier(const std::optional<std::string>& lhs,
+                            const std::optional<std::string>& rhs)
+{
+    return (lhs && rhs && *lhs == *rhs) ? lhs : std::nullopt;
+}
+
+} // namespace insight::metalog::detail
+
+
+// ──────── from src/insight/metalog/detail/statistics.hpp ────────
+
+// Deterministic distribution statistics over template/value frequency maps:
+// Shannon entropy and the KL / Jensen-Shannon divergences. Single responsibility
+// — the integer/fixed-point math (via insight::det) that turns count maps into
+// the spec's bit fields. Cross-machine bit-identical; shared by the engine
+// (close_window stability + entropies), compose, and diff.
+
+
+export namespace insight::metalog::detail
+{
+
+// Shannon entropy in bits over a (possibly partial) frequency
+// distribution: -Σ p log2 p. Computed over the bucketed templates
+// we have full counts for; tail templates we only know the sum
+// of, so we treat them collectively as a single residual bucket.
+[[nodiscard]] double shannon_entropy_bits(const std::vector<std::uint64_t>& counts,
+                                          std::uint64_t total);
+
+// KL(p || q) over the union of keys, with Laplace add-α smoothing
+// applied to BOTH distributions so that zero entries on either
+// side don't blow up to infinity. α = 1 over the union size is a
+// standard cheap choice; the resulting divergence is biased but
+// bounded and monotone in the underlying distributional change.
+struct DivergenceResult
+{
+    double kl;
+    double js;
+};
+
+[[nodiscard]] DivergenceResult
+divergences(const std::unordered_map<std::string, std::uint64_t>& cur, std::uint64_t cur_total,
+            const std::unordered_map<std::string, std::uint64_t>& prev, std::uint64_t prev_total);
+
+[[nodiscard]] std::pair<std::uint64_t, std::uint64_t>
+new_and_vanished(const std::unordered_map<std::string, std::uint64_t>& cur,
+                 const std::unordered_map<std::string, std::uint64_t>& prev);
+
+// JS divergence between two per-param value-count maps.
+//
+// Uses the same Laplace-smoothed log2 convention as divergences():
+//   alpha = 1, smoothed over the union of keys.
+// Returns value in [0, 1] (bits, clamped).
+// Returns 0.0 when either total is zero.
+[[nodiscard]] double histogram_js(const std::unordered_map<std::string, std::uint64_t>& prev,
+                                  std::uint64_t prev_total,
+                                  const std::unordered_map<std::string, std::uint64_t>& curr,
+                                  std::uint64_t curr_total);
+
+} // namespace insight::metalog::detail
+
+
+// ──────── from src/insight/metalog/detail/salience.hpp ────────
+
+// Salience scoring: turning a template's level,
+// structural role, structural-surprise and self-novelty into a deterministic,
+// integer-quantized salience used to admit rare-but-meaningful templates into the
+// reservoir. Single responsibility — the severity ⊕ surprise ⊕ novelty ⊗ rarity
+// arithmetic (no float in this retention-content path, I5). Shared by the engine
+// (close_window reservoir selection) and compose (re-derived reservoir).
+
+
+
+export namespace insight::metalog::detail
+{
+
+// Most-frequent level / structural role for a template (argmax over the count
+// map). Roles are deterministic per template, so dominant_role_of is "the" role.
+[[nodiscard]] std::optional<LogLevel>
+dominant_level_of(const std::unordered_map<LogLevel, std::uint64_t>& levels);
+[[nodiscard]] StructuralRole
+dominant_role_of(const std::unordered_map<StructuralRole, std::uint64_t>& roles);
+
+// Structural-surprise band (0..100) for the MOST-LIKELY incoming edge p = c/t into
+// a template: high only when even a template's easiest way in is rare. Integer
+// thresholds on c·K vs t (no float, I5); c==0 means root/unreachable (not surprising).
+[[nodiscard]] std::uint32_t surprise_band(std::uint64_t edge_count,
+                                          std::uint64_t source_outgoing) noexcept;
+
+// Self-novelty band (0..100): how late a template first appeared within the window
+// (first-seen ordinal over line count). Self-relative (I3); integer-only (I5).
+[[nodiscard]] std::uint32_t novelty_band(std::uint64_t first_seen_index, std::uint64_t lines,
+                                         std::uint64_t count) noexcept;
+
+// Deterministic, quantized salience: (severity ⊕ structural_surprise ⊕ novelty) ⊗
+// rarity. Returns 0 for a non-salient template (so rare-benign noise never enters
+// the reservoir). Integer math only — no float (I5).
+[[nodiscard]] std::uint32_t salience_score(std::optional<LogLevel> level, StructuralRole role,
+                                           std::string_view tmpl, std::uint64_t count,
+                                           std::uint64_t lines, std::uint32_t structural_surprise,
+                                           std::uint32_t novelty) noexcept;
+
+} // namespace insight::metalog::detail
+
+
+// ──────── from src/insight/metalog/detail/wire_format.hpp ────────
+
+// MetaLog wire-format helpers (spec §2/§3): rendering domain values into the
+// exact strings the v0.5.0 envelope requires. Single responsibility — formatting
+// only; no statistics, no salience.
+
+
+
+export namespace insight::metalog::detail
+{
+
+// RFC 3339 UTC, fixed widths, always trailing 'Z' (e.g. "2026-04-24T10:00:00Z").
+[[nodiscard]] std::string format_rfc3339_utc(Timestamp timestamp);
+
+// SPEC level string. UNKNOWN maps to INFO — the spec defines no UNKNOWN level.
+[[nodiscard]] std::string level_to_spec_string(LogLevel level);
+
+} // namespace insight::metalog::detail
+

@@ -1,8 +1,9 @@
-#include "insight/metalog/detail/statistics.hpp"
+module;
 
-#include <algorithm>
-
-#include "insight/math/det_math.hpp" // deterministic fixed-point log2/ln
+module insight.metalog.detail;
+import insight.metalog.internal;
+import insight.metalog.api;
+import insight.canon;
 
 namespace insight::metalog::detail
 {

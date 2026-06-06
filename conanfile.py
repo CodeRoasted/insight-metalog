@@ -24,7 +24,7 @@ class InsightMetalogConan(ConanFile):
         "fPIC": True,
     }
 
-    exports_sources = "CMakeLists.txt", "modules/*", "src/*", "api/*"
+    exports_sources = "CMakeLists.txt", "src/*", "api/*"
 
     def config_options(self):
         if self.settings.os == "Windows":

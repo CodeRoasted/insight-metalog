@@ -1,20 +1,21 @@
+module;
+#include <glaze/glaze.hpp>
+
+module insight.metalog;
+import insight.metalog.internal;
+import insight.metalog.api;
+import insight.canon;
+import insight.metalog.detail;
+
 // MetaLog JSON serialiser (SPEC v0.5.0 envelope). The restrictive, omit-empty
 // glaze DTO layer: a per-wire struct mirror of the domain types + the make_*
 // builders that translate domain -> DTO, behind the two free `to_json`
 // overloads. Single responsibility — serialization only (no producer state, no
 // compose/diff semantics).
 
-#include "insight/metalog/metalog_engine.hpp"
 
-#include <map>
-#include <optional>
-#include <string>
-#include <utility>
-#include <vector>
 
-#include <glaze/glaze.hpp>
 
-#include "insight/metalog/detail/wire_format.hpp"
 
 namespace insight::metalog
 {

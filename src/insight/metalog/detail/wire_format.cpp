@@ -1,9 +1,10 @@
-#include "insight/metalog/detail/wire_format.hpp"
+module;
+#include <ctime> // gmtime_r — POSIX, not in import std (§11.9 textual GMF exception)
 
-#include <chrono>
-#include <ctime>
-#include <iomanip>
-#include <sstream>
+module insight.metalog.detail;
+import insight.metalog.internal;
+import insight.metalog.api;
+import insight.canon;
 
 namespace insight::metalog::detail
 {

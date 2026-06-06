@@ -30,17 +30,16 @@ A MetaLog document is a **deterministic** function of its input window — the s
 | Field | Value |
 |---|---|
 | Conan name | `insight_metalog` |
-| Version | `1.4.4` |
 | Spec conformance | MetaLog v0.5.0 |
 | Visibility | CodeRoast-owned package |
 
 ## Requirements
 
 - GCC 15 with C++23
-- CMake 3.28+
+- CMake with C++20-module support
 - Ninja
-- Conan 2.27+
-- clang-tidy-18 (lint only)
+- Conan 2.x
+- clang-tidy (lint only)
 
 ## Quick Start
 

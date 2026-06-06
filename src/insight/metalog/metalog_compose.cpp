@@ -1,24 +1,19 @@
+module;
+
+module insight.metalog;
+import insight.metalog.internal;
+import insight.metalog.api;
+import insight.canon;
+import insight.metalog.detail;
+
 // MetaLog composition (SPEC §12): merge two documents into one bounded
 // fingerprint covering both windows. Lossy where either input had a non-empty
 // tail; required fields (lines_observed, unique_templates union, time envelope,
 // re-derived reservoir) are preserved. Single responsibility — the compose
 // semantics only.
 
-#include "insight/metalog/metalog_engine.hpp"
 
-#include <algorithm>
-#include <cstdint>
-#include <optional>
-#include <string>
-#include <string_view>
-#include <unordered_map>
-#include <unordered_set>
-#include <utility>
-#include <vector>
 
-#include "insight/metalog/detail/comparability.hpp"
-#include "insight/metalog/detail/salience.hpp"
-#include "insight/metalog/detail/statistics.hpp"
 
 namespace insight::metalog
 {

@@ -2,18 +2,13 @@
 // Unit tests: allow short identifiers and test-specific patterns
 // Unit tests for the v0.5.0 spec-conformant MetaLogEngine.
 
-#include <chrono>
-#include <cmath>
-#include <iostream>
-#include <string>
-#include <vector>
-
 #include <glaze/glaze.hpp>
 #include <gtest/gtest.h>
 #include <picosha2.h>
 
-#include "insight/metalog/metalog_engine.hpp"
-#include "insight/tokenization/canonical_event.hpp"
+import std;
+import insight.metalog;
+import insight.canon;
 
 namespace
 {

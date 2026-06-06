@@ -1,8 +1,9 @@
-#include "insight/metalog/detail/salience.hpp"
+module;
 
-#include <algorithm>
-
-#include "insight/utils/failure_lexicon.hpp" // token-aware failure lexicon (shared w/ canon)
+module insight.metalog.detail;
+import insight.metalog.internal;
+import insight.metalog.api;
+import insight.canon;
 
 namespace insight::metalog::detail
 {

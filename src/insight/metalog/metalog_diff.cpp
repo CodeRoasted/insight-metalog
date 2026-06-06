@@ -1,20 +1,17 @@
+module;
+
+module insight.metalog;
+import insight.metalog.internal;
+import insight.metalog.api;
+import insight.canon;
+import insight.metalog.detail;
+
 // MetaLog pairwise diff (SPEC §13): the stateless delta between two documents
 // (previous -> current). Template/branching/n-gram/field-histogram/tail deltas +
 // the KL/JS divergence summary. Single responsibility — diff semantics only.
 
-#include "insight/metalog/metalog_engine.hpp"
 
-#include <algorithm>
-#include <cstdint>
-#include <optional>
-#include <string>
-#include <unordered_map>
-#include <unordered_set>
-#include <utility>
-#include <vector>
 
-#include "insight/metalog/detail/comparability.hpp"
-#include "insight/metalog/detail/statistics.hpp"
 
 namespace insight::metalog
 {
