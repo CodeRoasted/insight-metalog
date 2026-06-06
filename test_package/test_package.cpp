@@ -5,8 +5,11 @@
 #include <glaze/glaze.hpp>
 #include <gtest/gtest.h>
 
-#include "insight/metalog/metalog_engine.hpp"
-#include "insight/tokenization/canonical_event.hpp"
+// Black-box consumer: the 1.5.1 unwrap (§11.9) replaced the textual public headers with modules.
+// insight.metalog re-exports the MetaLog DTOs + engine + to_json; canon types (Timestamp/LogLevel/
+// CanonicalEvent) are reachable-not-visible through it, so the consumer imports insight.canon too.
+import insight.metalog;
+import insight.canon;
 
 TEST(InsightMetaLogPackage, ProducesSpecConformantDocument)
 {
