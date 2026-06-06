@@ -17,7 +17,12 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(INSIGHT_METALOG_BUILD_TESTS "Build metalog unit tests" ${PROJECT_IS_TOP_LEVEL})
 option(INSIGHT_METALOG_BUILD_BENCHMARKS "Build metalog micro-benchmarks" ${PROJECT_IS_TOP_LEVEL})
 
-find_package(insight_canon REQUIRED CONFIG)
+# Guard: when metalog is add_subdirectory()'d alongside an in-tree canon (e.g. the
+# determinism proof harness builds the canon+metalog module tower from source per cell),
+# the insight::canon target already exists — don't re-find the packaged config.
+if(NOT TARGET insight::canon)
+    find_package(insight_canon REQUIRED CONFIG)
+endif()
 find_package(glaze REQUIRED CONFIG)
 find_package(picosha2 REQUIRED CONFIG)
 
@@ -57,8 +62,11 @@ add_library(insight::metalog_module ALIAS insight_metalog) # 1.5.1: wrapper reti
 target_link_libraries(insight_metalog
     PUBLIC  insight::canon
     PRIVATE picosha2::picosha2)
-target_include_directories(insight_metalog PRIVATE
-    $<BUILD_INTERFACE:$<TARGET_PROPERTY:glaze::glaze,INTERFACE_INCLUDE_DIRECTORIES>>)
+# glaze (visible=False, impl-only): scope its include to ONLY the .cpp that needs it (metalog_serialize),
+# NOT the target — a target-level include leaks into IMPORTED_CXX_MODULES_INCLUDE_DIRECTORIES, which
+# editable module consumers (detection/eidos) then evaluate → "glaze::glaze not found" in their graph.
+set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/src/insight/metalog/metalog_serialize.cpp
+    PROPERTIES INCLUDE_DIRECTORIES "$<TARGET_PROPERTY:glaze::glaze,INTERFACE_INCLUDE_DIRECTORIES>")
 
 # Float determinism: the MetaLog document is deterministic content → cross-machine bit-identity.
 # Disable FMA contraction (no fused a*b+c). PUBLIC so consumers inherit it.

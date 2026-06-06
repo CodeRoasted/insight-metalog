@@ -15,9 +15,12 @@
 #include <string>
 #include <vector>
 
-#include "insight/metalog/metalog_engine.hpp"
-#include "insight/tokenization/arena_allocator.hpp"
-#include "insight/tokenization/tokenizer_engine.hpp"
+// 1.5.1 unwrap (Approach B): textual public headers are gone — consume the canon+metalog
+// module tower. metalog's MetaLog{Config,Engine} via insight.metalog; canon's tokenization
+// (ArenaAllocator/Tokenizer/CanonicalEvent) via insight.canon (metalog imports but doesn't
+// re-export it).
+import insight.canon;
+import insight.metalog;
 
 int main(int argc, char** argv)
 {

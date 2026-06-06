@@ -1,142 +1,88 @@
 #!/usr/bin/env bash
 # Determinism gate — the cross-stdlib DIAGONAL bit-identity of the MetaLog document.
 #
-# Compiles scripts/determinism_fixture.cpp (+ canon & metalog sources, self-contained)
-# on the TWO real toolchain legs and asserts the serialized document is byte-identical
-# across them:
-#   - g++     (gcc-15, ship) + libstdc++   — deps from build-gcc15-release/
-#   - clang++ (clang-21, dev) + libc++     — deps from build/ (the libc++ dev default)
+# Builds the canon+metalog MODULE TOWER on the TWO real toolchain legs and asserts the
+# serialized document is byte-identical across them:
+#   - g++     (gcc-15, ship) + libstdc++   (profile linux-gcc15-release)
+#   - clang++ (clang-21, dev) + libc++      (profile linux-clang21-libcxx-release)
 #
 # This IS the determinism diagonal (insight_determinism_model.md §F5 / cxx_modules_
 # migration_contract.md §5): the strongest bit-identity oracle, because the two legs
 # differ in BOTH compiler AND stdlib — it hunts the libm/FMA/reassociation divergences
 # AND the unordered_*/iteration-order ones (a libstdc++↔libc++ map-order bug shows up
-# here). It is the cross-compiler/stdlib proxy for the cross-arch (x64+arm) gate; the
-# in-suite DeterminismGate golden pins the same artifact per build.
+# here). Cross-compiler/stdlib proxy for the cross-arch (x64+arm) gate; the in-suite
+# DeterminismGate golden pins the same artifact per build.
 #
-# Each leg links its OWN stdlib's fmt/spdlog/simdjson .a — a libc++ archive cannot link
-# into a libstdc++ binary (the __1 vs __cxx11 std::string ABI). Includes are shared: the
-# dep HEADERS are version-identical and stdlib-agnostic; only the archives differ. The
-# determinism config (-O3 -march=x86-64-v2 -ffp-contract=off) mirrors the
-# linux-{gcc15,clang21-libcxx}-release profiles.
+# ── Approach B (Daidalos ruling 2026-06-06; the private twin of canon's det_public_proof.sh)
+# The 1.5.1 unwrap turned canon+metalog into C++20 modules, deleting the textual headers the
+# old single-shot `$cxx canon/src metalog/src fixture.cpp` recompile #include'd. The methodology
+# is unchanged (build N ways → digest → assert identical); only the "N ways" MECHANIC changed:
+# per leg, build canon+metalog as a MODULE STATIC-LIB tower via their real CXX_MODULE_STD build
+# (scripts/det_harness: add_subdirectory(canon)+add_subdirectory(metalog) + the fixture importing
+# the tower), driven by the leg's conan profile. Building the libs IS recompiling canon+metalog
+# under the leg's codegen; only the trivial fixture moves from recompile to link, so the diagonal's
+# coverage is unchanged. BMI ordering + the std module are delegated to the build system the
+# modules cascade already proves green. The fixture/digest/compare core below is byte-untouched —
+# so the 2 legs staying IDENTICAL is the same invariant the retired source-recompile asserted.
 #
-# Populate BOTH builds first — gcc15 leg FIRST, libc++ leg LAST, canon→metalog within
-# each leg. The order matters because of a known CMakeDeps leak:
-#     ( cd insight-canon   && malf build --profile linux-gcc15-release )  # ship  -> build-gcc15-release/
-#     ( cd insight-metalog && malf build --profile linux-gcc15-release )
-#     ( cd insight-canon   && malf build )                                # libc++ default -> build/
-#     ( cd insight-metalog && malf build )
-# WHY THE ORDER (CMakeDeps leak — the CMakeConfigDeps migration is expected to fix it):
-#   (1) malf refreshes the UNKEYED build/compile_commands.json for clangd on EVERY build,
-#       so build/ reflects the LAST build's profile — the libc++ leg MUST build last so
-#       build/ is libc++ (build-gcc15-release/ is the keyed, stable libstdc++ leg).
-#   (2) canon's editable CMakeDeps reflects ITS last build, so building canon→metalog
-#       consecutively keeps metalog's transitive fmt/spdlog on the same stdlib.
-# Until CMakeConfigDeps lands, this gate guards explicitly: a wrong-stdlib (libstdc++)
-# archive reaching the libc++ leg hard-errors below rather than emitting a cryptic link
-# failure.
-# Run locally or via the superproject CI (.github/workflows/determinism-gate.yml).
-# Exit non-zero on any divergence, or if either diagonal leg fails to build (a one-leg
-# gate is hollow — the cross-stdlib property would be unverified).
+# Requires conan + the leg profiles seeded in CONAN_HOME/profiles (malf seeds them); a prior dep
+# resolution populates the cache. Run locally or via the superproject determinism-gate.yml. Exit
+# non-zero on any divergence, or if either diagonal leg fails to build (a one-leg gate is hollow).
 set -uo pipefail
-META="$(cd "$(dirname "$0")/.." && pwd)"
 
-# extract_flags <meta/build*/compile_commands.json> -> emits 3 lines: canon dir / defs /
-# include flags. Unions canon's include dirs (canon-only deps, e.g. simdjson) taken from
-# the SAME build-variant subdir, so the dep include (and hence archive) paths match this
-# leg's stdlib. Read separately so multi-word vars are not word-split.
-extract_flags() {
-  python3 - "$1" <<'PY'
-import json, os, re, sys
-cc = sys.argv[1]
-subdir = os.path.basename(os.path.dirname(cc))  # "build" (libc++) or "build-gcc15-release"
-def flags(path):
-    cmds = json.load(open(path))
-    e = next((c for c in cmds if c['file'].endswith(('metalog_engine.cpp', 'drain.cpp'))), cmds[0])
-    cmd = e.get('command') or ' '.join(e.get('arguments', []))
-    defs = re.findall(r'-D\S+', cmd)
-    incs = [a or b for a, b in re.findall(r'-I *([^ ]+)|-isystem *([^ ]+)', cmd)]
-    return defs, incs
-mdefs, mincs = flags(cc)
-canon_api = next((i for i in mincs if i.endswith('insight-canon/api')), '')
-canon = os.path.dirname(canon_api)
-incs = list(mincs)
-canon_cc = os.path.join(canon, subdir, 'compile_commands.json')
-if os.path.isfile(canon_cc):
-    _, cincs = flags(canon_cc)
-    for i in cincs:
-        if i not in incs:
-            incs.append(i)
-defs = [d for d in mdefs if not d.startswith('-DSPDLOG_ACTIVE_LEVEL')]
-print(canon)
-print(' '.join(defs + ['-DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_OFF']))
-print(' '.join(('-isystem ' + i) for i in incs))
-PY
-}
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+META="$(cd "$SCRIPT_DIR/.." && pwd)"
+CANON="$(cd "$META/../insight-canon" && pwd)"
+HARNESS="$SCRIPT_DIR/det_harness"
+FIXTURE="$SCRIPT_DIR/determinism_fixture.cpp"
 
-# dep_libs <incs> -> the fmt/spdlog/simdjson static archives sitting under those include
-# dirs (sibling lib/ of each .../p/include). Stdlib-specific: derived from THIS leg's incs.
-dep_libs() {
-  local incs="$1" libs="" dep inc a
-  for dep in spdlo fmt simdj; do
-    for inc in $(echo "$incs" | tr ' ' '\n' | grep -E "/${dep}[^/]*/p/include$"); do
-      a=$(ls "${inc%/include}"/lib/lib*.a 2>/dev/null | head -1)
-      [ -n "$a" ] && libs="$libs $a"
-    done
-  done
-  echo "-Wl,--start-group $libs -Wl,--end-group -pthread"
-}
+[ -f "$HARNESS/CMakeLists.txt" ] || { echo "no $HARNESS/CMakeLists.txt (the Approach-B tower harness)"; exit 1; }
+[ -f "$FIXTURE" ] || { echo "no $FIXTURE"; exit 1; }
+[ -d "$CANON" ] || { echo "no canon repo at $CANON"; exit 1; }
+command -v conan >/dev/null || { echo "conan not found — the module tower build needs it"; exit 1; }
+command -v cmake >/dev/null || { echo "cmake not found"; exit 1; }
+export CONAN_HOME="${CONAN_HOME:-$(cd "$META/.." && pwd)/.conan2}"
 
-CC_CXX="$META/build/compile_commands.json"               # libc++ (dev default)
-CC_STD="$META/build-gcc15-release/compile_commands.json" # libstdc++ (ship)
-[ -f "$CC_CXX" ] || { echo "no $CC_CXX — run 'malf test' (libc++ default) first"; exit 1; }
-[ -f "$CC_STD" ] || { echo "no $CC_STD — run 'malf test --profile linux-gcc15-release' first"; exit 1; }
-
-{ read -r CANON; read -r DEFS; read -r INCS_CXX; } < <(extract_flags "$CC_CXX")
-{ read -r _;     read -r _;    read -r INCS_STD; } < <(extract_flags "$CC_STD")
-# Compile includes are shared (headers are version-identical across the two builds);
-# only the linked archives are stdlib-specific.
-INCS="-I$CANON/src -I$META/src $INCS_CXX"
-LIBS_CXX="$(dep_libs "$INCS_CXX")"
-LIBS_STD="$(dep_libs "$INCS_STD")"
-
-# Guard the CMakeDeps leak (header): if build/ was clobbered to libstdc++ (a later
-# gcc15 build) or the editable transitive dep crossed caches, the libc++ leg would link
-# a gcc15-release (libstdc++) archive — which cannot satisfy a libc++ binary (__cxx11 vs
-# __1, std::__throw_system_error). Fail loudly with the fix, not a cryptic linker error.
-case "$LIBS_CXX" in
-  *gcc15-release*)
-    echo "GATE SETUP FAIL: the libc++ leg references a gcc15-release (libstdc++) archive —"
-    echo "  build/ is not a clean libc++ build. Rebuild the libc++ leg LAST (canon then"
-    echo "  metalog): see the populate order in this script's header. [CMakeDeps leak]"
-    exit 2 ;;
-esac
-grep -q -- '-stdlib=libc++' "$CC_CXX" || {
-  echo "GATE SETUP FAIL: $CC_CXX has no -stdlib=libc++ — build/ reflects a non-libc++ build"
-  echo "  (malf refreshes it for clangd on every build). Rebuild the libc++ leg LAST."; exit 2; }
-
-SRCS="$(find "$CANON/src" "$META/src" -name '*.cpp')"
-# Committed, license-clean, hermetic corpus (no external dataset / network). Local and CI
-# tokenize the identical input, so a local PASS guarantees the CI corpus.
 CORPUS="$(ls "$META"/scripts/determinism_corpus/*.log 2>/dev/null | sort)"
 [ -n "$CORPUS" ] || { echo "no corpus under $META/scripts/determinism_corpus"; exit 1; }
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
-echo "canon=$CANON  libstdc++-libs=$(echo $LIBS_STD | grep -o '/[^ ]*\.a' | wc -l)  libc++-libs=$(echo $LIBS_CXX | grep -o '/[^ ]*\.a' | wc -l)  corpus=$(echo "$CORPUS" | wc -l) files"
+echo "canon=$CANON  conan_home=$CONAN_HOME  corpus=$(echo "$CORPUS" | wc -l) files"
 
-# The two diagonal legs — the real ship + dev toolchains, each on its own stdlib + deps.
-# "tag|compiler|extra-cxxflags|libs"
-FLAGS="-std=c++23 -O3 -march=x86-64-v2 -ffp-contract=off"
+# The two diagonal legs: "tag:cxx-bin:cc-bin:conan-profile". Each builds the tower under its own
+# compiler+stdlib via the conan toolchain; -ffp-contract=off is also baked PUBLIC into the targets.
 legs=(
-  "gcc15-libstdcxx|g++|$FLAGS|$LIBS_STD"
-  "clang21-libcxx|clang++|$FLAGS -stdlib=libc++|$LIBS_CXX"
+  "gcc15-libstdcxx:g++-15:gcc-15:linux-gcc15-release"
+  "clang21-libcxx:clang++-21:clang-21:linux-clang21-libcxx-release"
 )
+declare -A BIN
 builds=()
 for leg in "${legs[@]}"; do
-  IFS='|' read -r tag cxx cxxflags libs <<<"$leg"
-  command -v "$cxx" >/dev/null || { echo "MISSING COMPILER: $cxx (leg $tag) — cannot run the diagonal"; continue; }
-  if $cxx $cxxflags $DEFS $INCS $SRCS "$META/scripts/determinism_fixture.cpp" $libs -o "$WORK/$tag" 2>"$WORK/$tag.log"; then
-    builds+=("$tag")
-  else echo "BUILD FAIL: $tag"; tail -3 "$WORK/$tag.log" | sed 's/^/   /'; fi
+  IFS=: read -r tag cxxbin ccbin profile <<<"$leg"
+  command -v "$cxxbin" >/dev/null || { echo "MISSING COMPILER: $cxxbin (leg $tag) — cannot run the diagonal"; continue; }
+  [ -f "$CONAN_HOME/profiles/$profile" ] || { echo "MISSING PROFILE: $profile (leg $tag)"; continue; }
+
+  legdir="$WORK/conan-$tag"
+  if ! conan install "$META" --profile:host="$profile" --profile:build="$profile" \
+        --build=missing -of "$legdir" >"$legdir.install.log" 2>&1; then
+    echo "CONAN INSTALL FAIL: $tag"; tail -4 "$legdir.install.log" | sed 's/^/   /'; continue
+  fi
+  toolchain="$(find "$legdir" -name conan_toolchain.cmake 2>/dev/null | head -1)"
+  [ -f "$toolchain" ] || { echo "CONAN INSTALL FAIL: $tag — no conan_toolchain.cmake"; continue; }
+
+  bdir="$WORK/build-$tag"
+  if cmake -S "$HARNESS" -B "$bdir" -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_C_COMPILER="$ccbin" -DCMAKE_CXX_COMPILER="$cxxbin" \
+        -DCMAKE_TOOLCHAIN_FILE="$toolchain" \
+        -DCANON_ROOT="$CANON" -DMETA_ROOT="$META" \
+        -DCELL_FLAGS="-ffp-contract=off -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_OFF" >"$bdir.cfg.log" 2>&1 \
+     && cmake --build "$bdir" --target det_fixture >"$bdir.build.log" 2>&1; then
+    bin="$(find "$bdir" -name det_fixture -type f -perm -u+x 2>/dev/null | head -1)"
+    if [ -x "$bin" ]; then builds+=("$tag"); BIN["$tag"]="$bin"; else echo "BUILD FAIL: $tag (no det_fixture)"; fi
+  else
+    echo "BUILD FAIL: $tag"
+    { tail -4 "$bdir.build.log" "$bdir.cfg.log" 2>/dev/null | sed 's/^/   /'; } || true
+  fi
 done
 
 # Gate integrity: the diagonal needs BOTH legs. A single leg verifies nothing about the
@@ -148,7 +94,7 @@ fi
 
 for tag in "${builds[@]}"; do
   : >"$WORK/$tag.out"
-  for f in $CORPUS; do echo "### $(basename "$f") ###" >>"$WORK/$tag.out"; "$WORK/$tag" "$f" >>"$WORK/$tag.out" 2>/dev/null; done
+  for f in $CORPUS; do echo "### $(basename "$f") ###" >>"$WORK/$tag.out"; "${BIN[$tag]}" "$f" >>"$WORK/$tag.out" 2>/dev/null; done
 done
 ref="$WORK/${builds[0]}.out"; rc=0
 echo "reference: ${builds[0]}  sha=$(sha256sum "$ref" | cut -c1-16)"
