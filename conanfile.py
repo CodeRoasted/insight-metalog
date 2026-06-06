@@ -86,7 +86,8 @@ class InsightMetalogConan(ConanFile):
         # (it carries FILE_SET CXX_MODULES; conan's generator does not emit it).
         # Editable build-tree config dir + create install path both listed.
         self.cpp_info.set_property("cmake_find_mode", "none")
-        self.cpp_info.builddirs = [
-            os.environ.get("MALF_EDITABLE_BUILD_DIR", "build"),
-            "lib/cmake/insight_metalog",
-        ]
+        malf_editable_build_dir = os.environ.get("MALF_EDITABLE_BUILD_DIR")
+        if malf_editable_build_dir:
+            self.cpp_info.builddirs = [malf_editable_build_dir, "lib/cmake/insight_metalog"]
+        else:
+            self.cpp_info.builddirs = ["lib/cmake/insight_metalog"]
