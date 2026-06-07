@@ -70,19 +70,21 @@ for leg in "${legs[@]}"; do
   [ -f "$toolchain" ] || { echo "CONAN INSTALL FAIL: $tag — no conan_toolchain.cmake"; continue; }
 
   bdir="$WORK/build-$tag"
-  if cmake -S "$HARNESS" -B "$bdir" -G Ninja \
+  # Separate configure from build so a failure names the stage, and print the REAL tail of the
+  # failing stage's log (a one-line "BUILD FAIL" with no diagnostics is useless under CI).
+  if ! cmake -S "$HARNESS" -B "$bdir" -G Ninja \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_C_COMPILER="$ccbin" -DCMAKE_CXX_COMPILER="$cxxbin" \
         -DCMAKE_TOOLCHAIN_FILE="$toolchain" \
         -DCANON_ROOT="$CANON" -DMETA_ROOT="$META" \
-        -DCELL_FLAGS="-ffp-contract=off -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_OFF" >"$bdir.cfg.log" 2>&1 \
-     && cmake --build "$bdir" --target det_fixture >"$bdir.build.log" 2>&1; then
-    bin="$(find "$bdir" -name det_fixture -type f -perm -u+x 2>/dev/null | head -1)"
-    if [ -x "$bin" ]; then builds+=("$tag"); BIN["$tag"]="$bin"; else echo "BUILD FAIL: $tag (no det_fixture)"; fi
-  else
-    echo "BUILD FAIL: $tag"
-    { tail -4 "$bdir.build.log" "$bdir.cfg.log" 2>/dev/null | sed 's/^/   /'; } || true
+        -DCELL_FLAGS="-ffp-contract=off -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_OFF" >"$bdir.cfg.log" 2>&1; then
+    echo "CONFIGURE FAIL: $tag"; tail -40 "$bdir.cfg.log" | sed 's/^/   /'; continue
   fi
+  if ! cmake --build "$bdir" --target det_fixture >"$bdir.build.log" 2>&1; then
+    echo "BUILD FAIL: $tag"; tail -40 "$bdir.build.log" | sed 's/^/   /'; continue
+  fi
+  bin="$(find "$bdir" -name det_fixture -type f -perm -u+x 2>/dev/null | head -1)"
+  if [ -x "$bin" ]; then builds+=("$tag"); BIN["$tag"]="$bin"; else echo "BUILD FAIL: $tag (no det_fixture produced)"; fi
 done
 
 # Gate integrity: the diagonal needs BOTH legs. A single leg verifies nothing about the
