@@ -48,6 +48,15 @@ CORPUS="$(ls "$META"/scripts/determinism_corpus/*.log 2>/dev/null | sort)"
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 echo "canon=$CANON  conan_home=$CONAN_HOME  corpus=$(echo "$CORPUS" | wc -l) files"
 
+# `import std` module-tower builds are memory-hungry (~2-3 GB per concurrent compile). On a small
+# CI runner (2-core / ~7 GB), ninja's default ncpu+2 parallelism OOM-kills the build mid-compile —
+# which truncates the log to nothing and surfaces as a bare "BUILD FAIL" with no cause. Cap the
+# build job count by BOTH cpu and free memory (≈3 GB/job) so peak stays under the runner's limit.
+mem_gb=$(awk '/MemAvailable/{print int($2/1024/1024)}' /proc/meminfo 2>/dev/null || echo 4)
+ncpu=$(nproc 2>/dev/null || echo 2)
+JOBS=$(( mem_gb / 3 )); [ "$JOBS" -lt 1 ] && JOBS=1; [ "$JOBS" -gt "$ncpu" ] && JOBS=$ncpu
+echo "build parallelism: $JOBS jobs (MemAvailable=${mem_gb}GB cpu=$ncpu)"
+
 # The two diagonal legs: "tag:cxx-bin:cc-bin:conan-profile". Each builds the tower under its own
 # compiler+stdlib via the conan toolchain; -ffp-contract=off is also baked PUBLIC into the targets.
 legs=(
@@ -80,7 +89,7 @@ for leg in "${legs[@]}"; do
         -DCELL_FLAGS="-ffp-contract=off -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_OFF" >"$bdir.cfg.log" 2>&1; then
     echo "CONFIGURE FAIL: $tag"; tail -40 "$bdir.cfg.log" | sed 's/^/   /'; continue
   fi
-  if ! cmake --build "$bdir" --target det_fixture >"$bdir.build.log" 2>&1; then
+  if ! cmake --build "$bdir" --target det_fixture --parallel "$JOBS" >"$bdir.build.log" 2>&1; then
     echo "BUILD FAIL: $tag"; tail -40 "$bdir.build.log" | sed 's/^/   /'; continue
   fi
   bin="$(find "$bdir" -name det_fixture -type f -perm -u+x 2>/dev/null | head -1)"
