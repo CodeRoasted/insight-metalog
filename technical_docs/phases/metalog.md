@@ -1,6 +1,6 @@
 # MetaLog (insight-metalog)
 
-Status: shipped. Package: `metalog/` (insight-metalog). Public API: `metalog/api/insight/metalog/metalog_engine.hpp`.
+Status: shipped. Package: insight-metalog (single-package repo). The public API is the `insight.metalog` named module (`api/insight/metalog.cppm` — `MetaLogEngine`, `compose()`, `diff()`) over the `insight.metalog.api` contract layer; the envelope internals are the sealed `insight.metalog.detail` module. Tests mirror the concerns under `tests/{engine,serialize,diff,compose,reservoir,determinism}/` and import the `insight.metalog.test` aggregate.
 
 insight-metalog is the compression layer. It turns one bounded window of canonical events into a deterministic MetaLog v0.5.0 document, plus spec-level `compose()` and `diff()` helpers used by detection.
 
