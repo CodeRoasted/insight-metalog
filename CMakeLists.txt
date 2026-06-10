@@ -1,5 +1,5 @@
 ###########################################################
-#  insight_metalog — MetaLog spec-conformant producer (1.5.1 pure named module).
+#  insight_metalog — MetaLog spec-conformant producer (1.5.2 template-aligned named modules).
 #  Spec: https://github.com/CodeRoasted/metalog-spec
 ###########################################################
 cmake_minimum_required(VERSION 3.28)
@@ -27,15 +27,20 @@ find_package(glaze REQUIRED CONFIG)
 find_package(picosha2 REQUIRED CONFIG)
 
 ###########################################################
-#  Sources (1.5.1 unwrap)
-#  - Module interface units (FILE_SET cxx_modules): internal + api + facade (api/) + detail (src/).
+#  Sources (1.5.2 template alignment, §11.9.11)
+#  - PUBLIC module interface units (installed): internal + api + facade (api/).
+#  - PRIVATE (sealed, build-only) detail module (src/): HLL, comparability, statistics, salience,
+#    wire_format — five cohesive leaf sections with no edges between them, so the §11.9.11 sizing
+#    rule keeps it a SINGLE detail module (a domain split would be cosmetic).
 #  - Module impl units (regular sources, scanned): src/*.cpp attach via `module insight.metalog[.detail];`.
 #  - No textual headers survive (metalog uses no logging macro layer).
 ###########################################################
-set(METALOG_MODULE_UNITS
+set(METALOG_PUBLIC_MODULE_UNITS
     ${CMAKE_CURRENT_SOURCE_DIR}/api/insight/metalog.internal.cppm
     ${CMAKE_CURRENT_SOURCE_DIR}/api/insight/metalog.api.cppm
     ${CMAKE_CURRENT_SOURCE_DIR}/api/insight/metalog.cppm
+)
+set(METALOG_DETAIL_MODULE_UNITS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/insight/metalog.detail.cppm
 )
 file(GLOB_RECURSE METALOG_IMPL_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
@@ -43,12 +48,19 @@ file(GLOB_RECURSE METALOG_IMPL_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE
 ###########################################################
 #  Module-bearing static library
 ###########################################################
+# §11.9.7/§11.9.11 install seal: the PUBLIC file set (internal/api/facade) is installed; the
+# PRIVATE cxx_modules_detail set is build-only — legal because no external target imports the
+# lib's private module (tests/benchmarks are module MEMBERS below).
 add_library(insight_metalog STATIC ${METALOG_IMPL_SOURCES})
 target_sources(insight_metalog
     PUBLIC
         FILE_SET cxx_modules TYPE CXX_MODULES
         BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/api ${CMAKE_CURRENT_SOURCE_DIR}/src
-        FILES    ${METALOG_MODULE_UNITS}
+        FILES    ${METALOG_PUBLIC_MODULE_UNITS}
+    PRIVATE
+        FILE_SET cxx_modules_detail TYPE CXX_MODULES
+        BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/src
+        FILES    ${METALOG_DETAIL_MODULE_UNITS}
 )
 set_target_properties(insight_metalog PROPERTIES EXPORT_NAME metalog
     CXX_SCAN_FOR_MODULES ON CXX_MODULE_STD ON)
@@ -110,22 +122,28 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/insight_metalog-config.cmake
 #  Tests
 ###########################################################
 if(INSIGHT_METALOG_BUILD_TESTS)
+    # Per-domain test mirror (§11.9.11): tests/<domain>/*.cpp — engine (window/stats/behavior/
+    # stability/histograms/HLL), serialize, diff, compose, reservoir, determinism.
     file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/*.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp"
     )
     if(TEST_SOURCES)
         include(CTest)
         find_package(GTest REQUIRED CONFIG)
         enable_testing()
 
-        # White-box tests RECOMPILE the module (interface units + impl .cpp) + the test TUs, so a test
-        # may import the sealed internals if needed; CXX_MODULE_STD ON provides the same std module.
+        # §11.9.7 white-box tests are MODULE MEMBERS: the test target RECOMPILES the module
+        # (interface units + impl .cpp) + the test TUs, so a test may import the sealed detail
+        # module (via the insight.metalog.test aggregate) WITHOUT the lib exporting it;
+        # CXX_MODULE_STD ON provides the same std module.
         add_executable(insight_metalog_tests ${TEST_SOURCES} ${METALOG_IMPL_SOURCES})
         target_sources(insight_metalog_tests
             PRIVATE
                 FILE_SET cxx_modules TYPE CXX_MODULES
                 BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/api ${CMAKE_CURRENT_SOURCE_DIR}/src
-                FILES    ${METALOG_MODULE_UNITS})
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests
+                FILES    ${METALOG_PUBLIC_MODULE_UNITS} ${METALOG_DETAIL_MODULE_UNITS}
+                         tests/metalog.test.cppm)
         target_link_libraries(insight_metalog_tests PRIVATE
             insight::canon glaze::glaze picosha2::picosha2
             GTest::gtest GTest::gtest_main)
@@ -149,13 +167,26 @@ if(INSIGHT_METALOG_BUILD_BENCHMARKS)
     if(BENCH_SOURCES)
         find_package(benchmark REQUIRED CONFIG)
         find_package(spdlog   REQUIRED CONFIG)
-        add_executable(insight_metalog_bench ${BENCH_SOURCES})
-        # Link insight::canon EXPLICITLY (not just transitively via insight_metalog): the bench
-        # `import insight.canon`, and gcc-15 does not propagate a transitive module file set for import.
+        # §11.9.7/§11.9.11: like the white-box tests, benchmarks are MODULE MEMBERS, not consumers —
+        # the bench target RECOMPILES the module (interface + detail + impl .cpp) + the bench TUs
+        # (via the insight.metalog.bench aggregate) and does NOT link insight_metalog; it pulls the
+        # lib's deps directly. This is what lets the detail module stay a PRIVATE (build-only,
+        # never-installed) file set on the shipped lib.
+        add_executable(insight_metalog_bench ${BENCH_SOURCES} ${METALOG_IMPL_SOURCES})
+        target_sources(insight_metalog_bench
+            PRIVATE
+                FILE_SET cxx_modules TYPE CXX_MODULES
+                BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/api ${CMAKE_CURRENT_SOURCE_DIR}/src
+                         ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks
+                FILES    ${METALOG_PUBLIC_MODULE_UNITS} ${METALOG_DETAIL_MODULE_UNITS}
+                         benchmarks/metalog.bench.cppm)
         target_link_libraries(insight_metalog_bench PRIVATE
-            insight_metalog insight::canon benchmark::benchmark spdlog::spdlog)
+            insight::canon glaze::glaze picosha2::picosha2
+            benchmark::benchmark spdlog::spdlog)
         target_include_directories(insight_metalog_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
         target_compile_features(insight_metalog_bench PRIVATE cxx_std_23)
         set_target_properties(insight_metalog_bench PROPERTIES CXX_SCAN_FOR_MODULES ON CXX_MODULE_STD ON)
+        target_compile_options(insight_metalog_bench PRIVATE
+            $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>:-ffp-contract=off>)
     endif()
 endif()

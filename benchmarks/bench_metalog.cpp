@@ -16,9 +16,7 @@
 
 #include <benchmark/benchmark.h>
 
-import std;
-import insight.metalog;
-import insight.canon;
+import insight.metalog.bench;
 
 namespace
 {
