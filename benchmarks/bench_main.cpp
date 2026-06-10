@@ -4,8 +4,7 @@
 #include <benchmark/benchmark.h>
 #include <spdlog/spdlog.h>
 
-import std;
-import insight.metalog;
+import insight.metalog.bench;
 
 int main(int argc, char** argv)
 {
