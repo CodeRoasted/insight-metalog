@@ -5,7 +5,7 @@ module insight.metalog;
 import insight.metalog.internal;
 import insight.metalog.api;
 import insight.canon;
-import insight.metalog.detail;
+import insight.metalog.detail.stats;
 
 // MetaLog producer engine (SPEC v0.5.0). The stateful streaming side: one window
 // of CanonicalEvents in (open_window / ingest_event) -> one bounded MetaLog

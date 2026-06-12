@@ -1,7 +1,7 @@
 module;
 #include <ctime> // gmtime_r — POSIX, not in import std (§11.9 textual GMF exception)
 
-module insight.metalog.detail;
+module insight.metalog.detail.stats;
 import insight.metalog.internal;
 import insight.metalog.api;
 import insight.canon;

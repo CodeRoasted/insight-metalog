@@ -5,7 +5,7 @@ module insight.metalog;
 import insight.metalog.internal;
 import insight.metalog.api;
 import insight.canon;
-import insight.metalog.detail;
+import insight.metalog.detail.stats;
 
 // MetaLog JSON serialiser (SPEC v0.5.0 envelope). The restrictive, omit-empty
 // glaze DTO layer: a per-wire struct mirror of the domain types + the make_*

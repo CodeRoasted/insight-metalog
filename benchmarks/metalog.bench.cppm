@@ -5,5 +5,6 @@
 export module insight.metalog.bench;
 export import std;
 export import insight.metalog;
-export import insight.metalog.detail;
+export import insight.metalog.detail.stats;
+export import insight.metalog.detail.operations;
 export import insight.canon;

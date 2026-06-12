@@ -6,7 +6,8 @@
 export module insight.metalog.test;
 export import std;
 export import insight.metalog;
-export import insight.metalog.detail;
+export import insight.metalog.detail.stats;
+export import insight.metalog.detail.operations;
 export import insight.canon;
 
 export namespace insight::metalog::test

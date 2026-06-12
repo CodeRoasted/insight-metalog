@@ -4,7 +4,8 @@ module insight.metalog;
 import insight.metalog.internal;
 import insight.metalog.api;
 import insight.canon;
-import insight.metalog.detail;
+import insight.metalog.detail.stats;
+import insight.metalog.detail.operations;
 
 // MetaLog composition (SPEC §12): merge two documents into one bounded
 // fingerprint covering both windows. Lossy where either input had a non-empty

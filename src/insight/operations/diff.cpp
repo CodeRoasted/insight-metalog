@@ -4,7 +4,8 @@ module insight.metalog;
 import insight.metalog.internal;
 import insight.metalog.api;
 import insight.canon;
-import insight.metalog.detail;
+import insight.metalog.detail.stats;
+import insight.metalog.detail.operations;
 
 // MetaLog pairwise diff (SPEC §13): the stateless delta between two documents
 // (previous -> current). Template/branching/n-gram/field-histogram/tail deltas +

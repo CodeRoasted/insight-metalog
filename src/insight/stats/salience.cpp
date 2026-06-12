@@ -1,6 +1,6 @@
 module;
 
-module insight.metalog.detail;
+module insight.metalog.detail.stats;
 import insight.metalog.internal;
 import insight.metalog.api;
 import insight.canon;

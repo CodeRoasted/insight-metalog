@@ -27,21 +27,23 @@ find_package(glaze REQUIRED CONFIG)
 find_package(picosha2 REQUIRED CONFIG)
 
 ###########################################################
-#  Sources (1.5.2 template alignment, §11.9.11)
+#  Sources (1.5.2 domain decomposition, §11.9.11)
 #  - PUBLIC module interface units (installed): internal (src/) + api + facade (api/).
-#  - PRIVATE (sealed, build-only) detail module (src/): HLL, comparability, statistics, salience,
-#    wire_format — five cohesive leaf sections with no edges between them, so the §11.9.11 sizing
-#    rule keeps it a SINGLE detail module (a domain split would be cosmetic).
-#  - Module impl units (regular sources, scanned): src/*.cpp attach via `module insight.metalog[.detail];`.
+#  - PRIVATE (sealed, build-only) detail shards (src/<domain>/): two domain shards —
+#    detail.stats (HLL, statistics, salience, wire_format) and detail.operations
+#    (comparability gate). Impl units live alongside their shard in src/<domain>/.
+#  - Module impl units (regular sources, scanned): src/**/*.cpp attach via
+#    `module insight.metalog[.detail.<domain>];`.
 #  - No textual headers survive (metalog uses no logging macro layer).
 ###########################################################
 set(METALOG_PUBLIC_MODULE_UNITS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/insight/metalog.internal.cppm
-    ${CMAKE_CURRENT_SOURCE_DIR}/api/insight/metalog.api.cppm
-    ${CMAKE_CURRENT_SOURCE_DIR}/api/insight/metalog.cppm
+    ${CMAKE_CURRENT_SOURCE_DIR}/api/metalog.api.cppm
+    ${CMAKE_CURRENT_SOURCE_DIR}/api/metalog.cppm
 )
 set(METALOG_DETAIL_MODULE_UNITS
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/insight/metalog.detail.cppm
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/insight/stats/metalog.detail.stats.cppm
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/insight/operations/metalog.detail.operations.cppm
 )
 file(GLOB_RECURSE METALOG_IMPL_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 
@@ -77,7 +79,7 @@ target_link_libraries(insight_metalog
 # glaze (visible=False, impl-only): scope its include to ONLY the .cpp that needs it (metalog_serialize),
 # NOT the target — a target-level include leaks into IMPORTED_CXX_MODULES_INCLUDE_DIRECTORIES, which
 # editable module consumers (detection/eidos) then evaluate → "glaze::glaze not found" in their graph.
-set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/src/insight/metalog/metalog_serialize.cpp
+set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/src/insight/serialization/serialize.cpp
     PROPERTIES INCLUDE_DIRECTORIES "$<TARGET_PROPERTY:glaze::glaze,INTERFACE_INCLUDE_DIRECTORIES>")
 
 # Float determinism: the MetaLog document is deterministic content → cross-machine bit-identity.
