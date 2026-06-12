@@ -28,7 +28,7 @@ find_package(picosha2 REQUIRED CONFIG)
 
 ###########################################################
 #  Sources (1.5.2 template alignment, §11.9.11)
-#  - PUBLIC module interface units (installed): internal + api + facade (api/).
+#  - PUBLIC module interface units (installed): internal (src/) + api + facade (api/).
 #  - PRIVATE (sealed, build-only) detail module (src/): HLL, comparability, statistics, salience,
 #    wire_format — five cohesive leaf sections with no edges between them, so the §11.9.11 sizing
 #    rule keeps it a SINGLE detail module (a domain split would be cosmetic).
@@ -36,7 +36,7 @@ find_package(picosha2 REQUIRED CONFIG)
 #  - No textual headers survive (metalog uses no logging macro layer).
 ###########################################################
 set(METALOG_PUBLIC_MODULE_UNITS
-    ${CMAKE_CURRENT_SOURCE_DIR}/api/insight/metalog.internal.cppm
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/insight/metalog.internal.cppm
     ${CMAKE_CURRENT_SOURCE_DIR}/api/insight/metalog.api.cppm
     ${CMAKE_CURRENT_SOURCE_DIR}/api/insight/metalog.cppm
 )

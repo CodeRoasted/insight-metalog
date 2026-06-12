@@ -11,15 +11,13 @@ import insight.canon;
 // Zero-dependency implementation; FNV-1a + MurmurHash3 finalizer for hash.
 // Private to the metalog module — not part of the public API.
 
-
-
 export namespace insight::metalog::detail
 {
 
 class HyperLogLog
 {
   public:
-    static constexpr std::uint8_t kPrecision = 14;
+    static constexpr std::uint8_t kPrecision { 14 };
     static constexpr std::size_t kNumRegisters{1U << kPrecision}; // 16384
 
     HyperLogLog() noexcept
