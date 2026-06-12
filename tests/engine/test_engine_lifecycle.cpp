@@ -1,6 +1,7 @@
 // NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns
-// MetaLogEngine lifecycle + window envelope: open/close guards, reset semantics, duration/lines_observed.
+// MetaLogEngine lifecycle + window envelope: open/close guards, reset semantics,
+// duration/lines_observed.
 
 #include <gtest/gtest.h>
 

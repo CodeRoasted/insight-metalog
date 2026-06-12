@@ -11,9 +11,6 @@ import insight.metalog.detail.operations;
 // (previous -> current). Template/branching/n-gram/field-histogram/tail deltas +
 // the KL/JS divergence summary. Single responsibility — diff semantics only.
 
-
-
-
 namespace insight::metalog
 {
 

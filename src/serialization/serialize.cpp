@@ -13,10 +13,6 @@ import insight.metalog.detail.stats;
 // overloads. Single responsibility — serialization only (no producer state, no
 // compose/diff semantics).
 
-
-
-
-
 namespace insight::metalog
 {
 

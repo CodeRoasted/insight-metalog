@@ -1,6 +1,7 @@
 // NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns
-// BehaviorBlock: n-gram emission, conditional probabilities, bounded keys (MetaLogEngine close_window).
+// BehaviorBlock: n-gram emission, conditional probabilities, bounded keys (MetaLogEngine
+// close_window).
 
 #include <gtest/gtest.h>
 

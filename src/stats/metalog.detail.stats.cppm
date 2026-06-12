@@ -18,7 +18,7 @@ export namespace insight::metalog
 class HyperLogLog
 {
   public:
-    static constexpr std::uint8_t kPrecision { 14 };
+    static constexpr std::uint8_t kPrecision{14};
     static constexpr std::size_t kNumRegisters{1U << kPrecision}; // 16384
 
     HyperLogLog() noexcept

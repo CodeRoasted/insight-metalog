@@ -13,9 +13,6 @@ import insight.metalog.detail.operations;
 // re-derived reservoir) are preserved. Single responsibility — the compose
 // semantics only.
 
-
-
-
 namespace insight::metalog
 {
 

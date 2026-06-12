@@ -1,6 +1,7 @@
 // NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns
-// Salience reservoir (Tier 2) + re-derivation coordinates: admission, caps, dedup, coordinate XOR (§15.2).
+// Salience reservoir (Tier 2) + re-derivation coordinates: admission, caps, dedup, coordinate XOR
+// (§15.2).
 
 #include <glaze/glaze.hpp>
 #include <gtest/gtest.h>

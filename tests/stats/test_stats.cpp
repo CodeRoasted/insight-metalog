@@ -1,8 +1,8 @@
 // NOLINTBEGIN
 // Unit tests for insight.metalog.detail.stats:
 //   statistics.cpp — shannon_entropy_bits, divergences, new_and_vanished, histogram_js
-//   salience.cpp   — dominant_level_of, dominant_role_of, surprise_band, novelty_band, salience_score
-//   wire_format.cpp — format_rfc3339_utc, level_to_spec_string
+//   salience.cpp   — dominant_level_of, dominant_role_of, surprise_band, novelty_band,
+//   salience_score wire_format.cpp — format_rfc3339_utc, level_to_spec_string
 
 #include <gtest/gtest.h>
 
@@ -50,7 +50,7 @@ TEST(ShannonEntropy, HighlySkewedIsLowEntropy)
 TEST(ShannonEntropy, ZeroBucketsAreSkipped)
 {
     // Sparse: zeros should not affect result vs. the same non-zero buckets.
-    const double with_zeros    = meta::shannon_entropy_bits({50, 0, 50, 0}, 100);
+    const double with_zeros = meta::shannon_entropy_bits({50, 0, 50, 0}, 100);
     const double without_zeros = meta::shannon_entropy_bits({50, 50}, 100);
     EXPECT_NEAR(with_zeros, without_zeros, 1e-9);
 }
@@ -176,23 +176,21 @@ TEST(DominantLevel, SingleLevelReturnsThatLevel)
 
 TEST(DominantLevel, HighestCountWins)
 {
-    std::unordered_map<LogLevel, std::uint64_t> levels{
-        {LogLevel::Info, 100}, {LogLevel::Error, 5}};
+    std::unordered_map<LogLevel, std::uint64_t> levels{{LogLevel::Info, 100}, {LogLevel::Error, 5}};
     EXPECT_EQ(meta::dominant_level_of(levels), LogLevel::Info);
 }
 
 TEST(DominantLevel, TieBreakBySeverityErrorBeatsInfo)
 {
     // Tied count — higher severity must win, not map iteration order.
-    std::unordered_map<LogLevel, std::uint64_t> levels{
-        {LogLevel::Info, 10}, {LogLevel::Error, 10}};
+    std::unordered_map<LogLevel, std::uint64_t> levels{{LogLevel::Info, 10}, {LogLevel::Error, 10}};
     EXPECT_EQ(meta::dominant_level_of(levels), LogLevel::Error);
 }
 
 TEST(DominantLevel, TieBreakUnknownLosesToAnyRealLevel)
 {
-    std::unordered_map<LogLevel, std::uint64_t> levels{
-        {LogLevel::Unknown, 10}, {LogLevel::Trace, 10}};
+    std::unordered_map<LogLevel, std::uint64_t> levels{{LogLevel::Unknown, 10},
+                                                       {LogLevel::Trace, 10}};
     EXPECT_EQ(meta::dominant_level_of(levels), LogLevel::Trace);
 }
 
@@ -212,16 +210,16 @@ TEST(DominantRole, EmptyReturnsNone)
 
 TEST(DominantRole, HighestCountWins)
 {
-    std::unordered_map<StructuralRole, std::uint64_t> roles{
-        {StructuralRole::GroupBegin, 50}, {StructuralRole::Terminator, 5}};
+    std::unordered_map<StructuralRole, std::uint64_t> roles{{StructuralRole::GroupBegin, 50},
+                                                            {StructuralRole::Terminator, 5}};
     EXPECT_EQ(meta::dominant_role_of(roles), StructuralRole::GroupBegin);
 }
 
 TEST(DominantRole, TieBreakByEnumValueIsStable)
 {
     // Tie: higher enum value must win regardless of iteration order.
-    std::unordered_map<StructuralRole, std::uint64_t> roles{
-        {StructuralRole::None, 10}, {StructuralRole::GroupBegin, 10}};
+    std::unordered_map<StructuralRole, std::uint64_t> roles{{StructuralRole::None, 10},
+                                                            {StructuralRole::GroupBegin, 10}};
     // Milestone > None in enum value — Milestone must win.
     EXPECT_NE(meta::dominant_role_of(roles), StructuralRole::None);
 }
@@ -321,14 +319,15 @@ TEST(NoveltyBand, LastTenPctScoresLate)
 TEST(SalienceScore, ZeroSeverityReturnsZero)
 {
     // Info level, no failure cue, no surprise, no novelty → 0.
-    EXPECT_EQ(meta::salience_score(LogLevel::Info, StructuralRole::None, "conn accepted",
-                                   50, 100, 0, 0), 0u);
+    EXPECT_EQ(
+        meta::salience_score(LogLevel::Info, StructuralRole::None, "conn accepted", 50, 100, 0, 0),
+        0u);
 }
 
 TEST(SalienceScore, FatalLevelScoresHigh)
 {
-    const std::uint32_t score = meta::salience_score(
-        LogLevel::Fatal, StructuralRole::None, "process died", 1, 1000, 0, 0);
+    const std::uint32_t score =
+        meta::salience_score(LogLevel::Fatal, StructuralRole::None, "process died", 1, 1000, 0, 0);
     EXPECT_GT(score, 0u);
     // fatal band (100) × uncommon (90, count·100 < lines) = 9000.
     EXPECT_EQ(score, 9000u);
@@ -336,10 +335,10 @@ TEST(SalienceScore, FatalLevelScoresHigh)
 
 TEST(SalienceScore, ErrorLevelScoresLowerThanFatal)
 {
-    const std::uint32_t fatal_score = meta::salience_score(
-        LogLevel::Fatal, StructuralRole::None, "died", 1, 1000, 0, 0);
-    const std::uint32_t error_score = meta::salience_score(
-        LogLevel::Error, StructuralRole::None, "failed", 1, 1000, 0, 0);
+    const std::uint32_t fatal_score =
+        meta::salience_score(LogLevel::Fatal, StructuralRole::None, "died", 1, 1000, 0, 0);
+    const std::uint32_t error_score =
+        meta::salience_score(LogLevel::Error, StructuralRole::None, "failed", 1, 1000, 0, 0);
     EXPECT_GT(fatal_score, error_score);
     EXPECT_GT(error_score, 0u);
 }
@@ -347,25 +346,25 @@ TEST(SalienceScore, ErrorLevelScoresLowerThanFatal)
 TEST(SalienceScore, FrequentTemplateIsDamped)
 {
     // Same level but frequent (count >= 10% of lines) → lower rarity modulator.
-    const std::uint32_t rare_score = meta::salience_score(
-        LogLevel::Error, StructuralRole::None, "err", 1, 10000, 0, 0);
-    const std::uint32_t frequent_score = meta::salience_score(
-        LogLevel::Error, StructuralRole::None, "err", 5000, 10000, 0, 0);
+    const std::uint32_t rare_score =
+        meta::salience_score(LogLevel::Error, StructuralRole::None, "err", 1, 10000, 0, 0);
+    const std::uint32_t frequent_score =
+        meta::salience_score(LogLevel::Error, StructuralRole::None, "err", 5000, 10000, 0, 0);
     EXPECT_GT(rare_score, frequent_score);
 }
 
 TEST(SalienceScore, StructuralSurpriseAloneCanMakeNonZero)
 {
     // Info template, no failure cue — but strong surprise lifts it.
-    const std::uint32_t score = meta::salience_score(
-        LogLevel::Info, StructuralRole::None, "query ok", 1, 1000, 90, 0);
+    const std::uint32_t score =
+        meta::salience_score(LogLevel::Info, StructuralRole::None, "query ok", 1, 1000, 90, 0);
     EXPECT_GT(score, 0u);
 }
 
 TEST(SalienceScore, NoveltyAloneCanMakeNonZero)
 {
-    const std::uint32_t score = meta::salience_score(
-        LogLevel::Info, StructuralRole::None, "session start", 2, 100, 0, 60);
+    const std::uint32_t score =
+        meta::salience_score(LogLevel::Info, StructuralRole::None, "session start", 2, 100, 0, 60);
     EXPECT_GT(score, 0u);
 }
 
@@ -396,12 +395,12 @@ TEST(WireFormat, SubSecondTruncatedToSeconds)
 
 TEST(WireFormat, AllLevelsMapToSpecStrings)
 {
-    EXPECT_EQ(meta::level_to_spec_string(LogLevel::Trace),   "TRACE");
-    EXPECT_EQ(meta::level_to_spec_string(LogLevel::Debug),   "DEBUG");
-    EXPECT_EQ(meta::level_to_spec_string(LogLevel::Info),    "INFO");
-    EXPECT_EQ(meta::level_to_spec_string(LogLevel::Warn),    "WARN");
-    EXPECT_EQ(meta::level_to_spec_string(LogLevel::Error),   "ERROR");
-    EXPECT_EQ(meta::level_to_spec_string(LogLevel::Fatal),   "FATAL");
+    EXPECT_EQ(meta::level_to_spec_string(LogLevel::Trace), "TRACE");
+    EXPECT_EQ(meta::level_to_spec_string(LogLevel::Debug), "DEBUG");
+    EXPECT_EQ(meta::level_to_spec_string(LogLevel::Info), "INFO");
+    EXPECT_EQ(meta::level_to_spec_string(LogLevel::Warn), "WARN");
+    EXPECT_EQ(meta::level_to_spec_string(LogLevel::Error), "ERROR");
+    EXPECT_EQ(meta::level_to_spec_string(LogLevel::Fatal), "FATAL");
 }
 
 TEST(WireFormat, UnknownMapsToInfo)

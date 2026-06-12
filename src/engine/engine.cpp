@@ -13,15 +13,8 @@ import insight.metalog.detail.stats;
 // compose and diff live in their own translation units, and the cross-cutting
 // statistics / salience / wire-format helpers live under detail/.
 
-
-
-
-
-
-
 namespace insight::metalog
 {
-
 
 namespace
 {
@@ -380,8 +373,9 @@ void MetaLogEngine::stamp_envelope(MetaLogDocument& doc, Timestamp start, Timest
         // §15.2 RAW coordinate: source_ref + bounds present, children absent.
         ReDerivationCoordinate coord;
         coord.source_ref = *config_.source_ref;
-        coord.bounds = EventTimeBounds{.start_tick = static_cast<std::uint64_t>(start.time_since_epoch().count()),
-                                       .end_tick   = static_cast<std::uint64_t>(end.time_since_epoch().count())};
+        coord.bounds = EventTimeBounds{
+            .start_tick = static_cast<std::uint64_t>(start.time_since_epoch().count()),
+            .end_tick = static_cast<std::uint64_t>(end.time_since_epoch().count())};
         coord.canonicalization_version = config_.canonicalization_version;
         doc.coordinate = std::move(coord);
     }

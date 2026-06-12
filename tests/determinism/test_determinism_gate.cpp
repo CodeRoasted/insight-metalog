@@ -2,8 +2,8 @@
 // Unit tests: allow short identifiers and test-specific patterns
 // Standing gate: full-document cross-machine bit-identity golden (SHA-256 frozen).
 
-#include <picosha2.h>
 #include <gtest/gtest.h>
+#include <picosha2.h>
 
 import insight.metalog.test;
 
@@ -79,7 +79,6 @@ TEST(DeterminismGate, FullDocumentByteIdentityGolden)
            "(and re-verified across the cross-arch CI matrix).\nDOC:\n"
         << combined;
 }
-
 
 } // namespace
 
