@@ -11,7 +11,6 @@ Technical reference for the insight-metalog library: MetaLog production, composi
 ```text
 Raw log line
   -> insight-canon tokenization  ->  CanonicalEvent
-  -> insight-canon sequence      ->  SequenceEngine summaries
   -> insight-metalog             ->  MetaLogDocument
   -> insight-eidos               ->  DetectionReport + Insight
 ```
