@@ -6,13 +6,13 @@ import insight.metalog.internal;
 import insight.metalog.api;
 import insight.canon;
 
-// ──────── from src/insight/metalog/hll.hpp ────────
-// HyperLogLog sketch with p=14 (m=16384 registers, ~1.5% standard error).
+export namespace insight::metalog
+{
+
+// ── HyperLogLog ───────────────────────────────────────────────────────────────
+// Sketch with p=14 (m=16384 registers, ~1.5% standard error).
 // Zero-dependency implementation; FNV-1a + MurmurHash3 finalizer for hash.
 // Private to the metalog module — not part of the public API.
-
-export namespace insight::metalog::detail
-{
 
 class HyperLogLog
 {
@@ -116,19 +116,10 @@ class HyperLogLog
     }
 };
 
-} // namespace insight::metalog::detail
-
-
-// ──────── from src/insight/metalog/detail/comparability.hpp ────────
-
+// ── Comparability gate ────────────────────────────────────────────────────────
 // SPEC §2.4 processing-identifier comparability gate: deciding whether two
 // documents may be composed / diffed, and which opaque contract identifier the
-// result may carry. Single responsibility — the gate predicate + the carry rule.
-// Header-only (two tiny pure functions); shared by compose and diff.
-
-
-export namespace insight::metalog::detail
-{
+// result may carry.
 
 // §2.4 comparability gate. When both sides carry the identifier, the values MUST
 // be equal; throwing satisfies the spec's "MUST fail" branch. When one side omits
@@ -155,20 +146,11 @@ carry_processing_identifier(const std::optional<std::string>& lhs,
     return (lhs && rhs && *lhs == *rhs) ? lhs : std::nullopt;
 }
 
-} // namespace insight::metalog::detail
-
-
-// ──────── from src/insight/metalog/detail/statistics.hpp ────────
-
+// ── Distribution statistics ───────────────────────────────────────────────────
 // Deterministic distribution statistics over template/value frequency maps:
-// Shannon entropy and the KL / Jensen-Shannon divergences. Single responsibility
-// — the integer/fixed-point math (via insight::det) that turns count maps into
-// the spec's bit fields. Cross-machine bit-identical; shared by the engine
-// (close_window stability + entropies), compose, and diff.
-
-
-export namespace insight::metalog::detail
-{
+// Shannon entropy and the KL / Jensen-Shannon divergences.
+// Integer/fixed-point math (via insight::det); cross-machine bit-identical.
+// Shared by the engine (close_window stability + entropies), compose, and diff.
 
 // Shannon entropy in bits over a (possibly partial) frequency
 // distribution: -Σ p log2 p. Computed over the bucketed templates
@@ -207,22 +189,11 @@ new_and_vanished(const std::unordered_map<std::string, std::uint64_t>& cur,
                                   const std::unordered_map<std::string, std::uint64_t>& curr,
                                   std::uint64_t curr_total);
 
-} // namespace insight::metalog::detail
-
-
-// ──────── from src/insight/metalog/detail/salience.hpp ────────
-
-// Salience scoring: turning a template's level,
-// structural role, structural-surprise and self-novelty into a deterministic,
-// integer-quantized salience used to admit rare-but-meaningful templates into the
-// reservoir. Single responsibility — the severity ⊕ surprise ⊕ novelty ⊗ rarity
-// arithmetic (no float in this retention-content path, I5). Shared by the engine
-// (close_window reservoir selection) and compose (re-derived reservoir).
-
-
-
-export namespace insight::metalog::detail
-{
+// ── Salience scoring ──────────────────────────────────────────────────────────
+// Turning a template's level, structural role, structural-surprise and
+// self-novelty into a deterministic, integer-quantized salience used to admit
+// rare-but-meaningful templates into the reservoir.
+// Integer math only — no float (I5). Shared by engine and compose.
 
 // Most-frequent level / structural role for a template (argmax over the count
 // map). Roles are deterministic per template, so dominant_role_of is "the" role.
@@ -250,19 +221,9 @@ dominant_role_of(const std::unordered_map<StructuralRole, std::uint64_t>& roles)
                                            std::uint64_t lines, std::uint32_t structural_surprise,
                                            std::uint32_t novelty) noexcept;
 
-} // namespace insight::metalog::detail
-
-
-// ──────── from src/insight/metalog/detail/wire_format.hpp ────────
-
+// ── Wire-format helpers ───────────────────────────────────────────────────────
 // MetaLog wire-format helpers (spec §2/§3): rendering domain values into the
-// exact strings the v0.5.0 envelope requires. Single responsibility — formatting
-// only; no statistics, no salience.
-
-
-
-export namespace insight::metalog::detail
-{
+// exact strings the v0.5.0 envelope requires.
 
 // RFC 3339 UTC, fixed widths, always trailing 'Z' (e.g. "2026-04-24T10:00:00Z").
 [[nodiscard]] std::string format_rfc3339_utc(Timestamp timestamp);
@@ -270,5 +231,4 @@ export namespace insight::metalog::detail
 // SPEC level string. UNKNOWN maps to INFO — the spec defines no UNKNOWN level.
 [[nodiscard]] std::string level_to_spec_string(LogLevel level);
 
-} // namespace insight::metalog::detail
-
+} // namespace insight::metalog

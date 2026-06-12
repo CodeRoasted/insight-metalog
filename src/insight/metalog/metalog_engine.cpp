@@ -22,15 +22,6 @@ import insight.metalog.detail;
 namespace insight::metalog
 {
 
-using detail::divergences;
-using detail::dominant_level_of;
-using detail::dominant_role_of;
-using detail::format_rfc3339_utc;
-using detail::new_and_vanished;
-using detail::novelty_band;
-using detail::salience_score;
-using detail::shannon_entropy_bits;
-using detail::surprise_band;
 
 namespace
 {
@@ -78,7 +69,7 @@ std::string MetaLogEngine::compute_template_id(std::string_view canonical_templa
 // Key = content_template_id + '\x1f' + decimal(param_index).
 struct MetaLogEngine::HllState
 {
-    using HLL = detail::HyperLogLog;
+    using HLL = HyperLogLog;
 
     std::unordered_map<std::string, std::vector<HLL>> sketches;
     // sketches[content_id][param_index]

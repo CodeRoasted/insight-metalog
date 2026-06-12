@@ -5,7 +5,7 @@ import insight.metalog.internal;
 import insight.metalog.api;
 import insight.canon;
 
-namespace insight::metalog::detail
+namespace insight::metalog
 {
 
 namespace
@@ -215,4 +215,4 @@ std::uint32_t salience_score(std::optional<LogLevel> level, StructuralRole role,
     return severity * rarity; // 0..10000
 }
 
-} // namespace insight::metalog::detail
+} // namespace insight::metalog

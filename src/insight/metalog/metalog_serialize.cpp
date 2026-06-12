@@ -19,7 +19,6 @@ import insight.metalog.detail;
 
 namespace insight::metalog
 {
-using detail::level_to_spec_string;
 
 // ── JSON serialiser (glaze, DTO layer) ─────────────────────────
 //

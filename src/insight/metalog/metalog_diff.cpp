@@ -15,9 +15,6 @@ import insight.metalog.detail;
 
 namespace insight::metalog
 {
-using detail::check_processing_identifier_gate;
-using detail::divergences;
-using detail::histogram_js;
 
 // ── diff (SPEC §13) ────────────────────────────────────────────
 

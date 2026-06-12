@@ -5,7 +5,7 @@ import insight.metalog.internal;
 import insight.metalog.api;
 import insight.canon;
 
-namespace insight::metalog::detail
+namespace insight::metalog
 {
 
 namespace
@@ -172,4 +172,4 @@ double histogram_js(const std::unordered_map<std::string, std::uint64_t>& prev,
     return std::clamp(js_value, 0.0, 1.0);
 }
 
-} // namespace insight::metalog::detail
+} // namespace insight::metalog

@@ -17,12 +17,6 @@ import insight.metalog.detail;
 
 namespace insight::metalog
 {
-using detail::carry_processing_identifier;
-using detail::check_processing_identifier_gate;
-using detail::dominant_level_of;
-using detail::dominant_role_of;
-using detail::salience_score;
-using detail::shannon_entropy_bits;
 
 // ── compose (SPEC §12) ─────────────────────────────────────────
 

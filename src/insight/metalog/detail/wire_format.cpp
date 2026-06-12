@@ -6,7 +6,7 @@ import insight.metalog.internal;
 import insight.metalog.api;
 import insight.canon;
 
-namespace insight::metalog::detail
+namespace insight::metalog
 {
 
 std::string format_rfc3339_utc(Timestamp timestamp)
@@ -46,4 +46,4 @@ std::string level_to_spec_string(LogLevel level)
     }
 }
 
-} // namespace insight::metalog::detail
+} // namespace insight::metalog
