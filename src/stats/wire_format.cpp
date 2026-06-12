@@ -14,7 +14,7 @@ std::string format_rfc3339_utc(Timestamp timestamp)
     const auto secs{std::chrono::time_point_cast<std::chrono::seconds>(timestamp)};
     const std::time_t epoch_time{std::chrono::system_clock::to_time_t(secs)};
     std::tm utc_tm{};
-#if defined(_WIN32)
+#ifdef _WIN32
     gmtime_s(&utc_tm, &epoch_time);
 #else
     gmtime_r(&epoch_time, &utc_tm);

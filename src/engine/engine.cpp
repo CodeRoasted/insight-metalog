@@ -133,7 +133,7 @@ void MetaLogEngine::open_window(Timestamp start)
     recent_.fill(0);
     ngram_counts_.clear();
     ngram_total_ = 0;
-    hll_state_->reset();
+    (*hll_state_).reset();
     // NOTE: prev_freq_ / prev_window_end_iso_ are NOT cleared here —
     // they are the cross-window state that feeds the stability block.
 }
@@ -380,8 +380,8 @@ void MetaLogEngine::stamp_envelope(MetaLogDocument& doc, Timestamp start, Timest
         // §15.2 RAW coordinate: source_ref + bounds present, children absent.
         ReDerivationCoordinate coord;
         coord.source_ref = *config_.source_ref;
-        coord.bounds = EventTimeBounds{static_cast<std::uint64_t>(start.time_since_epoch().count()),
-                                       static_cast<std::uint64_t>(end.time_since_epoch().count())};
+        coord.bounds = EventTimeBounds{.start_tick = static_cast<std::uint64_t>(start.time_since_epoch().count()),
+                                       .end_tick   = static_cast<std::uint64_t>(end.time_since_epoch().count())};
         coord.canonicalization_version = config_.canonicalization_version;
         doc.coordinate = std::move(coord);
     }
