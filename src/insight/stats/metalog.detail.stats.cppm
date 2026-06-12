@@ -1,7 +1,8 @@
-// insight.metalog.detail — sealed internal (HLL, comparability, statistics, salience, wire_format).
-// EXPORTED so impl units import it; the facade does NOT re-export it. std via internal; canon (det_math,
-// types) via import insight.canon; metalog DTOs via import api.
-export module insight.metalog.detail;
+// insight.metalog.detail.stats — SEALED statistics domain (domain decomposition, §11.9.11).
+// HLL cardinality sketch, distribution statistics (entropy/KL/JS), salience scoring, and
+// wire-format helpers. A leaf over api+canon — imports no other metalog detail shard.
+// Never re-exported by the facade and never installed (PRIVATE file set).
+export module insight.metalog.detail.stats;
 import insight.metalog.internal;
 import insight.metalog.api;
 import insight.canon;
@@ -115,36 +116,6 @@ class HyperLogLog
         return hash_acc;
     }
 };
-
-// ── Comparability gate ────────────────────────────────────────────────────────
-// SPEC §2.4 processing-identifier comparability gate: deciding whether two
-// documents may be composed / diffed, and which opaque contract identifier the
-// result may carry.
-
-// §2.4 comparability gate. When both sides carry the identifier, the values MUST
-// be equal; throwing satisfies the spec's "MUST fail" branch. When one side omits
-// it, the operation MAY proceed (the consumer should treat the result with
-// caution); see callers for the carry rule.
-inline void check_processing_identifier_gate(const std::optional<std::string>& lhs,
-                                             const std::optional<std::string>& rhs,
-                                             std::string_view field, std::string_view operation)
-{
-    if (lhs && rhs && *lhs != *rhs)
-        throw std::invalid_argument{std::string{"metalog::"} + std::string{operation} +
-                                    ": incompatible " + std::string{field} + " — \"" + *lhs +
-                                    "\" vs \"" + *rhs + "\" (SPEC §2.4 comparability gate)"};
-}
-
-// Carry an identifier into a compose() output only when BOTH inputs supplied it
-// (and matched — already checked). When only one side has it, omitting from the
-// output is honest: the merged document covers an input under an unstated
-// contract; consumers see the absence rather than an over-claim.
-[[nodiscard]] inline std::optional<std::string>
-carry_processing_identifier(const std::optional<std::string>& lhs,
-                            const std::optional<std::string>& rhs)
-{
-    return (lhs && rhs && *lhs == *rhs) ? lhs : std::nullopt;
-}
 
 // ── Distribution statistics ───────────────────────────────────────────────────
 // Deterministic distribution statistics over template/value frequency maps:
