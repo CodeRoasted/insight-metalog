@@ -25,7 +25,7 @@ namespace
 {
 // Compare ISO 8601 lexicographically — valid for fixed-format
 // RFC 3339 UTC strings as we emit (always Z, fixed widths).
-[[nodiscard]] std::string iso_min(const std::string& lhs, const std::string& rhs)
+[[nodiscard]] std::string_view iso_min(std::string_view lhs, std::string_view rhs)
 {
     if (lhs.empty())
         return rhs;
@@ -33,7 +33,7 @@ namespace
         return lhs;
     return lhs < rhs ? lhs : rhs;
 }
-[[nodiscard]] std::string iso_max(const std::string& lhs, const std::string& rhs)
+[[nodiscard]] std::string_view iso_max(std::string_view lhs, std::string_view rhs)
 {
     if (lhs.empty())
         return rhs;
