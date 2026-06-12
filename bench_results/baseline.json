@@ -1,8 +1,8 @@
 {
   "context": {
-    "date": "2026-06-06T15:17:55+02:00",
+    "date": "2026-06-12T10:42:44+02:00",
     "host_name": "DESKTOP-F7PPTO6",
-    "executable": "/home/windows/workspace/coderoast/insight-metalog/build-gcc15-release/insight_metalog_bench",
+    "executable": "/home/windows/workspace/coderoast/insight-metalog/build-clang21-libcxx-release/insight_metalog_bench",
     "num_cpus": 8,
     "mhz_per_cpu": 4192,
     "cpu_scaling_enabled": false,
@@ -33,8 +33,8 @@
         "num_sharing": 8
       }
     ],
-    "load_avg": [1.90869,2.375,1.33789],
-    "library_version": "v1.9.5",
+    "load_avg": [2.22461,1.17627,0.617676],
+    "library_version": "v1.4.3-8-gdb4a26b1-dirty",
     "library_build_type": "release",
     "json_schema_version": 1
   },
@@ -48,12 +48,12 @@
       "repetitions": 1,
       "repetition_index": 0,
       "threads": 1,
-      "iterations": 520,
-      "real_time": 1.4203477365439399e+00,
-      "cpu_time": 1.3102534230769232e+00,
+      "iterations": 512,
+      "real_time": 1.3731686484383943e+00,
+      "cpu_time": 1.3284030839843752e+00,
       "time_unit": "ms",
-      "items_per_second": 7.6321113334827847e+05,
-      "label": "json_bytes=14853 unique=236 per_million=14853000 top_k=16"
+      "items_per_second": 7.5278355798499647e+05,
+      "label": "json_bytes=14753 unique=241 per_million=14753000 top_k=16"
     },
     {
       "name": "BM_MetaLogCompress/10000/16",
@@ -65,10 +65,10 @@
       "repetition_index": 0,
       "threads": 1,
       "iterations": 73,
-      "real_time": 1.0181259958724146e+01,
-      "cpu_time": 9.3921140958904079e+00,
+      "real_time": 9.5839020137047974e+00,
+      "cpu_time": 9.2716980821917776e+00,
       "time_unit": "ms",
-      "items_per_second": 1.0647230110178897e+06,
+      "items_per_second": 1.0785510821590575e+06,
       "label": "json_bytes=15098 unique=256 per_million=1509800 top_k=16"
     },
     {
@@ -81,10 +81,10 @@
       "repetition_index": 0,
       "threads": 1,
       "iterations": 9,
-      "real_time": 8.5048557886491636e+01,
-      "cpu_time": 7.8440498000000019e+01,
+      "real_time": 7.6925382222220321e+01,
+      "cpu_time": 7.4418834777777761e+01,
       "time_unit": "ms",
-      "items_per_second": 1.2748516716454297e+06,
+      "items_per_second": 1.3437458446992647e+06,
       "label": "json_bytes=15273 unique=256 per_million=152730 top_k=16"
     },
     {
@@ -96,12 +96,12 @@
       "repetitions": 1,
       "repetition_index": 0,
       "threads": 1,
-      "iterations": 540,
-      "real_time": 1.4647748722280893e+00,
-      "cpu_time": 1.3432362981481485e+00,
+      "iterations": 537,
+      "real_time": 1.3569147206703451e+00,
+      "cpu_time": 1.3126781024208571e+00,
       "time_unit": "ms",
-      "items_per_second": 7.4447065001046285e+05,
-      "label": "json_bytes=17415 unique=242 per_million=17415000 top_k=32"
+      "items_per_second": 7.6180138767896546e+05,
+      "label": "json_bytes=17386 unique=242 per_million=17386000 top_k=32"
     },
     {
       "name": "BM_MetaLogCompress/10000/32",
@@ -112,12 +112,12 @@
       "repetitions": 1,
       "repetition_index": 0,
       "threads": 1,
-      "iterations": 72,
-      "real_time": 1.7276497083205161e+01,
-      "cpu_time": 1.0470748013888889e+01,
+      "iterations": 74,
+      "real_time": 9.5304739729849768e+00,
+      "cpu_time": 9.2198024054054031e+00,
       "time_unit": "ms",
-      "items_per_second": 9.5504160607585369e+05,
-      "label": "json_bytes=17825 unique=256 per_million=1782500 top_k=32"
+      "items_per_second": 1.0846219431055465e+06,
+      "label": "json_bytes=17801 unique=256 per_million=1780100 top_k=32"
     },
     {
       "name": "BM_MetaLogCompress/100000/32",
@@ -128,12 +128,12 @@
       "repetitions": 1,
       "repetition_index": 0,
       "threads": 1,
-      "iterations": 8,
-      "real_time": 1.3688213062414434e+02,
-      "cpu_time": 8.6544648875000021e+01,
+      "iterations": 10,
+      "real_time": 7.7916058000118937e+01,
+      "cpu_time": 7.5376734399999989e+01,
       "time_unit": "ms",
-      "items_per_second": 1.1554729414228036e+06,
-      "label": "json_bytes=17995 unique=256 per_million=179950 top_k=32"
+      "items_per_second": 1.3266693071277444e+06,
+      "label": "json_bytes=17982 unique=256 per_million=179820 top_k=32"
     },
     {
       "name": "BM_MetaLogCompress/1000/64",
@@ -144,12 +144,12 @@
       "repetitions": 1,
       "repetition_index": 0,
       "threads": 1,
-      "iterations": 474,
-      "real_time": 3.3607701687456624e+00,
-      "cpu_time": 1.5402674810126586e+00,
+      "iterations": 532,
+      "real_time": 1.3408921804511920e+00,
+      "cpu_time": 1.2971971729323308e+00,
       "time_unit": "ms",
-      "items_per_second": 6.4923788389179239e+05,
-      "label": "json_bytes=22721 unique=233 per_million=22721000 top_k=64"
+      "items_per_second": 7.7089283022371016e+05,
+      "label": "json_bytes=22786 unique=233 per_million=22786000 top_k=64"
     },
     {
       "name": "BM_MetaLogCompress/10000/64",
@@ -160,12 +160,12 @@
       "repetitions": 1,
       "repetition_index": 0,
       "threads": 1,
-      "iterations": 72,
-      "real_time": 1.5843276555339495e+01,
-      "cpu_time": 1.0294851055555561e+01,
+      "iterations": 75,
+      "real_time": 9.4111825733367969e+00,
+      "cpu_time": 9.1045660933333270e+00,
       "time_unit": "ms",
-      "items_per_second": 9.7135936654504144e+05,
-      "label": "json_bytes=23196 unique=256 per_million=2319600 top_k=64"
+      "items_per_second": 1.0983499814804287e+06,
+      "label": "json_bytes=23230 unique=256 per_million=2323000 top_k=64"
     },
     {
       "name": "BM_MetaLogCompress/100000/64",
@@ -177,10 +177,10 @@
       "repetition_index": 0,
       "threads": 1,
       "iterations": 9,
-      "real_time": 8.3881720221446201e+01,
-      "cpu_time": 7.7024564888888804e+01,
+      "real_time": 8.0030791222169583e+01,
+      "cpu_time": 7.7422763888888952e+01,
       "time_unit": "ms",
-      "items_per_second": 1.2982871132638559e+06,
+      "items_per_second": 1.2916097924831526e+06,
       "label": "json_bytes=23426 unique=256 per_million=234260 top_k=64"
     },
     {
@@ -192,12 +192,12 @@
       "repetitions": 1,
       "repetition_index": 0,
       "threads": 1,
-      "iterations": 28115,
-      "real_time": 2.5547372577067648e+01,
-      "cpu_time": 2.3677494824826617e+01,
+      "iterations": 25222,
+      "real_time": 2.8659559947668175e+01,
+      "cpu_time": 2.7726420347315852e+01,
       "time_unit": "us",
-      "items_per_second": 4.2234197806748867e+07,
-      "ns_per_event": 2.3677494824826618e-08
+      "items_per_second": 3.6066682517016962e+07,
+      "ns_per_event": 2.7726420347315852e-08
     },
     {
       "name": "BM_MetaLogIngest_FieldHistograms/1",
@@ -208,12 +208,12 @@
       "repetitions": 1,
       "repetition_index": 0,
       "threads": 1,
-      "iterations": 12176,
-      "real_time": 6.5596548455437514e+01,
-      "cpu_time": 6.0794783015768758e+01,
+      "iterations": 9507,
+      "real_time": 7.2132763121908468e+01,
+      "cpu_time": 6.9781026822341531e+01,
       "time_unit": "us",
-      "items_per_second": 1.6448779819489168e+07,
-      "ns_per_event": 6.0794783015768765e-08
+      "items_per_second": 1.4330542921730604e+07,
+      "ns_per_event": 6.9781026822341536e-08
     },
     {
       "name": "BM_MetaLogIngest_FieldHistograms/3",
@@ -224,12 +224,12 @@
       "repetitions": 1,
       "repetition_index": 0,
       "threads": 1,
-      "iterations": 4934,
-      "real_time": 1.5568869294320095e+02,
-      "cpu_time": 1.4429339906769329e+02,
+      "iterations": 4465,
+      "real_time": 1.6186774311346889e+02,
+      "cpu_time": 1.5659730593505051e+02,
       "time_unit": "us",
-      "items_per_second": 6.9303239542570040e+06,
-      "ns_per_event": 1.4429339906769328e-07
+      "items_per_second": 6.3858058989517651e+06,
+      "ns_per_event": 1.5659730593505053e-07
     }
   ]
 }
