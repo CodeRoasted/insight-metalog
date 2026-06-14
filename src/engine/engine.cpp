@@ -776,7 +776,9 @@ void MetaLogEngine::build_branching(BehaviorBlock& behavior, const WindowAnalysi
             {
                 if (count == 0)
                     continue;
-                reducer.add_fixed(static_cast<__int128>(count) *
+                // det::i128 (canon shim: native __int128 on gcc/clang, portable struct on MSVC).
+                // u64 count widened VALUE-PRESERVING via u128, matching native. [[msvc-port-stdlib-isms]]
+                reducer.add_fixed(static_cast<insight::det::i128>(insight::det::u128{count}) *
                                   (log2_total - insight::det::det_log2_fixed(count)));
             }
             entry.entropy_bits = reducer.normalized_bits(static_cast<std::int64_t>(total));

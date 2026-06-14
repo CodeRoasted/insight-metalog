@@ -12,6 +12,17 @@ namespace
 {
 // Jensen-Shannon is the average of the two directional KL terms: js = ½(D_p + D_q).
 constexpr double kJsSymmetryFactor{0.5};
+
+// 128-bit accumulators come from canon's det shim: native `__int128` on gcc/clang, a portable
+// constexpr struct on MSVC (which has no __int128). Same two's-complement semantics, so the digest
+// is bit-identical cross-OS. as_i128 widens a u64 count VALUE-PRESERVING (every u64 is a
+// non-negative i128) — matching native widening of a u64, NOT via int64 (which sign-flips
+// ≥2^63). [[msvc-port-stdlib-isms]]
+using i128 = insight::det::i128;
+[[nodiscard]] constexpr i128 as_i128(std::uint64_t value) noexcept
+{
+    return static_cast<i128>(insight::det::u128{value});
+}
 } // namespace
 
 double shannon_entropy_bits(const std::vector<std::uint64_t>& counts, std::uint64_t total)
@@ -27,7 +38,7 @@ double shannon_entropy_bits(const std::vector<std::uint64_t>& counts, std::uint6
     {
         if (count == 0)
             continue;
-        reducer.add_fixed(static_cast<__int128>(count) *
+        reducer.add_fixed(as_i128(count) *
                           (log2_total - insight::det::det_log2_fixed(count)));
     }
     return reducer.normalized_bits(static_cast<std::int64_t>(total));
@@ -69,9 +80,9 @@ DivergenceResult divergences(const std::unordered_map<std::string, std::uint64_t
     const std::uint64_t cur_denom{cur_total + key_count};
     const std::uint64_t prev_denom{prev_total + key_count};
 
-    __int128 kl_acc{0};
-    __int128 js_p_acc{0};
-    __int128 js_q_acc{0};
+    i128 kl_acc{0};
+    i128 js_p_acc{0};
+    i128 js_q_acc{0};
     for (const std::string* keyp : keys)
     {
         const auto cur_it{cur.find(*keyp)};
@@ -82,12 +93,12 @@ DivergenceResult divergences(const std::unordered_map<std::string, std::uint64_t
         const std::uint64_t q_arg{qnum * cur_denom};
         const std::uint64_t divergence_d{p_arg + q_arg};
         const std::int64_t log2_d{insight::det::det_log2_fixed(divergence_d)};
-        kl_acc += static_cast<__int128>(pnum) *
+        kl_acc += as_i128(pnum) *
                   (insight::det::det_log2_fixed(p_arg) - insight::det::det_log2_fixed(q_arg));
         js_p_acc +=
-            static_cast<__int128>(pnum) * (insight::det::det_log2_fixed(2U * p_arg) - log2_d);
+            as_i128(pnum) * (insight::det::det_log2_fixed(2U * p_arg) - log2_d);
         js_q_acc +=
-            static_cast<__int128>(qnum) * (insight::det::det_log2_fixed(2U * q_arg) - log2_d);
+            as_i128(qnum) * (insight::det::det_log2_fixed(2U * q_arg) - log2_d);
     }
     double kl_value{insight::det::fixed_to_double(
         insight::det::round_div(kl_acc, static_cast<std::int64_t>(cur_denom)))};
@@ -148,8 +159,8 @@ double histogram_js(const std::unordered_map<std::string, std::uint64_t>& prev,
     //   D   = (pn+1)·c_denom + (cn+1)·p_denom
     //   L_p = log2(2·(pn+1)·c_denom) − log2(D)
     //   L_c = log2(2·(cn+1)·p_denom) − log2(D)
-    __int128 prev_acc{0};
-    __int128 curr_acc{0};
+    i128 prev_acc{0};
+    i128 curr_acc{0};
     for (const std::string* keyp : keys)
     {
         const auto p_it{prev.find(*keyp)};
@@ -160,9 +171,9 @@ double histogram_js(const std::unordered_map<std::string, std::uint64_t>& prev,
         const std::uint64_t c_arg{cnum * p_denom};
         const std::int64_t log2_d{insight::det::det_log2_fixed(p_arg + c_arg)};
         prev_acc +=
-            static_cast<__int128>(pnum) * (insight::det::det_log2_fixed(2U * p_arg) - log2_d);
+            as_i128(pnum) * (insight::det::det_log2_fixed(2U * p_arg) - log2_d);
         curr_acc +=
-            static_cast<__int128>(cnum) * (insight::det::det_log2_fixed(2U * c_arg) - log2_d);
+            as_i128(cnum) * (insight::det::det_log2_fixed(2U * c_arg) - log2_d);
     }
     const std::int64_t prev_q{
         insight::det::round_div(prev_acc, static_cast<std::int64_t>(p_denom))};

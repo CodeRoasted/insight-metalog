@@ -49,37 +49,52 @@ class HyperLogLog
         // __int128 has no rounding and no order dependence (unlike the prior
         // double Σ std::ldexp, which dropped low-order terms). No libm.
         constexpr int kHllFrac{52}; // > max register value (51) → every term exact
-        unsigned __int128 sum_fixed{0};
+        // det::u128 (canon shim: native unsigned __int128 on gcc/clang, portable struct on MSVC).
+        insight::det::u128 sum_fixed{0};
         int zeros{0};
         for (auto reg : regs_)
         {
-            sum_fixed += static_cast<unsigned __int128>(1) << (kHllFrac - static_cast<int>(reg));
+            sum_fixed +=
+                insight::det::u128{1} << static_cast<unsigned>(kHllFrac - static_cast<int>(reg));
             if (reg == 0)
                 ++zeros;
         }
 
-        // raw = α·m²/S = (α·m²·2^kHllFrac) / S_fixed. The numerator is α's mantissa
-        // scaled by exact powers of two → an EXACT, compiler-identical double;
-        // the conversion to __int128 is exact, and one integer divide yields raw.
+        // raw = α·m²/S = (α·m²·2^kHllFrac) / S_fixed. The numerator is α's 53-bit mantissa scaled
+        // by exact powers of two → an EXACT, compiler-identical double whose value is an INTEGER
+        // (mantissa × 2^k, k ≥ 0). We need it as u128. A hardware double→int128 cast is forbidden in
+        // deterministic content (CLAUDE.md: the float→int instruction can diverge across ISAs), so
+        // convert by INTEGER bit-extraction of the IEEE-754 representation — pure shifts, bit-identical
+        // everywhere, and exactly equal to truncating the (integer-valued) double. All compile-time.
         constexpr double kAlpha{0.7213 / (1.0 + (1.079 / static_cast<double>(kNumRegisters)))};
-        const double raw_numerator{kAlpha * static_cast<double>(kNumRegisters) *
-                                   static_cast<double>(kNumRegisters) *
-                                   static_cast<double>(std::uint64_t{1} << kHllFrac)};
+        constexpr double kNumerator{kAlpha * static_cast<double>(kNumRegisters) *
+                                    static_cast<double>(kNumRegisters) *
+                                    static_cast<double>(std::uint64_t{1} << kHllFrac)};
+        constexpr std::uint64_t kNumBits{std::bit_cast<std::uint64_t>(kNumerator)};
+        constexpr std::uint64_t kMantissaMask{(std::uint64_t{1} << 52U) - 1U};
+        constexpr std::uint64_t kSignificand{(kNumBits & kMantissaMask) | (std::uint64_t{1} << 52U)};
+        constexpr int kNumExp{static_cast<int>((kNumBits >> 52U) & 0x7FFU) - 1023 - 52};
+        static_assert(kNumExp >= 0, "HLL numerator must be integer-valued (significand << k, k >= 0)");
+        const insight::det::u128 raw_numerator{insight::det::u128{kSignificand}
+                                               << static_cast<unsigned>(kNumExp)};
         // sum_fixed > 0 always: regs_ is a fixed, compile-time-non-empty std::array
         // (kNumRegisters > 0) and every term 1<<(kHllFrac-reg) is >= 2, so the loop
         // above accumulates a strictly positive sum. The analyzer cannot prove the
         // range-for executes; this divide is never by zero.
         // NOLINTNEXTLINE(clang-analyzer-core.DivideZero)
-        const unsigned __int128 raw{static_cast<unsigned __int128>(raw_numerator) / sum_fixed};
+        const insight::det::u128 raw{raw_numerator / sum_fixed};
 
         // Small-range correction (linear counting): m·ln(m/zeros), via det_ln.
         constexpr std::uint64_t kSmallRangeThreshold{(5U * kNumRegisters) / 2U}; // 2.5·m
         if (zeros > 0 && raw < kSmallRangeThreshold)
         {
-            // ln(m/zeros) = ln(m) − ln(zeros), each in Qk; m·(…) then >> kFracBits.
-            const __int128 linear{static_cast<__int128>(kNumRegisters) *
-                                  (insight::det::det_ln_fixed(kNumRegisters) -
-                                   insight::det::det_ln_fixed(static_cast<std::uint64_t>(zeros)))};
+            // ln(m/zeros) = ln(m) − ln(zeros) ≥ 0 (m ≥ zeros), in Qk; m·(…) then >> kFracBits.
+            // u128 (canon shim) — the value is non-negative, so a logical >> equals the old
+            // __int128 arithmetic >> exactly, and u128 carries operator>> (no i128 shift needed).
+            const std::int64_t ln_diff{insight::det::det_ln_fixed(kNumRegisters) -
+                                       insight::det::det_ln_fixed(static_cast<std::uint64_t>(zeros))};
+            const insight::det::u128 linear{insight::det::u128{kNumRegisters} *
+                                            insight::det::u128{static_cast<std::uint64_t>(ln_diff)}};
             return static_cast<std::uint64_t>(linear >> insight::det::kFracBits);
         }
         return static_cast<std::uint64_t>(raw);
