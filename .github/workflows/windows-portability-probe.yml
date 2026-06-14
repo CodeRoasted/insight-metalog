@@ -13,6 +13,12 @@ name: Windows Portability Probe
 # Ninja). New 3rd-party surfaces beyond canon = glaze (template-heavy JSON reflection) + picosha2 —
 # the probe's first real unknowns.
 #
+# RESOLVING CANON: insight_canon/1.5.3 is published to NO conan remote (we don't push to conancenter)
+# and has no Release tarball yet (a release is the Founder's signed tag; it would be linux-gcc15 only —
+# canon's release-publish never builds Windows). So the probe checks out canon's main (which carries
+# the MSVC port + version 1.5.3) and `conan export`s its recipe+sources into the cache; canon then
+# builds FROM SOURCE for os=Windows alongside glaze/picosha2 — the right shape for a source-build probe.
+#
 # SCOPE v1 = COMPILE GATE: `conan create .` builds canon + glaze + picosha2 + metalog for os=Windows
 # and the test_package consumer (which `import insight.metalog` + is CXX_MODULE_STD ON). This proves
 # metalog COMPILES + links + the modules tower resolves on MSVC. The cross-OS DETERMINISM measure
@@ -84,12 +90,37 @@ jobs:
           New-Item -ItemType Directory -Force -Path "$env:CONAN_HOME/profiles" | Out-Null
           Copy-Item windows-msvc-release "$env:CONAN_HOME/profiles/windows-msvc-release"
 
+      - name: Check out insight-canon source (the MSVC port lives on canon's main, not in any conan remote)
+        # metalog requires insight_canon/1.5.3, but that package exists NOWHERE conan can reach on a
+        # fresh Windows runner: we publish nothing to conancenter, and no v1.5.3 canon Release tarball
+        # exists yet (a release is the Founder's signed-tag trigger — and it would be a LINUX-gcc15
+        # binary regardless; canon's release-publish never builds Windows). canon's main IS the source
+        # of truth: it carries the cross-OS MSVC port + version=1.5.3. So fetch it and build from source.
+        uses: actions/checkout@v4
+        with:
+          repository: CodeRoasted/insight-canon
+          ref: main
+          path: _canon
+
+      - name: Export insight_canon/1.5.3 (recipe + sources) into the local cache
+        # `conan export` registers canon's recipe+exports_sources in the cache WITHOUT building a binary;
+        # the `conan create` below then compiles insight_canon FROM SOURCE for os=Windows via --build=missing,
+        # exactly like glaze/picosha2. This is the right shape for a source-build cross-OS probe (vs the
+        # Linux gates, which vendor canon's prebuilt linux-gcc15 Release tarball — wrong ISA here, and
+        # the point of THIS probe is the from-source MSVC compile). The export'd version must equal the
+        # `insight_canon/1.5.3` pin in conanfile.py; a canon main version bump fails loudly here (pin drift).
+        shell: pwsh
+        run: |
+          conan export _canon
+          conan list "insight_canon/1.5.3#*"
+
       - name: Probe — conan create on Windows/MSVC (canon+glaze+picosha2+metalog tower + consumer)
         # The real test of C++23 named modules + import std under MSVC for the metalog tower: conan
-        # create builds insight_canon, glaze, picosha2 (all --build=missing for os=Windows from source —
-        # no prebuilt packages exist), then metalog's CXX_MODULE_STD lib, then test_package/ (a consumer
-        # that import insight.metalog + is itself CXX_MODULE_STD ON), then runs its smoke test. NUMA is
-        # absent (canon gates libnuma to os==Linux). pwsh (not bash): bash's `link` shadows link.exe.
+        # create builds insight_canon (from the recipe just exported above), glaze, picosha2 (all
+        # --build=missing for os=Windows from source — no prebuilt Windows packages exist), then
+        # metalog's CXX_MODULE_STD lib, then test_package/ (a consumer that import insight.metalog +
+        # is itself CXX_MODULE_STD ON), then runs its smoke test. NUMA is absent (canon gates libnuma
+        # to os==Linux). pwsh (not bash): bash's `link` shadows link.exe.
         shell: pwsh
         run: |
           conan create . `
