@@ -1,0 +1,36 @@
+# windows-msvc-release — metalog's Windows (cross-OS determinism) target profile.
+#
+# Second leg of the canon→metalog→eidos cross-OS port. canon is proven cross-OS bit-identical on
+# MSVC/Windows (det_proof digest == its Linux golden); metalog sits on canon and is next up the
+# chain toward the Windows Sift CLI. Same toolchain choice + rationale as canon's profile:
+#
+# WHY MSVC, NOT CLANG: clang ships no libc++ on Windows → `import std` is unsupported there (CMake
+# "Only `libc++`/`libstdc++` are supported"). MSVC cl.exe is the only mature C++23 named-modules +
+# import-std path on Windows (ships std.ixx; CMake supports it under Ninja). Proven on canon.
+#
+# metalog's own source is clean of the known MSVC traps; its `__int128` (HLL + KL/JS/entropy) was
+# ported to canon's portable `det::u128`/`i128` shim, and the HLL double→128 to deterministic integer
+# bit-extraction (commit 41af4fc). New 3rd-party surfaces beyond canon = glaze (template-heavy JSON
+# reflection, [[glaze-gotchas]]) + picosha2 — the probe's first real unknowns.
+#
+# ⚠ DETERMINISM-MODEL: cross-OS bit-identity is MEASURED, not assumed (Daidalos). The probe compares
+# metalog's MSVC determinism digest to the committed Linux golden (scripts/determinism_golden.sha256).
+# Promotion of the canon→metalog tower to a Tier-1 cross-OS CLAIM is Daidalos's gate-promotion call;
+# the probe is measure-only until then. (insight_determinism_model.md)
+[settings]
+arch=x86_64
+build_type=Release
+compiler=msvc
+# 194 = VS 2022 17.10+ / MSVC 19.40 — the toolset on the windows-2022 runner (supports import std).
+compiler.version=194
+compiler.cppstd=23
+compiler.runtime=dynamic
+compiler.runtime_type=Release
+os=Windows
+
+[conf]
+# Ninja mandatory for import std (CMake supports CXX_MODULE_STD only under Ninja, never the VS gen).
+tools.cmake.cmaketoolchain:generator=Ninja
+# No -march: that is a gcc/clang flag MSVC rejects. MSVC's x64 default codegen (SSE2 baseline,
+# /fp:precise) is the portable floor — the determinism-relevant equivalent of the Linux profiles'
+# -march=x86-64-v2 + -ffp-contract=off, without a flag.

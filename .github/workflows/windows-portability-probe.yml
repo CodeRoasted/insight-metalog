@@ -1,0 +1,98 @@
+name: Windows Portability Probe
+
+# STAGED PROBE — not yet a ship gate (Argos 2026-06-13).
+#
+# Second leg of the canon→metalog→eidos cross-OS port. canon is proven cross-OS bit-identical on
+# MSVC/Windows (its det_proof digest == its Linux golden); metalog sits on canon, next toward the
+# Windows Sift CLI. metalog's own __int128 (HLL + KL/JS/entropy) was ported to canon's portable
+# det::u128/i128 shim, and the HLL double→128 to deterministic integer bit-extraction (commit
+# 41af4fc); both Linux toolchains stay 132/132 and the determinism diagonal byte-identical.
+#
+# WHY MSVC (proven on canon): clang ships no libc++ on Windows → no `import std` there. MSVC cl.exe
+# is the only mature C++23 named-modules + import-std path (ships std.ixx; CMake supports it under
+# Ninja). New 3rd-party surfaces beyond canon = glaze (template-heavy JSON reflection) + picosha2 —
+# the probe's first real unknowns.
+#
+# SCOPE v1 = COMPILE GATE: `conan create .` builds canon + glaze + picosha2 + metalog for os=Windows
+# and the test_package consumer (which `import insight.metalog` + is CXX_MODULE_STD ON). This proves
+# metalog COMPILES + links + the modules tower resolves on MSVC. The cross-OS DETERMINISM measure
+# (build the det_harness fixture, run it over scripts/determinism_corpus, compare the digest to the
+# committed scripts/determinism_golden.sha256 = fd25f9f3…) is the GREEN-GATED FOLLOW-UP — the golden
+# is already frozen + ASCII-only (canon's em-dash/CRLF/log-leak lessons pre-applied); it gets wired
+# once this compile gate is green, and needs a second checkout of insight-canon (the det_harness
+# builds the canon+metalog tower from source). Same incremental order canon followed.
+#
+# POSTURE: NOT a required check, NOT continue-on-error — real red or real green so we learn the true
+# state. Cannot gate a ship until green once. Tier-1 cross-OS promotion = Daidalos's call.
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'api/**'
+      - 'src/**'
+      - 'CMakeLists.txt'
+      - 'conanfile.py'
+      - 'windows-msvc-release'
+      - '.github/workflows/windows-portability-probe.yml'
+
+jobs:
+  windows-msvc-probe:
+    # PINNED windows-2022 (VS 2022, toolset v143/MSVC 19.4x — conan compiler.version=194). The
+    # windows-latest runner migrates to VS 2026 mid-2026; pin for a stable toolset.
+    runs-on: windows-2022
+    env:
+      CONAN_HOME: ${{ github.workspace }}/.conan2
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSVC dev environment (puts cl.exe / link.exe on PATH for Ninja)
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Verify cl.exe is the active compiler (fail here, not later with a cryptic error)
+        shell: pwsh
+        run: |
+          if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) { Write-Error "cl.exe not on PATH — MSVC env not activated"; exit 1 }
+          cl.exe 2>&1 | Select-Object -First 1
+
+      - name: Setup CMake 4.3.x (the import-std experimental gate UUID 451f2fe2 lives only in 4.3.x)
+        shell: pwsh
+        run: |
+          python -m pip install "cmake==4.3.1"
+          $v = (cmake --version | Select-Object -First 1)
+          if ($v -notmatch ' 4\.3\.') { Write-Error "expected CMake 4.3.x (got: $v)"; exit 1 }
+          cmake --version
+
+      - name: Setup Conan
+        uses: conan-io/setup-conan@v1
+        with:
+          version: "2.29.0"
+          home: ${{ env.CONAN_HOME }}
+          cache_packages: true
+          profile_detect: false
+
+      - name: Setup Conan profile (windows-msvc-release)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "$env:CONAN_HOME/profiles" | Out-Null
+          Copy-Item windows-msvc-release "$env:CONAN_HOME/profiles/windows-msvc-release"
+
+      - name: Probe — conan create on Windows/MSVC (canon+glaze+picosha2+metalog tower + consumer)
+        # The real test of C++23 named modules + import std under MSVC for the metalog tower: conan
+        # create builds insight_canon, glaze, picosha2 (all --build=missing for os=Windows from source —
+        # no prebuilt packages exist), then metalog's CXX_MODULE_STD lib, then test_package/ (a consumer
+        # that import insight.metalog + is itself CXX_MODULE_STD ON), then runs its smoke test. NUMA is
+        # absent (canon gates libnuma to os==Linux). pwsh (not bash): bash's `link` shadows link.exe.
+        shell: pwsh
+        run: |
+          conan create . `
+            --profile:host="$env:CONAN_HOME/profiles/windows-msvc-release" `
+            --profile:build="$env:CONAN_HOME/profiles/windows-msvc-release" `
+            --build=missing
