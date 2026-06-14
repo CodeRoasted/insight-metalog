@@ -1,12 +1,13 @@
 name: Windows Portability Probe
 
-# STAGED PROBE — not yet a ship gate (Argos 2026-06-13).
+# STAGED PROBE — not yet a ship gate (Argos 2026-06-13; determinism measure wired 2026-06-14).
 #
 # Second leg of the canon→metalog→eidos cross-OS port. canon is proven cross-OS bit-identical on
 # MSVC/Windows (its det_proof digest == its Linux golden); metalog sits on canon, next toward the
-# Windows Sift CLI. metalog's own __int128 (HLL + KL/JS/entropy) was ported to canon's portable
-# det::u128/i128 shim, and the HLL double→128 to deterministic integer bit-extraction (commit
-# 41af4fc); both Linux toolchains stay 132/132 and the determinism diagonal byte-identical.
+# Windows Sift CLI. metalog COMPILES green on MSVC (the whole canon→metalog→eidos tower does). Its own
+# __int128 (HLL + KL/JS/entropy) was ported to canon's portable det::u128/i128 shim, and the HLL
+# double→128 to deterministic integer bit-extraction (commit 41af4fc); both Linux toolchains stay
+# 132/132 and the determinism diagonal byte-identical.
 #
 # WHY MSVC (proven on canon): clang ships no libc++ on Windows → no `import std` there. MSVC cl.exe
 # is the only mature C++23 named-modules + import-std path (ships std.ixx; CMake supports it under
@@ -19,14 +20,17 @@ name: Windows Portability Probe
 # the MSVC port + version 1.5.3) and `conan export`s its recipe+sources into the cache; canon then
 # builds FROM SOURCE for os=Windows alongside glaze/picosha2 — the right shape for a source-build probe.
 #
-# SCOPE v1 = COMPILE GATE: `conan create .` builds canon + glaze + picosha2 + metalog for os=Windows
-# and the test_package consumer (which `import insight.metalog` + is CXX_MODULE_STD ON). This proves
-# metalog COMPILES + links + the modules tower resolves on MSVC. The cross-OS DETERMINISM measure
-# (build the det_harness fixture, run it over scripts/determinism_corpus, compare the digest to the
-# committed scripts/determinism_golden.sha256 = fd25f9f3…) is the GREEN-GATED FOLLOW-UP — the golden
-# is already frozen + ASCII-only (canon's em-dash/CRLF/log-leak lessons pre-applied); it gets wired
-# once this compile gate is green, and needs a second checkout of insight-canon (the det_harness
-# builds the canon+metalog tower from source). Same incremental order canon followed.
+# SCOPE = COMPILE GATE + DETERMINISM MEASURE (two steps):
+#  (1) COMPILE GATE — `conan create .` builds canon + glaze + picosha2 + metalog for os=Windows and the
+#      test_package consumer (which `import insight.metalog` + is CXX_MODULE_STD ON): the modules tower
+#      COMPILES + links + resolves on MSVC.
+#  (2) DETERMINISM MEASURE — build the Approach-B det_harness (canon+metalog module tower +
+#      determinism_fixture) under MSVC, run it over scripts/determinism_corpus, reproduce the golden's
+#      exact bytes, and sha256-compare to scripts/determinism_golden.sha256 (fd25f9f3…). The golden is
+#      ASCII-only and the fixture _setmode's stdout to binary (canon's em-dash/CRLF/log-leak lessons
+#      pre-applied). Needs the same insight-canon checkout the compile gate uses (the harness builds the
+#      tower from source). MEASURE-ONLY: a divergence is a real finding (localized + artifacted), not yet
+#      a ship gate.
 #
 # POSTURE: NOT a required check, NOT continue-on-error — real red or real green so we learn the true
 # state. Cannot gate a ship until green once. Tier-1 cross-OS promotion = Daidalos's call.
@@ -127,3 +131,84 @@ jobs:
             --profile:host="$env:CONAN_HOME/profiles/windows-msvc-release" `
             --profile:build="$env:CONAN_HOME/profiles/windows-msvc-release" `
             --build=missing
+
+      - name: Determinism measure — metalog MSVC digest vs the frozen Linux golden (fd25f9f3…)
+        # The GREEN-GATED follow-up the probe always named (canon precedent). Does the canon→metalog
+        # tower emit a BIT-IDENTICAL MetaLog document on MSVC vs Linux? Build the Approach-B det_harness
+        # (canon+metalog module tower + determinism_fixture) under MSVC, run it over the SAME
+        # scripts/determinism_corpus, reproduce the golden's exact bytes ("### <file> ###\n" + the two
+        # JSON docs, LF — the fixture _setmode's stdout to binary), sha256, compare to
+        # scripts/determinism_golden.sha256. metalog's twin of canon's det_proof digest match.
+        # MEASURE-ONLY (Daidalos): a divergence is a real finding to localize (per-section diff +
+        # artifact below), not yet a ship gate; Tier-1 cross-OS promotion is Daidalos's call.
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $prof = "$env:CONAN_HOME/profiles/windows-msvc-release"
+          $work = "$env:RUNNER_TEMP/det-measure"
+          New-Item -ItemType Directory -Force -Path $work | Out-Null
+
+          # 1) Resolve metalog's deps (simdjson/spdlog/fmt/glaze/picosha2) + a conan toolchain for the
+          #    standalone harness CMake. canon was exported earlier; --build=missing builds it for Windows.
+          conan install . --profile:host="$prof" --profile:build="$prof" --build=missing -of "$work/conan"
+          $toolchain = (Get-ChildItem -Recurse "$work/conan" -Filter conan_toolchain.cmake | Select-Object -First 1).FullName
+          if (-not $toolchain) { Write-Error "no conan_toolchain.cmake from conan install"; exit 1 }
+
+          # 2) Configure + build det_harness under MSVC. CELL_FLAGS = SPDLOG-off ONLY (NO -ffp-contract=off
+          #    — that is a gcc/clang flag MSVC rejects; MSVC /fp:precise is the portable floor).
+          cmake -S scripts/det_harness -B "$work/build" -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_TOOLCHAIN_FILE="$toolchain" `
+            -DCANON_ROOT="$env:GITHUB_WORKSPACE/_canon" `
+            -DMETA_ROOT="$env:GITHUB_WORKSPACE" `
+            -DCELL_FLAGS="-DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_OFF"
+          cmake --build "$work/build" --target det_fixture --parallel 2
+          $fixture = (Get-ChildItem -Recurse "$work/build" -Filter det_fixture.exe | Select-Object -First 1).FullName
+          if (-not $fixture) { Write-Error "det_fixture.exe not produced"; exit 1 }
+
+          # 3) Reproduce the golden's EXACT bytes: per sorted corpus file, "### <name> ###\n" (LF) then
+          #    the fixture's RAW stdout (binary via _setmode). Accumulate as bytes — no pwsh CRLF.
+          $outPath = "$work/msvc.out"
+          $fs = [System.IO.File]::Create($outPath)
+          try {
+            Get-ChildItem "scripts/determinism_corpus/*.log" | Sort-Object Name | ForEach-Object {
+              $hdr = [System.Text.Encoding]::ASCII.GetBytes("### $($_.Name) ###`n")
+              $fs.Write($hdr, 0, $hdr.Length)
+              $tmp = "$work/fixture.out"
+              $p = Start-Process -FilePath $fixture -ArgumentList "`"$($_.FullName)`"" -NoNewWindow -Wait -PassThru -RedirectStandardOutput $tmp
+              if ($p.ExitCode -ne 0) { throw "det_fixture failed (exit $($p.ExitCode)) on $($_.Name)" }
+              $bytes = [System.IO.File]::ReadAllBytes($tmp)
+              $fs.Write($bytes, 0, $bytes.Length)
+            }
+          } finally { $fs.Close() }
+
+          # 4) Compare digest to the frozen Linux golden.
+          $sha = (Get-FileHash $outPath -Algorithm SHA256).Hash.ToLower()
+          $golden = (Get-Content "scripts/determinism_golden.sha256" -Raw).Trim().ToLower()
+          Copy-Item $outPath "$env:GITHUB_WORKSPACE/metalog_msvc_determinism.txt"
+          Write-Host "MSVC metalog determinism digest: $sha"
+          Write-Host "Linux golden:                    $golden"
+          if ($sha -ne $golden) {
+            Write-Host "::error::CROSS-OS DIVERGENCE — metalog MSVC digest != Linux golden"
+            $g = Get-Content "scripts/determinism_golden.txt"
+            $m = Get-Content $outPath
+            for ($i = 0; $i -lt [Math]::Max($g.Count, $m.Count); $i++) {
+              if ($g[$i] -ne $m[$i]) {
+                Write-Host "first divergent line $($i + 1):"
+                Write-Host "  golden: $($g[$i])"
+                Write-Host "  msvc  : $($m[$i])"
+                break
+              }
+            }
+            exit 1
+          }
+          Write-Host "GOLDEN MATCH — metalog cross-OS bit-identical (MSVC == Linux)"
+
+      - name: Upload MSVC determinism output (divergence localization)
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: metalog-msvc-determinism
+          path: metalog_msvc_determinism.txt
+          if-no-files-found: ignore

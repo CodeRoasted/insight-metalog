@@ -15,6 +15,14 @@
 #include <string>
 #include <vector>
 
+#if defined(_WIN32)
+// Windows std::cout is TEXT mode by default → every '\n' becomes CRLF, which would diverge from the
+// LF-only Linux golden (a cross-OS HARNESS artifact, not an engine difference — the canon det_proof
+// lesson). Put stdout in BINARY mode so the emitted bytes are exactly what the engine wrote.
+#include <fcntl.h>
+#include <io.h>
+#endif
+
 // 1.5.1 unwrap (Approach B): textual public headers are gone — consume the canon+metalog
 // module tower. metalog's MetaLog{Config,Engine} via insight.metalog; canon's tokenization
 // (ArenaAllocator/Tokenizer/CanonicalEvent) via insight.canon (metalog imports but doesn't
@@ -24,6 +32,9 @@ import insight.metalog;
 
 int main(int argc, char** argv)
 {
+#if defined(_WIN32)
+    _setmode(_fileno(stdout), _O_BINARY); // LF-exact stdout, matching the Linux golden (no CRLF)
+#endif
     if (argc < 2)
     {
         std::cerr << "usage: determinism_fixture <corpus>\n";
