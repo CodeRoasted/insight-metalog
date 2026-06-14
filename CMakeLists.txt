@@ -149,7 +149,8 @@ if(INSIGHT_METALOG_BUILD_TESTS)
         target_link_libraries(insight_metalog_tests PRIVATE
             insight::canon glaze::glaze picosha2::picosha2
             GTest::gtest GTest::gtest_main)
-        target_include_directories(insight_metalog_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+        target_include_directories(insight_metalog_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
+            ${CMAKE_CURRENT_SOURCE_DIR}/scripts) # shared reservoir_nearfull_scenario.hpp (F5-M8 golden)
         target_compile_features(insight_metalog_tests PRIVATE cxx_std_23)
         set_target_properties(insight_metalog_tests PROPERTIES CXX_SCAN_FOR_MODULES ON CXX_MODULE_STD ON)
         target_compile_options(insight_metalog_tests PRIVATE

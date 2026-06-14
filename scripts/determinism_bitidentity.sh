@@ -97,15 +97,25 @@ for leg in "${legs[@]}"; do
 done
 
 # Gate integrity: the diagonal needs BOTH legs. A single leg verifies nothing about the
-# cross-stdlib property — refuse to report a hollow green.
-if [ "${#builds[@]}" -ne 2 ]; then
-  echo "GATE INTEGRITY FAIL: the diagonal needs BOTH legs (gcc15/libstdc++ AND clang21/libc++); ${#builds[@]} built."
+# cross-stdlib property — refuse to report a hollow green. DETERMINISM_REQUIRE_COMPILERS (default
+# "g++ clang++") is the coverage invariant: every required compiler MUST have produced a build, else
+# the gate is a one-compiler hollow green and FAILS (it does NOT silently degrade). [F5-M8]
+REQUIRE_COMPILERS="${DETERMINISM_REQUIRE_COMPILERS:-g++ clang++}"
+if [ "${#builds[@]}" -ne "${#legs[@]}" ]; then
+  echo "GATE INTEGRITY FAIL: DETERMINISM_REQUIRE_COMPILERS='$REQUIRE_COMPILERS' needs all ${#legs[@]} stdlib legs (gcc15/libstdc++ AND clang21/libc++); ${#builds[@]} built."
   exit 3
 fi
 
+# Each leg emits the committed corpus (5 files) THEN the F5-M8 synthetic near-full reservoir scenario
+# (--reservoir-nearfull). The reservoir section is what would have caught F5-M8: a cross-stdlib flip
+# of the M=128 admit/evict boundary shows up as that section DIVERGENT. (The -O{0,3}×-ffp{off,fast}
+# corners are an orthogonal FP-hazard sweep — they do NOT perturb stdlib iteration order, so they are
+# not what catches F5-M8; tracked separately as the coverage-matrix expansion.)
 for tag in "${builds[@]}"; do
   : >"$WORK/$tag.out"
   for f in $CORPUS; do echo "### $(basename "$f") ###" >>"$WORK/$tag.out"; "${BIN[$tag]}" "$f" >>"$WORK/$tag.out" 2>/dev/null; done
+  echo "### --reservoir-nearfull (F5-M8 synthetic M=128) ###" >>"$WORK/$tag.out"
+  "${BIN[$tag]}" --reservoir-nearfull >>"$WORK/$tag.out" 2>/dev/null
 done
 ref="$WORK/${builds[0]}.out"; rc=0
 echo "reference: ${builds[0]}  sha=$(sha256sum "$ref" | cut -c1-16)"
@@ -113,6 +123,11 @@ for tag in "${builds[@]}"; do
   if cmp -s "$ref" "$WORK/$tag.out"; then st=IDENTICAL; else st=DIVERGENT; rc=1; fi
   printf "  %-22s %s\n" "$tag" "$st"
 done
-if [ $rc -eq 0 ]; then echo "PASS: MetaLog document byte-identical across the gcc-15/libstdc++ ≡ clang-21/libc++ diagonal."
-else echo "FAIL: cross-stdlib divergence — a determinism regression on the diagonal."; fi
+if [ $rc -eq 0 ]; then echo "PASS: MetaLog document (corpus + near-full reservoir) byte-identical across the gcc-15/libstdc++ ≡ clang-21/libc++ diagonal."
+else
+  echo "FAIL: cross-stdlib divergence — a determinism regression on the diagonal."
+  echo "  If the DIVERGENT section is '--reservoir-nearfull', that is the F5-M8 item-reservoir"
+  echo "  salience leak (insight_determinism_model.md §F5-M8) — RELEASE-BLOCKING for the eidos M=128"
+  echo "  batch-diff. Localize: diff the two legs' \$WORK/*.out around that section."
+fi
 exit $rc

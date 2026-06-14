@@ -30,6 +30,10 @@
 import insight.canon;
 import insight.metalog;
 
+// AFTER the imports (plain TU): the shared F5-M8 near-full reservoir scenario, shared with the
+// in-suite golden (tests/determinism/test_determinism_gate.cpp) so both run the identical window.
+#include "reservoir_nearfull_scenario.hpp"
+
 int main(int argc, char** argv)
 {
 #if defined(_WIN32)
@@ -37,9 +41,29 @@ int main(int argc, char** argv)
 #endif
     if (argc < 2)
     {
-        std::cerr << "usage: determinism_fixture <corpus>\n";
+        std::cerr << "usage: determinism_fixture <corpus | --reservoir-nearfull>\n";
         return 2;
     }
+
+    // F5-M8 near-full reservoir oracle: a SYNTHETIC scenario (not a tokenized corpus), driven by a
+    // flag so the existing corpus files + their golden are untouched. determinism_bitidentity.sh
+    // replays it across the gcc×clang × -O{0,3} × -ffp-contract{off,fast} matrix; the emitted
+    // document must be byte-identical across every cell, or the item-reservoir admit/evict boundary
+    // is non-deterministic (the F5-M8 leak). Same window as the in-suite ReservoirNearFull golden.
+    if (std::string{argv[1]} == "--reservoir-nearfull")
+    {
+        namespace ml = insight::metalog;
+        ml::MetaLogConfig cfg;
+        ml::nearfull::configure(cfg);
+        ml::MetaLogEngine engine{cfg};
+        using Clock = std::chrono::system_clock;
+        engine.open_window(Clock::time_point{std::chrono::seconds{1700000000}});
+        ml::nearfull::emit_window(engine);
+        const auto doc{engine.close_window(Clock::time_point{std::chrono::seconds{1700000060}})};
+        std::cout << ml::to_json(doc) << "\n";
+        return 0;
+    }
+
     std::ifstream input(argv[1], std::ios::binary);
     if (!input)
     {

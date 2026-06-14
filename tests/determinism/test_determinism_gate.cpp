@@ -7,6 +7,10 @@
 
 import insight.metalog.test;
 
+// AFTER the imports (plain TU, ordinary textual include): the shared F5-M8 near-full reservoir
+// scenario, shared with scripts/determinism_fixture.cpp so both oracles run the identical window.
+#include "reservoir_nearfull_scenario.hpp"
+
 namespace
 {
 
@@ -78,6 +82,79 @@ TEST(DeterminismGate, FullDocumentByteIdentityGolden)
            "regression, OR an intentional contract change needing the golden re-derived "
            "(and re-verified across the cross-arch CI matrix).\nDOC:\n"
         << combined;
+}
+
+// ── Near-full reservoir determinism golden (F5-M8) ────────────────────────────
+// The oracle that closes the F5-M8 coverage gap. FullDocumentByteIdentityGolden above
+// never drove the item-reservoir (§2.11) to its admit/evict boundary — its fixture has a
+// handful of templates, so the reservoir stays empty and the salience pipeline that decides
+// bag membership is never exercised. F5-M8: the reservoir salience inputs (structural_surprise
+// in particular) were not bit-identical clang≢gcc, and an order-dependent surprise pick flipped a
+// near-tie admit/evict at the M=128 boundary → a different bag → a Tier-1 violation in the
+// production Sift batch-diff (eidos ships reservoir_size=128). "golden green" did NOT certify the
+// reservoir until this fixture exists. (insight_determinism_model.md §F5-M8.)
+//
+// Design: a window whose item-reservoir fills to the FULL production M=128 with the admit/evict
+// boundary contested by structural_surprise — the non-deterministic input. per_kind_cap=0 (Founder
+// ruling 2026-06-14): the cap keys on (StructuralRole×LogLevel)=4×7=28 kinds, so cap=4 would
+// hard-ceiling the reservoir at 112; cap=0 admits the top-M by pure salience rank, the clean oracle
+// for the salience VALUE (the F5-M8 root, upstream of the cap). Salient-by-structure benign spokes
+// (reached only via a rare off-path edge from a busy hub) make structural_surprise — not a fixed
+// level — decide membership, including AMBIGUOUS spokes reached by two EQUAL-RATIO edges (count 1 vs
+// 2): the exact most-likely-edge tie F5-M8's order-dependent pick resolves differently per stdlib.
+//
+// FREEZE ORDERING (strict — do not freeze a non-deterministic value): the SHA is frozen ONLY after
+// Heph's F5-M8 det_math+exact-tie-break fix makes the document bit-identical across the gcc×clang ×
+// -O{0,3} × -ffp-contract{off,fast} matrix. Until then this is RED cross-stdlib by design; the
+// active repro is scripts/determinism_bitidentity.sh (the same fixture, replayed across the matrix).
+// The coverage assertion (reservoir == M, structural-surprise boundary) is ALWAYS live so the oracle
+// can never silently stop exercising the regime. RELEASE-BLOCKING: no cut ships eidos M=128 batch-diff
+// until this is green-frozen.
+TEST(DeterminismGate, ReservoirNearFullByteIdentityGolden)
+{
+    // The scenario lives in scripts/reservoir_nearfull_scenario.hpp so this in-suite golden and the
+    // cross-compiler matrix fixture (scripts/determinism_fixture.cpp, via determinism_bitidentity.sh)
+    // exercise the EXACT same M=128 admit/evict boundary — they cannot drift.
+    meta::MetaLogConfig cfg;
+    meta::nearfull::configure(cfg);
+    meta::MetaLogEngine engine{cfg};
+
+    using Clock = std::chrono::system_clock;
+    const Clock::time_point t0{std::chrono::seconds{1700000000}};
+    const Clock::time_point t1{std::chrono::seconds{1700000060}};
+    engine.open_window(t0);
+    meta::nearfull::emit_window(engine);
+    const auto doc{engine.close_window(t1)};
+
+    // ── Coverage invariant (ALWAYS live): the fixture MUST drive the reservoir to the full M and
+    //    the admit/evict boundary MUST be structural-surprise-driven — else it stops exercising the
+    //    F5-M8 regime and a green golden would be hollow. Verbose on failure (CLAUDE.md).
+    std::size_t surprise_driven{0};
+    for (const auto& entry : doc.stats.reservoir)
+        if (entry.structural_surprise > 0 && entry.dominant_level != insight::LogLevel::Error &&
+            entry.dominant_level != insight::LogLevel::Fatal)
+            ++surprise_driven;
+    ASSERT_EQ(doc.stats.reservoir.size(), cfg.reservoir_size)
+        << "near-full reservoir fixture must fill the item-reservoir to the full production M="
+        << cfg.reservoir_size << " (got " << doc.stats.reservoir.size()
+        << ").\n  unique_templates=" << doc.stats.unique_templates
+        << " top_k=" << doc.stats.top_k.size()
+        << " surprise_driven_reservoir_entries=" << surprise_driven;
+    EXPECT_GT(surprise_driven, 0U)
+        << "the reservoir boundary must be structural_surprise-driven so the F5-M8 hazard "
+           "(a non-deterministic surprise score) flips bag membership; none were.";
+
+    const std::string doc_json{meta::to_json(doc)};
+    const std::string digest{picosha2::hash256_hex_string(doc_json)};
+
+    // FREEZE PENDING: do not freeze a non-deterministic value (Founder, strict). Until Heph's F5-M8
+    // fix lands, this digest differs across the cross-stdlib matrix — the repro. After the matrix is
+    // green (determinism_bitidentity.sh), replace this skip with:
+    //     constexpr std::string_view kGolden{"<frozen sha>"}; EXPECT_EQ(digest, kGolden) << ...;
+    GTEST_SKIP() << "ReservoirNearFull golden SHA pending Heph's F5-M8 det_math fix — currently RED "
+                    "cross-stdlib by design (repro: scripts/determinism_bitidentity.sh). This build's "
+                    "digest: "
+                 << digest;
 }
 
 } // namespace
