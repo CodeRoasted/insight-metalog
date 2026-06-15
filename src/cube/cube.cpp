@@ -6,6 +6,13 @@ import insight.metalog.api;
 import insight.canon;
 import insight.metalog.detail.stats; // level_to_spec_string
 
+// MSVC-port opt-off (see metalog.api.impl.cpp): the cube diff/compose path also touches
+// optional<CubeBlock>; disable optimization for this TU at the source level (CMake opt-flags
+// don't reach module-unit compiles). Cold path; pure-integer → byte-identical output.
+#if defined(_MSC_VER)
+#pragma optimize("", off)
+#endif
+
 // MetaLog intra-window cube (SPEC §16) + emerging-border cube_diff (§13.6). The closed
 // cube is built ONCE in batch over the closed, frozen, ordered window, so it is a pure
 // function of that set — bit-identical cross-stdlib and cross-OS (§16.9). The lattice

@@ -18,6 +18,15 @@ module insight.metalog.api;
 import insight.metalog.internal; // std
 import insight.canon;            // canon types reachable from MetaLogDocument's members
 
+// MSVC-port opt-off (decisive). The probe proved metalog's OWN copy ctor engages a nullopt cube
+// (internal_copy_keeps_empty=0) with ALL sizes matching the consumer — so it's metalog's codegen,
+// not ABI. CMake opt-flags (/Ob1 per-source, /Od target) never reached these C++ module-unit
+// compiles, so the optimizer was never actually disabled. A source-level #pragma DOES apply.
+// Cold-path special members; output is byte-identical (no float) — determinism goldens unaffected.
+#if defined(_MSC_VER)
+#pragma optimize("", off)
+#endif
+
 namespace insight::metalog
 {
 

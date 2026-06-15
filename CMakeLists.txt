@@ -84,17 +84,10 @@ target_link_libraries(insight_metalog
 set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/src/serialization/serialize.cpp
     PROPERTIES INCLUDE_DIRECTORIES "$<TARGET_PROPERTY:glaze::glaze,INTERFACE_INCLUDE_DIRECTORIES>")
 
-# MSVC optimizer-bug workaround ([[msvc-port-stdlib-isms]]): MSVC's Release optimizer miscompiles
-# `std::optional<CubeBlock>` _Has_value-dependent operations (operator bool / copy / move) — observed
-# as a spuriously-engaged cube after a copy and an AV in cube_diff_of, only on MSVC. A per-source
-# /Ob1 had NO effect (per-source COMPILE_OPTIONS does not reliably reach C++ module-unit compiles,
-# and/or /Ob1 is not a low enough bar), so disable optimization for metalog's whole compilation on
-# MSVC (target-level → reliably applied; PRIVATE → metalog's own TUs only, not propagated). The cube /
-# det_math content is pure-integer, so /Od vs /O2 cannot change output: determinism-safe, goldens
-# unaffected. MSVC is a Tier-2 port (gcc/clang are the perf-ship targets), so the cold cost is fine.
-# Same per-compiler opt-level workaround pattern as the gcc-15 benchmark -O0 dodge.
-target_compile_options(insight_metalog PRIVATE
-    $<$<CXX_COMPILER_ID:MSVC>:/Od>)
+# (MSVC optimizer-bug workaround for optional<CubeBlock> now lives as a source-level
+# `#pragma optimize("", off)` in src/metalog.api.impl.cpp + src/cube/cube.cpp — CMake opt-level
+# flags, whether per-source COMPILE_OPTIONS or target-level, do NOT reach C++ module-unit compiles,
+# so they had no effect; the pragma reliably applies. See [[msvc-port-stdlib-isms]].)
 
 # Float determinism: the MetaLog document is deterministic content → cross-machine bit-identity.
 # Disable FMA contraction (no fused a*b+c). PUBLIC so consumers inherit it.
