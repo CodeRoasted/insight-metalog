@@ -34,6 +34,12 @@ namespace insight::metalog
 // special member is synthesizable, which both reintroduces the consumer-side miscompile and collides
 // at link (LNK2005). So `= default` is exactly the wrong fix here — suppress the modernize hint.
 // NOLINTBEGIN(modernize-use-equals-default)
+// Default ctor: empty body, user-provided (NOT `= default`). The default MEMBER initializers in
+// metalog.api.cppm (metalog_version{"0.6.0"}, the `{}`-initialized blocks, and `cube` → optional's
+// disengaged default) still apply since `cube` etc. are absent from this (empty) mem-init list. Being
+// user-provided, consumers/other TUs CALL this single definition instead of synthesizing their own.
+MetaLogDocument::MetaLogDocument() {}
+
 MetaLogDocument::MetaLogDocument(const MetaLogDocument& other)
     : metalog_version(other.metalog_version),
       producer(other.producer),

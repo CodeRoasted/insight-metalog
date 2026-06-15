@@ -256,7 +256,13 @@ struct DebugDocLayout
     std::size_t opt_cube_size{0};
     std::size_t string_size{0};
     std::size_t map_size{0};
-    bool internal_copy_keeps_cube_empty{false};
+    bool internal_copy_keeps_cube_empty{false};   // b.cube empty after `MetaLogDocument b = a`
+    bool default_keeps_cube_empty{false};          // a.cube empty right after `MetaLogDocument a`
+    bool bare_opt_default_empty{false};            // local std::optional<CubeBlock>{} empty (metalog TU)
+    bool bare_opt_copy_empty{false};               // copy of a local nullopt optional empty (metalog TU)
+    bool opt_cube_trivially_copyable{false};       // is_trivially_copyable_v<optional<CubeBlock>>
+    bool opt_cube_trivially_default{false};         // is_trivially_default_constructible_v<optional<CubeBlock>>
+    bool cubeblock_trivially_copyable{false};      // is_trivially_copyable_v<CubeBlock>
 };
 [[nodiscard]] DebugDocLayout debug_doc_layout() noexcept;
 

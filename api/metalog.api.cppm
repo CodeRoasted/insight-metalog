@@ -373,11 +373,13 @@ struct MetaLogDocument
     // synthesizable, so the consumer must emit a real CALL into metalog's single, correctly-compiled
     // definition — the same path the destructor already takes. The bodies are member-wise (== the
     // implicit semantics; determinism goldens unaffected, and metalog's tests catch any dropped member
-    // since the serialized output would change); `cube` is built via in_place/emplace to also sidestep
-    // optional<CubeBlock>'s own copy/move ctor. Default ctor stays `= default` (the consumer never
-    // synthesizes it, and it does not touch the miscompiled optional path). MetaLogDocument is never
-    // aggregate-initialized, so user-declaring these breaks no call site.
-    MetaLogDocument() = default;
+    // since the serialized output would change). ALL SIX are out-of-line — including the DEFAULT
+    // ctor: leaving it `= default` in-class meant it was the lone special member still SYNTHESIZED
+    // per-TU (in engine.cpp, in consumers), and a per-TU synthesis that mis-inits the optional<CubeBlock>
+    // is exactly the observed failure. Out-of-lining it forces every TU to CALL metalog's single
+    // definition. MetaLogDocument is never aggregate-initialized, so user-declaring these breaks no
+    // call site.
+    MetaLogDocument();
     MetaLogDocument(const MetaLogDocument&);
     MetaLogDocument(MetaLogDocument&&) noexcept;
     MetaLogDocument& operator=(const MetaLogDocument&);

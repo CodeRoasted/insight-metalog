@@ -997,16 +997,26 @@ void MetaLogEngine::reset_window_state()
 // MSVC-port layout diagnostic (TEMPORARY — see metalog.cppm). Computed inside metalog's TU.
 DebugDocLayout debug_doc_layout() noexcept
 {
-    MetaLogDocument a;
-    MetaLogDocument b = a; // metalog's own copy ctor, in metalog's TU
     DebugDocLayout out;
+    MetaLogDocument a;                          // metalog's default ctor (now out-of-line, in metalog TU)
+    out.default_keeps_cube_empty = !a.cube.has_value();
+    MetaLogDocument b = a;                       // metalog's own copy ctor, in metalog's TU
+    out.internal_copy_keeps_cube_empty = !b.cube.has_value();
+
+    std::optional<CubeBlock> bare;               // bare optional<CubeBlock> in metalog's TU
+    out.bare_opt_default_empty = !bare.has_value();
+    std::optional<CubeBlock> bare_copy = bare;   // bare optional copy in metalog's TU
+    out.bare_opt_copy_empty = !bare_copy.has_value();
+
     out.doc_size = sizeof(MetaLogDocument);
     out.cube_offset = static_cast<std::size_t>(reinterpret_cast<const char*>(&a.cube) -
                                                reinterpret_cast<const char*>(&a));
     out.opt_cube_size = sizeof(std::optional<CubeBlock>);
     out.string_size = sizeof(std::string);
     out.map_size = sizeof(std::map<std::string, std::string>);
-    out.internal_copy_keeps_cube_empty = !b.cube.has_value();
+    out.opt_cube_trivially_copyable = std::is_trivially_copyable_v<std::optional<CubeBlock>>;
+    out.opt_cube_trivially_default = std::is_trivially_default_constructible_v<std::optional<CubeBlock>>;
+    out.cubeblock_trivially_copyable = std::is_trivially_copyable_v<CubeBlock>;
     return out;
 }
 
