@@ -6,6 +6,7 @@ import insight.metalog.api;
 import insight.canon;
 import insight.metalog.detail.stats;
 import insight.metalog.detail.operations;
+import insight.metalog.detail.cube;
 
 // MetaLog pairwise diff (SPEC §13): the stateless delta between two documents
 // (previous -> current). Template/branching/n-gram/field-histogram/tail deltas +
@@ -299,6 +300,10 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
     diff_ngram_delta(out, previous, current);
     diff_field_histogram_deltas(out, previous, current);
     diff_tail_delta(out, previous, current);
+    // SPEC §13.6 cube_diff — the emerging border. Emitted only when both documents
+    // carried a cube and their axes match (the §2.4 gate above already ensures equal
+    // canonicalization_version, under which the axes are frozen identical).
+    out.cube_diff = cube::cube_diff_of(previous.cube, current.cube);
 
     return out;
 }

@@ -6,6 +6,7 @@ import insight.metalog.internal;
 import insight.metalog.api;
 import insight.canon;
 import insight.metalog.detail.stats;
+import insight.metalog.detail.cube;
 
 // MetaLog producer engine (SPEC v0.5.0). The stateful streaming side: one window
 // of CanonicalEvents in (open_window / ingest_event) -> one bounded MetaLog
@@ -126,6 +127,7 @@ void MetaLogEngine::open_window(Timestamp start)
     recent_.fill(0);
     ngram_counts_.clear();
     ngram_total_ = 0;
+    cube_base_.clear();
     (*hll_state_).reset();
     // NOTE: prev_freq_ / prev_window_end_iso_ are NOT cleared here —
     // they are the cross-window state that feeds the stability block.
@@ -206,6 +208,8 @@ void MetaLogEngine::migrate_bucket(const std::string& from_content_id,
         dst.level_counts[level] += level_count;
     for (const auto& [role, role_count] : moved.role_counts)
         dst.role_counts[role] += role_count;
+    for (const auto& [component, component_count] : moved.component_counts)
+        dst.component_counts[component] += component_count;
 
     // Param histograms (only populated when config_.max_param_histograms > 0).
     if (!moved.param_value_counts.empty())
@@ -258,6 +262,19 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
     ++bucket.level_counts[event.level];
     ++bucket.role_counts[event.structural_role]; // announced role → salience
     ++lines_observed_;
+
+    // SPEC §16 cube: accumulate the per-EVENT joint (level, component, role) and the
+    // per-template component marginal (for the §16.6 reservoir cross). Gated on
+    // emit_cube == false (default) → one predicted-not-taken branch, zero extra work on
+    // the hot path (same discipline as max_param_histograms). The component string_view
+    // is arena-stable only within the window, so it is COPIED into the keys.
+    if (config_.emit_cube)
+    {
+        ++cube_base_[std::make_tuple(event.level, std::string{event.component},
+                                     event.structural_role)];
+        if (!event.component.empty())
+            ++bucket.component_counts[std::string{event.component}];
+    }
 
     // Per-param field histogram accumulation.
     // Gated on config_.max_param_histograms == 0 (default) → single
@@ -328,6 +345,7 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end,
 
     build_behavior(doc, analysis);
     build_stability(doc, analysis);
+    build_cube(doc); // SPEC §16 — only when config_.emit_cube
 
     // Carry this window's frequencies for the next window's stability, emit the
     // §3.4 dedup map, then drop the per-window state.
@@ -343,7 +361,7 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end,
 void MetaLogEngine::stamp_envelope(MetaLogDocument& doc, Timestamp start, Timestamp end,
                                    std::optional<ReportedWindowBounds> reported_bounds) const
 {
-    doc.metalog_version = "0.5.0";
+    doc.metalog_version = "0.6.0";
     doc.producer.version = config_.producer_version;
     doc.source = source_;
 
@@ -444,7 +462,17 @@ void MetaLogEngine::build_transition_graph(WindowAnalysis& analysis) const
         {
             if (to_id >= node_count)
                 continue;
-            if (count * best_t[to_id] > best_c[to_id] * outgoing)
+            // Most-likely incoming edge = highest ratio count/outgoing (cross-multiplied, exact
+            // integer). DETERMINISTIC tie-break on EQUAL ratio: prefer the edge with MORE observations
+            // (larger count) — a pure function of the contents, NOT the unordered_map iteration order.
+            // Two equal-ratio edges with different absolute (count, outgoing) can fall in DIFFERENT
+            // surprise bands (the ≥2-observation floor + the integer thresholds in surprise_band), so an
+            // order-dependent pick diverges across stdlibs and perturbs structural_surprise → the
+            // salience ranking → the reservoir admission boundary. (Found via the §9.2 cross-count
+            // clang≢gcc; the same determinism discipline as dominant_level_of/dominant_role_of.)
+            const std::uint64_t cand{count * best_t[to_id]};
+            const std::uint64_t best{best_c[to_id] * outgoing};
+            if (cand > best || (cand == best && count > best_c[to_id]))
             {
                 best_c[to_id] = count;
                 best_t[to_id] = outgoing;
@@ -622,6 +650,12 @@ void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& ana
         // of the document coordinate; meaningless without one).
         if (config_.source_ref)
             entry.within_window_ordinal = bucket.first_seen_index;
+        // §16.6 reservoir→cell cross: LOCATION-only {level, where}. A pure function of
+        // the entry's (dominant level, dominant component) — read-only, one-way, carries
+        // no salience. Only when a cube block is emitted.
+        if (config_.emit_cube)
+            entry.cube_coord =
+                cube::cube_location(level, dominant_component_of(bucket.component_counts));
         stats.reservoir.push_back(std::move(entry));
         reserved.insert(ordered[candidate.index].first);
     }
@@ -899,6 +933,24 @@ void MetaLogEngine::build_stability(MetaLogDocument& doc, const WindowAnalysis& 
     }
 }
 
+// Intra-window closed cube (SPEC §16): flatten the per-event (level, component, role)
+// joint accumulated during ingest into BaseRows and close it. Built in batch over the
+// frozen window → a pure function of that set, bit-identical cross-stdlib/OS (§16.9).
+void MetaLogEngine::build_cube(MetaLogDocument& doc) const
+{
+    if (!config_.emit_cube)
+        return;
+    std::vector<cube::BaseRow> base;
+    base.reserve(cube_base_.size());
+    for (const auto& [key, count] : cube_base_)
+    {
+        const auto& [level, component, role]{key};
+        base.push_back(cube::BaseRow{
+            .level = level, .component = component, .role = role, .count = count});
+    }
+    doc.cube = cube::build_closed_cube(base);
+}
+
 void MetaLogEngine::stash_prev_window(const MetaLogDocument& doc)
 {
     // Stash this window's frequency map for the NEXT close_window's
@@ -939,6 +991,7 @@ void MetaLogEngine::reset_window_state()
     recent_.fill(0);
     ngram_counts_.clear();
     ngram_total_ = 0;
+    cube_base_.clear();
 }
 
 } // namespace insight::metalog

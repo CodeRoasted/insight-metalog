@@ -66,17 +66,16 @@ TEST(DeterminismGate, FullDocumentByteIdentityGolden)
     const std::string combined{meta::to_json(doc1) + "\n" + meta::to_json(doc2)};
     const std::string digest{picosha2::hash256_hex_string(combined)};
 
-    // Re-derived 2026-06-04 (was 798463…, frozen 2026-05-31). The window-2 GET
-    // template is deliberately ~50% errors → a level-count TIE (150 INFO / 150
-    // ERROR). The old value encoded a non-deterministic tie result: dominant_level_of
-    // broke the tie by unordered_map iteration order, so the template resolved to
-    // INFO under libstdc++ but ERROR under libc++ — both a cross-stdlib determinism
-    // break AND a latent detection defect (a half-error endpoint hidden as INFO).
-    // dominant_level_of now breaks count ties by higher severity (ERROR here), a
-    // pure function of the contents. The same value must hold on every
-    // compiler/architecture (re-verify across the gcc×clang×-O×-ffp-contract matrix).
+    // Re-derived 2026-06-15 (was 5782e7…) for the metalog 0.6.0 format-version bump
+    // (metalog_version / producer.version "0.5.0" → "0.6.0", the SPEC §16 cube landing).
+    // This scenario does NOT enable the cube (emit_cube defaults false), so the ONLY
+    // wire change is the two version strings — the cube's own bytes are golden-gated
+    // separately by CubeDeterminism.ByteIdentityGolden. The window-2 GET template is
+    // ~50% errors → a level-count TIE (150 INFO / 150 ERROR); dominant_level_of breaks
+    // it by higher severity (ERROR), a pure function of the contents. The same value
+    // MUST hold on every compiler/architecture (re-verify across the cross-stdlib diagonal).
     constexpr std::string_view kGolden{
-        "5782e79f6096cff581ab6c05ee9b08a3de4382702121db85578d68028816e279"};
+        "2cb1d9665d30e8cfe65aab2ce18b423420e6973430548c7ee2de6a1fb8eeed13"};
     EXPECT_EQ(digest, kGolden)
         << "MetaLog document determinism golden mismatch — a cross-machine bit-identity "
            "regression, OR an intentional contract change needing the golden re-derived "

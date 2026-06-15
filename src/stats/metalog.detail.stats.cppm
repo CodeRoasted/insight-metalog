@@ -188,6 +188,13 @@ dominant_level_of(const std::unordered_map<LogLevel, std::uint64_t>& levels);
 [[nodiscard]] StructuralRole
 dominant_role_of(const std::unordered_map<StructuralRole, std::uint64_t>& roles);
 
+// Most-frequent component for a template (argmax over the count map; ties broken by
+// component string asc — a pure function of the contents, stdlib-identical). Empty
+// string when the template carried no component. Feeds the §16.6 reservoir→cell cross
+// (the WHERE-path of a salient template's LOCATION).
+[[nodiscard]] std::string
+dominant_component_of(const std::unordered_map<std::string, std::uint64_t>& components);
+
 // Structural-surprise band (0..100) for the MOST-LIKELY incoming edge p = c/t into
 // a template: high only when even a template's easiest way in is rare. Integer
 // thresholds on c·K vs t (no float, I5); c==0 means root/unreachable (not surprising).

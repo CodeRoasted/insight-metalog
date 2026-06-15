@@ -1,0 +1,394 @@
+// NOLINTBEGIN
+// Unit tests: allow short identifiers and test-specific patterns.
+// SPEC §16 intra-window closed cube + §13.6 emerging-border cube_diff: closure /
+// condensation, the order-convex (lower, upper) border, compose re-closure, the §16.6
+// reservoir→cell LOCATION cross, the §16.5 MUST-1 tree guard, and a byte-identity golden.
+
+#include <gtest/gtest.h>
+#include <picosha2.h>
+
+import insight.metalog.test;
+
+namespace
+{
+
+namespace tok = insight::tokenization;
+namespace meta = insight::metalog;
+namespace cube = insight::metalog::cube;
+using insight::LogLevel;
+using insight::StructuralRole;
+
+// A CanonicalEvent carrying a template, level, component (the WHERE), and role. The
+// component/template are string literals (static storage) → the string_views stay valid.
+[[nodiscard]] tok::CanonicalEvent
+ev(std::string_view tmpl, LogLevel level, std::string_view component,
+   StructuralRole role = StructuralRole::None)
+{
+    tok::CanonicalEvent e;
+    e.template_str = tmpl;
+    e.level = level;
+    e.component = component;
+    e.structural_role = role;
+    return e;
+}
+
+[[nodiscard]] meta::MetaLogConfig cube_cfg()
+{
+    return meta::MetaLogConfig{.reservoir_size = 8,
+                               .reservoir_per_kind_cap = 4,
+                               .emit_stability = false,
+                               .emit_cube = true};
+}
+
+// Find a closed cell by its (optional) level + (optional) where-leaf + (optional) role.
+[[nodiscard]] const meta::CubeCell* find_cell(const meta::CubeBlock& c,
+                                              std::optional<std::string> level,
+                                              std::optional<std::string> where_leaf,
+                                              std::optional<std::string> role)
+{
+    for (const auto& cell : c.cells)
+    {
+        const bool level_ok{cell.coord.level == level};
+        const bool role_ok{cell.coord.structural_role == role};
+        std::optional<std::string> cell_where;
+        if (cell.coord.where && !cell.coord.where->empty())
+            cell_where = cell.coord.where->back();
+        const bool where_ok{cell_where == where_leaf};
+        if (level_ok && role_ok && where_ok)
+            return &cell;
+    }
+    return nullptr;
+}
+
+[[nodiscard]] const meta::CubeBorderCell* find_border(const std::vector<meta::CubeBorderCell>& cells,
+                                                      std::optional<std::string> level,
+                                                      std::optional<std::string> where_leaf,
+                                                      std::optional<std::string> role)
+{
+    for (const auto& cell : cells)
+    {
+        std::optional<std::string> cw;
+        if (cell.coord.where && !cell.coord.where->empty())
+            cw = cell.coord.where->back();
+        if (cell.coord.level == level && cell.coord.structural_role == role && cw == where_leaf)
+            return &cell;
+    }
+    return nullptr;
+}
+
+} // namespace
+
+// ── Block shape & condensation (§16.1/§16.2/§16.4) ──────────────────────────────
+
+TEST(CubeBlock, OffByDefault)
+{
+    meta::MetaLogEngine engine; // default config: emit_cube == false
+    engine.open_window(std::chrono::system_clock::time_point{});
+    engine.ingest_event(ev("login ok", LogLevel::Info, "auth"));
+    const auto doc{engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
+    EXPECT_FALSE(doc.cube.has_value()) << "the cube is additive — absent unless emit_cube is set";
+}
+
+TEST(CubeBlock, ReferenceAxesAndAggregateTotal)
+{
+    meta::MetaLogEngine engine{cube_cfg()};
+    engine.open_window(std::chrono::system_clock::time_point{});
+    for (int i = 0; i < 5; ++i)
+        engine.ingest_event(ev("login ok", LogLevel::Info, "auth"));
+    for (int i = 0; i < 3; ++i)
+        engine.ingest_event(ev("timeout", LogLevel::Error, "db"));
+    const auto doc{engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
+
+    ASSERT_TRUE(doc.cube.has_value());
+    const meta::CubeBlock& c{*doc.cube};
+
+    // §16.2 reference axes: level (categorical), where (chain, floor_depth 1), structural_role.
+    ASSERT_EQ(c.axes.size(), 3U);
+    EXPECT_EQ(c.axes[0].name, "level");
+    EXPECT_EQ(c.axes[0].kind, "categorical");
+    EXPECT_EQ(c.axes[1].name, "where");
+    EXPECT_EQ(c.axes[1].kind, "chain");
+    ASSERT_TRUE(c.axes[1].chain.has_value());
+    ASSERT_EQ(c.axes[1].chain->size(), 1U);
+    EXPECT_EQ(c.axes[1].chain->front(), "component");
+    ASSERT_TRUE(c.axes[1].floor_depth.has_value());
+    EXPECT_EQ(*c.axes[1].floor_depth, 1U);
+    EXPECT_EQ(c.axes[2].name, "structural_role");
+
+    // §16.4: the window total lives in the closure of coord {}. Here all events share
+    // role=None (level + where both vary), so the closed total-bearing cell is
+    // {structural_role:"None"} (closure pins the constant role, stars the varying dims).
+    const meta::CubeCell* apex{find_cell(c, std::nullopt, std::nullopt, "None")};
+    ASSERT_NE(apex, nullptr) << "the window-total cell (closure of coord {}) must be present";
+    EXPECT_EQ(apex->count, 8U) << "total == 5 + 3";
+
+    // The joint cell (ERROR, db) must carry exactly the 3 timeouts.
+    const meta::CubeCell* err_db{find_cell(c, "ERROR", "db", "None")};
+    ASSERT_NE(err_db, nullptr);
+    EXPECT_EQ(err_db->count, 3U);
+
+    // Condensation: closure collapses redundant cells → cell_count ≤ raw_cell_count.
+    EXPECT_GT(c.raw_cell_count, 0U);
+    EXPECT_LE(c.cell_count, c.raw_cell_count);
+    EXPECT_EQ(c.cell_count, c.cells.size());
+}
+
+TEST(CubeBlock, ClosureCollapsesSingleComponent)
+{
+    // Every event shares component=auth → (level, auth, role) and (level, *, role) carry
+    // the SAME count, so the where-pinned cell is REDUNDANT (regenerates by closure) and is
+    // NOT stored: closure collapse is real.
+    meta::MetaLogEngine engine{cube_cfg()};
+    engine.open_window(std::chrono::system_clock::time_point{});
+    for (int i = 0; i < 4; ++i)
+        engine.ingest_event(ev("a", LogLevel::Info, "auth"));
+    const auto doc{engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
+    ASSERT_TRUE(doc.cube.has_value());
+    EXPECT_LT(doc.cube->cell_count, doc.cube->raw_cell_count)
+        << "a single-component window must collapse (redundant where-pinned cells dropped)";
+    // The fully-pinned base cell (INFO, auth, None) is always closed and present.
+    EXPECT_NE(find_cell(*doc.cube, "INFO", "auth", "None"), nullptr);
+}
+
+TEST(CubeBlock, EmptyComponentAggregatesNoWhere)
+{
+    // An event with empty component has NO where → it lands only in where-aggregated cells;
+    // the apex still equals the full window total (empty-component events are counted).
+    meta::MetaLogEngine engine{cube_cfg()};
+    engine.open_window(std::chrono::system_clock::time_point{});
+    engine.ingest_event(ev("x", LogLevel::Info, "")); // no component
+    engine.ingest_event(ev("y", LogLevel::Info, "auth"));
+    const auto doc{engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
+    ASSERT_TRUE(doc.cube.has_value());
+    // Both events are INFO/None; the total-bearing closed cell is {level:INFO, role:None}
+    // (where starred, since the empty-component event and the auth event differ on where).
+    const meta::CubeCell* apex{find_cell(*doc.cube, "INFO", std::nullopt, "None")};
+    ASSERT_NE(apex, nullptr);
+    EXPECT_EQ(apex->count, 2U) << "both events counted in the aggregate, incl. the empty-component one";
+    // No where=auth cell may claim the empty-component event.
+    const meta::CubeCell* info_auth{find_cell(*doc.cube, "INFO", "auth", "None")};
+    ASSERT_NE(info_auth, nullptr);
+    EXPECT_EQ(info_auth->count, 1U);
+}
+
+// ── Emerging border (§13.6) ─────────────────────────────────────────────────────
+
+namespace
+{
+// Two single-window documents under a shared contract, so diff() does not trip the
+// §2.4 gate. Window B introduces an (ERROR, db) burst absent from window A.
+[[nodiscard]] std::pair<meta::MetaLogDocument, meta::MetaLogDocument> two_windows()
+{
+    auto cfg{cube_cfg()};
+    cfg.canonicalization_version = "canon-cube-test";
+    cfg.retention_profile = "rp-cube-test";
+
+    meta::MetaLogEngine engine{cfg};
+    const std::chrono::system_clock::time_point t0{};
+    const auto t1{t0 + std::chrono::seconds{60}};
+    const auto t2{t0 + std::chrono::seconds{120}};
+
+    engine.open_window(t0);
+    for (int i = 0; i < 6; ++i)
+        engine.ingest_event(ev("login ok", LogLevel::Info, "auth"));
+    const auto prev{engine.close_window(t1)};
+
+    engine.open_window(t1);
+    for (int i = 0; i < 6; ++i)
+        engine.ingest_event(ev("login ok", LogLevel::Info, "auth"));
+    for (int i = 0; i < 5; ++i)
+        engine.ingest_event(ev("pool timeout", LogLevel::Error, "db")); // the burst
+    const auto cur{engine.close_window(t2)};
+    return {prev, cur};
+}
+} // namespace
+
+TEST(CubeDiff, EmergingHeadlineIsMinimalGenerator)
+{
+    const auto [prev, cur]{two_windows()};
+    const auto diff{meta::diff(prev, cur)};
+
+    ASSERT_TRUE(diff.cube_diff.has_value()) << "both docs carried a cube with equal axes";
+    EXPECT_EQ(diff.cube_diff->axes.size(), 3U);
+    ASSERT_TRUE(diff.cube_diff->emerging.has_value()) << "the (ERROR, db) burst must emerge";
+    const meta::CubeBorder& emerging{*diff.cube_diff->emerging};
+
+    // The fully-specific cell (ERROR, db, None) is on the LOWER border (precise description).
+    const meta::CubeBorderCell* lower{find_border(emerging.lower, "ERROR", "db", "None")};
+    ASSERT_NE(lower, nullptr);
+    EXPECT_EQ(lower->previous_count, 0U);
+    EXPECT_EQ(lower->current_count, 5U);
+
+    // The UPPER border (the headline = minimal generators) names the smallest condition
+    // that characterises everything that emerged. Every upper cell appeared from nothing.
+    ASSERT_FALSE(emerging.upper.empty());
+    for (const auto& cell : emerging.upper)
+    {
+        EXPECT_EQ(cell.previous_count, 0U) << "an upper-border cell emerged from nothing (≤ θ_was)";
+        EXPECT_GE(cell.current_count, 1U);
+        // A minimal generator has no emergent parent: it is more general than the lower cell.
+        EXPECT_LE(cell.coord.level.has_value() + (cell.coord.where.has_value()) +
+                      cell.coord.structural_role.has_value(),
+                  3);
+    }
+    // Nothing vanished (window A's auth traffic persists into B).
+    EXPECT_FALSE(diff.cube_diff->vanishing.has_value());
+}
+
+TEST(CubeDiff, VanishingIsTheDual)
+{
+    // Swap the order: the burst is in the PREVIOUS window, gone from the current one.
+    const auto [a, b]{two_windows()};
+    const auto diff{meta::diff(b, a)}; // b has the burst, a does not → it vanishes
+
+    ASSERT_TRUE(diff.cube_diff.has_value());
+    ASSERT_TRUE(diff.cube_diff->vanishing.has_value());
+    const meta::CubeBorderCell* lower{find_border(diff.cube_diff->vanishing->lower, "ERROR", "db", "None")};
+    ASSERT_NE(lower, nullptr);
+    EXPECT_EQ(lower->previous_count, 5U);
+    EXPECT_EQ(lower->current_count, 0U);
+    EXPECT_FALSE(diff.cube_diff->emerging.has_value());
+}
+
+TEST(CubeDiff, OmittedWhenOneSideHasNoCube)
+{
+    auto cfg{cube_cfg()};
+    cfg.canonicalization_version = "c";
+    meta::MetaLogEngine with_cube{cfg};
+    with_cube.open_window(std::chrono::system_clock::time_point{});
+    with_cube.ingest_event(ev("a", LogLevel::Info, "auth"));
+    const auto doc_cube{with_cube.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
+
+    auto cfg2{cfg};
+    cfg2.emit_cube = false;
+    meta::MetaLogEngine no_cube{cfg2};
+    no_cube.open_window(std::chrono::system_clock::time_point{});
+    no_cube.ingest_event(ev("a", LogLevel::Info, "auth"));
+    const auto doc_plain{no_cube.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
+
+    EXPECT_FALSE(meta::diff(doc_cube, doc_plain).cube_diff.has_value())
+        << "§13.6: a cube_diff needs a cube on BOTH sides";
+}
+
+// ── Compose re-closure (§16.7 / §12.1) ──────────────────────────────────────────
+
+TEST(CubeCompose, RecloseSumsCounts)
+{
+    auto cfg{cube_cfg()};
+    cfg.canonicalization_version = "c";
+    cfg.retention_profile = "r";
+
+    const auto build{[&](LogLevel level, std::string_view comp, int n)
+                     {
+                         meta::MetaLogEngine engine{cfg};
+                         engine.open_window(std::chrono::system_clock::time_point{});
+                         for (int i = 0; i < n; ++i)
+                             engine.ingest_event(ev("t", level, comp));
+                         return engine.close_window(std::chrono::system_clock::time_point{} +
+                                                    std::chrono::seconds{1});
+                     }};
+    const auto lhs{build(LogLevel::Error, "db", 3)};
+    const auto rhs{build(LogLevel::Error, "db", 4)};
+
+    const auto composed{meta::compose(lhs, rhs)};
+    ASSERT_TRUE(composed.cube.has_value()) << "both inputs had a cube → re-closed cube emitted";
+    // Every event is (ERROR, db, None), so the whole cube collapses to one closed base
+    // cell carrying the merged total — that single cell IS the apex (3 + 4 = 7).
+    const meta::CubeCell* err_db{find_cell(*composed.cube, "ERROR", "db", "None")};
+    ASSERT_NE(err_db, nullptr);
+    EXPECT_EQ(err_db->count, 7U) << "distributive counts add (3 + 4) under re-closure";
+}
+
+TEST(CubeCompose, OmittedWhenOneSideHasNoCube)
+{
+    auto cfg{cube_cfg()};
+    cfg.canonicalization_version = "c";
+    cfg.retention_profile = "r";
+    meta::MetaLogEngine a{cfg};
+    a.open_window(std::chrono::system_clock::time_point{});
+    a.ingest_event(ev("t", LogLevel::Info, "auth"));
+    const auto with{a.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
+
+    auto cfg2{cfg};
+    cfg2.emit_cube = false;
+    meta::MetaLogEngine b{cfg2};
+    b.open_window(std::chrono::system_clock::time_point{});
+    b.ingest_event(ev("t", LogLevel::Info, "auth"));
+    const auto without{b.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
+
+    EXPECT_FALSE(meta::compose(with, without).cube.has_value())
+        << "§16.7: when either input omits a cube, the composed cube is omitted";
+}
+
+// ── §16.6 reservoir → cell LOCATION cross ───────────────────────────────────────
+
+TEST(CubeReservoirCross, SalientEntryCarriesLocation)
+{
+    meta::MetaLogConfig cfg{
+        .top_k_size = 2, .reservoir_size = 8, .emit_stability = false, .emit_cube = true};
+    meta::MetaLogEngine engine{cfg};
+    engine.open_window(std::chrono::system_clock::time_point{});
+    for (int i = 0; i < 50; ++i)
+    {
+        engine.ingest_event(ev("steady a", LogLevel::Info, "web"));
+        engine.ingest_event(ev("steady b", LogLevel::Info, "web"));
+        engine.ingest_event(ev("steady c", LogLevel::Info, "web"));
+    }
+    engine.ingest_event(ev("disk failed", LogLevel::Fatal, "storage")); // rare-salient
+    const auto doc{engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{60})};
+
+    ASSERT_TRUE(doc.cube.has_value());
+    const meta::ReservoirEntry* fatal{nullptr};
+    for (const auto& entry : doc.stats.reservoir)
+        if (entry.template_str == "disk failed")
+            fatal = &entry;
+    ASSERT_NE(fatal, nullptr) << "the rare fatal must be in the reservoir";
+    ASSERT_TRUE(fatal->cube_coord.has_value()) << "§16.6: a salient entry carries its cube LOCATION";
+    EXPECT_EQ(fatal->cube_coord->level, "FATAL");
+    ASSERT_TRUE(fatal->cube_coord->where.has_value());
+    ASSERT_EQ(fatal->cube_coord->where->size(), 1U);
+    EXPECT_EQ(fatal->cube_coord->where->front(), "storage");
+    // Firewall (§16.6): LOCATION-only — no salience, no role leaks into the cross.
+    EXPECT_FALSE(fatal->cube_coord->structural_role.has_value());
+}
+
+// ── §16.5 MUST-1 — WHERE chain is a single-parent tree ──────────────────────────
+
+TEST(CubeMustOne, TreeAcceptedDagRejected)
+{
+    // A proper tree: a/b and a/c share parent a — single-parent everywhere.
+    const std::vector<std::vector<std::string>> tree{
+        {"a", "b"}, {"a", "c"}, {"a"}};
+    EXPECT_TRUE(cube::where_chain_is_tree(tree));
+
+    // A DAG: node {x} appears under two different parents (a and b) → rejected.
+    const std::vector<std::vector<std::string>> dag{
+        {"a", "x"}, {"b", "x"}};
+    EXPECT_FALSE(cube::where_chain_is_tree(dag));
+
+    // Depth-1 chains (the v0.6.0 regime) are vacuously trees.
+    const std::vector<std::vector<std::string>> flat{{"auth"}, {"db"}, {"web"}};
+    EXPECT_TRUE(cube::where_chain_is_tree(flat));
+}
+
+// ── Determinism golden (§16.9) ──────────────────────────────────────────────────
+// A fixed cube-enabled two-window scenario, serialised (document + cube_diff). The
+// SHA-256 is FROZEN: every stdlib / arch / OS MUST reproduce these exact bytes. A
+// mismatch is a cube determinism regression. Re-derive ONLY for an intentional
+// contract change (and re-verify across the cross-stdlib diagonal).
+TEST(CubeDeterminism, ByteIdentityGolden)
+{
+    const auto [prev, cur]{two_windows()};
+    const auto diff{meta::diff(prev, cur)};
+    const std::string combined{meta::to_json(prev) + "\n" + meta::to_json(cur) + "\n" +
+                               meta::to_json(diff)};
+    const std::string digest{picosha2::hash256_hex_string(combined)};
+
+    constexpr std::string_view kGolden{
+        "b211fe7afafe85f754facf0864af506451fbb90077557411078f7651dc434e36"};
+    EXPECT_EQ(digest, kGolden) << "cube wire bytes changed — re-derive across the cross-stdlib "
+                                  "diagonal if intentional.\nactual combined:\n"
+                               << combined;
+}
+
+// NOLINTEND

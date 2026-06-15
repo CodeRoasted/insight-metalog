@@ -93,6 +93,25 @@ std::optional<LogLevel> dominant_level_of(const std::unordered_map<LogLevel, std
     return best_it->first;
 }
 
+std::string dominant_component_of(const std::unordered_map<std::string, std::uint64_t>& components)
+{
+    const std::string* best{nullptr};
+    std::uint64_t best_count{0};
+    for (const auto& [component, count] : components)
+    {
+        // Max count; ties broken by component string asc — a pure function of the
+        // contents (not unordered_map iteration order) so the dominant component (and
+        // thus the reservoir entry's cube_coord WHERE) is stdlib-identical.
+        if (best == nullptr || count > best_count ||
+            (count == best_count && component < *best))
+        {
+            best = &component;
+            best_count = count;
+        }
+    }
+    return best == nullptr ? std::string{} : *best;
+}
+
 StructuralRole dominant_role_of(const std::unordered_map<StructuralRole, std::uint64_t>& roles)
 {
     StructuralRole best{StructuralRole::None};

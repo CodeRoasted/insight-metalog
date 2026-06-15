@@ -69,6 +69,11 @@ class MetaLogEngine
         // Announced structural roles seen for this template (→ salience).
         // Dominant role feeds the salience severity signal (Terminator = severe).
         std::unordered_map<StructuralRole, std::uint64_t> role_counts;
+        // Functional-source (canon `component`) counts seen for this template.
+        // Populated only when config_.emit_cube. The dominant component is the
+        // template's WHERE-path for the §16.6 reservoir→cell cross. Not the cube
+        // itself (the cube is the per-EVENT joint, accumulated in cube_base_).
+        std::unordered_map<std::string, std::uint64_t> component_counts;
         // Per-param value histograms; index i == CanonicalEvent::params[i].
         // Populated only when config_.max_param_histograms > 0.
         std::vector<std::unordered_map<std::string, std::uint64_t>> param_value_counts;
@@ -162,6 +167,9 @@ class MetaLogEngine
     void build_dominant_path(BehaviorBlock& behavior, const WindowAnalysis& analysis) const;
     [[nodiscard]] InternalTemplateID dominant_path_start() const;
     void build_stability(MetaLogDocument& doc, const WindowAnalysis& analysis) const;
+    // Intra-window closed cube (SPEC §16), built from the per-event (level, component,
+    // role) joint accumulated in cube_base_. Only when config_.emit_cube.
+    void build_cube(MetaLogDocument& doc) const;
     void stash_prev_window(const MetaLogDocument& doc);
     void build_templates_map(MetaLogDocument& doc) const;
     void reset_window_state();
@@ -184,6 +192,12 @@ class MetaLogEngine
     // content-derived spec IDs only when building the document.
     std::unordered_map<NGramKey, std::uint64_t, NGramKeyHash> ngram_counts_;
     std::uint64_t ngram_total_{0};
+
+    // Intra-window cube base (SPEC §16): the per-EVENT joint (level, component, role) →
+    // count. Populated only when config_.emit_cube (one map insert per ingest, off the
+    // default hot path). An ordered map keyed on api/canon types only (no detail type in
+    // the facade interface); the closure is built from it at close_window in build_cube.
+    std::map<std::tuple<LogLevel, std::string, StructuralRole>, std::uint64_t> cube_base_;
 
     // Cross-window state for stability. Populated at the end of each
     // close_window with this window's per-template counts and end

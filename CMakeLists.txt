@@ -29,9 +29,10 @@ find_package(picosha2 REQUIRED CONFIG)
 ###########################################################
 #  Sources (1.5.2 domain decomposition, §11.9.11)
 #  - PUBLIC module interface units (installed): internal (src/) + api + facade (api/).
-#  - PRIVATE (sealed, build-only) detail shards (src/<domain>/): two domain shards —
-#    detail.stats (HLL, statistics, salience, wire_format) and detail.operations
-#    (comparability gate). Impl units live alongside their shard in src/<domain>/.
+#  - PRIVATE (sealed, build-only) detail shards (src/<domain>/): three domain shards —
+#    detail.stats (HLL, statistics, salience, wire_format), detail.operations
+#    (comparability gate), and detail.cube (closed cube + emerging border, SPEC §16/§13.6).
+#    Impl units live alongside their shard in src/<domain>/.
 #  - Module impl units (regular sources, scanned): src/**/*.cpp attach via
 #    `module insight.metalog[.detail.<domain>];`.
 #  - No textual headers survive (metalog uses no logging macro layer).
@@ -44,6 +45,7 @@ set(METALOG_PUBLIC_MODULE_UNITS
 set(METALOG_DETAIL_MODULE_UNITS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/stats/metalog.detail.stats.cppm
     ${CMAKE_CURRENT_SOURCE_DIR}/src/operations/metalog.detail.operations.cppm
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cube/metalog.detail.cube.cppm
 )
 file(GLOB_RECURSE METALOG_IMPL_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 

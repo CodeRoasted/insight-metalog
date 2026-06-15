@@ -6,6 +6,7 @@ import insight.metalog.api;
 import insight.canon;
 import insight.metalog.detail.stats;
 import insight.metalog.detail.operations;
+import insight.metalog.detail.cube;
 
 // MetaLog composition (SPEC §12): merge two documents into one bounded
 // fingerprint covering both windows. Lossy where either input had a non-empty
@@ -264,6 +265,7 @@ struct ComposeSalienceInfo
     std::uint32_t structural_surprise{0};
     std::uint32_t novelty{0};
     StructuralRole role{StructuralRole::None};
+    std::string where_leaf; // §16.6 cube_coord WHERE leaf carried from an input entry
 };
 
 // A below-composed-top_k template ranked for the re-derived reservoir.
@@ -274,6 +276,7 @@ struct ComposeReservoirCandidate
     std::uint32_t structural_surprise;
     std::uint32_t novelty;
     StructuralRole role;
+    std::string where_leaf; // §16.6 cube_coord WHERE leaf
 };
 
 // Rank the templates salient in EITHER input's reservoir that did NOT rise into the
@@ -299,6 +302,11 @@ collect_compose_reservoir_candidates(const MetaLogDocument& out, const ComposeSt
                                         info.novelty = std::max(info.novelty, entry.novelty);
                                         if (info.role == StructuralRole::None)
                                             info.role = entry.structural_role;
+                                        // §16.6: carry the WHERE leaf from the first input
+                                        // entry that has a cube_coord (LOCATION only).
+                                        if (info.where_leaf.empty() && entry.cube_coord &&
+                                            entry.cube_coord->where && !entry.cube_coord->where->empty())
+                                            info.where_leaf = entry.cube_coord->where->back();
                                     }
                                 }};
     absorb_reservoir(lhs);
@@ -329,7 +337,8 @@ collect_compose_reservoir_candidates(const MetaLogDocument& out, const ComposeSt
                                           .salience = sal,
                                           .structural_surprise = info.structural_surprise,
                                           .novelty = info.novelty,
-                                          .role = info.role});
+                                          .role = info.role,
+                                          .where_leaf = info.where_leaf});
     }
     return res_cands;
 }
@@ -348,6 +357,9 @@ void rederive_reservoir(MetaLogDocument& out, ComposeState& state, const MetaLog
     auto& reserved = state.reserved;
     const auto total_lines = static_cast<double>(out.window.lines_observed);
 
+    // §16.6: a composed document emits a cube only when BOTH inputs had one; the
+    // re-derived reservoir entries carry a cube_coord only in that case.
+    const bool has_cube{lhs.cube.has_value() && rhs.cube.has_value()};
     auto res_cands = collect_compose_reservoir_candidates(out, state, lhs, rhs);
     std::ranges::sort(res_cands,
                       [](const ComposeReservoirCandidate& lhs, const ComposeReservoirCandidate& rhs)
@@ -372,6 +384,8 @@ void rederive_reservoir(MetaLogDocument& out, ComposeState& state, const MetaLog
         entry.structural_surprise = cand.structural_surprise;
         entry.novelty = cand.novelty;
         entry.salience = cand.salience;
+        if (has_cube)
+            entry.cube_coord = cube::cube_location(entry.dominant_level, cand.where_leaf);
         out.stats.reservoir.push_back(std::move(entry));
         reserved.insert(cand.template_id);
     }
@@ -581,6 +595,11 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
         out.coordinate = std::move(coord);
     if (auto behavior{merge_behavior(lhs, rhs)})
         out.behavior = std::move(behavior);
+    // SPEC §16.7 / §12.1: the cube is RE-CLOSED, not merged cell-by-cell (the
+    // distributive counts add but the closure/border do not). Omitted when either input
+    // omits a cube. The re-derived reservoir entries' §16.6 cube_coord is set above only
+    // when both inputs carried a cube (== out.cube present).
+    out.cube = cube::compose_cubes(lhs.cube, rhs.cube);
 
     return out;
 }

@@ -110,6 +110,42 @@ struct TopKEntry
     };
 };
 
+// Cube coordinate (SPEC §16.4) — an OPEN object keyed by axis name. The v0.6.0
+// reference axes are level (categorical), where (chain, prefix-path array), and
+// structural_role (categorical); skip_null_members omits an absent (aggregated) axis.
+// A future axis is one more optional field — the wire object stays open over names.
+struct CubeCoord
+{
+    std::optional<std::string> level;
+    std::optional<std::vector<std::string>> where;
+    std::optional<std::string> structural_role;
+};
+
+// Cube axis descriptor (SPEC §16.2). chain + floor_depth present only for kind=="chain".
+struct CubeAxis
+{
+    std::string name;
+    std::string kind;
+    std::optional<std::vector<std::string>> chain;
+    std::optional<std::uint32_t> floor_depth;
+};
+
+struct CubeCell
+{
+    CubeCoord coord;
+    std::uint64_t count{0};
+};
+
+// Closed cube block (SPEC §16.1). floor_saturation is omitted (degenerate at
+// floor_depth=1; a diff-time concept) — consumers read its absence leniently.
+struct CubeBlock
+{
+    std::vector<CubeAxis> axes;
+    std::vector<CubeCell> cells;
+    std::uint64_t cell_count{0};
+    std::uint64_t raw_cell_count{0};
+};
+
 // Salience reservoir entry (Tier 2). Self-describing: carries WHY it was kept
 // (salience + the per-axis bands) so a consumer/explainer can attribute it without
 // the producer. Emitted under `compose()` and serialise→reparse.
@@ -125,6 +161,7 @@ struct ReservoirEntry
     std::uint32_t novelty{0};
     std::uint32_t salience{0};
     std::optional<std::uint64_t> within_window_ordinal; // §15.4 sub-coordinate; omit when absent
+    std::optional<CubeCoord> cube_coord; // §16.6 reservoir→cell LOCATION cross; omit when absent
 
     struct glaze
     {
@@ -133,7 +170,8 @@ struct ReservoirEntry
             "template_id", &T::template_id, "count", &T::count, "frequency", &T::frequency,
             "template", &T::tmpl, "level", &T::level, "structural_role", &T::structural_role,
             "structural_surprise", &T::structural_surprise, "novelty", &T::novelty, "salience",
-            &T::salience, "within_window_ordinal", &T::within_window_ordinal);
+            &T::salience, "within_window_ordinal", &T::within_window_ordinal, "cube_coord",
+            &T::cube_coord);
     };
 };
 
@@ -241,9 +279,33 @@ struct Document
     std::optional<std::string> canonicalization_version; // §2.4 processing identifiers
     std::optional<std::string> retention_profile;
     std::optional<Coordinate> coordinate; // §15 re-derivation coordinate
+    std::optional<CubeBlock> cube;        // §16 intra-window cube; omit when not emitted
 };
 
 // ── Diff DTO (SPEC §13) ──
+
+// Cube diff border (SPEC §13.6). A border cell = a constraint coord + the (was, now)
+// counts it bounds; a border = the (lower, upper) pair; the cube_diff = axes + the two
+// regions (each omitted when empty).
+struct CubeBorderCell
+{
+    CubeCoord coord;
+    std::uint64_t previous_count{0};
+    std::uint64_t current_count{0};
+};
+
+struct CubeBorder
+{
+    std::vector<CubeBorderCell> lower;
+    std::vector<CubeBorderCell> upper;
+};
+
+struct CubeDiff
+{
+    std::vector<CubeAxis> axes;
+    std::optional<CubeBorder> emerging;
+    std::optional<CubeBorder> vanishing;
+};
 struct DocRef
 {
     ProvenanceWindow window;
@@ -311,6 +373,7 @@ struct Diff
     std::optional<std::vector<BranchingDelta>> branching_delta;
     std::optional<NGramDelta> ngram_delta;
     std::optional<TailDelta> tail_delta;
+    std::optional<CubeDiff> cube_diff; // §13.6 emerging-border cube diff; omit when absent
 };
 
 } // namespace dto
@@ -359,6 +422,77 @@ dto::Coordinate make_coordinate(const ReDerivationCoordinate& coord)
             kids.push_back(make_coordinate(child));
         out.children = std::move(kids);
     }
+    return out;
+}
+
+// ── Cube (SPEC §16 / §13.6) ── domain → wire, defined before make_reservoir_entry
+// (the reservoir cube_coord cross) and make_document/make_diff use them.
+dto::CubeCoord make_cube_coord(const CubeCoord& coord)
+{
+    dto::CubeCoord out;
+    out.level = coord.level;
+    out.where = coord.where;
+    out.structural_role = coord.structural_role;
+    return out;
+}
+
+dto::CubeAxis make_cube_axis(const CubeAxis& axis)
+{
+    dto::CubeAxis out;
+    out.name = axis.name;
+    out.kind = axis.kind;
+    out.chain = axis.chain;
+    out.floor_depth = axis.floor_depth;
+    return out;
+}
+
+std::vector<dto::CubeAxis> make_cube_axes(const std::vector<CubeAxis>& axes)
+{
+    std::vector<dto::CubeAxis> out;
+    out.reserve(axes.size());
+    for (const auto& axis : axes)
+        out.push_back(make_cube_axis(axis));
+    return out;
+}
+
+dto::CubeBlock make_cube(const CubeBlock& cube)
+{
+    dto::CubeBlock out;
+    out.axes = make_cube_axes(cube.axes);
+    out.cells.reserve(cube.cells.size());
+    for (const auto& cell : cube.cells)
+        out.cells.push_back(dto::CubeCell{.coord = make_cube_coord(cell.coord), .count = cell.count});
+    out.cell_count = cube.cell_count;
+    out.raw_cell_count = cube.raw_cell_count;
+    return out;
+}
+
+dto::CubeBorder make_cube_border(const CubeBorder& border)
+{
+    const auto convert{[](const std::vector<CubeBorderCell>& cells)
+                       {
+                           std::vector<dto::CubeBorderCell> rows;
+                           rows.reserve(cells.size());
+                           for (const auto& cell : cells)
+                               rows.push_back(dto::CubeBorderCell{.coord = make_cube_coord(cell.coord),
+                                                                  .previous_count = cell.previous_count,
+                                                                  .current_count = cell.current_count});
+                           return rows;
+                       }};
+    dto::CubeBorder out;
+    out.lower = convert(border.lower);
+    out.upper = convert(border.upper);
+    return out;
+}
+
+dto::CubeDiff make_cube_diff(const CubeDiffBlock& diff)
+{
+    dto::CubeDiff out;
+    out.axes = make_cube_axes(diff.axes);
+    if (diff.emerging)
+        out.emerging = make_cube_border(*diff.emerging);
+    if (diff.vanishing)
+        out.vanishing = make_cube_border(*diff.vanishing);
     return out;
 }
 
@@ -411,6 +545,8 @@ dto::ReservoirEntry make_reservoir_entry(const ReservoirEntry& entry)
     row.novelty = entry.novelty;
     row.salience = entry.salience;
     row.within_window_ordinal = entry.within_window_ordinal;
+    if (entry.cube_coord)
+        row.cube_coord = make_cube_coord(*entry.cube_coord);
     return row;
 }
 
@@ -522,6 +658,8 @@ dto::Document make_document(const MetaLogDocument& doc)
     out.retention_profile = doc.retention_profile;
     if (doc.coordinate)
         out.coordinate = make_coordinate(*doc.coordinate);
+    if (doc.cube)
+        out.cube = make_cube(*doc.cube);
     return out;
 }
 
@@ -604,6 +742,8 @@ dto::Diff make_diff(const MetaLogDiff& diff)
                            .current_tail_max_rate = tail.current_tail_max_rate,
                            .tail_max_rate_delta = tail.tail_max_rate_delta};
     }
+    if (diff.cube_diff)
+        out.cube_diff = make_cube_diff(*diff.cube_diff);
     return out;
 }
 

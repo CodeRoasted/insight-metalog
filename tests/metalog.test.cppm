@@ -8,6 +8,7 @@ export import std;
 export import insight.metalog;
 export import insight.metalog.detail.stats;
 export import insight.metalog.detail.operations;
+export import insight.metalog.detail.cube;
 export import insight.canon;
 
 export namespace insight::metalog::test

@@ -47,6 +47,64 @@ struct TopKEntry
     std::vector<FieldHistogram> field_histograms;
 };
 
+// ── Cube (SPEC §16, EXPERIMENTAL) ──────────────────────────────
+//
+// Intra-window joint categorical condensation: a CLOSED cube over a small, fixed
+// set of low-card categorical axes (level × structural_role × where-chain). An
+// attributor/projector, not a detector — given events already marked interesting
+// elsewhere, it answers "what is the smallest conjunction characterising them".
+// ADDITIVE and removable in a single revert (§16.8): emitted only when the
+// producer opts in (MetaLogConfig::emit_cube); never the source of truth for any
+// 1-D marginal in v0.6.0.
+
+// One axis descriptor (§16.2). kind=="categorical" is a flat low-card category
+// (cell value = a string); kind=="chain" is a single-parent roll-up hierarchy
+// (§16.3) carrying its ordered chain levels (coarsest first) + the frozen
+// floor_depth (cell value = an ordered prefix-path array).
+struct CubeAxis
+{
+    std::string name; // "level" | "structural_role" | "where"
+    std::string kind; // "categorical" | "chain"
+    std::optional<std::vector<std::string>> chain; // chain only: ordered levels, coarsest first
+    std::optional<std::uint32_t> floor_depth;      // chain only: retained depth (≤ len(chain))
+    [[nodiscard]] bool operator==(const CubeAxis&) const noexcept = default;
+};
+
+// A cell coordinate (§16.4), generic over axes. An ABSENT axis means aggregated
+// (`*`). The v0.6.0 reference axes are fixed (level, structural_role, where), so
+// the coord is the three optional keys; a future axis is one more optional field
+// (the wire object is open over axis names). A `categorical` value is a string; a
+// `chain` value (`where`) is an ordered prefix-path array (`[i]` = chain level i).
+struct CubeCoord
+{
+    std::optional<std::string> level;              // categorical: severity
+    std::optional<std::vector<std::string>> where; // chain: WHERE prefix-path
+    std::optional<std::string> structural_role;    // categorical: KIND-FRAMING marker
+    [[nodiscard]] bool operator==(const CubeCoord&) const noexcept = default;
+};
+
+// One closed cell: its coordinate + the distributive COUNT measure (integer).
+struct CubeCell
+{
+    CubeCoord coord;
+    std::uint64_t count{0};
+    [[nodiscard]] bool operator==(const CubeCell&) const noexcept = default;
+};
+
+// The closed cube block (§16.1). `cells` is the condensed (closed) representation
+// in canonical coord-sorted order; the closure regenerates every non-closed cell
+// losslessly. `cell_count`/`raw_cell_count` expose the collapse rate (condensation
+// measure) the closure achieved. floor_saturation is a degenerate health metric at
+// floor_depth=1 (a diff-time concept) and is intentionally omitted in v0.6.0.
+struct CubeBlock
+{
+    std::vector<CubeAxis> axes;
+    std::vector<CubeCell> cells;
+    std::uint64_t cell_count{0};     // number of closed cells emitted
+    std::uint64_t raw_cell_count{0}; // raw (pre-closure) populated-cell count
+    [[nodiscard]] bool operator==(const CubeBlock&) const noexcept = default;
+};
+
 // Salience Reservoir entry (Tier 2). A template
 // retained by intrinsic SALIENCE rather than frequency — where a rare-but-severe
 // event (a lone fatal) survives the bounded fingerprint instead of collapsing
@@ -86,6 +144,14 @@ struct ReservoirEntry
     // a reservoir entry is a canon artifact, so locating its raw needs raw-recovery
     // (§15.1-1) then re-canonicalization (§15.1-2). Never a per-line coordinate.
     std::optional<std::uint64_t> within_window_ordinal;
+    // §16.6 reservoir→cell cross — LOCATION-only (`level` + `where`-path), read-only,
+    // one-way (cube geometry → item location): restores the WHERE of a salient template
+    // the (capped) emerging border never surfaced. A PURE FUNCTION of the entry's
+    // (dominant level, dominant component); carries NO salience back into the cube and
+    // never re-ranks a cell or the border. Populated only when a cube block is emitted
+    // (MetaLogConfig::emit_cube). `structural_role` is intentionally left unset — the
+    // cross is LOCATION (severity + where), not the full cube cell.
+    std::optional<CubeCoord> cube_coord;
 };
 
 // Per-node branching statistics (MetaLog SPEC §4.2).
@@ -193,7 +259,7 @@ struct ReportedWindowBounds
 struct ProducerBlock
 {
     std::string name{"insight"};
-    std::string version{"0.5.0"};
+    std::string version{"0.6.0"};
     std::string implementation_uri{"https://github.com/CodeRoasted/insight"};
 };
 
@@ -270,7 +336,7 @@ struct ProvenanceEntry
 
 struct MetaLogDocument
 {
-    std::string metalog_version{"0.5.0"};
+    std::string metalog_version{"0.6.0"};
     ProducerBlock producer{};
     WindowBlock window{};
     SourceBlock source{};
@@ -288,6 +354,12 @@ struct MetaLogDocument
     // configured with a source_ref; a composed document carries `children` instead
     // of addressing a single source. Absent otherwise.
     std::optional<ReDerivationCoordinate> coordinate;
+    // Intra-window cube (SPEC §16) — joint categorical condensation. EXPERIMENTAL,
+    // additive: present only when the producer opted in (MetaLogConfig::emit_cube).
+    // Absent = "no joint-categorical information available". The cube is part of the
+    // §2.4 comparability contract (axes frozen per canonicalization_version /
+    // retention_profile); two cubes diff into a cube_diff only when their axes match.
+    std::optional<CubeBlock> cube;
 };
 
 // ── Producer configuration ─────────────────────────────────────
@@ -354,7 +426,18 @@ struct MetaLogConfig
     std::size_t dominant_path_max_steps{kDefaultDominantPathMaxSteps};
 
     // Reported as producer.version in the envelope.
-    std::string producer_version{"0.5.0"};
+    std::string producer_version{"0.6.0"};
+
+    // Intra-window cube emission (SPEC §16) — EXPERIMENTAL, additive. false (default)
+    // = no cube block, zero overhead on the ingest hot path (one predicted-not-taken
+    // branch per ingest_event, same discipline as max_param_histograms). true builds a
+    // CLOSED cube over the v0.6.0 reference axes (level × structural_role × where-chain,
+    // WHERE grounded in canon `component`) at close_window, plus the §16.6
+    // reservoir→cell cross on each reservoir entry. Removable in a single revert
+    // (§16.8): the cube is never the source of truth for any 1-D marginal. A producer
+    // emitting a cube MUST bump canonicalization_version (the cube joins the §2.4
+    // comparability contract) — that bump is the caller's, set via the field above.
+    bool emit_cube{false};
 
     // Re-derivation source (SPEC §15). When set, close_window stamps a coordinate
     // on the document (source_ref + the window's event-time bounds). The engine does
@@ -498,9 +581,48 @@ struct TailDelta
     double tail_max_rate_delta{0.0};
 };
 
+// ── Cube diff (SPEC §13.6, EXPERIMENTAL) ───────────────────────
+//
+// The emerging border between two cube blocks: the smallest constraint
+// characterising what GREW (and the dual, what vanished) between `previous` and
+// `current`. The emerging region (count_prev ≤ θ_was ∧ count_cur ≥ θ_now — two
+// ABSOLUTE thresholds, never a ratio, §16.5 MUST-2) is order-convex, bounded by a
+// (lower, upper) border pair.
+
+// One border cell: the constraint coordinate + the (was, now) counts it bounds.
+struct CubeBorderCell
+{
+    CubeCoord coord;
+    std::uint64_t previous_count{0};
+    std::uint64_t current_count{0};
+    [[nodiscard]] bool operator==(const CubeBorderCell&) const noexcept = default;
+};
+
+// An order-convex region as a (lower, upper) border pair (§13.6):
+//  * lower — the most-SPECIFIC emerging cells (the precise description).
+//  * upper — the most-GENERAL emerging cells = the minimal generators = the
+//    deterministic HEADLINE (computed, not narrated).
+struct CubeBorder
+{
+    std::vector<CubeBorderCell> lower;
+    std::vector<CubeBorderCell> upper;
+    [[nodiscard]] bool operator==(const CubeBorder&) const noexcept = default;
+};
+
+// The cube_diff block: emitted only when BOTH documents carried a cube AND their
+// axes are equal (the §2.4 comparability gate + an equal cube schema). `axes`
+// equals both inputs' cube axes.
+struct CubeDiffBlock
+{
+    std::vector<CubeAxis> axes;
+    std::optional<CubeBorder> emerging;  // growth region
+    std::optional<CubeBorder> vanishing; // disappearance region (the dual)
+    [[nodiscard]] bool operator==(const CubeDiffBlock&) const noexcept = default;
+};
+
 struct MetaLogDiff
 {
-    std::string diff_version{"0.4.0"};
+    std::string diff_version{"0.6.0"};
     DocumentRef previous{};
     DocumentRef current{};
     std::optional<double> kl_divergence;
@@ -518,6 +640,10 @@ struct MetaLogDiff
     // Long-tail shape change. Present only when both documents carried a
     // tail_summary. See TailDelta.
     std::optional<TailDelta> tail_delta;
+    // Emerging-border cube diff (SPEC §13.6) — EXPERIMENTAL. Present only when both
+    // documents carried a `cube` and their axes are equal. Structured evidence (the
+    // upper border is the deterministic headline); NOT an alert on its own.
+    std::optional<CubeDiffBlock> cube_diff;
 };
 
 } // namespace insight::metalog
