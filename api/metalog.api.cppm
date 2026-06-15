@@ -360,13 +360,6 @@ struct MetaLogDocument
     // §2.4 comparability contract (axes frozen per canonicalization_version /
     // retention_profile); two cubes diff into a cube_diff only when their axes match.
     std::optional<CubeBlock> cube;
-
-    MetaLogDocument() = default;
-    MetaLogDocument(const MetaLogDocument&) = default;
-    MetaLogDocument(MetaLogDocument&&) noexcept = default;
-    MetaLogDocument& operator=(const MetaLogDocument&) = default;
-    MetaLogDocument& operator=(MetaLogDocument&&) noexcept = default;
-    ~MetaLogDocument() = default;
 };
 
 // ── Producer configuration ─────────────────────────────────────
