@@ -35,10 +35,19 @@ endif()
 
 # canon's impl (src/*.cpp JSON strategies) #includes simdjson.h directly — a PRIVATE impl-only
 # dep. Built from source here inside metalog's conan env, simdjson is a transitive-private-of-canon
-# whose generated target carries only the .a, not the header include (normal create builds canon as
-# a finished package, so never hit this). Expose simdjson's headers so canon's source compiles.
+# whose generated target carries only the .a + its compile-define, NOT the header include dir (a
+# normal `conan create` builds canon as a finished package, so never hits this). Expose simdjson's
+# headers so canon's source compiles. The legacy simdjson_INCLUDE_DIRS variable (CMakeDeps) carries
+# the path on Linux but is EMPTY under MSVC/conan-2.29 (a C1083 'simdjson.h not found' mid-build) —
+# so locate the header DIRECTLY over the conan prefix path, robust to either conan generator. REQUIRED
+# turns a miss into a clear configure-time error, never a cryptic mid-build failure.
 find_package(simdjson REQUIRED CONFIG)
-include_directories(${simdjson_INCLUDE_DIRS})
+if(simdjson_INCLUDE_DIRS)
+    include_directories(${simdjson_INCLUDE_DIRS})
+else()
+    find_path(SIMDJSON_SCRATCH_INCLUDE_DIR NAMES simdjson.h REQUIRED)
+    include_directories(${SIMDJSON_SCRATCH_INCLUDE_DIR})
+endif()
 
 # Build the module tower from source: canon first (so metalog's guarded find_package sees the
 # in-build insight::canon target), then metalog. Tests/benchmarks default OFF (not top-level).
