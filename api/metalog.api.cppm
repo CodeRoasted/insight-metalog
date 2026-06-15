@@ -360,7 +360,32 @@ struct MetaLogDocument
     // §2.4 comparability contract (axes frozen per canonicalization_version /
     // retention_profile); two cubes diff into a cube_diff only when their axes match.
     std::optional<CubeBlock> cube;
+
+    // Special members are user-declared here and defined `= default` OUT OF LINE (just below, still
+    // in this interface unit) instead of being left implicit. RATIONALE — MSVC C++23-modules port:
+    // when the implicit copy/move of this type are SYNTHESIZED in a CONSUMER module TU
+    // (insight.detection) under MSVC Release /O2 /Ob2, the `std::optional<CubeBlock> cube` member is
+    // miscompiled — the destination optional is left spuriously ENGAGED over an unconstructed
+    // CubeBlock, so a later ~MetaLogDocument destroys a garbage std::vector<CubeAxis> (AV 0xc0000005,
+    // _Myfirst in heap tail-guard bytes). The identical ops are correct when emitted in another TU,
+    // so pinning ONE definition here (emitted in metalog) and having consumers CALL it removes the
+    // faulty per-consumer synthesis. An out-of-line definition in a module interface unit is
+    // non-inline, so the symbol lives in metalog's object — no new impl unit / CMake / conan change.
+    // Behaviour is byte-identical on gcc/clang (defaulted), so the determinism goldens are unaffected.
+    MetaLogDocument();
+    MetaLogDocument(const MetaLogDocument&);
+    MetaLogDocument(MetaLogDocument&&) noexcept;
+    MetaLogDocument& operator=(const MetaLogDocument&);
+    MetaLogDocument& operator=(MetaLogDocument&&) noexcept;
+    ~MetaLogDocument();
 };
+
+MetaLogDocument::MetaLogDocument() = default;
+MetaLogDocument::MetaLogDocument(const MetaLogDocument&) = default;
+MetaLogDocument::MetaLogDocument(MetaLogDocument&&) noexcept = default;
+MetaLogDocument& MetaLogDocument::operator=(const MetaLogDocument&) = default;
+MetaLogDocument& MetaLogDocument::operator=(MetaLogDocument&&) noexcept = default;
+MetaLogDocument::~MetaLogDocument() = default;
 
 // ── Producer configuration ─────────────────────────────────────
 
