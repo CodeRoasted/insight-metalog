@@ -59,17 +59,24 @@ ncpu=$(nproc 2>/dev/null || echo 2)
 JOBS=$(( mem_gb / 3 )); [ "$JOBS" -lt 1 ] && JOBS=1; [ "$JOBS" -gt "$ncpu" ] && JOBS=$ncpu
 echo "build parallelism: $JOBS jobs (MemAvailable=${mem_gb}GB cpu=$ncpu)"
 
-# The CELL MATRIX = stdlib leg × optimization corner. Two orthogonal hazard axes, both required for
-# full determinism coverage (Founder, F5-M8 coverage invariant):
+# The CELL MATRIX = stdlib leg × optimization corner. Two orthogonal hazard axes:
 #   - stdlib leg (gcc-15/libstdc++ vs clang-21/libc++): catches ITERATION-ORDER leaks (unordered_*),
-#     the F5-M8 class — the cross-stdlib diagonal is the ONLY axis that exposes a hash-order flip.
+#     the F5-M8 class — the cross-stdlib axis is the ONLY one that exposes a hash-order flip.
 #   - optimization corner (-O{0,3} × -ffp-contract{off,fast}): catches FP-CONTRACTION / reassociation
 #     leaks — a stray float op in the det_math / salience path that -ffp=fast would reorder. A correct
 #     integer/fixed-point det core is -ffp-INVARIANT, so these MUST stay identical; a divergent -ffp
 #     cell is a det_math gap. (-DNDEBUG is fixed from Release; only -O / -ffp vary per cell.)
+#
+# ⚠ gcc LEG DEFERRED (Founder, 2026-06-15 — ROADMAP § Bugs Encountered): the gcc profile pins
+# from-source gcc-15.3 under /opt (PR124309: the module tower ICEs on the PPA's gcc-15.2), and CI has
+# no /opt/gcc-15.3 provisioning yet. So the cross-stdlib gcc≡clang diagonal — and with it the F5-M8
+# cross-stdlib repro on this gate — is on hold; for now CROSS-OS determinism is asserted clang-21/libc++
+# (Linux) ↔ MSVC (Windows) by the per-repo windows-portability-probe.yml. This clang-only run still
+# gates the -O/-ffp corners. Re-enable the gcc leg below (and DETERMINISM_REQUIRE_COMPILERS) once CI
+# provisions gcc-15.3 — or once the ubuntu-toolchain-r PPA ships 15.3 (the profile's planned swap-back).
 # leg = "tag:cxx-bin:cc-bin:conan-profile"; cell = "name:flags".
 legs=(
-  "gcc15-libstdcxx:g++-15:gcc-15:linux-gcc15-release"
+  # DEFERRED until CI provisions gcc-15.3 (see ⚠ above): "gcc15-libstdcxx:g++-15:gcc-15:linux-gcc15-release"
   "clang21-libcxx:clang++-21:clang-21:linux-clang21-libcxx-release"
 )
 cells=(
@@ -133,11 +140,11 @@ for leg in "${legs[@]}"; do
   done
 done
 
-# Gate integrity: every stdlib leg must build EVERY cell (no hollow one-compiler / one-corner green).
-# DETERMINISM_REQUIRE_COMPILERS (default "g++ clang++") is the coverage invariant — a required compiler
-# missing (or a cell that failed to build, e.g. a toolchain ICE) FAILS the gate; it does NOT silently
-# degrade to fewer cells. [F5-M8]
-REQUIRE_COMPILERS="${DETERMINISM_REQUIRE_COMPILERS:-g++ clang++}"
+# Gate integrity: every configured leg must build EVERY cell (no hollow one-corner green). A required
+# compiler missing (or a cell that failed to build, e.g. a toolchain ICE) FAILS the gate; it does NOT
+# silently degrade to fewer cells. DETERMINISM_REQUIRE_COMPILERS default is "clang++" WHILE THE gcc LEG
+# IS DEFERRED (gcc-15.3 not in CI — see the ⚠ note at `legs`); restore "g++ clang++" when it returns. [F5-M8]
+REQUIRE_COMPILERS="${DETERMINISM_REQUIRE_COMPILERS:-clang++}"
 expected=$(( ${#legs[@]} * ${#cells[@]} ))
 for leg in "${legs[@]}"; do
   IFS=: read -r tag _ _ _ <<<"$leg"
