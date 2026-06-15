@@ -303,7 +303,11 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
     // SPEC §13.6 cube_diff — the emerging border. Emitted only when both documents
     // carried a cube and their axes match (the §2.4 gate above already ensures equal
     // canonicalization_version, under which the axes are frozen identical).
-    out.cube_diff = cube::cube_diff_of(previous.cube, current.cube);
+    // Presence-check HERE (in insight.metalog), not in the detail.cube helper: MSVC miscompiles
+    // a `!optional<CubeBlock>` check done in the detail.cube module on a by-ref param. Absent on
+    // either side → cube_diff stays nullopt (the §13.6 "both carried a cube" gate).
+    if (previous.cube && current.cube)
+        out.cube_diff = cube::cube_diff_of(*previous.cube, *current.cube);
 
     return out;
 }

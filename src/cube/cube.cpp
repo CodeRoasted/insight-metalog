@@ -376,23 +376,25 @@ CubeCoord cube_location(std::optional<LogLevel> level, std::string_view componen
     return coord;
 }
 
-std::optional<CubeDiffBlock> cube_diff_of(const std::optional<CubeBlock>& previous,
-                                          const std::optional<CubeBlock>& current)
+std::optional<CubeDiffBlock> cube_diff_of(const CubeBlock& previous, const CubeBlock& current)
 {
-    // §13.6: emit only when BOTH carried a cube AND their axes are equal.
-    if (!previous || !current || previous->axes != current->axes)
+    // §13.6 comparability gate: emit only when the axes match. The "both documents carried a
+    // cube" presence-check is the CALLER's (metalog::diff, in the insight.metalog module) — this
+    // helper takes CubeBlock by ref, never the optional (MSVC miscompiles a `!optional<CubeBlock>`
+    // null-check done here in the detail.cube module — see metalog.detail.cube.cppm).
+    if (previous.axes != current.axes)
         return std::nullopt;
 
-    const std::vector<std::string> labels{shared_labels(*previous, *current)};
+    const std::vector<std::string> labels{shared_labels(previous, current)};
     const std::map<Cell, std::uint64_t, CellLess> base_prev{
-        recover_base(internal_cells(*previous, labels))};
+        recover_base(internal_cells(previous, labels))};
     const std::map<Cell, std::uint64_t, CellLess> base_cur{
-        recover_base(internal_cells(*current, labels))};
+        recover_base(internal_cells(current, labels))};
     const PopulatedCube cube_prev{populate(base_prev)};
     const PopulatedCube cube_cur{populate(base_cur)};
 
     CubeDiffBlock diff;
-    diff.axes = previous->axes;
+    diff.axes = previous.axes;
     // emerging: appeared (anti = prev, monotone = cur). vanishing: the dual via the role
     // swap (anti = cur, monotone = prev) — same predicate, count_cur ≤ θ_was ∧ count_prev ≥ θ_now.
     CubeBorder emerging{border_of(cube_prev, cube_cur, cube_prev, cube_cur, labels)};
@@ -404,16 +406,16 @@ std::optional<CubeDiffBlock> cube_diff_of(const std::optional<CubeBlock>& previo
     return diff;
 }
 
-std::optional<CubeBlock> compose_cubes(const std::optional<CubeBlock>& lhs,
-                                       const std::optional<CubeBlock>& rhs)
+std::optional<CubeBlock> compose_cubes(const CubeBlock& lhs, const CubeBlock& rhs)
 {
-    // §12.1: re-closed, not merged cell-by-cell. When either omits a cube, omit (§16.7).
-    if (!lhs || !rhs || lhs->axes != rhs->axes)
+    // §12.1: re-closed, not merged cell-by-cell. Axes-mismatch → omit. The "both present, else
+    // omit (§16.7)" presence-check is the CALLER's (metalog::compose) — takes CubeBlock by ref.
+    if (lhs.axes != rhs.axes)
         return std::nullopt;
 
-    const std::vector<std::string> labels{shared_labels(*lhs, *rhs)};
-    std::map<Cell, std::uint64_t, CellLess> merged{recover_base(internal_cells(*lhs, labels))};
-    for (const auto& [cell, count] : recover_base(internal_cells(*rhs, labels)))
+    const std::vector<std::string> labels{shared_labels(lhs, rhs)};
+    std::map<Cell, std::uint64_t, CellLess> merged{recover_base(internal_cells(lhs, labels))};
+    for (const auto& [cell, count] : recover_base(internal_cells(rhs, labels)))
         merged[cell] += count;
     return close_and_emit(merged, labels);
 }

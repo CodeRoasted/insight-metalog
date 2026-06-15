@@ -175,17 +175,21 @@ struct BaseRow
 // + where). Empty component → no `where` (the entry's WHERE is unknown).
 [[nodiscard]] CubeCoord cube_location(std::optional<LogLevel> level, std::string_view component);
 
-// Emerging-border diff of two cube blocks (§13.6). nullopt unless BOTH carried a cube
-// AND their axes are equal (the comparability gate). The upper border is the
-// deterministic headline (minimal generators); the lower border the precise
-// description. `vanishing` is the dual.
-[[nodiscard]] std::optional<CubeDiffBlock> cube_diff_of(const std::optional<CubeBlock>& previous,
-                                                        const std::optional<CubeBlock>& current);
+// Emerging-border diff of two cube blocks (§13.6). nullopt unless their axes are equal
+// (the comparability gate). The upper border is the deterministic headline (minimal
+// generators); the lower border the precise description. `vanishing` is the dual.
+// The "both present" presence-check is the CALLER's job (it lives in `metalog::diff`, in
+// the `insight.metalog` module) — this helper takes CubeBlock by ref, never the optional.
+// WHY: MSVC miscompiles a `!optional<CubeBlock>` null-check performed HERE, in the
+// detail.cube module, on a by-const-ref parameter (AV); the identical check on
+// optional<BehaviorBlock> inside metalog::diff is fine. [[msvc-port-stdlib-isms]]
+[[nodiscard]] std::optional<CubeDiffBlock> cube_diff_of(const CubeBlock& previous,
+                                                        const CubeBlock& current);
 
 // Compose two cube blocks (§16.7 / §12.1): the distributive counts merge, but the
 // closure does NOT — the merged cube is RE-CLOSED from the recovered base. nullopt
-// unless BOTH carried a cube AND their axes are equal (§12.1: when either omits, omit).
-[[nodiscard]] std::optional<CubeBlock> compose_cubes(const std::optional<CubeBlock>& lhs,
-                                                     const std::optional<CubeBlock>& rhs);
+// unless their axes are equal. As with cube_diff_of, the "both present, else omit"
+// presence-check is the CALLER's job (in `metalog::compose`); takes CubeBlock by ref.
+[[nodiscard]] std::optional<CubeBlock> compose_cubes(const CubeBlock& lhs, const CubeBlock& rhs);
 
 } // namespace insight::metalog::cube

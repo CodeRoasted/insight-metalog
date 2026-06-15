@@ -597,9 +597,10 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
         out.behavior = std::move(behavior);
     // SPEC §16.7 / §12.1: the cube is RE-CLOSED, not merged cell-by-cell (the
     // distributive counts add but the closure/border do not). Omitted when either input
-    // omits a cube. The re-derived reservoir entries' §16.6 cube_coord is set above only
-    // when both inputs carried a cube (== out.cube present).
-    out.cube = cube::compose_cubes(lhs.cube, rhs.cube);
+    // omits a cube. Presence-check HERE (in insight.metalog), not in the detail.cube helper:
+    // MSVC miscompiles a `!optional<CubeBlock>` check done in detail.cube on a by-ref param.
+    if (lhs.cube && rhs.cube)
+        out.cube = cube::compose_cubes(*lhs.cube, *rhs.cube);
 
     return out;
 }
