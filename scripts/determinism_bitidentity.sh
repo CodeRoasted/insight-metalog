@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
-# Determinism gate — the cross-stdlib × optimization-corner MATRIX bit-identity of the MetaLog document.
+# Determinism gate — CONFIGURABLE multi-leg bit-identity of the MetaLog document (cross-stdlib +
+# cross-OS + optimization-corner).
 #
-# Builds the canon+metalog MODULE TOWER across a CELL MATRIX and asserts the serialized document
-# (the committed corpus PLUS the F5-M8 synthetic near-full reservoir scenario) is byte-identical
-# across every cell. The matrix = two stdlib legs × four optimization corners:
-#   - g++     (gcc-15, ship) + libstdc++   (profile linux-gcc15-release)
-#   - clang++ (clang-21, dev) + libc++      (profile linux-clang21-libcxx-release)
-#   × -O{0,3} × -ffp-contract{off,fast}  (the FP-contraction/optimization corners; F5-M8 invariant).
+# Asserts the serialized document is byte-identical across N legs (2 or 3, see `LEGS` below):
+#   • BUILT Linux toolchains (DETERMINISM_LEGS): g++ (gcc-15/libstdc++) and/or clang++ (clang-21/libc++),
+#     each across the -O{0,3} × -ffp-contract{off,fast} corners → the cross-STDLIB diagonal (catches an
+#     unordered_*/iteration-order leak, i.e. F5-M8) + the FP-contraction/optimization corners.
+#   • the MSVC leg (cross-OS): the committed corpus golden, which the per-repo
+#     windows-portability-probe.yml verifies == real MSVC — no cl.exe needed in this Linux script.
+# DEFAULT = clang(built) + MSVC(golden) [2 legs] while gcc-15.3 is out of CI; gcc(built)+clang(built)+
+# MSVC = the full 3-leg diagonal once /opt/gcc-15.3 is provisioned. (insight_determinism_model.md §F5 /
+# cxx_modules_migration_contract.md §5.)
 #
 # This IS the determinism diagonal (insight_determinism_model.md §F5 / cxx_modules_
 # migration_contract.md §5): the strongest bit-identity oracle, because the two legs
@@ -67,18 +71,27 @@ echo "build parallelism: $JOBS jobs (MemAvailable=${mem_gb}GB cpu=$ncpu)"
 #     integer/fixed-point det core is -ffp-INVARIANT, so these MUST stay identical; a divergent -ffp
 #     cell is a det_math gap. (-DNDEBUG is fixed from Release; only -O / -ffp vary per cell.)
 #
-# ⚠ gcc LEG DEFERRED (Founder, 2026-06-15 — ROADMAP § Bugs Encountered): the gcc profile pins
-# from-source gcc-15.3 under /opt (PR124309: the module tower ICEs on the PPA's gcc-15.2), and CI has
-# no /opt/gcc-15.3 provisioning yet. So the cross-stdlib gcc≡clang diagonal — and with it the F5-M8
-# cross-stdlib repro on this gate — is on hold; for now CROSS-OS determinism is asserted clang-21/libc++
-# (Linux) ↔ MSVC (Windows) by the per-repo windows-portability-probe.yml. This clang-only run still
-# gates the -O/-ffp corners. Re-enable the gcc leg below (and DETERMINISM_REQUIRE_COMPILERS) once CI
-# provisions gcc-15.3 — or once the ubuntu-toolchain-r PPA ships 15.3 (the profile's planned swap-back).
-# leg = "tag:cxx-bin:cc-bin:conan-profile"; cell = "name:flags".
-legs=(
-  # DEFERRED until CI provisions gcc-15.3 (see ⚠ above): "gcc15-libstdcxx:g++-15:gcc-15:linux-gcc15-release"
-  "clang21-libcxx:clang++-21:clang-21:linux-clang21-libcxx-release"
+# LEGS — CONFIGURABLE, 2 or 3. Two KINDS of leg, byte-compared to each other:
+#   • BUILT Linux toolchains (DETERMINISM_LEGS, space-separated keys of LEG_SPEC) — each builds the
+#     canon+metalog tower across the -O/-ffp corners and runs the fixtures. gcc-15/libstdc++ ≡
+#     clang-21/libc++ = the cross-STDLIB diagonal (the only axis that exposes an unordered_* order
+#     leak, i.e. F5-M8).
+#   • the MSVC leg — NOT built here (Linux bash can't run cl.exe); it enters as the committed CORPUS
+#     golden (determinism_golden.txt), which the per-repo windows-portability-probe.yml independently
+#     verifies == real MSVC. Comparing a Linux leg's corpus to it asserts CROSS-OS bit-identity.
+#       - DEFAULT now: clang(built) + MSVC(golden) = 2 legs. gcc is OUT because CI has no /opt/gcc-15.3
+#         (its profile pins from-source 15.3 for PR124309; PPA is 15.2 → module tower ICEs).
+#       - once /opt/gcc-15.3 is provisioned: DETERMINISM_LEGS="gcc15-libstdcxx clang21-libcxx" →
+#         gcc(built) + clang(built) + MSVC(golden) = the full 3-leg diagonal.
+#       - DETERMINISM_MSVC=0 drops the MSVC anchor (pure Linux cross-stdlib run).
+declare -A LEG_SPEC=(
+  [gcc15-libstdcxx]="g++-15:gcc-15:linux-gcc15-release"     # cxx-bin:cc-bin:conan-profile
+  [clang21-libcxx]="clang++-21:clang-21:linux-clang21-libcxx-release"
 )
+read -ra LINUX_LEGS <<<"${DETERMINISM_LEGS:-clang21-libcxx}"
+DETERMINISM_MSVC="${DETERMINISM_MSVC:-1}"
+GOLDEN_TXT="$SCRIPT_DIR/determinism_golden.txt"
+
 cells=(
   "O3_off:-O3 -ffp-contract=off"
   "O0_off:-O0 -ffp-contract=off"
@@ -88,8 +101,11 @@ cells=(
 declare -A BIN
 declare -A LEG_BUILT
 builds=()
-for leg in "${legs[@]}"; do
-  IFS=: read -r tag cxxbin ccbin profile <<<"$leg"
+for legkey in "${LINUX_LEGS[@]}"; do
+  spec="${LEG_SPEC[$legkey]:-}"
+  [ -n "$spec" ] || { echo "UNKNOWN LEG: '$legkey' (known: ${!LEG_SPEC[*]})"; exit 2; }
+  IFS=: read -r cxxbin ccbin profile <<<"$spec"
+  tag="$legkey"
   [ -f "$CONAN_HOME/profiles/$profile" ] || { echo "MISSING PROFILE: $profile (leg $tag)"; continue; }
 
   # Preflight: the PROFILE is the source of truth for the compiler (its [buildenv] CXX), NOT the
@@ -140,47 +156,61 @@ for leg in "${legs[@]}"; do
   done
 done
 
-# Gate integrity: every configured leg must build EVERY cell (no hollow one-corner green). A required
-# compiler missing (or a cell that failed to build, e.g. a toolchain ICE) FAILS the gate; it does NOT
-# silently degrade to fewer cells. DETERMINISM_REQUIRE_COMPILERS default is "clang++" WHILE THE gcc LEG
-# IS DEFERRED (gcc-15.3 not in CI — see the ⚠ note at `legs`); restore "g++ clang++" when it returns. [F5-M8]
-REQUIRE_COMPILERS="${DETERMINISM_REQUIRE_COMPILERS:-clang++}"
-expected=$(( ${#legs[@]} * ${#cells[@]} ))
-for leg in "${legs[@]}"; do
-  IFS=: read -r tag _ _ _ <<<"$leg"
-  [ "${LEG_BUILT[$tag]:-0}" -eq "${#cells[@]}" ] ||
-    echo "GATE INTEGRITY: leg $tag built ${LEG_BUILT[$tag]:-0}/${#cells[@]} cells"
+# Gate integrity: every configured BUILT leg must produce ALL cells (no hollow one-corner green). A
+# missing compiler or a cell that fails to build (e.g. a toolchain ICE) FAILS the gate — no silent
+# degrade. DETERMINISM_LEGS is the source of truth for the built set; the MSVC golden anchor is checked
+# separately below. [F5-M8]
+expected=$(( ${#LINUX_LEGS[@]} * ${#cells[@]} ))
+for legkey in "${LINUX_LEGS[@]}"; do
+  [ "${LEG_BUILT[$legkey]:-0}" -eq "${#cells[@]}" ] ||
+    echo "GATE INTEGRITY: leg $legkey built ${LEG_BUILT[$legkey]:-0}/${#cells[@]} cells"
 done
-if [ "${#builds[@]}" -ne "$expected" ]; then
-  echo "GATE INTEGRITY FAIL: DETERMINISM_REQUIRE_COMPILERS='$REQUIRE_COMPILERS' needs all $expected cells"
-  echo "  (${#legs[@]} stdlib legs × ${#cells[@]} -O/-ffp corners); built ${#builds[@]}. See the FAIL tails above."
+if [ "${#builds[@]}" -eq 0 ] || [ "${#builds[@]}" -ne "$expected" ]; then
+  echo "GATE INTEGRITY FAIL: built ${#builds[@]} cells, expected $expected"
+  echo "  (DETERMINISM_LEGS='${LINUX_LEGS[*]}' × ${#cells[@]} -O/-ffp corners). See the FAIL tails above."
   exit 3
 fi
 
-# Each cell emits the committed corpus (5 files) THEN the F5-M8 synthetic near-full reservoir scenario
-# (--reservoir-nearfull), and EVERY cell must be byte-identical to the reference. A DIVERGENT
-# '--reservoir-nearfull' section on a cross-STDLIB pair is the F5-M8 item-reservoir leak; a divergence
-# that tracks the -ffp corner is an FP-contraction leak in the det_math/salience path.
+# Each cell emits the committed corpus (5 files) THEN --reservoir-nearfull (the F5-M8 synthetic M=128
+# scenario). Compare every built cell to the reference; then anchor the CORPUS to the MSVC golden.
 for ctag in "${builds[@]}"; do
   : >"$WORK/$ctag.out"
   for f in $CORPUS; do echo "### $(basename "$f") ###" >>"$WORK/$ctag.out"; "${BIN[$ctag]}" "$f" >>"$WORK/$ctag.out" 2>/dev/null; done
   echo "### --reservoir-nearfull (F5-M8 synthetic M=128) ###" >>"$WORK/$ctag.out"
   "${BIN[$ctag]}" --reservoir-nearfull >>"$WORK/$ctag.out" 2>/dev/null
 done
-ref="$WORK/${builds[0]}.out"; rc=0
-echo "reference: ${builds[0]}  sha=$(sha256sum "$ref" | cut -c1-16)"
+rc=0; ref="${builds[0]}"
+echo "reference: $ref  sha=$(sha256sum "$WORK/$ref.out" | cut -c1-16)"
+echo "── built Linux legs (cross-stdlib when >1 leg; -O{0,3}×-ffp{off,fast} corners always) ──"
 for ctag in "${builds[@]}"; do
-  if cmp -s "$ref" "$WORK/$ctag.out"; then st=IDENTICAL; else st=DIVERGENT; rc=1; fi
+  if cmp -s "$WORK/$ref.out" "$WORK/$ctag.out"; then st=IDENTICAL; else st=DIVERGENT; rc=1; fi
   printf "  %-28s %s\n" "$ctag" "$st"
 done
+# CROSS-OS anchor (MSVC): the corpus PORTION of the reference (before the reservoir marker) must equal
+# the committed golden, which the windows probe verifies == real MSVC. The golden is corpus-only; the
+# reservoir's cross-OS is F5-M8-gated, so it rides the built legs only, NOT this MSVC anchor.
+if [ "$DETERMINISM_MSVC" = "1" ]; then
+  echo "── MSVC cross-OS anchor (corpus vs determinism_golden.txt) ──"
+  if [ -f "$GOLDEN_TXT" ]; then
+    sed '/^### --reservoir-nearfull/,$d' "$WORK/$ref.out" >"$WORK/$ref.corpus"
+    if cmp -s "$GOLDEN_TXT" "$WORK/$ref.corpus"; then printf "  %-28s %s\n" "msvc(golden)" "IDENTICAL"
+    else printf "  %-28s %s\n" "msvc(golden)" "DIVERGENT — corpus differs from the cross-OS golden"; rc=1; fi
+  else
+    echo "  msvc(golden)  MISSING $GOLDEN_TXT — cannot assert cross-OS"; rc=1
+  fi
+fi
+[ "${#LINUX_LEGS[@]}" -ge 2 ] || {
+  echo "NOTE: 1 built leg ('${LINUX_LEGS[*]}') — corpus is cross-OS-anchored to MSVC, but the F5-M8"
+  echo "  RESERVOIR cross-stdlib repro needs >=2 built legs (restore gcc via DETERMINISM_LEGS @ gcc-15.3)."
+}
 if [ $rc -eq 0 ]; then
-  echo "PASS: MetaLog document (corpus + near-full reservoir) byte-identical across all $expected cells"
-  echo "  (gcc-15/libstdc++ ≡ clang-21/libc++ × -O{0,3} × -ffp-contract{off,fast})."
+  echo "PASS: byte-identical across ${#builds[@]} built cell(s)$([ "$DETERMINISM_MSVC" = 1 ] && echo ' + MSVC golden') —"
+  echo "  corpus (cross-stdlib + cross-OS) and --reservoir-nearfull."
 else
-  echo "FAIL: determinism divergence across the cell matrix."
-  echo "  DIVERGENT on a cross-STDLIB pair + section '--reservoir-nearfull' ⇒ the F5-M8 item-reservoir"
-  echo "  salience leak (insight_determinism_model.md §F5-M8) — RELEASE-BLOCKING for the eidos M=128"
-  echo "  batch-diff. DIVERGENT tracking the -ffp corner ⇒ an FP-contraction leak in det_math/salience."
-  echo "  Localize: diff the divergent cell's \$WORK/<ctag>.out vs \$WORK/${builds[0]}.out."
+  echo "FAIL: determinism divergence."
+  echo "  vs msvc(golden) ⇒ CROSS-OS break; vs another built cell ⇒ cross-stdlib or -O/-ffp break."
+  echo "  a '### --reservoir-nearfull' divergence across stdlibs ⇒ the F5-M8 item-reservoir leak"
+  echo "  (insight_determinism_model.md §F5-M8 — RELEASE-BLOCKING for the eidos M=128 batch-diff)."
+  echo "  Localize: diff \$WORK/<ctag>.out vs \$WORK/$ref.out."
 fi
 exit $rc
