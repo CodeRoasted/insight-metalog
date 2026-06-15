@@ -361,17 +361,18 @@ struct MetaLogDocument
     // retention_profile); two cubes diff into a cube_diff only when their axes match.
     std::optional<CubeBlock> cube;
 
-    // Special members are user-declared here and defined `= default` OUT OF LINE (just below, still
-    // in this interface unit) instead of being left implicit. RATIONALE — MSVC C++23-modules port:
-    // when the implicit copy/move of this type are SYNTHESIZED in a CONSUMER module TU
-    // (insight.detection) under MSVC Release /O2 /Ob2, the `std::optional<CubeBlock> cube` member is
-    // miscompiled — the destination optional is left spuriously ENGAGED over an unconstructed
-    // CubeBlock, so a later ~MetaLogDocument destroys a garbage std::vector<CubeAxis> (AV 0xc0000005,
-    // _Myfirst in heap tail-guard bytes). The identical ops are correct when emitted in another TU,
-    // so pinning ONE definition here (emitted in metalog) and having consumers CALL it removes the
-    // faulty per-consumer synthesis. An out-of-line definition in a module interface unit is
-    // non-inline, so the symbol lives in metalog's object — no new impl unit / CMake / conan change.
-    // Behaviour is byte-identical on gcc/clang (defaulted), so the determinism goldens are unaffected.
+    // Special members are user-declared here and defined `= default` in the module IMPLEMENTATION
+    // unit `src/metalog.api.impl.cpp` — NOT here, and NOT `= default` in-class. RATIONALE — MSVC
+    // C++23-modules port: if these are left implicit, defined `= default` in-class, or even defined
+    // out-of-line in THIS interface unit, their bodies land in the BMI, so a consumer module TU
+    // (insight.detection) INLINES the copy/move at the call site under Release /O2 /Ob2 and
+    // miscompiles the `std::optional<CubeBlock> cube` member — the destination optional is left
+    // spuriously ENGAGED over an unconstructed CubeBlock, so a later ~MetaLogDocument frees a garbage
+    // std::vector<CubeAxis> (AV 0xc0000005, _Myfirst in heap tail-guard bytes). Defining the bodies in
+    // an implementation unit keeps them OUT of the BMI, so every consumer emits a real CALL into
+    // metalog's (correct) codegen — exactly how the destructor already behaves. MetaLogDocument is
+    // never aggregate-initialized, so user-declaring these breaks no call site; `= default` ⇒
+    // byte-identical on gcc/clang, determinism goldens unaffected.
     MetaLogDocument();
     MetaLogDocument(const MetaLogDocument&);
     MetaLogDocument(MetaLogDocument&&) noexcept;
@@ -379,13 +380,6 @@ struct MetaLogDocument
     MetaLogDocument& operator=(MetaLogDocument&&) noexcept;
     ~MetaLogDocument();
 };
-
-MetaLogDocument::MetaLogDocument() = default;
-MetaLogDocument::MetaLogDocument(const MetaLogDocument&) = default;
-MetaLogDocument::MetaLogDocument(MetaLogDocument&&) noexcept = default;
-MetaLogDocument& MetaLogDocument::operator=(const MetaLogDocument&) = default;
-MetaLogDocument& MetaLogDocument::operator=(MetaLogDocument&&) noexcept = default;
-MetaLogDocument::~MetaLogDocument() = default;
 
 // ── Producer configuration ─────────────────────────────────────
 
