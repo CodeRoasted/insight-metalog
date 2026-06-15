@@ -83,14 +83,29 @@ declare -A LEG_BUILT
 builds=()
 for leg in "${legs[@]}"; do
   IFS=: read -r tag cxxbin ccbin profile <<<"$leg"
-  command -v "$cxxbin" >/dev/null || { echo "MISSING COMPILER: $cxxbin (leg $tag) — cannot run the diagonal"; continue; }
   [ -f "$CONAN_HOME/profiles/$profile" ] || { echo "MISSING PROFILE: $profile (leg $tag)"; continue; }
+
+  # Preflight: the PROFILE is the source of truth for the compiler (its [buildenv] CXX), NOT the
+  # leg-array `cxxbin` — e.g. linux-gcc15-release pins CXX=/opt/gcc-15.3/bin/g++ (from-source 15.3,
+  # PR124309) which the runner may not have provisioned. Check the profile's compiler exists and FAIL
+  # FAST with the path, instead of letting conan invoke a missing compiler and surfacing it as a
+  # buried "fmt cmake.configure Error 1" 1000 lines deep. (Was lost on the gcc-15.3 CI-drift, 2026-06-15.)
+  prof_cxx="$(sed -nE 's/^[[:space:]]*CXX[[:space:]]*=[[:space:]]*//p' "$CONAN_HOME/profiles/$profile" | tail -1)"
+  if [ -n "$prof_cxx" ] && [ ! -x "$prof_cxx" ]; then
+    echo "MISSING COMPILER: $prof_cxx — profile '$profile' [buildenv] points here but the runner has no"
+    echo "  such binary (PPA gcc-15 is /usr/bin/gcc-15 @ 15.2; this profile wants from-source 15.3 under"
+    echo "  /opt for PR124309). PROVISION /opt/gcc-15.3 in CI, or point the profile at the PPA toolchain."
+    continue
+  fi
+  command -v "$cxxbin" >/dev/null || { echo "MISSING COMPILER: $cxxbin (leg $tag)"; continue; }
 
   # conan install once per leg (the deps are -O/-ffp-independent); each cell re-cmakes the tower.
   legdir="$WORK/conan-$tag"
   if ! conan install "$META" --profile:host="$profile" --profile:build="$profile" \
         --build=missing -of "$legdir" >"$legdir.install.log" 2>&1; then
-    echo "CONAN INSTALL FAIL: $tag"; tail -4 "$legdir.install.log" | sed 's/^/   /'; continue
+    # Print a generous tail: a dep's cmake.configure error (e.g. fmt) sits well above conan's final
+    # ConanException summary — `tail -4` hid the real cause on the gcc-15.3 CI-drift.
+    echo "CONAN INSTALL FAIL: $tag"; tail -50 "$legdir.install.log" | sed 's/^/   /'; continue
   fi
   toolchain="$(find "$legdir" -name conan_toolchain.cmake 2>/dev/null | head -1)"
   [ -f "$toolchain" ] || { echo "CONAN INSTALL FAIL: $tag — no conan_toolchain.cmake"; continue; }
