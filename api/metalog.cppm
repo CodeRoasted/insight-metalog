@@ -243,4 +243,21 @@ class MetaLogEngine
 // `delta = current - previous`. See SPEC §13.
 [[nodiscard]] MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current);
 
+// ── MSVC-port layout diagnostic (TEMPORARY — remove once the cube×MSVC ABI question is closed) ──
+// Reports metalog's OWN view of MetaLogDocument's layout (computed inside metalog's TU) plus the
+// result of an in-metalog copy of a default-constructed document. A consumer compares these against
+// its own sizeof()s: any divergence proves an ABI / _ITERATOR_DEBUG_LEVEL mismatch between how
+// metalog and the consumer compile the shared std types (which would shift the trailing `cube`),
+// while `internal_copy_keeps_cube_empty == false` would instead implicate metalog's own codegen.
+struct DebugDocLayout
+{
+    std::size_t doc_size{0};
+    std::size_t cube_offset{0};
+    std::size_t opt_cube_size{0};
+    std::size_t string_size{0};
+    std::size_t map_size{0};
+    bool internal_copy_keeps_cube_empty{false};
+};
+[[nodiscard]] DebugDocLayout debug_doc_layout() noexcept;
+
 } // namespace insight::metalog

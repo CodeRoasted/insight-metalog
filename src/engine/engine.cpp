@@ -994,4 +994,20 @@ void MetaLogEngine::reset_window_state()
     cube_base_.clear();
 }
 
+// MSVC-port layout diagnostic (TEMPORARY — see metalog.cppm). Computed inside metalog's TU.
+DebugDocLayout debug_doc_layout() noexcept
+{
+    MetaLogDocument a;
+    MetaLogDocument b = a; // metalog's own copy ctor, in metalog's TU
+    DebugDocLayout out;
+    out.doc_size = sizeof(MetaLogDocument);
+    out.cube_offset = static_cast<std::size_t>(reinterpret_cast<const char*>(&a.cube) -
+                                               reinterpret_cast<const char*>(&a));
+    out.opt_cube_size = sizeof(std::optional<CubeBlock>);
+    out.string_size = sizeof(std::string);
+    out.map_size = sizeof(std::map<std::string, std::string>);
+    out.internal_copy_keeps_cube_empty = !b.cube.has_value();
+    return out;
+}
+
 } // namespace insight::metalog
