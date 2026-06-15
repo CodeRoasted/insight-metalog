@@ -63,8 +63,8 @@ struct TopKEntry
 // floor_depth (cell value = an ordered prefix-path array).
 struct CubeAxis
 {
-    std::string name; // "level" | "structural_role" | "where"
-    std::string kind; // "categorical" | "chain"
+    std::string name;                              // "level" | "structural_role" | "where"
+    std::string kind;                              // "categorical" | "chain"
     std::optional<std::vector<std::string>> chain; // chain only: ordered levels, coarsest first
     std::optional<std::uint32_t> floor_depth;      // chain only: retained depth (≤ len(chain))
     [[nodiscard]] bool operator==(const CubeAxis&) const noexcept = default;
@@ -361,30 +361,12 @@ struct MetaLogDocument
     // retention_profile); two cubes diff into a cube_diff only when their axes match.
     std::optional<CubeBlock> cube;
 
-    // The copy/move/assign/dtor are user-declared here and HAND-WRITTEN (not `= default`) in the
-    // module IMPLEMENTATION unit `src/metalog.api.impl.cpp`. RATIONALE — MSVC C++23-modules port:
-    // a `= default` special member is always compiler-synthesizable, so under MSVC a consumer module
-    // TU (insight.detection) SYNTHESIZES its own copy/move (anywhere they are defaulted — implicit,
-    // in-class, or even out-of-line in an impl unit) and, under Release /O2 /Ob2, INLINES + miscompiles
-    // the `std::optional<CubeBlock> cube` member: the destination optional is left spuriously ENGAGED
-    // over an unconstructed CubeBlock, so a later ~MetaLogDocument frees a garbage std::vector<CubeAxis>
-    // (AV 0xc0000005). (An impl-unit `= default` additionally caused LNK2005 — metalog's body AND the
-    // consumer's synthesized one collide.) GENUINELY user-provided (hand-written) bodies are NOT
-    // synthesizable, so the consumer must emit a real CALL into metalog's single, correctly-compiled
-    // definition — the same path the destructor already takes. The bodies are member-wise (== the
-    // implicit semantics; determinism goldens unaffected, and metalog's tests catch any dropped member
-    // since the serialized output would change). ALL SIX are out-of-line — including the DEFAULT
-    // ctor: leaving it `= default` in-class meant it was the lone special member still SYNTHESIZED
-    // per-TU (in engine.cpp, in consumers), and a per-TU synthesis that mis-inits the optional<CubeBlock>
-    // is exactly the observed failure. Out-of-lining it forces every TU to CALL metalog's single
-    // definition. MetaLogDocument is never aggregate-initialized, so user-declaring these breaks no
-    // call site.
-    MetaLogDocument();
-    MetaLogDocument(const MetaLogDocument&);
-    MetaLogDocument(MetaLogDocument&&) noexcept;
-    MetaLogDocument& operator=(const MetaLogDocument&);
-    MetaLogDocument& operator=(MetaLogDocument&&) noexcept;
-    ~MetaLogDocument();
+    MetaLogDocument() = default;
+    MetaLogDocument(const MetaLogDocument&) = default;
+    MetaLogDocument(MetaLogDocument&&) noexcept = default;
+    MetaLogDocument& operator=(const MetaLogDocument&) = default;
+    MetaLogDocument& operator=(MetaLogDocument&&) noexcept = default;
+    ~MetaLogDocument() = default;
 };
 
 // ── Producer configuration ─────────────────────────────────────
