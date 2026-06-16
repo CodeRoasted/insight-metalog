@@ -84,11 +84,6 @@ target_link_libraries(insight_metalog
 set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/src/serialization/serialize.cpp
     PROPERTIES INCLUDE_DIRECTORIES "$<TARGET_PROPERTY:glaze::glaze,INTERFACE_INCLUDE_DIRECTORIES>")
 
-# (MSVC optimizer-bug workaround for optional<CubeBlock> now lives as a source-level
-# `#pragma optimize("", off)` in src/metalog.api.impl.cpp + src/cube/cube.cpp — CMake opt-level
-# flags, whether per-source COMPILE_OPTIONS or target-level, do NOT reach C++ module-unit compiles,
-# so they had no effect; the pragma reliably applies. See [[msvc-port-stdlib-isms]].)
-
 # Float determinism: the MetaLog document is deterministic content → cross-machine bit-identity.
 # Disable FMA contraction (no fused a*b+c). PUBLIC so consumers inherit it.
 target_compile_options(insight_metalog PUBLIC

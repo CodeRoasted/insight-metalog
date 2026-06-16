@@ -360,6 +360,14 @@ struct MetaLogDocument
     // §2.4 comparability contract (axes frozen per canonicalization_version /
     // retention_profile); two cubes diff into a cube_diff only when their axes match.
     std::optional<CubeBlock> cube;
+
+    // MSVC-port DIAGNOSTIC (TEMPORARY, 2026-06-16) — `cube` was the struct's LAST member, and MSVC
+    // /O2 /Ob2 miscompiles its SYNTHESIZED optional<CubeBlock> copy/move in the consumer (detection)
+    // TU. Founder's hypothesis: a TRAILING-member codegen quirk. This inert trivial member moves
+    // `cube` off the tail to test it — never read, never serialized (serialize.cpp maps explicit
+    // fields, not whole-struct reflection), so goldens are unaffected. GREEN on the 14.44 probe ⇒ the
+    // tail was the trigger; else ⇒ drop optional<CubeBlock> for bool+CubeBlock. See [[msvc-port-stdlib-isms]].
+    std::uint64_t msvc_tail_filler{0};
 };
 
 // ── Producer configuration ─────────────────────────────────────
