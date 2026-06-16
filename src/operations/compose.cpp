@@ -359,7 +359,7 @@ void rederive_reservoir(MetaLogDocument& out, ComposeState& state, const MetaLog
 
     // §16.6: a composed document emits a cube only when BOTH inputs had one; the
     // re-derived reservoir entries carry a cube_coord only in that case.
-    const bool has_cube{lhs.cube.has_value() && rhs.cube.has_value()};
+    const bool inputs_have_cube{lhs.has_cube && rhs.has_cube};
     auto res_cands = collect_compose_reservoir_candidates(out, state, lhs, rhs);
     std::ranges::sort(res_cands,
                       [](const ComposeReservoirCandidate& lhs, const ComposeReservoirCandidate& rhs)
@@ -384,7 +384,7 @@ void rederive_reservoir(MetaLogDocument& out, ComposeState& state, const MetaLog
         entry.structural_surprise = cand.structural_surprise;
         entry.novelty = cand.novelty;
         entry.salience = cand.salience;
-        if (has_cube)
+        if (inputs_have_cube)
             entry.cube_coord = cube::cube_location(entry.dominant_level, cand.where_leaf);
         out.stats.reservoir.push_back(std::move(entry));
         reserved.insert(cand.template_id);
@@ -597,10 +597,17 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
         out.behavior = std::move(behavior);
     // SPEC §16.7 / §12.1: the cube is RE-CLOSED, not merged cell-by-cell (the
     // distributive counts add but the closure/border do not). Omitted when either input
-    // omits a cube. Presence-check HERE (in insight.metalog), not in the detail.cube helper:
-    // MSVC miscompiles a `!optional<CubeBlock>` check done in detail.cube on a by-ref param.
-    if (lhs.cube && rhs.cube)
-        out.cube = cube::compose_cubes(*lhs.cube, *rhs.cube);
+    // omits a cube. Gate on the explicit presence flags; compose_cubes returns optional<CubeBlock>
+    // (it omits the re-closure when the axes mismatch), a local in metalog's TU — unaffected by the
+    // MSVC consumer-synthesis bug that drove the cube member to bool+value.
+    if (lhs.has_cube && rhs.has_cube)
+    {
+        if (auto composed{cube::compose_cubes(lhs.cube, rhs.cube)})
+        {
+            out.cube = std::move(*composed);
+            out.has_cube = true;
+        }
+    }
 
     return out;
 }

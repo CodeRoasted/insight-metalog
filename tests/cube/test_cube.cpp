@@ -86,7 +86,7 @@ TEST(CubeBlock, OffByDefault)
     engine.open_window(std::chrono::system_clock::time_point{});
     engine.ingest_event(ev("login ok", LogLevel::Info, "auth"));
     const auto doc{engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
-    EXPECT_FALSE(doc.cube.has_value()) << "the cube is additive — absent unless emit_cube is set";
+    EXPECT_FALSE(doc.has_cube) << "the cube is additive — absent unless emit_cube is set";
 }
 
 TEST(CubeBlock, ReferenceAxesAndAggregateTotal)
@@ -99,8 +99,8 @@ TEST(CubeBlock, ReferenceAxesAndAggregateTotal)
         engine.ingest_event(ev("timeout", LogLevel::Error, "db"));
     const auto doc{engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
 
-    ASSERT_TRUE(doc.cube.has_value());
-    const meta::CubeBlock& c{*doc.cube};
+    ASSERT_TRUE(doc.has_cube);
+    const meta::CubeBlock& c{doc.cube};
 
     // §16.2 reference axes: level (categorical), where (chain, floor_depth 1), structural_role.
     ASSERT_EQ(c.axes.size(), 3U);
@@ -143,11 +143,11 @@ TEST(CubeBlock, ClosureCollapsesSingleComponent)
     for (int i = 0; i < 4; ++i)
         engine.ingest_event(ev("a", LogLevel::Info, "auth"));
     const auto doc{engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
-    ASSERT_TRUE(doc.cube.has_value());
-    EXPECT_LT(doc.cube->cell_count, doc.cube->raw_cell_count)
+    ASSERT_TRUE(doc.has_cube);
+    EXPECT_LT(doc.cube.cell_count, doc.cube.raw_cell_count)
         << "a single-component window must collapse (redundant where-pinned cells dropped)";
     // The fully-pinned base cell (INFO, auth, None) is always closed and present.
-    EXPECT_NE(find_cell(*doc.cube, "INFO", "auth", "None"), nullptr);
+    EXPECT_NE(find_cell(doc.cube, "INFO", "auth", "None"), nullptr);
 }
 
 TEST(CubeBlock, EmptyComponentAggregatesNoWhere)
@@ -159,14 +159,14 @@ TEST(CubeBlock, EmptyComponentAggregatesNoWhere)
     engine.ingest_event(ev("x", LogLevel::Info, "")); // no component
     engine.ingest_event(ev("y", LogLevel::Info, "auth"));
     const auto doc{engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
-    ASSERT_TRUE(doc.cube.has_value());
+    ASSERT_TRUE(doc.has_cube);
     // Both events are INFO/None; the total-bearing closed cell is {level:INFO, role:None}
     // (where starred, since the empty-component event and the auth event differ on where).
-    const meta::CubeCell* apex{find_cell(*doc.cube, "INFO", std::nullopt, "None")};
+    const meta::CubeCell* apex{find_cell(doc.cube, "INFO", std::nullopt, "None")};
     ASSERT_NE(apex, nullptr);
     EXPECT_EQ(apex->count, 2U) << "both events counted in the aggregate, incl. the empty-component one";
     // No where=auth cell may claim the empty-component event.
-    const meta::CubeCell* info_auth{find_cell(*doc.cube, "INFO", "auth", "None")};
+    const meta::CubeCell* info_auth{find_cell(doc.cube, "INFO", "auth", "None")};
     ASSERT_NE(info_auth, nullptr);
     EXPECT_EQ(info_auth->count, 1U);
 }
@@ -208,10 +208,10 @@ TEST(CubeDiff, EmergingHeadlineIsMinimalGenerator)
     const auto [prev, cur]{two_windows()};
     const auto diff{meta::diff(prev, cur)};
 
-    ASSERT_TRUE(diff.cube_diff.has_value()) << "both docs carried a cube with equal axes";
-    EXPECT_EQ(diff.cube_diff->axes.size(), 3U);
-    ASSERT_TRUE(diff.cube_diff->emerging.has_value()) << "the (ERROR, db) burst must emerge";
-    const meta::CubeBorder& emerging{*diff.cube_diff->emerging};
+    ASSERT_TRUE(diff.has_cube_diff) << "both docs carried a cube with equal axes";
+    EXPECT_EQ(diff.cube_diff.axes.size(), 3U);
+    ASSERT_TRUE(diff.cube_diff.has_emerging) << "the (ERROR, db) burst must emerge";
+    const meta::CubeBorder& emerging{diff.cube_diff.emerging};
 
     // The fully-specific cell (ERROR, db, None) is on the LOWER border (precise description).
     const meta::CubeBorderCell* lower{find_border(emerging.lower, "ERROR", "db", "None")};
@@ -232,7 +232,7 @@ TEST(CubeDiff, EmergingHeadlineIsMinimalGenerator)
                   3);
     }
     // Nothing vanished (window A's auth traffic persists into B).
-    EXPECT_FALSE(diff.cube_diff->vanishing.has_value());
+    EXPECT_FALSE(diff.cube_diff.has_vanishing);
 }
 
 TEST(CubeDiff, VanishingIsTheDual)
@@ -241,13 +241,13 @@ TEST(CubeDiff, VanishingIsTheDual)
     const auto [a, b]{two_windows()};
     const auto diff{meta::diff(b, a)}; // b has the burst, a does not → it vanishes
 
-    ASSERT_TRUE(diff.cube_diff.has_value());
-    ASSERT_TRUE(diff.cube_diff->vanishing.has_value());
-    const meta::CubeBorderCell* lower{find_border(diff.cube_diff->vanishing->lower, "ERROR", "db", "None")};
+    ASSERT_TRUE(diff.has_cube_diff);
+    ASSERT_TRUE(diff.cube_diff.has_vanishing);
+    const meta::CubeBorderCell* lower{find_border(diff.cube_diff.vanishing.lower, "ERROR", "db", "None")};
     ASSERT_NE(lower, nullptr);
     EXPECT_EQ(lower->previous_count, 5U);
     EXPECT_EQ(lower->current_count, 0U);
-    EXPECT_FALSE(diff.cube_diff->emerging.has_value());
+    EXPECT_FALSE(diff.cube_diff.has_emerging);
 }
 
 TEST(CubeDiff, OmittedWhenOneSideHasNoCube)
@@ -266,7 +266,7 @@ TEST(CubeDiff, OmittedWhenOneSideHasNoCube)
     no_cube.ingest_event(ev("a", LogLevel::Info, "auth"));
     const auto doc_plain{no_cube.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
 
-    EXPECT_FALSE(meta::diff(doc_cube, doc_plain).cube_diff.has_value())
+    EXPECT_FALSE(meta::diff(doc_cube, doc_plain).has_cube_diff)
         << "§13.6: a cube_diff needs a cube on BOTH sides";
 }
 
@@ -291,10 +291,10 @@ TEST(CubeCompose, RecloseSumsCounts)
     const auto rhs{build(LogLevel::Error, "db", 4)};
 
     const auto composed{meta::compose(lhs, rhs)};
-    ASSERT_TRUE(composed.cube.has_value()) << "both inputs had a cube → re-closed cube emitted";
+    ASSERT_TRUE(composed.has_cube) << "both inputs had a cube → re-closed cube emitted";
     // Every event is (ERROR, db, None), so the whole cube collapses to one closed base
     // cell carrying the merged total — that single cell IS the apex (3 + 4 = 7).
-    const meta::CubeCell* err_db{find_cell(*composed.cube, "ERROR", "db", "None")};
+    const meta::CubeCell* err_db{find_cell(composed.cube, "ERROR", "db", "None")};
     ASSERT_NE(err_db, nullptr);
     EXPECT_EQ(err_db->count, 7U) << "distributive counts add (3 + 4) under re-closure";
 }
@@ -316,7 +316,7 @@ TEST(CubeCompose, OmittedWhenOneSideHasNoCube)
     b.ingest_event(ev("t", LogLevel::Info, "auth"));
     const auto without{b.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
 
-    EXPECT_FALSE(meta::compose(with, without).cube.has_value())
+    EXPECT_FALSE(meta::compose(with, without).has_cube)
         << "§16.7: when either input omits a cube, the composed cube is omitted";
 }
 
@@ -337,7 +337,7 @@ TEST(CubeReservoirCross, SalientEntryCarriesLocation)
     engine.ingest_event(ev("disk failed", LogLevel::Fatal, "storage")); // rare-salient
     const auto doc{engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{60})};
 
-    ASSERT_TRUE(doc.cube.has_value());
+    ASSERT_TRUE(doc.has_cube);
     const meta::ReservoirEntry* fatal{nullptr};
     for (const auto& entry : doc.stats.reservoir)
         if (entry.template_str == "disk failed")

@@ -178,11 +178,10 @@ struct BaseRow
 // Emerging-border diff of two cube blocks (§13.6). nullopt unless their axes are equal
 // (the comparability gate). The upper border is the deterministic headline (minimal
 // generators); the lower border the precise description. `vanishing` is the dual.
-// The "both present" presence-check is the CALLER's job (it lives in `metalog::diff`, in
-// the `insight.metalog` module) — this helper takes CubeBlock by ref, never the optional.
-// WHY: MSVC miscompiles a `!optional<CubeBlock>` null-check performed HERE, in the
-// detail.cube module, on a by-const-ref parameter (AV); the identical check on
-// optional<BehaviorBlock> inside metalog::diff is fine. [[msvc-port-stdlib-isms]]
+// The "both documents carried a cube" presence-check is the CALLER's job (`metalog::diff`
+// gates on has_cube) — this helper takes CubeBlock by ref and owns only the axes-equality
+// gate. (The cube DTOs are bool+value, not optional<…>, since MSVC miscompiles synthesized
+// optional copies of the vector-owning cube types. [[msvc-port-stdlib-isms]])
 [[nodiscard]] std::optional<CubeDiffBlock> cube_diff_of(const CubeBlock& previous,
                                                         const CubeBlock& current);
 

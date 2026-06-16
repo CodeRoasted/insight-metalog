@@ -355,19 +355,19 @@ struct MetaLogDocument
     // of addressing a single source. Absent otherwise.
     std::optional<ReDerivationCoordinate> coordinate;
     // Intra-window cube (SPEC §16) — joint categorical condensation. EXPERIMENTAL,
-    // additive: present only when the producer opted in (MetaLogConfig::emit_cube).
-    // Absent = "no joint-categorical information available". The cube is part of the
+    // additive: present (has_cube) only when the producer opted in (MetaLogConfig::emit_cube).
+    // !has_cube = "no joint-categorical information available". The cube is part of the
     // §2.4 comparability contract (axes frozen per canonicalization_version /
     // retention_profile); two cubes diff into a cube_diff only when their axes match.
-    std::optional<CubeBlock> cube;
-
-    // MSVC-port DIAGNOSTIC (TEMPORARY, 2026-06-16) — `cube` was the struct's LAST member, and MSVC
-    // /O2 /Ob2 miscompiles its SYNTHESIZED optional<CubeBlock> copy/move in the consumer (detection)
-    // TU. Founder's hypothesis: a TRAILING-member codegen quirk. This inert trivial member moves
-    // `cube` off the tail to test it — never read, never serialized (serialize.cpp maps explicit
-    // fields, not whole-struct reflection), so goldens are unaffected. GREEN on the 14.44 probe ⇒ the
-    // tail was the trigger; else ⇒ drop optional<CubeBlock> for bool+CubeBlock. See [[msvc-port-stdlib-isms]].
-    std::uint64_t msvc_tail_filler{0};
+    //
+    // Representation: an explicit presence flag + inline value, NOT std::optional<CubeBlock>.
+    // MSVC /O2 /Ob2 miscompiles the SYNTHESIZED optional<CubeBlock> copy in consumer module TUs
+    // (a triviality-propagation bug — it memcpy's a stale _Has_value byte, spuriously engaging a
+    // disengaged cube). A presence-bool + inline value keeps MetaLogDocument a copyable value with
+    // DEFAULTED special members and honest triviality (bool truly trivial, CubeBlock truly not),
+    // so the synthesized copy is always correct. See [[msvc-port-stdlib-isms]].
+    bool has_cube{false};
+    CubeBlock cube{};
 };
 
 // ── Producer configuration ─────────────────────────────────────
@@ -623,8 +623,14 @@ struct CubeBorder
 struct CubeDiffBlock
 {
     std::vector<CubeAxis> axes;
-    std::optional<CubeBorder> emerging;  // growth region
-    std::optional<CubeBorder> vanishing; // disappearance region (the dual)
+    // Presence-bool + inline value, NOT std::optional<CubeBorder> (CubeBorder owns vectors, so a
+    // synthesized optional<CubeBorder> copy hits the same MSVC bug as the cube). Since CubeDiffBlock
+    // is itself an inline value member of MetaLogDiff now, these are copied on every MetaLogDiff copy
+    // (detection holds std::optional<MetaLogDiff>) even when empty — bool+value keeps that copy sound.
+    bool has_emerging{false};
+    CubeBorder emerging{};  // growth region (valid iff has_emerging)
+    bool has_vanishing{false};
+    CubeBorder vanishing{}; // disappearance region, the dual (valid iff has_vanishing)
     [[nodiscard]] bool operator==(const CubeDiffBlock&) const noexcept = default;
 };
 
@@ -648,10 +654,12 @@ struct MetaLogDiff
     // Long-tail shape change. Present only when both documents carried a
     // tail_summary. See TailDelta.
     std::optional<TailDelta> tail_delta;
-    // Emerging-border cube diff (SPEC §13.6) — EXPERIMENTAL. Present only when both
-    // documents carried a `cube` and their axes are equal. Structured evidence (the
-    // upper border is the deterministic headline); NOT an alert on its own.
-    std::optional<CubeDiffBlock> cube_diff;
+    // Emerging-border cube diff (SPEC §13.6) — EXPERIMENTAL. Present (has_cube_diff) only when
+    // both documents carried a `cube` and their axes are equal. Structured evidence (the upper
+    // border is the deterministic headline); NOT an alert on its own. Presence-bool + inline value,
+    // NOT std::optional<CubeDiffBlock> — same MSVC consumer-synthesis reason as MetaLogDocument::cube.
+    bool has_cube_diff{false};
+    CubeDiffBlock cube_diff{};
 };
 
 } // namespace insight::metalog

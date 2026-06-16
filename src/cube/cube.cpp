@@ -379,9 +379,8 @@ CubeCoord cube_location(std::optional<LogLevel> level, std::string_view componen
 std::optional<CubeDiffBlock> cube_diff_of(const CubeBlock& previous, const CubeBlock& current)
 {
     // §13.6 comparability gate: emit only when the axes match. The "both documents carried a
-    // cube" presence-check is the CALLER's (metalog::diff, in the insight.metalog module) — this
-    // helper takes CubeBlock by ref, never the optional (MSVC miscompiles a `!optional<CubeBlock>`
-    // null-check done here in the detail.cube module — see metalog.detail.cube.cppm).
+    // cube" presence-check is the CALLER's (metalog::diff gates on has_cube) — this helper takes
+    // CubeBlock by ref and owns only the axes-equality gate.
     if (previous.axes != current.axes)
         return std::nullopt;
 
@@ -400,9 +399,15 @@ std::optional<CubeDiffBlock> cube_diff_of(const CubeBlock& previous, const CubeB
     CubeBorder emerging{border_of(cube_prev, cube_cur, cube_prev, cube_cur, labels)};
     CubeBorder vanishing{border_of(cube_cur, cube_prev, cube_prev, cube_cur, labels)};
     if (!emerging.lower.empty() || !emerging.upper.empty())
+    {
         diff.emerging = std::move(emerging);
+        diff.has_emerging = true;
+    }
     if (!vanishing.lower.empty() || !vanishing.upper.empty())
+    {
         diff.vanishing = std::move(vanishing);
+        diff.has_vanishing = true;
+    }
     return diff;
 }
 

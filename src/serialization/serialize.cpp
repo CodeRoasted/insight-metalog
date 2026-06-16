@@ -489,10 +489,10 @@ dto::CubeDiff make_cube_diff(const CubeDiffBlock& diff)
 {
     dto::CubeDiff out;
     out.axes = make_cube_axes(diff.axes);
-    if (diff.emerging)
-        out.emerging = make_cube_border(*diff.emerging);
-    if (diff.vanishing)
-        out.vanishing = make_cube_border(*diff.vanishing);
+    if (diff.has_emerging)
+        out.emerging = make_cube_border(diff.emerging);
+    if (diff.has_vanishing)
+        out.vanishing = make_cube_border(diff.vanishing);
     return out;
 }
 
@@ -658,8 +658,8 @@ dto::Document make_document(const MetaLogDocument& doc)
     out.retention_profile = doc.retention_profile;
     if (doc.coordinate)
         out.coordinate = make_coordinate(*doc.coordinate);
-    if (doc.cube)
-        out.cube = make_cube(*doc.cube);
+    if (doc.has_cube)
+        out.cube = make_cube(doc.cube);
     return out;
 }
 
@@ -742,8 +742,8 @@ dto::Diff make_diff(const MetaLogDiff& diff)
                            .current_tail_max_rate = tail.current_tail_max_rate,
                            .tail_max_rate_delta = tail.tail_max_rate_delta};
     }
-    if (diff.cube_diff)
-        out.cube_diff = make_cube_diff(*diff.cube_diff);
+    if (diff.has_cube_diff)
+        out.cube_diff = make_cube_diff(diff.cube_diff);
     return out;
 }
 
