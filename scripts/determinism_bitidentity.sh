@@ -114,10 +114,14 @@ for legkey in "${LINUX_LEGS[@]}"; do
   # FAST with the path, instead of letting conan invoke a missing compiler and surfacing it as a
   # buried "fmt cmake.configure Error 1" 1000 lines deep. (Was lost on the gcc-15.3 CI-drift, 2026-06-15.)
   prof_cxx="$(sed -nE 's/^[[:space:]]*CXX[[:space:]]*=[[:space:]]*//p' "$CONAN_HOME/profiles/$profile" | tail -1)"
-  if [ -n "$prof_cxx" ] && [ ! -x "$prof_cxx" ]; then
-    echo "MISSING COMPILER: $prof_cxx — profile '$profile' [buildenv] points here but the runner has no"
-    echo "  such binary (PPA gcc-15 is /usr/bin/gcc-15 @ 15.2; this profile wants from-source 15.3 under"
-    echo "  /opt for PR124309). PROVISION /opt/gcc-15.3 in CI, or point the profile at the PPA toolchain."
+  # A profile CXX may be an ABSOLUTE path (linux-gcc15-release → /opt/gcc-15.3/bin/g++) OR a
+  # PATH-relative name (linux-clang21-libcxx-release → clang++-21). Accept either: `-x` for a path,
+  # `command -v` for a PATH lookup. (A bare name MUST NOT be tested with `-x` alone — that checks the
+  # CWD, falsely failing a PATH-resolvable compiler; it silently skipped the clang leg, 2026-06-16.)
+  if [ -n "$prof_cxx" ] && ! { [ -x "$prof_cxx" ] || command -v "$prof_cxx" >/dev/null 2>&1; }; then
+    echo "MISSING COMPILER: $prof_cxx — profile '$profile' [buildenv] points here but the runner has"
+    echo "  no such binary on PATH or at that path. (e.g. linux-gcc15-release pins from-source"
+    echo "  /opt/gcc-15.3 for PR124309 — provision it in CI, or point the profile at an available toolchain.)"
     continue
   fi
   command -v "$cxxbin" >/dev/null || { echo "MISSING COMPILER: $cxxbin (leg $tag)"; continue; }
