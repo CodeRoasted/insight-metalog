@@ -103,13 +103,14 @@ TEST(DeterminismGate, FullDocumentByteIdentityGolden)
 // vs 2): the exact most-likely-edge tie F5-M8's order-dependent pick resolves differently per
 // stdlib.
 //
-// FREEZE ORDERING (strict — do not freeze a non-deterministic value): the SHA is frozen ONLY after
-// Heph's F5-M8 det_math+exact-tie-break fix makes the document bit-identical across the gcc×clang ×
-// -O{0,3} × -ffp-contract{off,fast} matrix. Until then this is RED cross-stdlib by design; the
-// active repro is scripts/determinism_bitidentity.sh (the same fixture, replayed across the
-// matrix). The coverage assertion (reservoir == M, structural-surprise boundary) is ALWAYS live so
-// the oracle can never silently stop exercising the regime. RELEASE-BLOCKING: no cut ships eidos
-// M=128 batch-diff until this is green-frozen.
+// GREEN-FROZEN 2026-06-16 (the SHA below). The freeze gate was strict — never freeze a
+// non-deterministic value — and is now satisfied: Heph's F5-M8 fix (the exact most-likely-edge
+// tie-break in build_transition_graph) made this document bit-identical across the cross-stdlib
+// diagonal (the only axis that exposes the iteration-order flip) AND the orthogonal -O{0,3} ×
+// -ffp-contract{off,fast} corners. The standing repro is scripts/determinism_bitidentity.sh (the
+// same fixture replayed across that matrix); the coverage assertion below (reservoir == M,
+// structural-surprise boundary) is ALWAYS live so the oracle can never silently stop exercising the
+// regime. RELEASE-BLOCKING: a mismatch here blocks any cut that ships the eidos M=128 batch-diff.
 TEST(DeterminismGate, ReservoirNearFullByteIdentityGolden)
 {
     // The scenario lives in scripts/reservoir_nearfull_scenario.hpp so this in-suite golden and the
@@ -148,15 +149,26 @@ TEST(DeterminismGate, ReservoirNearFullByteIdentityGolden)
     const std::string doc_json{meta::to_json(doc)};
     const std::string digest{picosha2::hash256_hex_string(doc_json)};
 
-    // FREEZE PENDING: do not freeze a non-deterministic value (Founder, strict). Until Heph's F5-M8
-    // fix lands, this digest differs across the cross-stdlib matrix — the repro. After the matrix
-    // is green (determinism_bitidentity.sh), replace this skip with:
-    //     constexpr std::string_view kGolden{"<frozen sha>"}; EXPECT_EQ(digest, kGolden) << ...;
-    GTEST_SKIP()
-        << "ReservoirNearFull golden SHA pending Heph's F5-M8 det_math fix — currently RED "
-           "cross-stdlib by design (repro: scripts/determinism_bitidentity.sh). This build's "
-           "digest: "
-        << digest;
+    // FROZEN 2026-06-16 (Argos) — the F5-M8 freeze gate is satisfied. Heph's root fix landed (the
+    // build_transition_graph most-likely-incoming-edge pick now breaks an EQUAL ratio by MORE
+    // observations — a pure content function, not unordered_map iteration order; engine.cpp). The
+    // near-full reservoir document is now byte-identical across the cross-stdlib diagonal (the ONLY
+    // axis that exposes the F5-M8 iteration-order flip) AND the orthogonal -O{0,3}×-ffp{off,fast}
+    // corners: scripts/determinism_bitidentity.sh with DETERMINISM_LEGS="gcc15-libstdcxx
+    // clang21-libcxx" reports all 8 cells IDENTICAL on --reservoir-nearfull, and gcc-15.3/libstdc++
+    // ≡ clang-21/libc++ produce this exact SHA in-suite. The coverage invariant above (reservoir == M,
+    // structural-surprise-driven boundary) guarantees this golden keeps exercising the M=128 regime.
+    // Re-derive ONLY for an intentional contract change — and it must then hold across the
+    // cross-stdlib diagonal again (a bare mismatch = an item-reservoir admit/evict determinism
+    // regression; insight_determinism_model.md §F5-M8).
+    constexpr std::string_view kGolden{
+        "86b985fb69bf9326abcd59cb8d899b17b7c2305c0cd9a4a32383ef7a2b109aa9"};
+    EXPECT_EQ(digest, kGolden)
+        << "near-full reservoir determinism golden mismatch (F5-M8) — the item-reservoir admit/evict "
+           "boundary is non-deterministic across this build, OR an intentional contract change needs "
+           "the golden re-derived (and re-verified across the cross-stdlib diagonal). RELEASE-BLOCKING "
+           "for the eidos M=128 batch-diff.\nDOC:\n"
+        << doc_json;
 }
 
 } // namespace
