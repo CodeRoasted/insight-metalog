@@ -7,7 +7,7 @@ import insight.metalog.api;
 import insight.canon;
 import insight.metalog.detail.stats;
 
-// MetaLog JSON serialiser (SPEC v0.5.0 envelope). The restrictive, omit-empty
+// MetaLog JSON serialiser (SPEC v0.6.0 envelope). The restrictive, omit-empty
 // glaze DTO layer: a per-wire struct mirror of the domain types + the make_*
 // builders that translate domain -> DTO, behind the two free `to_json`
 // overloads. Single responsibility — serialization only (no producer state, no
@@ -18,7 +18,7 @@ namespace insight::metalog
 
 // ── JSON serialiser (glaze, DTO layer) ─────────────────────────
 //
-// Serialization is a thin DTO mirroring the MetaLog v0.5.0 envelope: each
+// Serialization is a thin DTO mirroring the MetaLog v0.6.0 envelope: each
 // DTO field name IS the JSON key, so the struct declaration reads as the
 // schema and glaze reflects it with zero stringly-typed mapping. The domain
 // types stay free of any serialization concern.
@@ -166,12 +166,12 @@ struct ReservoirEntry
     struct glaze
     {
         using T = ReservoirEntry;
-        static constexpr auto value = glz::object(
-            "template_id", &T::template_id, "count", &T::count, "frequency", &T::frequency,
-            "template", &T::tmpl, "level", &T::level, "structural_role", &T::structural_role,
-            "structural_surprise", &T::structural_surprise, "novelty", &T::novelty, "salience",
-            &T::salience, "within_window_ordinal", &T::within_window_ordinal, "cube_coord",
-            &T::cube_coord);
+        static constexpr auto value =
+            glz::object("template_id", &T::template_id, "count", &T::count, "frequency",
+                        &T::frequency, "template", &T::tmpl, "level", &T::level, "structural_role",
+                        &T::structural_role, "structural_surprise", &T::structural_surprise,
+                        "novelty", &T::novelty, "salience", &T::salience, "within_window_ordinal",
+                        &T::within_window_ordinal, "cube_coord", &T::cube_coord);
     };
 };
 
@@ -461,7 +461,8 @@ dto::CubeBlock make_cube(const CubeBlock& cube)
     out.axes = make_cube_axes(cube.axes);
     out.cells.reserve(cube.cells.size());
     for (const auto& cell : cube.cells)
-        out.cells.push_back(dto::CubeCell{.coord = make_cube_coord(cell.coord), .count = cell.count});
+        out.cells.push_back(
+            dto::CubeCell{.coord = make_cube_coord(cell.coord), .count = cell.count});
     out.cell_count = cube.cell_count;
     out.raw_cell_count = cube.raw_cell_count;
     return out;
@@ -469,16 +470,17 @@ dto::CubeBlock make_cube(const CubeBlock& cube)
 
 dto::CubeBorder make_cube_border(const CubeBorder& border)
 {
-    const auto convert{[](const std::vector<CubeBorderCell>& cells)
-                       {
-                           std::vector<dto::CubeBorderCell> rows;
-                           rows.reserve(cells.size());
-                           for (const auto& cell : cells)
-                               rows.push_back(dto::CubeBorderCell{.coord = make_cube_coord(cell.coord),
-                                                                  .previous_count = cell.previous_count,
-                                                                  .current_count = cell.current_count});
-                           return rows;
-                       }};
+    const auto convert{
+        [](const std::vector<CubeBorderCell>& cells)
+        {
+            std::vector<dto::CubeBorderCell> rows;
+            rows.reserve(cells.size());
+            for (const auto& cell : cells)
+                rows.push_back(dto::CubeBorderCell{.coord = make_cube_coord(cell.coord),
+                                                   .previous_count = cell.previous_count,
+                                                   .current_count = cell.current_count});
+            return rows;
+        }};
     dto::CubeBorder out;
     out.lower = convert(border.lower);
     out.upper = convert(border.upper);

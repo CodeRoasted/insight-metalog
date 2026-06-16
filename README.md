@@ -1,6 +1,6 @@
 # insight-metalog
 
-**insight-metalog** — MetaLog v0.5.0 producer.
+**insight-metalog** — MetaLog v0.6.0 producer.
 
 `insight_metalog` consumes an event sequence from `insight_canon` and produces a **bounded statistical fingerprint** of a window of log behaviour: composition, session framing, HLL-backed field-cardinality estimation, transition-stability ratios, and diff-encoded deltas between windows.
 
@@ -30,7 +30,7 @@ A MetaLog document is a **deterministic** function of its input window — the s
 | Field | Value |
 |---|---|
 | Conan name | `insight_metalog` |
-| Spec conformance | MetaLog v0.5.0 |
+| Spec conformance | MetaLog v0.6.0 |
 | Visibility | CodeRoast-owned package |
 
 ## Requirements

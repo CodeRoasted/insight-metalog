@@ -8,7 +8,7 @@ import insight.canon;
 import insight.metalog.detail.stats;
 import insight.metalog.detail.cube;
 
-// MetaLog producer engine (SPEC v0.5.0). The stateful streaming side: one window
+// MetaLog producer engine (SPEC v0.6.0). The stateful streaming side: one window
 // of CanonicalEvents in (open_window / ingest_event) -> one bounded MetaLog
 // document out (close_window). Single responsibility — production; serialization,
 // compose and diff live in their own translation units, and the cross-cutting
@@ -463,13 +463,14 @@ void MetaLogEngine::build_transition_graph(WindowAnalysis& analysis) const
             if (to_id >= node_count)
                 continue;
             // Most-likely incoming edge = highest ratio count/outgoing (cross-multiplied, exact
-            // integer). DETERMINISTIC tie-break on EQUAL ratio: prefer the edge with MORE observations
-            // (larger count) — a pure function of the contents, NOT the unordered_map iteration order.
-            // Two equal-ratio edges with different absolute (count, outgoing) can fall in DIFFERENT
-            // surprise bands (the ≥2-observation floor + the integer thresholds in surprise_band), so an
-            // order-dependent pick diverges across stdlibs and perturbs structural_surprise → the
-            // salience ranking → the reservoir admission boundary. (Found via the §9.2 cross-count
-            // clang≢gcc; the same determinism discipline as dominant_level_of/dominant_role_of.)
+            // integer). DETERMINISTIC tie-break on EQUAL ratio: prefer the edge with MORE
+            // observations (larger count) — a pure function of the contents, NOT the unordered_map
+            // iteration order. Two equal-ratio edges with different absolute (count, outgoing) can
+            // fall in DIFFERENT surprise bands (the ≥2-observation floor + the integer thresholds
+            // in surprise_band), so an order-dependent pick diverges across stdlibs and perturbs
+            // structural_surprise → the salience ranking → the reservoir admission boundary. (Found
+            // via the §9.2 cross-count clang≢gcc; the same determinism discipline as
+            // dominant_level_of/dominant_role_of.)
             const std::uint64_t cand{count * best_t[to_id]};
             const std::uint64_t best{best_c[to_id] * outgoing};
             if (cand > best || (cand == best && count > best_c[to_id]))
@@ -811,7 +812,8 @@ void MetaLogEngine::build_branching(BehaviorBlock& behavior, const WindowAnalysi
                 if (count == 0)
                     continue;
                 // det::i128 (canon shim: native __int128 on gcc/clang, portable struct on MSVC).
-                // u64 count widened VALUE-PRESERVING via u128, matching native. [[msvc-port-stdlib-isms]]
+                // u64 count widened VALUE-PRESERVING via u128, matching native.
+                // [[msvc-port-stdlib-isms]]
                 reducer.add_fixed(static_cast<insight::det::i128>(insight::det::u128{count}) *
                                   (log2_total - insight::det::det_log2_fixed(count)));
             }
@@ -945,8 +947,8 @@ void MetaLogEngine::build_cube(MetaLogDocument& doc) const
     for (const auto& [key, count] : cube_base_)
     {
         const auto& [level, component, role]{key};
-        base.push_back(cube::BaseRow{
-            .level = level, .component = component, .role = role, .count = count});
+        base.push_back(
+            cube::BaseRow{.level = level, .component = component, .role = role, .count = count});
     }
     doc.cube = cube::build_closed_cube(base);
     doc.has_cube = true;

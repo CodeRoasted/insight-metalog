@@ -214,7 +214,7 @@ class MetaLogEngine
 };
 
 // Free serialiser. Produces a serialised JSON document conforming to the
-// v0.5.0 MetaLog envelope.
+// v0.6.0 MetaLog envelope.
 //
 // Output is canonical and restrictive: empty/default optional fields are
 // OMITTED, never emitted as empty/zero/false (one document -> one byte

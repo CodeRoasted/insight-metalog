@@ -8,7 +8,7 @@ import insight.canon;
 export namespace insight::metalog
 {
 
-// ── Spec envelope (mirrors v0.5.0 schema) ──────────────────────
+// ── Spec envelope (mirrors v0.6.0 schema) ──────────────────────
 
 // Per-template per-wildcard-position value frequency table.
 //
@@ -624,11 +624,12 @@ struct CubeDiffBlock
 {
     std::vector<CubeAxis> axes;
     // Presence-bool + inline value, NOT std::optional<CubeBorder> (CubeBorder owns vectors, so a
-    // synthesized optional<CubeBorder> copy hits the same MSVC bug as the cube). Since CubeDiffBlock
-    // is itself an inline value member of MetaLogDiff now, these are copied on every MetaLogDiff copy
-    // (detection holds std::optional<MetaLogDiff>) even when empty — bool+value keeps that copy sound.
+    // synthesized optional<CubeBorder> copy hits the same MSVC bug as the cube). Since
+    // CubeDiffBlock is itself an inline value member of MetaLogDiff now, these are copied on every
+    // MetaLogDiff copy (detection holds std::optional<MetaLogDiff>) even when empty — bool+value
+    // keeps that copy sound.
     bool has_emerging{false};
-    CubeBorder emerging{};  // growth region (valid iff has_emerging)
+    CubeBorder emerging{}; // growth region (valid iff has_emerging)
     bool has_vanishing{false};
     CubeBorder vanishing{}; // disappearance region, the dual (valid iff has_vanishing)
     [[nodiscard]] bool operator==(const CubeDiffBlock&) const noexcept = default;
@@ -657,7 +658,8 @@ struct MetaLogDiff
     // Emerging-border cube diff (SPEC §13.6) — EXPERIMENTAL. Present (has_cube_diff) only when
     // both documents carried a `cube` and their axes are equal. Structured evidence (the upper
     // border is the deterministic headline); NOT an alert on its own. Presence-bool + inline value,
-    // NOT std::optional<CubeDiffBlock> — same MSVC consumer-synthesis reason as MetaLogDocument::cube.
+    // NOT std::optional<CubeDiffBlock> — same MSVC consumer-synthesis reason as
+    // MetaLogDocument::cube.
     bool has_cube_diff{false};
     CubeDiffBlock cube_diff{};
 };

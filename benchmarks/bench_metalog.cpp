@@ -1,5 +1,5 @@
 // NOLINTBEGIN
-// MetaLog v0.5.0 compression benchmark.
+// MetaLog v0.6.0 compression benchmark.
 //
 // This is the byte-budget anchor for Phase 3. It synthesises a window
 // of CanonicalEvents with a Zipf-ish template distribution, runs them

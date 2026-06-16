@@ -67,7 +67,7 @@ TEST(DeterminismGate, FullDocumentByteIdentityGolden)
     const std::string digest{picosha2::hash256_hex_string(combined)};
 
     // Re-derived 2026-06-15 (was 5782e7…) for the metalog 0.6.0 format-version bump
-    // (metalog_version / producer.version "0.5.0" → "0.6.0", the SPEC §16 cube landing).
+    // (metalog_version / producer.version "0.6.0" → "0.6.0", the SPEC §16 cube landing).
     // This scenario does NOT enable the cube (emit_cube defaults false), so the ONLY
     // wire change is the two version strings — the cube's own bytes are golden-gated
     // separately by CubeDeterminism.ByteIdentityGolden. The window-2 GET template is
@@ -99,21 +99,23 @@ TEST(DeterminismGate, FullDocumentByteIdentityGolden)
 // hard-ceiling the reservoir at 112; cap=0 admits the top-M by pure salience rank, the clean oracle
 // for the salience VALUE (the F5-M8 root, upstream of the cap). Salient-by-structure benign spokes
 // (reached only via a rare off-path edge from a busy hub) make structural_surprise — not a fixed
-// level — decide membership, including AMBIGUOUS spokes reached by two EQUAL-RATIO edges (count 1 vs
-// 2): the exact most-likely-edge tie F5-M8's order-dependent pick resolves differently per stdlib.
+// level — decide membership, including AMBIGUOUS spokes reached by two EQUAL-RATIO edges (count 1
+// vs 2): the exact most-likely-edge tie F5-M8's order-dependent pick resolves differently per
+// stdlib.
 //
 // FREEZE ORDERING (strict — do not freeze a non-deterministic value): the SHA is frozen ONLY after
 // Heph's F5-M8 det_math+exact-tie-break fix makes the document bit-identical across the gcc×clang ×
 // -O{0,3} × -ffp-contract{off,fast} matrix. Until then this is RED cross-stdlib by design; the
-// active repro is scripts/determinism_bitidentity.sh (the same fixture, replayed across the matrix).
-// The coverage assertion (reservoir == M, structural-surprise boundary) is ALWAYS live so the oracle
-// can never silently stop exercising the regime. RELEASE-BLOCKING: no cut ships eidos M=128 batch-diff
-// until this is green-frozen.
+// active repro is scripts/determinism_bitidentity.sh (the same fixture, replayed across the
+// matrix). The coverage assertion (reservoir == M, structural-surprise boundary) is ALWAYS live so
+// the oracle can never silently stop exercising the regime. RELEASE-BLOCKING: no cut ships eidos
+// M=128 batch-diff until this is green-frozen.
 TEST(DeterminismGate, ReservoirNearFullByteIdentityGolden)
 {
     // The scenario lives in scripts/reservoir_nearfull_scenario.hpp so this in-suite golden and the
-    // cross-compiler matrix fixture (scripts/determinism_fixture.cpp, via determinism_bitidentity.sh)
-    // exercise the EXACT same M=128 admit/evict boundary — they cannot drift.
+    // cross-compiler matrix fixture (scripts/determinism_fixture.cpp, via
+    // determinism_bitidentity.sh) exercise the EXACT same M=128 admit/evict boundary — they cannot
+    // drift.
     meta::MetaLogConfig cfg;
     meta::nearfull::configure(cfg);
     meta::MetaLogEngine engine{cfg};
@@ -147,13 +149,14 @@ TEST(DeterminismGate, ReservoirNearFullByteIdentityGolden)
     const std::string digest{picosha2::hash256_hex_string(doc_json)};
 
     // FREEZE PENDING: do not freeze a non-deterministic value (Founder, strict). Until Heph's F5-M8
-    // fix lands, this digest differs across the cross-stdlib matrix — the repro. After the matrix is
-    // green (determinism_bitidentity.sh), replace this skip with:
+    // fix lands, this digest differs across the cross-stdlib matrix — the repro. After the matrix
+    // is green (determinism_bitidentity.sh), replace this skip with:
     //     constexpr std::string_view kGolden{"<frozen sha>"}; EXPECT_EQ(digest, kGolden) << ...;
-    GTEST_SKIP() << "ReservoirNearFull golden SHA pending Heph's F5-M8 det_math fix — currently RED "
-                    "cross-stdlib by design (repro: scripts/determinism_bitidentity.sh). This build's "
-                    "digest: "
-                 << digest;
+    GTEST_SKIP()
+        << "ReservoirNearFull golden SHA pending Heph's F5-M8 det_math fix — currently RED "
+           "cross-stdlib by design (repro: scripts/determinism_bitidentity.sh). This build's "
+           "digest: "
+        << digest;
 }
 
 } // namespace
