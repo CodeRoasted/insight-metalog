@@ -1,60 +1,55 @@
-name: Windows · compile + msvc vs golden
+name: Windows · msvc vs golden
 
-# STAGED PROBE — not yet a ship gate (Argos 2026-06-13; determinism measure wired 2026-06-14).
+# STANDING GATE (release-blocking) — the metalog leg of the cross-OS bit-identity contract.
+# (Promoted from a staged probe 2026-06-18 per Daidalos's gate-promotion handoff.)
 #
-# Second leg of the canon→metalog→eidos cross-OS port. canon is proven cross-OS bit-identical on
-# MSVC/Windows (its det_proof digest == its Linux golden); metalog sits on canon, next toward the
-# Windows Sift CLI. metalog COMPILES green on MSVC (the whole canon→metalog→eidos tower does). Its own
-# __int128 (HLL + KL/JS/entropy) was ported to canon's portable det::u128/i128 shim, and the HLL
-# double→128 to deterministic integer bit-extraction (commit 41af4fc); both Linux toolchains stay
-# 132/132 and the determinism diagonal byte-identical.
+# Asserts the canon→metalog MetaLog document is byte-identical to the committed Linux golden
+# (scripts/determinism_golden.sha256) on MSVC 14.52, across the -O × -fp SWEEP — the four corners
+#   {/Od,/O2} × {/fp:precise,/fp:fast}
+# hardening the digest against optimization level AND float contraction/reassociation (MSVC /fp:precise
+# is the no-contraction floor; /fp:fast turns it on). Every cell matching the one shared golden is part
+# of what converts "measured-green MSVC" into the Tier-1 "tri-toolchain bit-identical" claim; a red cell
+# un-promotes the claim and blocks the cut.
 #
-# WHY MSVC (proven on canon): clang ships no libc++ on Windows → no `import std` there. MSVC cl.exe
-# is the only mature C++23 named-modules + import-std path (ships std.ixx; CMake supports it under
-# Ninja). New 3rd-party surfaces beyond canon = glaze (template-heavy JSON reflection) + picosha2 —
-# the probe's first real unknowns.
+# WHY MSVC: clang ships no libc++ on Windows → no `import std`; MSVC cl.exe is the only mature C++23
+# named-modules + import-std path. New 3rd-party surfaces beyond canon = glaze + picosha2.
 #
-# RESOLVING CANON: insight_canon/1.5.3 is published to NO conan remote (we don't push to conancenter)
-# and has no Release tarball yet (a release is the Founder's signed tag; it would be linux-gcc15 only —
-# canon's release-publish never builds Windows). So the probe checks out canon's main (which carries
-# the MSVC port + version 1.5.3) and `conan export`s its recipe+sources into the cache; canon then
-# builds FROM SOURCE for os=Windows alongside glaze/picosha2 — the right shape for a source-build probe.
+# Each cell builds the Approach-B det_harness (scripts/det_harness: add_subdirectory(canon)+(metalog) +
+# determinism_fixture) FROM SOURCE under the cell's -O/-fp (CELL_FLAGS, alongside SPDLOG_ACTIVE_LEVEL=OFF),
+# runs it over scripts/determinism_corpus, reproduces the golden's exact bytes ("### <file> ###\n" + the
+# two JSON docs, LF; the fixture _setmode's stdout to binary), and sha256-compares to the committed
+# golden. canon source isn't in any conan remote, so the cell checks out canon's main + `conan export`s
+# it (the from-source cross-OS shape).
 #
-# SCOPE = COMPILE GATE + DETERMINISM MEASURE (two steps):
-#  (1) COMPILE GATE — `conan create .` builds canon + glaze + picosha2 + metalog for os=Windows and the
-#      test_package consumer (which `import insight.metalog` + is CXX_MODULE_STD ON): the modules tower
-#      COMPILES + links + resolves on MSVC.
-#  (2) DETERMINISM MEASURE — build the Approach-B det_harness (canon+metalog module tower +
-#      determinism_fixture) under MSVC, run it over scripts/determinism_corpus, reproduce the golden's
-#      exact bytes, and sha256-compare to scripts/determinism_golden.sha256 (fd25f9f3…). The golden is
-#      ASCII-only and the fixture _setmode's stdout to binary (canon's em-dash/CRLF/log-leak lessons
-#      pre-applied). Needs the same insight-canon checkout the compile gate uses (the harness builds the
-#      tower from source). MEASURE-ONLY: a divergence is a real finding (localized + artifacted), not yet
-#      a ship gate.
-#
-# POSTURE: NOT a required check, NOT continue-on-error — real red or real green so we learn the true
-# state. Cannot gate a ship until green once. Tier-1 cross-OS promotion = Daidalos's call.
+# Freshness anchor: this asserts scripts/determinism_golden.sha256 — the SAME golden the Linux
+# determinism gate freezes + asserts — so an intended engine change forces a refreeze on Linux before
+# this can pass (see [[determinism-golden-freshness-gate]]). The golden value is NOT hardcoded in this
+# header (it would rot, as the old fd25f9f3→e23bb639 0.5.0→0.6.0 bump showed) — the file is the source.
 
 permissions:
   contents: read
 
 on:
+  # The determinism-gate cadence: the release-tag cut (auto-runs, gating the tag) + a weekly drift
+  # catch + manual dispatch. NOT per-PR — per-PR coverage is metalog's own golden unit tests.
   workflow_dispatch:
-  pull_request:
-    branches: [main]
-    paths:
-      - 'api/**'
-      - 'src/**'
-      - 'CMakeLists.txt'
-      - 'conanfile.py'
-      - '.github/workflows/windows-portability-probe.yml'
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+  schedule:
+    - cron: '0 6 * * 1'   # Mondays 06:00 UTC
 
 jobs:
-  windows-msvc-probe:
-    # windows-2025 (VS 2026). The runner's released toolsets are below the C++23-modules fix floor,
-    # so setup-msvc1452 installs MSVC >= 14.52.36418 (Insiders Preview). canon proved this leg green
-    # (conan create + cross-OS determinism bit-identical) on 14.52 via the same action.
+  msvc-sweep:
+    name: msvc ${{ matrix.tag }} vs golden
     runs-on: windows-2025
+    strategy:
+      fail-fast: false   # report every cell; a red cell fails the leg
+      matrix:
+        include:
+          - { opt: '/Od', fp: '/fp:precise', tag: 'Od-precise' }
+          - { opt: '/O2', fp: '/fp:precise', tag: 'O2-precise' }
+          - { opt: '/Od', fp: '/fp:fast',    tag: 'Od-fast' }
+          - { opt: '/O2', fp: '/fp:fast',    tag: 'O2-fast' }
     env:
       CONAN_HOME: ${{ github.workspace }}/.conan2
 
@@ -96,13 +91,13 @@ jobs:
           cache_packages: false
           profile_detect: false
 
-      - name: Cache conan dep binaries (openssl/boost/drogon/… — keyed on the dep set + profile)
+      - name: Cache conan dep binaries (per cell — keyed on the dep set + profile + cell)
         uses: actions/cache@v5
         with:
           path: ${{ env.CONAN_HOME }}
-          key: conan-msvc1452-${{ runner.os }}-${{ hashFiles('**/conanfile.py', 'malf/profiles/windows-msvc-release') }}
+          key: conan-msvc1452-${{ matrix.tag }}-${{ runner.os }}-${{ hashFiles('**/conanfile.py', 'malf/profiles/windows-msvc-release') }}
           restore-keys: |
-            conan-msvc1452-${{ runner.os }}-
+            conan-msvc1452-${{ matrix.tag }}-${{ runner.os }}-
 
       - name: Setup Conan profile (windows-msvc-release, from malf-toolchain)
         shell: pwsh
@@ -111,52 +106,28 @@ jobs:
           Copy-Item malf/profiles/windows-msvc-release "$env:CONAN_HOME/profiles/windows-msvc-release"
 
       - name: Check out insight-canon source (the MSVC port lives on canon's main, not in any conan remote)
-        # metalog requires insight_canon/1.5.3, but that package exists NOWHERE conan can reach on a
-        # fresh Windows runner: we publish nothing to conancenter, and no v1.5.3 canon Release tarball
-        # exists yet (a release is the Founder's signed-tag trigger — and it would be a LINUX-gcc15
-        # binary regardless; canon's release-publish never builds Windows). canon's main IS the source
-        # of truth: it carries the cross-OS MSVC port + version=1.5.3. So fetch it and build from source.
         uses: actions/checkout@v4
         with:
           repository: CodeRoasted/insight-canon
           ref: main
           path: _canon
 
-      - name: Export insight_canon/1.5.3 (recipe + sources) into the local cache
-        # `conan export` registers canon's recipe+exports_sources in the cache WITHOUT building a binary;
-        # the `conan create` below then compiles insight_canon FROM SOURCE for os=Windows via --build=missing,
-        # exactly like glaze/picosha2. This is the right shape for a source-build cross-OS probe (vs the
-        # Linux gates, which vendor canon's prebuilt linux-gcc15 Release tarball — wrong ISA here, and
-        # the point of THIS probe is the from-source MSVC compile). The export'd version must equal the
-        # `insight_canon/1.5.3` pin in conanfile.py; a canon main version bump fails loudly here (pin drift).
+      - name: Export insight_canon (recipe + sources) into the local cache
+        # `conan export` registers canon's recipe+exports_sources WITHOUT building; the install below
+        # resolves the graph (canon + glaze/picosha2/simdjson/…) for os=Windows. The export'd version
+        # must equal the insight_canon pin in conanfile.py; a canon main version bump fails loudly here.
         shell: pwsh
         run: |
           conan export _canon
-          conan list "insight_canon/1.5.3#*"
+          conan list "insight_canon/*#*"
 
-      - name: Probe — conan create on Windows/MSVC (canon+glaze+picosha2+metalog tower + consumer)
-        # The real test of C++23 named modules + import std under MSVC for the metalog tower: conan
-        # create builds insight_canon (from the recipe just exported above), glaze, picosha2 (all
-        # --build=missing for os=Windows from source — no prebuilt Windows packages exist), then
-        # metalog's CXX_MODULE_STD lib, then test_package/ (a consumer that import insight.metalog +
-        # is itself CXX_MODULE_STD ON), then runs its smoke test. NUMA is absent (canon gates libnuma
-        # to os==Linux). pwsh (not bash): bash's `link` shadows link.exe.
-        shell: pwsh
-        run: |
-          conan create . `
-            --profile:host="$env:CONAN_HOME/profiles/windows-msvc-release" `
-            --profile:build="$env:CONAN_HOME/profiles/windows-msvc-release" `
-            --build=missing
-
-      - name: Determinism measure — metalog MSVC digest vs the frozen Linux golden (fd25f9f3…)
-        # The GREEN-GATED follow-up the probe always named (canon precedent). Does the canon→metalog
-        # tower emit a BIT-IDENTICAL MetaLog document on MSVC vs Linux? Build the Approach-B det_harness
-        # (canon+metalog module tower + determinism_fixture) under MSVC, run it over the SAME
-        # scripts/determinism_corpus, reproduce the golden's exact bytes ("### <file> ###\n" + the two
-        # JSON docs, LF — the fixture _setmode's stdout to binary), sha256, compare to
-        # scripts/determinism_golden.sha256. metalog's twin of canon's det_proof digest match.
-        # MEASURE-ONLY (Daidalos): a divergence is a real finding to localize (per-section diff +
-        # artifact below), not yet a ship gate; Tier-1 cross-OS promotion is Daidalos's call.
+      - name: Build det_harness @ cell ${{ matrix.tag }} + measure vs the Linux golden (GATING)
+        # The det_harness builds canon+metalog FROM SOURCE (add_subdirectory CANON_ROOT/META_ROOT) under
+        # this cell's -O/-fp, so the cell flags hit the ENGINE codegen — the real determinism test. The
+        # det_fixture imports insight.metalog (CXX_MODULE_STD ON) → this build IS the MSVC module-compile
+        # proof, so no separate conan-create smoke is needed. GATING: a build failure OR a digest mismatch
+        # fails the cell (no continue-on-error) — un-promotes the cross-OS claim + blocks the cut.
+        # pwsh (not bash): bash's `link` shadows MSVC link.exe.
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -165,26 +136,24 @@ jobs:
           $work = "$env:RUNNER_TEMP/det-measure"
           New-Item -ItemType Directory -Force -Path $work | Out-Null
 
-          # 1) Resolve metalog's deps (simdjson/spdlog/fmt/glaze/picosha2) + a conan toolchain for the
-          #    standalone harness CMake. canon was exported earlier; --build=missing builds it for Windows.
+          # Resolve metalog's deps (+ canon from the export) + a conan toolchain for the standalone harness.
           conan install . --profile:host="$prof" --profile:build="$prof" --build=missing -of "$work/conan"
           $toolchain = (Get-ChildItem -Recurse "$work/conan" -Filter conan_toolchain.cmake | Select-Object -First 1).FullName
           if (-not $toolchain) { Write-Error "no conan_toolchain.cmake from conan install"; exit 1 }
 
-          # 2) Configure + build det_harness under MSVC. CELL_FLAGS = SPDLOG-off ONLY (NO -ffp-contract=off
-          #    — that is a gcc/clang flag MSVC rejects; MSVC /fp:precise is the portable floor).
+          # CELL_FLAGS = SPDLOG-off + this cell's -O/-fp (cl last-wins resolves /Od over Release's /O2).
           cmake -S scripts/det_harness -B "$work/build" -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
             -DCMAKE_TOOLCHAIN_FILE="$toolchain" `
             -DCANON_ROOT="$env:GITHUB_WORKSPACE/_canon" `
             -DMETA_ROOT="$env:GITHUB_WORKSPACE" `
-            -DCELL_FLAGS="-DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_OFF"
+            -DCELL_FLAGS="-DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_OFF ${{ matrix.opt }} ${{ matrix.fp }}"
           cmake --build "$work/build" --target det_fixture --parallel 2
           $fixture = (Get-ChildItem -Recurse "$work/build" -Filter det_fixture.exe | Select-Object -First 1).FullName
-          if (-not $fixture) { Write-Error "det_fixture.exe not produced"; exit 1 }
+          if (-not $fixture) { Write-Error "det_fixture.exe not produced — MSVC det harness build failed at cell ${{ matrix.tag }}"; exit 1 }
 
-          # 3) Reproduce the golden's EXACT bytes: per sorted corpus file, "### <name> ###\n" (LF) then
-          #    the fixture's RAW stdout (binary via _setmode). Accumulate as bytes — no pwsh CRLF.
+          # Reproduce the golden's EXACT bytes: per sorted corpus file, "### <name> ###\n" (LF) then the
+          # fixture's RAW stdout (binary via _setmode). Accumulate as bytes — no pwsh CRLF.
           $outPath = "$work/msvc.out"
           $fs = [System.IO.File]::Create($outPath)
           try {
@@ -199,14 +168,13 @@ jobs:
             }
           } finally { $fs.Close() }
 
-          # 4) Compare digest to the frozen Linux golden.
           $sha = (Get-FileHash $outPath -Algorithm SHA256).Hash.ToLower()
           $golden = (Get-Content "scripts/determinism_golden.sha256" -Raw).Trim().ToLower()
           Copy-Item $outPath "$env:GITHUB_WORKSPACE/metalog_msvc_determinism.txt"
-          Write-Host "MSVC metalog determinism digest: $sha"
-          Write-Host "Linux golden:                    $golden"
+          Write-Host "cell ${{ matrix.tag }} — MSVC metalog digest: $sha"
+          Write-Host "cell ${{ matrix.tag }} — Linux golden:        $golden"
           if ($sha -ne $golden) {
-            Write-Host "::error::CROSS-OS DIVERGENCE — metalog MSVC digest != Linux golden"
+            Write-Host "::error::cell ${{ matrix.tag }} CROSS-OS DIVERGENCE — metalog MSVC digest != Linux golden"
             $g = Get-Content "scripts/determinism_golden.txt"
             $m = Get-Content $outPath
             for ($i = 0; $i -lt [Math]::Max($g.Count, $m.Count); $i++) {
@@ -219,12 +187,12 @@ jobs:
             }
             exit 1
           }
-          Write-Host "GOLDEN MATCH — metalog cross-OS bit-identical (MSVC == Linux)"
+          Write-Host "::notice::cell ${{ matrix.tag }} GOLDEN MATCH — metalog cross-OS bit-identical (MSVC == Linux)"
 
-      - name: Upload MSVC determinism output (divergence localization)
+      - name: Upload MSVC determinism output @ ${{ matrix.tag }} (divergence localization)
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: metalog-msvc-determinism
+          name: metalog-msvc-determinism-${{ matrix.tag }}
           path: metalog_msvc_determinism.txt
           if-no-files-found: ignore
