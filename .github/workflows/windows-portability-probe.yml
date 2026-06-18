@@ -47,30 +47,38 @@ on:
       - 'src/**'
       - 'CMakeLists.txt'
       - 'conanfile.py'
-      - 'windows-msvc-release'
       - '.github/workflows/windows-portability-probe.yml'
 
 jobs:
   windows-msvc-probe:
-    # PINNED windows-2022 (VS 2022, toolset v143/MSVC 19.4x — conan compiler.version=194). The
-    # windows-latest runner migrates to VS 2026 mid-2026; pin for a stable toolset.
-    runs-on: windows-2022
+    # windows-2025 (VS 2026). The runner's released toolsets are below the C++23-modules fix floor,
+    # so setup-msvc1452 installs MSVC >= 14.52.36418 (Insiders Preview). canon proved this leg green
+    # (conan create + cross-OS determinism bit-identical) on 14.52 via the same action.
+    runs-on: windows-2025
     env:
       CONAN_HOME: ${{ github.workspace }}/.conan2
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup MSVC dev environment (puts cl.exe / link.exe on PATH for Ninja)
-        uses: ilammy/msvc-dev-cmd@v1
+      - name: Check out malf-toolchain into malf/ (canonical conan profile; public, anonymous)
+        uses: actions/checkout@v4
         with:
-          arch: x64
+          repository: CodeRoasted/malf-toolchain
+          path: malf
+          fetch-depth: 1
+          persist-credentials: false
 
-      - name: Verify cl.exe is the active compiler (fail here, not later with a cryptic error)
+      - name: Install + activate MSVC 14.52 (the fix floor; not pre-installed on the runner)
+        uses: CodeRoasted/malf-toolchain/.github/actions/setup-msvc1452@main
+
+      - name: Verify the active toolset is MSVC 14.52, not a fallback
         shell: pwsh
         run: |
           if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) { Write-Error "cl.exe not on PATH — MSVC env not activated"; exit 1 }
-          cl.exe 2>&1 | Select-Object -First 1
+          Write-Host "active VCToolsVersion: $env:VCToolsVersion"
+          if (-not $env:VCToolsVersion) { Write-Error "VCToolsVersion not set — MSVC env not activated"; exit 1 }
+          if ([version]$env:VCToolsVersion -lt [version]'14.52') { Write-Error "active toolset $env:VCToolsVersion < 14.52 (the fix floor)"; exit 1 }
 
       - name: Setup CMake 4.3.x (the import-std experimental gate UUID 451f2fe2 lives only in 4.3.x)
         shell: pwsh
@@ -92,15 +100,15 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ env.CONAN_HOME }}
-          key: conan-msvc-${{ runner.os }}-${{ hashFiles('**/conanfile.py', 'windows-msvc-release') }}
+          key: conan-msvc1452-${{ runner.os }}-${{ hashFiles('**/conanfile.py', 'malf/profiles/windows-msvc-release') }}
           restore-keys: |
-            conan-msvc-${{ runner.os }}-
+            conan-msvc1452-${{ runner.os }}-
 
-      - name: Setup Conan profile (windows-msvc-release)
+      - name: Setup Conan profile (windows-msvc-release, from malf-toolchain)
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path "$env:CONAN_HOME/profiles" | Out-Null
-          Copy-Item windows-msvc-release "$env:CONAN_HOME/profiles/windows-msvc-release"
+          Copy-Item malf/profiles/windows-msvc-release "$env:CONAN_HOME/profiles/windows-msvc-release"
 
       - name: Check out insight-canon source (the MSVC port lives on canon's main, not in any conan remote)
         # metalog requires insight_canon/1.5.3, but that package exists NOWHERE conan can reach on a
