@@ -266,6 +266,129 @@ void BM_CubeDiffOf(benchmark::State& state)
 }
 BENCHMARK(BM_CubeDiffOf)->Unit(benchmark::kMicrosecond);
 
+// ── round-trip attribution: coord_of / cell_of replicated (the §13 re-closure lever) ─────────
+// compose_cubes / cube_diff_of parse every closed CubeCoord back to an interned Cell on INPUT
+// (cell_of) and re-stringify Cell → CubeCoord on OUTPUT (coord_of), on EVERY op (×~23/tick via
+// the fibo pyramid). These benches replicate those exact string ops over a representative cube's
+// ~225 cells to attribute the round-trip WITHOUT exposing the sealed anonymous internals
+// (coord_of/cell_of are file-local in cube.cpp, and that code is the rewrite target — exposing it
+// now would be debt). The replicas mirror insight-metalog/src/cube/cube.cpp verbatim; the cost
+// they measure is exactly what "keep the cube interned end-to-end" (lever 1) reclaims.
+[[nodiscard]] LogLevel level_from_spec_replica(std::string_view spec) noexcept
+{
+    if (spec == "TRACE")
+        return LogLevel::Trace;
+    if (spec == "DEBUG")
+        return LogLevel::Debug;
+    if (spec == "WARN")
+        return LogLevel::Warn;
+    if (spec == "ERROR")
+        return LogLevel::Error;
+    if (spec == "FATAL")
+        return LogLevel::Fatal;
+    return LogLevel::Info;
+}
+
+[[nodiscard]] StructuralRole role_from_string_replica(std::string_view text) noexcept
+{
+    if (text == "GroupBegin")
+        return StructuralRole::GroupBegin;
+    if (text == "GroupEnd")
+        return StructuralRole::GroupEnd;
+    if (text == "Terminator")
+        return StructuralRole::Terminator;
+    return StructuralRole::None;
+}
+
+[[nodiscard]] std::uint32_t component_id_replica(std::span<const std::string> labels,
+                                                 std::string_view component) noexcept
+{
+    if (component.empty())
+        return cube::kStar;
+    const auto found{std::lower_bound(labels.begin(), labels.end(), component)};
+    if (found != labels.end() && *found == component)
+        return static_cast<std::uint32_t>(found - labels.begin());
+    return cube::kStar;
+}
+
+[[nodiscard]] cube::Cell cell_of_replica(const meta::CubeCoord& coord,
+                                         std::span<const std::string> labels) noexcept
+{
+    cube::Cell cell;
+    if (coord.level)
+        cell.value[static_cast<std::size_t>(cube::Dim::Level)] =
+            static_cast<std::uint32_t>(level_from_spec_replica(*coord.level));
+    if (coord.where && !coord.where->empty())
+        cell.value[static_cast<std::size_t>(cube::Dim::Where)] =
+            component_id_replica(labels, coord.where->back());
+    if (coord.structural_role)
+        cell.value[static_cast<std::size_t>(cube::Dim::Role)] =
+            static_cast<std::uint32_t>(role_from_string_replica(*coord.structural_role));
+    return cell;
+}
+
+[[nodiscard]] meta::CubeCoord coord_of_replica(const cube::Cell& cell,
+                                               std::span<const std::string> labels)
+{
+    meta::CubeCoord coord;
+    if (cell.pinned(cube::Dim::Level))
+        coord.level = meta::level_to_spec_string(
+            static_cast<LogLevel>(cell.value[static_cast<std::size_t>(cube::Dim::Level)]));
+    if (cell.pinned(cube::Dim::Where))
+        coord.where = std::vector<std::string>{
+            labels[cell.value[static_cast<std::size_t>(cube::Dim::Where)]]};
+    if (cell.pinned(cube::Dim::Role))
+        coord.structural_role = std::string{insight::to_string(
+            static_cast<StructuralRole>(cell.value[static_cast<std::size_t>(cube::Dim::Role)]))};
+    return coord;
+}
+
+struct CubeFixture
+{
+    meta::CubeBlock block;
+    std::vector<std::string> labels;   // the sorted WHERE-leaf dictionary
+    std::vector<cube::Cell> cells;      // the block's coords parsed back to interned Cells
+};
+
+[[nodiscard]] CubeFixture make_cube_fixture()
+{
+    std::vector<std::string> components;
+    for (std::size_t i{0}; i < kComponentCount; ++i)
+        components.push_back("svc_" + std::to_string(i));
+    CubeFixture fixture;
+    fixture.block = cube::build_closed_cube(make_base_rows(components));
+    std::set<std::string> uniq;
+    for (const meta::CubeCell& cell : fixture.block.cells)
+        if (cell.coord.where && !cell.coord.where->empty())
+            uniq.insert(cell.coord.where->back());
+    fixture.labels.assign(uniq.begin(), uniq.end());
+    for (const meta::CubeCell& cell : fixture.block.cells)
+        fixture.cells.push_back(cell_of_replica(cell.coord, fixture.labels));
+    return fixture;
+}
+
+// INPUT parse: CubeCoord → interned Cell, over every closed cell (what compose/diff do ×2/op).
+void BM_CoordParse(benchmark::State& state)
+{
+    const CubeFixture fixture{make_cube_fixture()};
+    for (auto _ : state)
+        for (const meta::CubeCell& cell : fixture.block.cells)
+            benchmark::DoNotOptimize(cell_of_replica(cell.coord, fixture.labels));
+    state.counters["cells"] = benchmark::Counter(static_cast<double>(fixture.block.cells.size()));
+}
+BENCHMARK(BM_CoordParse)->Unit(benchmark::kMicrosecond);
+
+// OUTPUT stringify: interned Cell → CubeCoord, over every closed cell (what build/compose emit).
+void BM_CoordStringify(benchmark::State& state)
+{
+    const CubeFixture fixture{make_cube_fixture()};
+    for (auto _ : state)
+        for (const cube::Cell& cell : fixture.cells)
+            benchmark::DoNotOptimize(coord_of_replica(cell, fixture.labels));
+    state.counters["cells"] = benchmark::Counter(static_cast<double>(fixture.cells.size()));
+}
+BENCHMARK(BM_CoordStringify)->Unit(benchmark::kMicrosecond);
+
 // ── reduction primitives — bucket 2 (the SIMD-amenable tail) ──────────────────────────────────
 // Operating points (the sizes compose()/diff() actually feed): the COMPOSE tail-entropy runs over
 // the merged tail (≈ pool − top_k ≈ 192 here); the DIFF divergence runs over counts_of = top_k
