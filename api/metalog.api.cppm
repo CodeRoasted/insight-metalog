@@ -91,6 +91,25 @@ struct CubeCell
     [[nodiscard]] bool operator==(const CubeCell&) const noexcept = default;
 };
 
+// '*' sentinel for a CubeBaseRow's component_id (the empty-component / aggregated-WHERE joint).
+// Numeric max, identical to the cube's internal kStar, so a retained base and a freshly-interned
+// base agree bit-for-bit.
+inline constexpr std::uint32_t kStarComponent{std::numeric_limits<std::uint32_t>::max()};
+
+// One retained interned base joint (DOMAIN-ONLY, never serialised — see CubeBlock::base). The
+// per-(level, component, role) observation the closed cube was built from, with `component_id`
+// an index into CubeBlock::base_component_dict (kStarComponent = empty component). `level` is
+// already cube-normalised (Unknown→Info). Carried so compose()/diff() read the base instead of
+// recover_base-ing it per op.
+struct CubeBaseRow
+{
+    LogLevel level{LogLevel::Info};
+    std::uint32_t component_id{kStarComponent};
+    StructuralRole role{StructuralRole::None};
+    std::uint64_t count{0};
+    [[nodiscard]] bool operator==(const CubeBaseRow&) const noexcept = default;
+};
+
 // The closed cube block (§16.1). `cells` is the condensed (closed) representation
 // in canonical coord-sorted order; the closure regenerates every non-closed cell
 // losslessly. `cell_count`/`raw_cell_count` expose the collapse rate (condensation
@@ -102,7 +121,25 @@ struct CubeBlock
     std::vector<CubeCell> cells;
     std::uint64_t cell_count{0};     // number of closed cells emitted
     std::uint64_t raw_cell_count{0}; // raw (pre-closure) populated-cell count
-    [[nodiscard]] bool operator==(const CubeBlock&) const noexcept = default;
+
+    // DOMAIN-ONLY (in-memory), NEVER serialised — the wire `dto::CubeBlock` (serialize.cpp) omits
+    // both, so the wire format is structurally unchanged ("stores closed cells, not base" is a
+    // WIRE invariant, not violated). The interned base + its sorted component dictionary the cube
+    // was built from, retained so compose_cubes/cube_diff_of read the base directly instead of
+    // recover_base-ing it from the closed cells every op (the §13 re-closure perf lever). Immutable
+    // after construction (emitted atomically with `cells`). Empty on a cube that did not retain it
+    // (e.g. parsed from the wire) → compose/diff fall back to recover_base. A pure cache of the
+    // closed cells (their lossless inverse) ⇒ EXCLUDED from operator== (two cubes with equal closed
+    // cells are equal whether or not the cache is populated).
+    std::vector<CubeBaseRow> base;
+    std::vector<std::string> base_component_dict;
+
+    // Identity is the wire-relevant state only; the retained base is a derived cache (above).
+    [[nodiscard]] bool operator==(const CubeBlock& other) const noexcept
+    {
+        return axes == other.axes && cells == other.cells && cell_count == other.cell_count &&
+               raw_cell_count == other.raw_cell_count;
+    }
 };
 
 // Salience Reservoir entry (Tier 2). A template

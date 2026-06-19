@@ -214,15 +214,100 @@ recover_base(std::span<const InternalCell> closed)
     return out;
 }
 
-// The shared component dictionary = the sorted union of both cubes' WHERE leaves.
-[[nodiscard]] std::vector<std::string> shared_labels(const CubeBlock& lhs, const CubeBlock& rhs)
+// Single-block WHERE dictionary = the sorted distinct component leaves of its closed cells. The
+// fallback dictionary when a cube carries no retained base (e.g. one parsed from the wire).
+[[nodiscard]] std::vector<std::string> labels_of(const CubeBlock& block)
 {
     std::set<std::string> uniq;
-    for (const CubeBlock* block : {&lhs, &rhs})
-        for (const CubeCell& cell : block->cells)
-            if (cell.coord.where && !cell.coord.where->empty())
-                uniq.insert(cell.coord.where->back());
+    for (const CubeCell& cell : block.cells)
+        if (cell.coord.where && !cell.coord.where->empty())
+            uniq.insert(cell.coord.where->back());
     return {uniq.begin(), uniq.end()};
+}
+
+// The merged WHERE dictionary of two cubes = the sorted union of their component dicts. Equal to
+// the old shared_labels (the union of both cubes' cell leaves), since a cube's base dictionary IS
+// its set of observed components == its closed-cell leaves — so the interned ids, the canonical
+// §16.4 order, and therefore the emitted bytes are identical to recover-then-share.
+[[nodiscard]] std::vector<std::string> merge_dicts(std::span<const std::string> lhs,
+                                                   std::span<const std::string> rhs)
+{
+    std::set<std::string> uniq{lhs.begin(), lhs.end()};
+    uniq.insert(rhs.begin(), rhs.end());
+    return {uniq.begin(), uniq.end()};
+}
+
+// Re-intern a base from `old_dict` onto `new_dict` (new_dict ⊇ old_dict). Level/Role ids are
+// dictionary-independent; only the WHERE component-id moves (kStar stays kStar). Integer remap by
+// binary search — no string round-trip. Identity when the dicts coincide (the common case).
+[[nodiscard]] std::map<Cell, std::uint64_t, CellLess>
+remap_base(const std::map<Cell, std::uint64_t, CellLess>& base,
+           std::span<const std::string> old_dict, std::span<const std::string> new_dict)
+{
+    std::map<Cell, std::uint64_t, CellLess> out;
+    for (const auto& [cell, count] : base)
+    {
+        Cell remapped{cell};
+        const std::uint32_t where{cell.value[static_cast<std::size_t>(Dim::Where)]};
+        if (where != kStar)
+        {
+            const auto found{std::lower_bound(new_dict.begin(), new_dict.end(), old_dict[where])};
+            remapped.value[static_cast<std::size_t>(Dim::Where)] =
+                static_cast<std::uint32_t>(found - new_dict.begin());
+        }
+        out[remapped] += count;
+    }
+    return out;
+}
+
+// Internal interned base map → the DOMAIN CubeBaseRow vector retained on the block (canonical
+// CellLess order). Level/Role are pinned on every base cell; Where is the component-id or kStar
+// (== kStarComponent). The inverse of interned_base_of's fast path.
+[[nodiscard]] std::vector<CubeBaseRow>
+to_base_rows(const std::map<Cell, std::uint64_t, CellLess>& base)
+{
+    std::vector<CubeBaseRow> rows;
+    rows.reserve(base.size());
+    for (const auto& [cell, count] : base)
+        rows.push_back(CubeBaseRow{
+            .level = static_cast<LogLevel>(cell.value[static_cast<std::size_t>(Dim::Level)]),
+            .component_id = cell.value[static_cast<std::size_t>(Dim::Where)],
+            .role = static_cast<StructuralRole>(cell.value[static_cast<std::size_t>(Dim::Role)]),
+            .count = count});
+    return rows;
+}
+
+// Retain the interned base + its dictionary on a freshly-built block (the §13 perf lever). Called
+// by close_and_emit so build_closed_cube AND compose_cubes retain atomically with the closed cells.
+void retain_base(CubeBlock& block, const std::map<Cell, std::uint64_t, CellLess>& base,
+                 std::span<const std::string> labels)
+{
+    block.base = to_base_rows(base);
+    block.base_component_dict.assign(labels.begin(), labels.end());
+}
+
+// The interned base + dictionary of a cube WITHOUT recover_base when it was retained (the hot path
+// — every in-memory cube). Fallback for a base-less cube (parsed from the wire / hand-built):
+// reconstruct from the closed cells via the lossless recover_base — its only remaining caller.
+[[nodiscard]] std::pair<std::map<Cell, std::uint64_t, CellLess>, std::vector<std::string>>
+interned_base_of(const CubeBlock& block)
+{
+    if (!block.base.empty())
+    {
+        std::map<Cell, std::uint64_t, CellLess> base;
+        for (const CubeBaseRow& row : block.base)
+        {
+            Cell cell;
+            cell.value[static_cast<std::size_t>(Dim::Level)] = static_cast<std::uint32_t>(row.level);
+            cell.value[static_cast<std::size_t>(Dim::Where)] = row.component_id; // kStarComponent == kStar
+            cell.value[static_cast<std::size_t>(Dim::Role)] = static_cast<std::uint32_t>(row.role);
+            base[cell] += row.count;
+        }
+        return {std::move(base), block.base_component_dict};
+    }
+    std::vector<std::string> labels{labels_of(block)};
+    std::map<Cell, std::uint64_t, CellLess> base{recover_base(internal_cells(block, labels))};
+    return {std::move(base), std::move(labels)};
 }
 
 // Emit the closed cells of a populated cube as the wire block (canonical coord-sorted
@@ -245,6 +330,7 @@ recover_base(std::span<const InternalCell> closed)
     if (!where_chain_is_tree(paths))
         throw std::logic_error{
             "metalog::cube: WHERE chain is not a single-parent tree (SPEC §16.5 MUST-1)"};
+    retain_base(block, base, labels); // emit the interned base atomically with the closed cells
     return block;
 }
 
@@ -384,13 +470,11 @@ std::optional<CubeDiffBlock> cube_diff_of(const CubeBlock& previous, const CubeB
     if (previous.axes != current.axes)
         return std::nullopt;
 
-    const std::vector<std::string> labels{shared_labels(previous, current)};
-    const std::map<Cell, std::uint64_t, CellLess> base_prev{
-        recover_base(internal_cells(previous, labels))};
-    const std::map<Cell, std::uint64_t, CellLess> base_cur{
-        recover_base(internal_cells(current, labels))};
-    const PopulatedCube cube_prev{populate(base_prev)};
-    const PopulatedCube cube_cur{populate(base_cur)};
+    const auto [prev_base, prev_dict]{interned_base_of(previous)};
+    const auto [cur_base, cur_dict]{interned_base_of(current)};
+    const std::vector<std::string> labels{merge_dicts(prev_dict, cur_dict)};
+    const PopulatedCube cube_prev{populate(remap_base(prev_base, prev_dict, labels))};
+    const PopulatedCube cube_cur{populate(remap_base(cur_base, cur_dict, labels))};
 
     CubeDiffBlock diff;
     diff.axes = previous.axes;
@@ -418,11 +502,13 @@ std::optional<CubeBlock> compose_cubes(const CubeBlock& lhs, const CubeBlock& rh
     if (lhs.axes != rhs.axes)
         return std::nullopt;
 
-    const std::vector<std::string> labels{shared_labels(lhs, rhs)};
-    std::map<Cell, std::uint64_t, CellLess> merged{recover_base(internal_cells(lhs, labels))};
-    for (const auto& [cell, count] : recover_base(internal_cells(rhs, labels)))
+    const auto [lhs_base, lhs_dict]{interned_base_of(lhs)};
+    const auto [rhs_base, rhs_dict]{interned_base_of(rhs)};
+    const std::vector<std::string> labels{merge_dicts(lhs_dict, rhs_dict)};
+    std::map<Cell, std::uint64_t, CellLess> merged{remap_base(lhs_base, lhs_dict, labels)};
+    for (const auto& [cell, count] : remap_base(rhs_base, rhs_dict, labels))
         merged[cell] += count;
-    return close_and_emit(merged, labels);
+    return close_and_emit(merged, labels); // re-closes AND retains the merged base
 }
 
 } // namespace insight::metalog::cube
