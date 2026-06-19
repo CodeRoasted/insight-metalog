@@ -7,4 +7,5 @@ export import std;
 export import insight.metalog;
 export import insight.metalog.detail.stats;
 export import insight.metalog.detail.operations;
+export import insight.metalog.detail.cube; // build_closed_cube/compose_cubes/cube_diff_of + BaseRow
 export import insight.canon;
