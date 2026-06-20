@@ -115,7 +115,7 @@ where_paths_of(const std::vector<CubeCell>& cells)
 // 2^(pinned) generalizations. Iterating over subsets of the PINNED dims (not all 2^n
 // masks) is what keeps an empty-component base (Where already starred) from being
 // double-counted into the Where-aggregated cells. Order-independent integer set work.
-[[nodiscard]] PopulatedCube populate(const std::map<Cell, std::uint64_t, CellLess>& base)
+[[nodiscard]] PopulatedCube populate(std::span<const std::pair<Cell, std::uint64_t>> base)
 {
     // Lever B (B1): emit every (gen_cell, mult, src_tuple) generation event into a flat vector,
     // SORT ONCE by cell_precedes, then linear-reduce adjacent equal cells — one bulk cache-friendly
@@ -194,16 +194,38 @@ struct InternalCell
     return best;
 }
 
+// ── the interned base as a flat multiset (Lever B, sibling of populate's flatten) ───────────────
+// The base is accumulate-then-iterate only (no key lookups), so it is a flat vector sorted by
+// cell_precedes (distinct cells, summed counts) — never an RB-tree. Every builder collects
+// (cell, count) events and sort-reduces once. Order is irrelevant to the emitted bytes (populate
+// re-sorts) but kept canonical for the retained base + reproducibility.
+using BaseMultiset = std::vector<std::pair<Cell, std::uint64_t>>;
+
+[[nodiscard]] BaseMultiset sort_reduce_base(std::vector<std::pair<Cell, std::uint64_t>> events)
+{
+    std::ranges::sort(events, [](const auto& lhs, const auto& rhs) noexcept
+                      { return cell_precedes(lhs.first, rhs.first); });
+    BaseMultiset base;
+    base.reserve(events.size());
+    for (const auto& [cell, count] : events)
+    {
+        if (!base.empty() && base.back().first == cell)
+            base.back().second += count;
+        else
+            base.emplace_back(cell, count);
+    }
+    return base;
+}
+
 // Recover the base multiset: the fully-pinned closed cells are the non-empty-component
 // observations directly; each (level, role) carries an empty-component residual
 // = count((L,*,R)) − Σ_w count((L,w,R)), an empty-WHERE base tuple (Where starred).
-[[nodiscard]] std::map<Cell, std::uint64_t, CellLess>
-recover_base(std::span<const InternalCell> closed)
+[[nodiscard]] BaseMultiset recover_base(std::span<const InternalCell> closed)
 {
-    std::map<Cell, std::uint64_t, CellLess> base;
+    std::vector<std::pair<Cell, std::uint64_t>> events;
     for (const InternalCell& entry : closed)
         if (entry.cell.pinned_count() == kNumDims)
-            base[entry.cell] += entry.count;
+            events.emplace_back(entry.cell, entry.count);
 
     // Distinct (Level, Role) pairs that pin both dims — candidates for an empty-WHERE residual.
     std::set<std::pair<std::uint32_t, std::uint32_t>> level_role;
@@ -226,9 +248,9 @@ recover_base(std::span<const InternalCell> closed)
                 entry.cell.value[static_cast<std::size_t>(Dim::Role)] == role_id)
                 pinned_sum += entry.count;
         if (total > pinned_sum)
-            base[star_where] += total - pinned_sum;
+            events.emplace_back(star_where, total - pinned_sum);
     }
-    return base;
+    return sort_reduce_base(std::move(events));
 }
 
 [[nodiscard]] std::vector<InternalCell> internal_cells(const CubeBlock& block,
@@ -267,11 +289,12 @@ recover_base(std::span<const InternalCell> closed)
 // Re-intern a base from `old_dict` onto `new_dict` (new_dict ⊇ old_dict). Level/Role ids are
 // dictionary-independent; only the WHERE component-id moves (kStar stays kStar). Integer remap by
 // binary search — no string round-trip. Identity when the dicts coincide (the common case).
-[[nodiscard]] std::map<Cell, std::uint64_t, CellLess>
-remap_base(const std::map<Cell, std::uint64_t, CellLess>& base,
-           std::span<const std::string> old_dict, std::span<const std::string> new_dict)
+[[nodiscard]] BaseMultiset remap_base(std::span<const std::pair<Cell, std::uint64_t>> base,
+                                      std::span<const std::string> old_dict,
+                                      std::span<const std::string> new_dict)
 {
-    std::map<Cell, std::uint64_t, CellLess> out;
+    std::vector<std::pair<Cell, std::uint64_t>> events;
+    events.reserve(base.size());
     for (const auto& [cell, count] : base)
     {
         Cell remapped{cell};
@@ -282,16 +305,16 @@ remap_base(const std::map<Cell, std::uint64_t, CellLess>& base,
             remapped.value[static_cast<std::size_t>(Dim::Where)] =
                 static_cast<std::uint32_t>(found - new_dict.begin());
         }
-        out[remapped] += count;
+        events.emplace_back(remapped, count);
     }
-    return out;
+    return sort_reduce_base(std::move(events));
 }
 
 // Internal interned base map → the DOMAIN CubeBaseRow vector retained on the block (canonical
 // CellLess order). Level/Role are pinned on every base cell; Where is the component-id or kStar
 // (== kStarComponent). The inverse of interned_base_of's fast path.
 [[nodiscard]] std::vector<CubeBaseRow>
-to_base_rows(const std::map<Cell, std::uint64_t, CellLess>& base)
+to_base_rows(std::span<const std::pair<Cell, std::uint64_t>> base)
 {
     std::vector<CubeBaseRow> rows;
     rows.reserve(base.size());
@@ -306,7 +329,7 @@ to_base_rows(const std::map<Cell, std::uint64_t, CellLess>& base)
 
 // Retain the interned base + its dictionary on a freshly-built block (the §13 perf lever). Called
 // by close_and_emit so build_closed_cube AND compose_cubes retain atomically with the closed cells.
-void retain_base(CubeBlock& block, const std::map<Cell, std::uint64_t, CellLess>& base,
+void retain_base(CubeBlock& block, std::span<const std::pair<Cell, std::uint64_t>> base,
                  std::span<const std::string> labels)
 {
     block.base = to_base_rows(base);
@@ -316,24 +339,25 @@ void retain_base(CubeBlock& block, const std::map<Cell, std::uint64_t, CellLess>
 // The interned base + dictionary of a cube WITHOUT recover_base when it was retained (the hot path
 // — every in-memory cube). Fallback for a base-less cube (parsed from the wire / hand-built):
 // reconstruct from the closed cells via the lossless recover_base — its only remaining caller.
-[[nodiscard]] std::pair<std::map<Cell, std::uint64_t, CellLess>, std::vector<std::string>>
+[[nodiscard]] std::pair<BaseMultiset, std::vector<std::string>>
 interned_base_of(const CubeBlock& block)
 {
     if (!block.base.empty())
     {
-        std::map<Cell, std::uint64_t, CellLess> base;
+        std::vector<std::pair<Cell, std::uint64_t>> events;
+        events.reserve(block.base.size());
         for (const CubeBaseRow& row : block.base)
         {
             Cell cell;
             cell.value[static_cast<std::size_t>(Dim::Level)] = static_cast<std::uint32_t>(row.level);
             cell.value[static_cast<std::size_t>(Dim::Where)] = row.component_id; // kStarComponent == kStar
             cell.value[static_cast<std::size_t>(Dim::Role)] = static_cast<std::uint32_t>(row.role);
-            base[cell] += row.count;
+            events.emplace_back(cell, row.count);
         }
-        return {std::move(base), block.base_component_dict};
+        return {sort_reduce_base(std::move(events)), block.base_component_dict};
     }
     std::vector<std::string> labels{labels_of(block)};
-    std::map<Cell, std::uint64_t, CellLess> base{recover_base(internal_cells(block, labels))};
+    BaseMultiset base{recover_base(internal_cells(block, labels))};
     return {std::move(base), std::move(labels)};
 }
 
@@ -341,7 +365,7 @@ interned_base_of(const CubeBlock& block)
 // order — the flat PopulatedCube is already cell_precedes-sorted, Lever B). raw_cell_count =
 // every populated cell; cell_count = the closed ones (closure == cell). MUST-1: the
 // constructed WHERE chains MUST be a single-parent tree.
-[[nodiscard]] CubeBlock close_and_emit(const std::map<Cell, std::uint64_t, CellLess>& base,
+[[nodiscard]] CubeBlock close_and_emit(std::span<const std::pair<Cell, std::uint64_t>> base,
                                        std::span<const std::string> labels)
 {
     const PopulatedCube cube{populate(base)};
@@ -404,7 +428,7 @@ interned_base_of(const CubeBlock& block)
                                                      .previous_count = count_in(previous, cell),
                                                      .current_count = count_in(current, cell)};
                            }};
-    // `cells` was populated by iterating `mono` (a CellLess-ordered map), so it is
+    // `cells` was populated by iterating `mono` (a cell_precedes-sorted vector), so it is
     // already in canonical cell order; upper/lower inherit that order — no re-sort needed.
     CubeBorder out;
     for (std::size_t i{0}; i < cells.size(); ++i)
@@ -465,7 +489,8 @@ CubeBlock build_closed_cube(std::span<const BaseRow> base_rows)
             uniq.emplace(row.component);
     const std::vector<std::string> labels{uniq.begin(), uniq.end()};
 
-    std::map<Cell, std::uint64_t, CellLess> base;
+    std::vector<std::pair<Cell, std::uint64_t>> events;
+    events.reserve(base_rows.size());
     for (const BaseRow& row : base_rows)
     {
         Cell cell;
@@ -473,9 +498,9 @@ CubeBlock build_closed_cube(std::span<const BaseRow> base_rows)
             static_cast<std::uint32_t>(cube_level(row.level));
         cell.value[static_cast<std::size_t>(Dim::Where)] = component_id(labels, row.component);
         cell.value[static_cast<std::size_t>(Dim::Role)] = static_cast<std::uint32_t>(row.role);
-        base[cell] += row.count;
+        events.emplace_back(cell, row.count);
     }
-    return close_and_emit(base, labels);
+    return close_and_emit(sort_reduce_base(std::move(events)), labels);
 }
 
 CubeCoord cube_location(std::optional<LogLevel> level, std::string_view component)
@@ -531,10 +556,14 @@ std::optional<CubeBlock> compose_cubes(const CubeBlock& lhs, const CubeBlock& rh
     const auto [lhs_base, lhs_dict]{interned_base_of(lhs)};
     const auto [rhs_base, rhs_dict]{interned_base_of(rhs)};
     const std::vector<std::string> labels{merge_dicts(lhs_dict, rhs_dict)};
-    std::map<Cell, std::uint64_t, CellLess> merged{remap_base(lhs_base, lhs_dict, labels)};
-    for (const auto& [cell, count] : remap_base(rhs_base, rhs_dict, labels))
-        merged[cell] += count;
-    return close_and_emit(merged, labels); // re-closes AND retains the merged base
+    const BaseMultiset lhs_remapped{remap_base(lhs_base, lhs_dict, labels)};
+    const BaseMultiset rhs_remapped{remap_base(rhs_base, rhs_dict, labels)};
+    std::vector<std::pair<Cell, std::uint64_t>> events;
+    events.reserve(lhs_remapped.size() + rhs_remapped.size());
+    events.insert(events.end(), lhs_remapped.begin(), lhs_remapped.end());
+    events.insert(events.end(), rhs_remapped.begin(), rhs_remapped.end());
+    // sort-reduce sums the two operands' counts on coincident cells (the old merged[cell] += count).
+    return close_and_emit(sort_reduce_base(std::move(events)), labels); // re-closes AND retains base
 }
 
 } // namespace insight::metalog::cube
