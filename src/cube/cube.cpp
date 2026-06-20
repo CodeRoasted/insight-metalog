@@ -117,7 +117,18 @@ where_paths_of(const std::vector<CubeCell>& cells)
 // double-counted into the Where-aggregated cells. Order-independent integer set work.
 [[nodiscard]] PopulatedCube populate(const std::map<Cell, std::uint64_t, CellLess>& base)
 {
-    PopulatedCube cube;
+    // Lever B (B1): emit every (gen_cell, mult, src_tuple) generation event into a flat vector,
+    // SORT ONCE by cell_precedes, then linear-reduce adjacent equal cells — one bulk cache-friendly
+    // sort instead of B·2ⁿ RB-tree inserts. The reduce is order-independent (COUNT sums, `meet` is
+    // commutative+associative), so the unstable sort is bit-identical. The sort IS the §16.4 order.
+    struct GenEvent
+    {
+        Cell gen;
+        std::uint64_t mult;
+        Cell src;
+    };
+    std::vector<GenEvent> events;
+    events.reserve(base.size() * (std::size_t{1} << kNumDims)); // upper bound: B·2ⁿ
     for (const auto& [tuple, multiplicity] : base)
     {
         std::array<std::size_t, kNumDims> pinned_dims{};
@@ -132,19 +143,35 @@ where_paths_of(const std::vector<CubeCell>& cells)
             for (std::size_t i{0}; i < pinned; ++i)
                 if (((subset >> i) & 1U) != 0U)
                     gen.value[pinned_dims[i]] = tuple.value[pinned_dims[i]];
-            CellAggregate& agg{cube[gen]};
-            const bool seeded{agg.count != 0};
-            agg.count += multiplicity;
-            agg.closure = seeded ? meet(agg.closure, tuple) : tuple;
+            events.push_back(GenEvent{.gen = gen, .mult = multiplicity, .src = tuple});
         }
+    }
+    std::ranges::sort(events, [](const GenEvent& lhs, const GenEvent& rhs) noexcept
+                      { return cell_precedes(lhs.gen, rhs.gen); });
+
+    PopulatedCube cube;
+    cube.reserve(events.size());
+    for (const GenEvent& event : events)
+    {
+        if (!cube.empty() && cube.back().cell == event.gen)
+        {
+            cube.back().agg.count += event.mult;
+            cube.back().agg.closure = meet(cube.back().agg.closure, event.src);
+        }
+        else
+            cube.push_back(PopulatedCell{
+                .cell = event.gen, .agg = CellAggregate{.count = event.mult, .closure = event.src}});
     }
     return cube;
 }
 
+// Binary search the cell_precedes-sorted PopulatedCube (Lever B): count(cell), 0 if absent.
 [[nodiscard]] std::uint64_t count_in(const PopulatedCube& cube, const Cell& cell) noexcept
 {
-    const auto found{cube.find(cell)};
-    return found == cube.end() ? std::uint64_t{0} : found->second.count;
+    const auto found{std::lower_bound(cube.begin(), cube.end(), cell,
+                                      [](const PopulatedCell& populated, const Cell& target) noexcept
+                                      { return cell_precedes(populated.cell, target); })};
+    return (found != cube.end() && found->cell == cell) ? found->agg.count : std::uint64_t{0};
 }
 
 // ── lossless base recovery from closed cells (§16.4) ────────────────────────────
@@ -311,7 +338,7 @@ interned_base_of(const CubeBlock& block)
 }
 
 // Emit the closed cells of a populated cube as the wire block (canonical coord-sorted
-// order — the PopulatedCube map already iterates in CellLess order). raw_cell_count =
+// order — the flat PopulatedCube is already cell_precedes-sorted, Lever B). raw_cell_count =
 // every populated cell; cell_count = the closed ones (closure == cell). MUST-1: the
 // constructed WHERE chains MUST be a single-parent tree.
 [[nodiscard]] CubeBlock close_and_emit(const std::map<Cell, std::uint64_t, CellLess>& base,
@@ -346,15 +373,13 @@ interned_base_of(const CubeBlock& block)
     const auto emergent{[&](const Cell& cell) noexcept
                         { return count_in(anti, cell) <= kThetaWas && count_in(mono, cell) >= kThetaNow; }};
 
-    // Every emergent cell has count(mono) ≥ θ_now ≥ 1, so it is a key of `mono`.
+    // Every emergent cell has count(mono) ≥ θ_now ≥ 1, so it is a member of `mono`. `mono` is
+    // cell_precedes-sorted (Lever B), so the emergent `cells` are too → parent lookup is a binary
+    // search over them, no std::map index.
     std::vector<Cell> cells;
-    std::map<Cell, std::size_t, CellLess> index;
-    for (const auto& [cell, agg] : mono)
-        if (emergent(cell))
-        {
-            index.emplace(cell, cells.size());
-            cells.push_back(cell);
-        }
+    for (const PopulatedCell& populated : mono)
+        if (emergent(populated.cell))
+            cells.push_back(populated.cell);
 
     std::vector<bool> has_parent(cells.size(), false);
     std::vector<bool> has_child(cells.size(), false);
@@ -365,11 +390,12 @@ interned_base_of(const CubeBlock& block)
                 continue;
             Cell parent{cells[i]};
             parent.value[dim] = kStar; // un-pin one dim = one step toward the apex
-            const auto found{index.find(parent)};
-            if (found == index.end())
+            const auto found{std::lower_bound(cells.begin(), cells.end(), parent, cell_precedes)};
+            if (found == cells.end() || *found != parent)
                 continue; // parent not emergent
             has_parent[i] = true;
-            has_child[found->second] = true; // the parent has an emergent child (cells[i])
+            has_child[static_cast<std::size_t>(found - cells.begin())] =
+                true; // the parent has an emergent child (cells[i])
         }
 
     const auto border_cell{[&](const Cell& cell)

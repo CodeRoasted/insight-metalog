@@ -131,7 +131,18 @@ struct CellAggregate
     std::uint64_t count{0};
     Cell closure{};
 };
-using PopulatedCube = std::map<Cell, CellAggregate, CellLess>;
+
+// One populated cell = its coordinate + aggregate. Lever B: PopulatedCube is a FLAT vector sorted
+// by cell_precedes — built by populate()'s collect→sort-once→linear-reduce, not an RB-tree of
+// B·2ⁿ pointer-chasing inserts. The sort IS the §16.4 canonical order, so close/border iterate it
+// directly and count_in binary-searches it. Reduce is order-independent (COUNT sums, `meet` is
+// commutative+associative) ⇒ an unstable sort stays bit-identical. [[cube-reclosure-rework-inmem-wire-split]]
+struct PopulatedCell
+{
+    Cell cell;
+    CellAggregate agg;
+};
+using PopulatedCube = std::vector<PopulatedCell>;
 
 // ── Severity normalisation ─────────────────────────────────────────────────────
 // Fold LogLevel::Unknown → Info so the Level value-id is bijective with its spec
