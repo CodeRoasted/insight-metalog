@@ -243,4 +243,11 @@ class MetaLogEngine
 // `delta = current - previous`. See SPEC §13.
 [[nodiscard]] MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current);
 
+// §13 cardinality monitor (cube_perf_and_collapse.md C2): the cube's distinct-value counts +
+// closed-cell count, as a PURE function of the closed cube. Observability only — a deterministic
+// function of the counts that NEVER feeds the deterministic content stream; the consumer (the eidos
+// pipeline) emits the gated WARN naming the offending axis. metalog excludes spdlog by design, so
+// the compute lives here and the log fires where logging does (Founder ruling 2026-06-20).
+[[nodiscard]] CubeCardinalityStat cube_cardinality(const CubeBlock& cube);
+
 } // namespace insight::metalog

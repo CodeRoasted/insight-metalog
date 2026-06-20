@@ -89,6 +89,54 @@ TEST(CubeBlock, OffByDefault)
     EXPECT_FALSE(doc.has_cube) << "the cube is additive — absent unless emit_cube is set";
 }
 
+// ── §13 cardinality monitor (the PURE compute; the eidos pipeline emits the WARN) ───────────────
+
+TEST(CubeCardinality, CountsDistinctPerAxisFromTheClosedCube)
+{
+    meta::MetaLogEngine engine{cube_cfg()};
+    engine.open_window(std::chrono::system_clock::time_point{});
+    // 3 distinct components, 2 distinct levels (Info/Error), 1 role (None).
+    engine.ingest_event(ev("a", LogLevel::Info, "auth"));
+    engine.ingest_event(ev("b", LogLevel::Error, "db"));
+    engine.ingest_event(ev("c", LogLevel::Info, "cache"));
+    const auto doc{engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
+    ASSERT_TRUE(doc.has_cube);
+
+    const meta::CubeCardinalityStat card{meta::cube_cardinality(doc.cube)};
+    EXPECT_EQ(card.per_axis[static_cast<std::size_t>(meta::CardinalityAxis::Component)], 3U)
+        << "distinct components auth/db/cache";
+    EXPECT_EQ(card.per_axis[static_cast<std::size_t>(meta::CardinalityAxis::Level)], 2U)
+        << "distinct levels Info/Error";
+    EXPECT_EQ(card.per_axis[static_cast<std::size_t>(meta::CardinalityAxis::Role)], 1U)
+        << "single role None";
+    EXPECT_EQ(card.cells, doc.cube.cell_count);
+    EXPECT_FALSE(card.warns()) << "3 components ≪ warn threshold "
+                               << meta::CubeCardinalityStat::kComponentWarn;
+    EXPECT_EQ(card.offending_axis(), "none");
+}
+
+TEST(CubeCardinality, ThresholdVerdictsNameTheOffendingAxis)
+{
+    using Stat = meta::CubeCardinalityStat;
+    const Stat ok{.cells = 10, .per_axis = {2, 5, 1}};
+    EXPECT_FALSE(ok.warns());
+    EXPECT_FALSE(ok.hard());
+    EXPECT_EQ(ok.offending_axis(), "none");
+
+    const Stat warn{.cells = 10, .per_axis = {2, Stat::kComponentWarn, 1}};
+    EXPECT_TRUE(warn.warns());
+    EXPECT_FALSE(warn.hard());
+    EXPECT_EQ(warn.offending_axis(), "component") << "component is the unbounded WHERE axis";
+    EXPECT_EQ(warn.offending_count(), Stat::kComponentWarn);
+
+    const Stat hard_component{.cells = 10, .per_axis = {2, Stat::kComponentHard, 1}};
+    EXPECT_TRUE(hard_component.hard());
+
+    const Stat cells_breach{.cells = Stat::kCellsWarn, .per_axis = {2, 5, 1}};
+    EXPECT_TRUE(cells_breach.warns());
+    EXPECT_EQ(cells_breach.offending_axis(), "cells") << "cell count breaches with bounded axes";
+}
+
 TEST(CubeBlock, ReferenceAxesAndAggregateTotal)
 {
     meta::MetaLogEngine engine{cube_cfg()};
