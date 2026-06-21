@@ -84,9 +84,17 @@ echo "build parallelism: $JOBS jobs (MemAvailable=${mem_gb}GB cpu=$ncpu)"
 #       - once /opt/gcc-15.3 is provisioned: DETERMINISM_LEGS="gcc15-libstdcxx clang21-libcxx" →
 #         gcc(built) + clang(built) + MSVC(golden) = the full 3-leg diagonal.
 #       - DETERMINISM_MSVC=0 drops the MSVC anchor (pure Linux cross-stdlib run).
+# The conan PROFILE per leg is overridable so the SAME tower gate runs on a 2nd ISA: the arm64
+# determinism leg sets DETERMINISM_GCC_PROFILE=linux-gcc15-arm64-release /
+# DETERMINISM_CLANG_PROFILE=linux-clang21-libcxx-arm64-release (the only x86↔arm64 difference is the
+# profile's arch/-march; g++-15/clang++-21 are wired identically on both ISAs). Defaults are the x86
+# profiles → the x86 gate is byte-unchanged. The MSVC golden anchor is shared, so an arm64 corpus
+# matching it IS the cross-ISA bit-identity assertion (insight_determinism_model.md § cross-ISA).
+GCC_PROFILE="${DETERMINISM_GCC_PROFILE:-linux-gcc15-release}"
+CLANG_PROFILE="${DETERMINISM_CLANG_PROFILE:-linux-clang21-libcxx-release}"
 declare -A LEG_SPEC=(
-  [gcc15-libstdcxx]="g++-15:gcc-15:linux-gcc15-release"     # cxx-bin:cc-bin:conan-profile
-  [clang21-libcxx]="clang++-21:clang-21:linux-clang21-libcxx-release"
+  [gcc15-libstdcxx]="g++-15:gcc-15:$GCC_PROFILE"     # cxx-bin:cc-bin:conan-profile
+  [clang21-libcxx]="clang++-21:clang-21:$CLANG_PROFILE"
 )
 read -ra LINUX_LEGS <<<"${DETERMINISM_LEGS:-clang21-libcxx}"
 DETERMINISM_MSVC="${DETERMINISM_MSVC:-1}"
