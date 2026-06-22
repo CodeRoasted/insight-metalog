@@ -1,23 +1,25 @@
 // NOLINTBEGIN
-// bench_compose_diff_cube.cpp — the STAGE-LEVEL cost attribution for the 1.6.0 perf keep-or-kill
-// (Part A of technical_docs/architecture/cube_perf_and_collapse.md §A2/§A3). Where the detection
-// bench_cube_tick measures the cube's share of the whole matured pyramid tick (the §13 number),
-// this isolates the per-call cost of each stage compose()/diff() spend their time in, so the §A2
-// three buckets can be split and the §A3 SIMD decision grounded in a number:
+// bench_compose_diff_cube.cpp — standing stage-level perf + determinism coverage for the cube's
+// per-call cost inside compose()/diff() (Cube A, kept product per adr/0018-cube-a-attribution.md;
+// design: technical_docs/architecture/cube_perf_and_collapse.md §A2/§A3). Where the detection
+// bench_cube_tick measures the cube's share of the whole matured pyramid tick, this isolates the
+// per-call cost of the pieces compose()/diff() spend their time in, so a regression in any one is
+// attributable:
 //
-//   bucket 1 — map/string-union plumbing : compose()/diff() MINUS the reductions MINUS the cube.
-//   bucket 2 — reduction tail            : shannon_entropy_bits / divergences / histogram_js
-//                                          (the ONLY SIMD-amenable part — contiguous count work).
-//   bucket 3 — cube re-closure           : build_closed_cube / compose_cubes / cube_diff_of
-//                                          (= the compose()/diff() cube=on − cube=off delta).
+//   piece 1 — map/string-union plumbing : compose()/diff() MINUS the reductions MINUS the cube.
+//   piece 2 — reduction tail            : shannon_entropy_bits / divergences / histogram_js
+//                                          (contiguous count work — the SIMD-amenable part).
+//   piece 3 — cube re-closure           : build_closed_cube / compose_cubes / cube_diff_of
+//                                          (the cube=on − cube=off gap inside compose()/diff()).
 //
-// The §A3 verdict falls out of comparing bucket 2's primitives against the compose()/diff()
-// totals: if the reductions are a thin slice, SIMD on them cannot move the tick and stays parked
-// (the lever is the cube — Part B's dimensional-shrink — not vectorising the reduction tail).
+// Comparing piece 2's primitives against the compose()/diff() totals locates where the stage cost
+// sits: the reductions are a thin slice, so the re-closure round-trip is the lever, not the
+// reduction tail (§A3; the interned-cube rework, [[cube-reclosure-rework-inmem-wire-split]]).
 //
-// Determinism (SPEC §16.9): BM_StageCube_Determinism re-runs build_closed_cube + compose_cubes +
-// cube_diff_of and aborts if the content differs across runs. The corpus uses a local splitmix64
-// (portable integer RNG, never a std::*_distribution — [[std-distributions-not-cross-stdlib-portable]]).
+// Determinism (SPEC §16.9, SACRED): BM_StageCube_Determinism re-runs build_closed_cube +
+// compose_cubes + cube_diff_of and aborts if the content differs across runs — the determinism
+// guard for the kept cube's stage path. The corpus uses a local splitmix64 (portable integer RNG,
+// never a std::*_distribution — [[std-distributions-not-cross-stdlib-portable]]).
 
 #include <benchmark/benchmark.h>
 
@@ -160,7 +162,7 @@ total_of(const std::unordered_map<std::string, std::uint64_t>& counts) noexcept
     return total;
 }
 
-// ── compose() / diff() — bucket 1 (no-cube) + bucket 3 delta (cube=on − cube=off) ─────────────
+// ── compose() / diff() — piece 1 (no-cube) + piece 3 (the cube=on − cube=off gap) ─────────────
 void BM_Compose(benchmark::State& state)
 {
     const bool emit_cube{state.range(0) != 0};
@@ -193,7 +195,7 @@ void BM_Diff(benchmark::State& state)
 }
 BENCHMARK(BM_Diff)->Arg(0)->Arg(1)->Unit(benchmark::kMicrosecond);
 
-// ── cube primitives — bucket 3 in isolation ──────────────────────────────────────────────────
+// ── cube primitives — piece 3 in isolation ───────────────────────────────────────────────────
 [[nodiscard]] std::vector<cube::BaseRow> make_base_rows(std::span<const std::string> components)
 {
     // The per-event (level, component, role) joint at representative low cardinality. Owns no
@@ -389,12 +391,12 @@ void BM_CoordStringify(benchmark::State& state)
 }
 BENCHMARK(BM_CoordStringify)->Unit(benchmark::kMicrosecond);
 
-// ── reduction primitives — bucket 2 (the SIMD-amenable tail) ──────────────────────────────────
+// ── reduction primitives — piece 2 (the SIMD-amenable tail) ───────────────────────────────────
 // Operating points (the sizes compose()/diff() actually feed): the COMPOSE tail-entropy runs over
 // the merged tail (≈ pool − top_k ≈ 192 here); the DIFF divergence runs over counts_of = top_k
 // (≤64 per side, union ≤128). The sweeps bracket those so the per-call cost can be read at the
 // real point. The reductions are det_log2_fixed (bit-serial integer log2, no libm) — the only
-// SIMD-amenable bucket, but per A3 their cost rides det_log2_fixed per element, not the add.
+// SIMD-amenable piece, but per §A3 their cost rides det_log2_fixed per element, not the add.
 void BM_ShannonEntropy(benchmark::State& state)
 {
     const auto n{static_cast<std::size_t>(state.range(0))};
@@ -455,6 +457,21 @@ void BM_StageCube_Determinism(benchmark::State& state)
         std::cerr << "bench_compose_diff_cube DETERMINISM FAILURE: compose_cubes not "
                      "bit-identical across runs\n";
         std::abort();
+    }
+    // cube_diff_of over two distinct deterministic cubes (the closed base vs its self-compose,
+    // which doubles every count) — the kept cube's diff path must be bit-identical run-to-run too.
+    // This is the byte-identical-cell guard the retired do-operator harness used to provide, now on
+    // the PRODUCTION cube (adr/0018 §Consequences): a non-deterministic diff cell aborts loudly.
+    if (composed_a)
+    {
+        const auto diff_a{cube::cube_diff_of(first, *composed_a)};
+        const auto diff_b{cube::cube_diff_of(first, *composed_a)};
+        if (diff_a != diff_b)
+        {
+            std::cerr << "bench_compose_diff_cube DETERMINISM FAILURE: cube_diff_of not "
+                         "bit-identical across runs\n";
+            std::abort();
+        }
     }
     for (auto _ : state)
     {
