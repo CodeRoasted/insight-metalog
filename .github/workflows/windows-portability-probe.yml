@@ -191,7 +191,7 @@ jobs:
 
       - name: Upload MSVC determinism output @ ${{ matrix.tag }} (divergence localization)
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: metalog-msvc-determinism-${{ matrix.tag }}
           path: metalog_msvc_determinism.txt
