@@ -70,7 +70,6 @@ set_target_properties(insight_metalog PROPERTIES EXPORT_NAME metalog
     CXX_SCAN_FOR_MODULES ON CXX_MODULE_STD ON)
 target_compile_features(insight_metalog PUBLIC cxx_std_23)
 add_library(insight::metalog ALIAS insight_metalog)
-add_library(insight::metalog_module ALIAS insight_metalog) # 1.5.1: wrapper retired
 
 # canon is imported by metalog's module units (consumers recompile them) → PUBLIC module link.
 # picosha2 is impl-only (engine.cpp, textual GMF). glaze (visible=False) must NOT reach the export
