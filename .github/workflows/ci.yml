@@ -28,7 +28,7 @@ jobs:
       CR_PIN_INSIGHT_CANON: '1.5.6'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Provision gcc-15.3 toolchain (PR124309 fix; replaces PPA gcc-15 = 15.2)
         uses: CodeRoasted/malf-toolchain/.github/actions/setup-gcc153@main

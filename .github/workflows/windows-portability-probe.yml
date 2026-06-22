@@ -54,10 +54,10 @@ jobs:
       CONAN_HOME: ${{ github.workspace }}/.conan2
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Check out malf-toolchain into malf/ (canonical conan profile; public, anonymous)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: CodeRoasted/malf-toolchain
           path: malf
@@ -106,7 +106,7 @@ jobs:
           Copy-Item malf/profiles/windows-msvc-release "$env:CONAN_HOME/profiles/windows-msvc-release"
 
       - name: Check out insight-canon source (the MSVC port lives on canon's main, not in any conan remote)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: CodeRoasted/insight-canon
           ref: main
