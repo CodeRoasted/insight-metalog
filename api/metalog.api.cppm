@@ -43,8 +43,36 @@ struct TopKEntry
     std::uint64_t count{0};
     double frequency{0.0};
     std::optional<LogLevel> dominant_level;
+    // The template's dominant functional source (canon `component` — "src/auth",
+    // a build job): the per-template WHERE *label* (sift_where_attribution.md
+    // D-WHERE-2). Populated from dominant_component_of(bucket.component_counts) at
+    // build_top_k, independent of the cube, when emit_where || emit_cube. EMPTY
+    // (disengaged) when the format carried no component — never "" masquerading as
+    // a location. Whether it is *surfaced* on a finding is decided window-level off
+    // the acquisition block (D-WHERE-6), not by this field's presence.
+    std::optional<std::string> dominant_component;
     // Empty unless MetaLogConfig::max_param_histograms > 0.
     std::vector<FieldHistogram> field_histograms;
+};
+
+// Per-window acquisition self-assessment (SPEC §16.x; sift_where_attribution.md
+// D-WHERE-4/5). Raw, integer STRUCTURAL FACTS about which dimensions a window
+// reliably carries — so each consumer (WHERE, the cube axis, the format-relative
+// gate) applies its OWN predicate over the same facts ("the window declares its
+// own cubeability"), instead of four format checks that drift. NOT a baked verdict.
+// A pure function of the frozen ordered window (no float, no float→int, no
+// wall-clock); the counts are order-independent → bit-identical cross-stdlib.
+// Present only when emit_where || emit_cube. Extensible-by-addition: burstiness /
+// mixing_proxy / the adaptive convergence-window land later (measure-gated /
+// OTEL-gated) — the seed below is the `component` axis only.
+struct AcquisitionBlock
+{
+    // `component`-axis coverage facts. records_with_component = events that carried
+    // a non-empty canon `component`; distinct_components = distinct values seen.
+    // lines_observed is NOT duplicated here — read it from WindowBlock.
+    std::uint64_t records_with_component{0};
+    std::uint64_t distinct_components{0};
+    [[nodiscard]] bool operator==(const AcquisitionBlock&) const noexcept = default;
 };
 
 // ── Cube (SPEC §16, EXPERIMENTAL) ──────────────────────────────
@@ -211,6 +239,12 @@ struct ReservoirEntry
     std::uint64_t count{0};
     double frequency{0.0};
     std::optional<LogLevel> dominant_level;
+    // The template's dominant functional source (canon `component`) — the WHERE
+    // *label* (D-WHERE-2), mirroring TopKEntry. Populated independent of the cube
+    // when emit_where || emit_cube; EMPTY when the format carried no component.
+    // Distinct from `cube_coord` (the §16.6 LOCATION cross, emit_cube-only): this
+    // is the cube-independent carrier the Sift WHERE rides.
+    std::optional<std::string> dominant_component;
     StructuralRole structural_role{StructuralRole::None};
     // Structural-surprise band (0..100): how off-path this template is, derived
     // from the lowest-probability incoming transition in the behavior graph. >0
@@ -461,6 +495,13 @@ struct MetaLogDocument
     // so the synthesized copy is always correct. See [[msvc-port-stdlib-isms]].
     bool has_cube{false};
     CubeBlock cube{};
+    // Per-window acquisition self-assessment (sift_where_attribution.md D-WHERE-4):
+    // the window's structural facts seeding the WHERE disposition (and, later, the
+    // cube-axis / format-relative gate). Present only when the producer set
+    // emit_where (or emit_cube). All-integer, so std::optional is sound here (the
+    // bool+inline workaround the cube needs is for vector-owning optionals copied in
+    // consumer module TUs; AcquisitionBlock is trivially copyable).
+    std::optional<AcquisitionBlock> acquisition;
 };
 
 // ── Producer configuration ─────────────────────────────────────
@@ -539,6 +580,19 @@ struct MetaLogConfig
     // emitting a cube MUST bump canonicalization_version (the cube joins the §2.4
     // comparability contract) — that bump is the caller's, set via the field above.
     bool emit_cube{false};
+
+    // WHERE-carrier emission (sift_where_attribution.md D-WHERE-3) — additive,
+    // gated. false (default) = no per-template `dominant_component`, no `acquisition`
+    // block, zero overhead on the InSight streaming hot path (one predicted-not-taken
+    // branch per ingest_event, the same discipline as emit_cube). true populates
+    // Bucket::component_counts, the per-template `dominant_component`, and the
+    // per-window `acquisition` block — independent of the cube. Sift's diff_logs sets
+    // it true. emit_cube IMPLIES emit_where (the cube already needs the component
+    // marginal), so every gate below tests `emit_cube || emit_where`. Unlike the cube
+    // (§16) this is NOT part of the canonicalization_version contract: canon
+    // extraction is unchanged, only the leaf schema gains a derived field + block
+    // (metalog schema bump, D-WHERE-13).
+    bool emit_where{false};
 
     // Re-derivation source (SPEC §15). When set, close_window stamps a coordinate
     // on the document (source_ref + the window's event-time bounds). The engine does

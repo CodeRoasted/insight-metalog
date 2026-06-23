@@ -433,7 +433,7 @@ TEST(CubeDeterminism, ByteIdentityGolden)
     const std::string digest{picosha2::hash256_hex_string(combined)};
 
     constexpr std::string_view kGolden{
-        "b211fe7afafe85f754facf0864af506451fbb90077557411078f7651dc434e36"};
+        "9eb68b9c3a16643ead38581c8696507547880dad62ee802dc73066c9afb7352b"};
     EXPECT_EQ(digest, kGolden) << "cube wire bytes changed — re-derive across the cross-stdlib "
                                   "diagonal if intentional.\nactual combined:\n"
                                << combined;

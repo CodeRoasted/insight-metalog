@@ -204,6 +204,78 @@ BENCHMARK(BM_MetaLogIngest_FieldHistograms)
     ->Arg(3) // track all 3 param slots
     ->Unit(benchmark::kMicrosecond);
 
+// ── WHERE-carrier ingest-cost benchmark (D-WHERE-3 graduate-or-keep) ───────────
+//
+// Measures the marginal cost of populating the per-template component marginal
+// (Bucket::component_counts) inside ingest_event() when emit_where is on — the
+// open question in the WHERE design: is it negligible enough to graduate to
+// unconditional (delete the flag), or does the string-keyed map increment justify
+// keeping the default-false gate?
+//
+// state.range(0): 0 → emit_where OFF (baseline, one predicted-not-taken branch)
+//                 1 → emit_where ON  (component_counts increment per located event)
+//
+// Every event carries a low-card component (the realistic structured case), so the
+// ON path does its full work (no empty-component short-circuit). Compare ns_per_event
+// against the FieldHistograms baseline to size the cost relative to level_counts (an
+// enum-keyed increment, always on) — the component marginal is the same shape PLUS a
+// short-string allocation + hash for the map key.
+void BM_MetaLogIngest_Where(benchmark::State& state)
+{
+    const bool emit_where{state.range(0) != 0};
+
+    meta::MetaLogConfig config;
+    config.top_k_size = 64;
+    config.top_ngrams_size = 32;
+    config.emit_where = emit_where;
+
+    constexpr std::size_t kEvents{1'000};
+    // A handful of low-card subsystems — the F3b functional-source shape (NOT host).
+    static constexpr std::array<std::string_view, 4> kComponents{"src/auth", "src/db", "src/api",
+                                                                 "src/core"};
+    static constexpr std::array<std::string_view, 4> kTemplates{
+        "login ok", "pool timeout", "request served <*>", "cache warmed"};
+
+    std::vector<tok::CanonicalEvent> events;
+    events.reserve(kEvents);
+    {
+        std::mt19937 rng{0x7E57C0DE};
+        std::uniform_int_distribution<std::size_t> pick{0, kComponents.size() - 1};
+        for (std::size_t i{0}; i < kEvents; ++i)
+        {
+            tok::CanonicalEvent ev;
+            const std::size_t idx{pick(rng)};
+            ev.template_str = kTemplates[idx];
+            ev.component = kComponents[idx]; // static-storage views stay valid
+            ev.level = insight::LogLevel::Info;
+            events.push_back(ev);
+        }
+    }
+
+    const auto t0{std::chrono::system_clock::now()};
+    std::int64_t total_events{0};
+
+    for (auto _ : state)
+    {
+        meta::MetaLogEngine engine{config};
+        engine.open_window(t0);
+        for (const auto& ev : events)
+            engine.ingest_event(ev);
+        auto doc{engine.close_window(t0 + std::chrono::seconds(60))};
+        benchmark::DoNotOptimize(doc.stats.top_k.size());
+        total_events += static_cast<std::int64_t>(kEvents);
+    }
+
+    state.SetItemsProcessed(total_events);
+    state.counters["ns_per_event"] = benchmark::Counter(
+        static_cast<double>(total_events),
+        benchmark::Counter::kIsRate | benchmark::Counter::kInvert, benchmark::Counter::kIs1000);
+}
+BENCHMARK(BM_MetaLogIngest_Where)
+    ->Arg(0) // emit_where off (baseline)
+    ->Arg(1) // emit_where on
+    ->Unit(benchmark::kMicrosecond);
+
 } // namespace
 
 // NOLINTEND

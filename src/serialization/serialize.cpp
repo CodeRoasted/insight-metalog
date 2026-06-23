@@ -92,8 +92,9 @@ struct TopKEntry
     std::string template_id;
     std::uint64_t count{0};
     double frequency{0.0};
-    std::optional<std::string> tmpl;  // key "template"; omitted when empty
-    std::optional<std::string> level; // spec level string; omitted when absent
+    std::optional<std::string> tmpl;      // key "template"; omitted when empty
+    std::optional<std::string> level;     // spec level string; omitted when absent
+    std::optional<std::string> component; // WHERE label (D-WHERE-2); omitted when absent
     // SPEC §3.5 per-param histograms. Present only when the producer enabled
     // max_param_histograms (batch / full-fidelity path); omitted otherwise
     // (skip_null_members), so default and streaming documents are byte-unchanged.
@@ -104,9 +105,10 @@ struct TopKEntry
     struct glaze
     {
         using T = TopKEntry;
-        static constexpr auto value = glz::object(
-            "template_id", &T::template_id, "count", &T::count, "frequency", &T::frequency,
-            "template", &T::tmpl, "level", &T::level, "param_histograms", &T::param_histograms);
+        static constexpr auto value =
+            glz::object("template_id", &T::template_id, "count", &T::count, "frequency",
+                        &T::frequency, "template", &T::tmpl, "level", &T::level, "component",
+                        &T::component, "param_histograms", &T::param_histograms);
     };
 };
 
@@ -156,6 +158,7 @@ struct ReservoirEntry
     double frequency{0.0};
     std::optional<std::string> tmpl;            // key "template"; omitted when empty
     std::optional<std::string> level;           // spec level string; omitted when absent
+    std::optional<std::string> component;       // WHERE label (D-WHERE-2); omitted when absent
     std::optional<std::string> structural_role; // omitted when None
     std::uint32_t structural_surprise{0};
     std::uint32_t novelty{0};
@@ -166,13 +169,22 @@ struct ReservoirEntry
     struct glaze
     {
         using T = ReservoirEntry;
-        static constexpr auto value =
-            glz::object("template_id", &T::template_id, "count", &T::count, "frequency",
-                        &T::frequency, "template", &T::tmpl, "level", &T::level, "structural_role",
-                        &T::structural_role, "structural_surprise", &T::structural_surprise,
-                        "novelty", &T::novelty, "salience", &T::salience, "within_window_ordinal",
-                        &T::within_window_ordinal, "cube_coord", &T::cube_coord);
+        static constexpr auto value = glz::object(
+            "template_id", &T::template_id, "count", &T::count, "frequency", &T::frequency,
+            "template", &T::tmpl, "level", &T::level, "component", &T::component, "structural_role",
+            &T::structural_role, "structural_surprise", &T::structural_surprise, "novelty",
+            &T::novelty, "salience", &T::salience, "within_window_ordinal", &T::within_window_ordinal,
+            "cube_coord", &T::cube_coord);
     };
+};
+
+// Per-window acquisition self-assessment (D-WHERE-4/5). The window's raw structural
+// facts (the `component`-axis coverage seed); a consumer applies its own predicate.
+// All-integer → genuinely cross-machine bit-identical. Omitted when not emitted.
+struct Acquisition
+{
+    std::uint64_t records_with_component{0};
+    std::uint64_t distinct_components{0};
 };
 
 struct Stats
@@ -278,8 +290,9 @@ struct Document
     std::optional<std::vector<Provenance>> provenance;
     std::optional<std::string> canonicalization_version; // §2.4 processing identifiers
     std::optional<std::string> retention_profile;
-    std::optional<Coordinate> coordinate; // §15 re-derivation coordinate
-    std::optional<CubeBlock> cube;        // §16 intra-window cube; omit when not emitted
+    std::optional<Coordinate> coordinate;     // §15 re-derivation coordinate
+    std::optional<CubeBlock> cube;            // §16 intra-window cube; omit when not emitted
+    std::optional<Acquisition> acquisition;   // D-WHERE-4 self-assessment; omit when not emitted
 };
 
 // ── Diff DTO (SPEC §13) ──
@@ -511,6 +524,8 @@ dto::TopKEntry make_top_k_entry(const TopKEntry& entry)
         row.tmpl = entry.template_str;
     if (entry.dominant_level)
         row.level = level_to_spec_string(*entry.dominant_level);
+    if (entry.dominant_component)
+        row.component = *entry.dominant_component;
     if (!entry.field_histograms.empty())
     {
         std::vector<dto::ParamHistogram> hists;
@@ -541,6 +556,8 @@ dto::ReservoirEntry make_reservoir_entry(const ReservoirEntry& entry)
         row.tmpl = entry.template_str;
     if (entry.dominant_level)
         row.level = level_to_spec_string(*entry.dominant_level);
+    if (entry.dominant_component)
+        row.component = *entry.dominant_component;
     if (entry.structural_role != StructuralRole::None)
         row.structural_role = std::string{to_string(entry.structural_role)};
     row.structural_surprise = entry.structural_surprise;
@@ -662,6 +679,10 @@ dto::Document make_document(const MetaLogDocument& doc)
         out.coordinate = make_coordinate(*doc.coordinate);
     if (doc.has_cube)
         out.cube = make_cube(doc.cube);
+    if (doc.acquisition)
+        out.acquisition = dto::Acquisition{
+            .records_with_component = doc.acquisition->records_with_component,
+            .distinct_components = doc.acquisition->distinct_components};
     return out;
 }
 

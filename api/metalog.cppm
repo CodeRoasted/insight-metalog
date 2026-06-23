@@ -70,9 +70,10 @@ class MetaLogEngine
         // Dominant role feeds the salience severity signal (Terminator = severe).
         std::unordered_map<StructuralRole, std::uint64_t> role_counts;
         // Functional-source (canon `component`) counts seen for this template.
-        // Populated only when config_.emit_cube. The dominant component is the
-        // template's WHERE-path for the §16.6 reservoir→cell cross. Not the cube
-        // itself (the cube is the per-EVENT joint, accumulated in cube_base_).
+        // Populated when config_.emit_cube || config_.emit_where. The dominant
+        // component is the template's WHERE label (the cube-independent Sift carrier,
+        // D-WHERE-2) and its §16.6 reservoir→cell WHERE-path. Not the cube itself
+        // (the cube is the per-EVENT joint, accumulated in cube_base_ under emit_cube).
         std::unordered_map<std::string, std::uint64_t> component_counts;
         // Per-param value histograms; index i == CanonicalEvent::params[i].
         // Populated only when config_.max_param_histograms > 0.
@@ -170,6 +171,10 @@ class MetaLogEngine
     // Intra-window closed cube (SPEC §16), built from the per-event (level, component,
     // role) joint accumulated in cube_base_. Only when config_.emit_cube.
     void build_cube(MetaLogDocument& doc) const;
+    // Per-window acquisition self-assessment (D-WHERE-4/5): the window's integer
+    // structural facts (the `component`-axis coverage seed), aggregated from the
+    // buckets' component marginals. Only when config_.emit_where || config_.emit_cube.
+    void build_acquisition(MetaLogDocument& doc) const;
     void stash_prev_window(const MetaLogDocument& doc);
     void build_templates_map(MetaLogDocument& doc) const;
     void reset_window_state();

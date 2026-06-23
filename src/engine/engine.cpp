@@ -263,18 +263,21 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
     ++bucket.role_counts[event.structural_role]; // announced role → salience
     ++lines_observed_;
 
-    // SPEC §16 cube: accumulate the per-EVENT joint (level, component, role) and the
-    // per-template component marginal (for the §16.6 reservoir cross). Gated on
+    // SPEC §16 cube: accumulate the per-EVENT joint (level, component, role). Gated on
     // emit_cube == false (default) → one predicted-not-taken branch, zero extra work on
     // the hot path (same discipline as max_param_histograms). The component string_view
     // is arena-stable only within the window, so it is COPIED into the keys.
     if (config_.emit_cube)
-    {
         ++cube_base_[std::make_tuple(event.level, std::string{event.component},
                                      event.structural_role)];
-        if (!event.component.empty())
-            ++bucket.component_counts[std::string{event.component}];
-    }
+
+    // Per-template component marginal — the WHERE carrier (D-WHERE-2/3) and the §16.6
+    // reservoir cross. Needed by the cube AND the cube-independent Sift WHERE, so it is
+    // gated on emit_cube || emit_where (both default false → one extra predicted-not-taken
+    // branch on the default hot path). Empty components are not counted (records_with_component
+    // then counts only located records).
+    if ((config_.emit_cube || config_.emit_where) && !event.component.empty())
+        ++bucket.component_counts[std::string{event.component}];
 
     // Per-param field histogram accumulation.
     // Gated on config_.max_param_histograms == 0 (default) → single
@@ -345,7 +348,8 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end,
 
     build_behavior(doc, analysis);
     build_stability(doc, analysis);
-    build_cube(doc); // SPEC §16 — only when config_.emit_cube
+    build_cube(doc);        // SPEC §16 — only when config_.emit_cube
+    build_acquisition(doc); // D-WHERE-4/5 — only when emit_where || emit_cube
 
     // Carry this window's frequencies for the next window's stability, emit the
     // §3.4 dedup map, then drop the per-window state.
@@ -520,6 +524,14 @@ void MetaLogEngine::build_top_k(MetaLogDocument& doc, const WindowAnalysis& anal
         entry.count = ordered[i].second->count;
         entry.frequency = total > 0.0 ? static_cast<double>(entry.count) / total : 0.0;
         entry.dominant_level = dominant_level_of(ordered[i].second->level_counts);
+        // WHERE label (D-WHERE-2): the dominant functional source, independent of the
+        // cube. component_counts is empty unless emit_cube || emit_where, so the gate
+        // skips the cold-path lookup entirely on the default path; an empty result stays
+        // a disengaged optional (never "" as a location).
+        if (config_.emit_cube || config_.emit_where)
+            if (auto component{dominant_component_of(ordered[i].second->component_counts)};
+                !component.empty())
+                entry.dominant_component = std::move(component);
 
         // Per-param field histograms — only when enabled.
         if (config_.max_param_histograms > 0)
@@ -651,12 +663,19 @@ void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& ana
         // of the document coordinate; meaningless without one).
         if (config_.source_ref)
             entry.within_window_ordinal = bucket.first_seen_index;
-        // §16.6 reservoir→cell cross: LOCATION-only {level, where}. A pure function of
-        // the entry's (dominant level, dominant component) — read-only, one-way, carries
-        // no salience. Only when a cube block is emitted.
-        if (config_.emit_cube)
-            entry.cube_coord =
-                cube::cube_location(level, dominant_component_of(bucket.component_counts));
+        // WHERE label + §16.6 reservoir→cell cross — both derive from the one dominant
+        // component (computed once). The label (D-WHERE-2) rides emit_cube || emit_where;
+        // the cube cross (LOCATION-only {level, where}, read-only, carries no salience)
+        // rides emit_cube. Empty component → disengaged label (never "" as a location);
+        // cube_location maps it to the aggregated-WHERE star.
+        if (config_.emit_cube || config_.emit_where)
+        {
+            auto component{dominant_component_of(bucket.component_counts)};
+            if (config_.emit_cube)
+                entry.cube_coord = cube::cube_location(level, component);
+            if (!component.empty())
+                entry.dominant_component = std::move(component);
+        }
         stats.reservoir.push_back(std::move(entry));
         reserved.insert(ordered[candidate.index].first);
     }
@@ -952,6 +971,32 @@ void MetaLogEngine::build_cube(MetaLogDocument& doc) const
     }
     doc.cube = cube::build_closed_cube(base);
     doc.has_cube = true;
+}
+
+// Per-window acquisition self-assessment (D-WHERE-4/5): the `component`-axis coverage
+// seed, aggregated in batch over the frozen window from the per-template component
+// marginals. records_with_component = total located events (Σ over buckets of Σ of
+// component_counts — every increment was a non-empty component, ingest_event);
+// distinct_components = the size of the union of component values. Both are
+// order-independent (a sum / a set-cardinality), so the block is bit-identical across
+// stdlibs despite the unordered_map iteration order — the same determinism discipline
+// as dominant_component_of. Integer-only, no float, no wall-clock (§16.9). The
+// consumer (the Sift diff) applies the coverage/cardinality PREDICATE; the producer
+// only states the facts.
+void MetaLogEngine::build_acquisition(MetaLogDocument& doc) const
+{
+    if (!(config_.emit_where || config_.emit_cube))
+        return;
+    AcquisitionBlock acquisition;
+    std::unordered_set<std::string> distinct;
+    for (const auto& [content_id, bucket] : buckets_)
+        for (const auto& [component, count] : bucket.component_counts)
+        {
+            acquisition.records_with_component += count;
+            distinct.insert(component);
+        }
+    acquisition.distinct_components = distinct.size();
+    doc.acquisition = acquisition;
 }
 
 void MetaLogEngine::stash_prev_window(const MetaLogDocument& doc)
