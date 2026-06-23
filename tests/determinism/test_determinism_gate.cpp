@@ -171,6 +171,99 @@ TEST(DeterminismGate, ReservoirNearFullByteIdentityGolden)
         << doc_json;
 }
 
+// ── emit_where-only document shape golden (the Sift WHERE carrier; D-WHERE-13) ─
+// The Sift diff path runs emit_where=true, emit_cube=FALSE — the carrier added so a
+// finding can name WHERE without paying for the cube (sift_where_attribution.md). That
+// document shape — per-template `dominant_component` + the per-window `acquisition`
+// block, with NO cube — was, before this gate, exercised only INDIRECTLY through the
+// cube golden (emit_cube IMPLIES emit_where), never on its own. This is the dedicated
+// byte-identity golden for the cube-independent shape (D-WHERE-13 cascade-owner: Argos).
+// It pins (a) the emit_where-only wire (acquisition + component present, cube ABSENT) and
+// (b) the dominant_component_of tie-break (ties → component string ascending — a pure
+// function of contents, the determinism-sensitive path, the F5-M8 lesson applied). The
+// new fields are integer / string only (no float, no float→int, no wall-clock), so the
+// document MUST be bit-identical across the cross-stdlib diagonal (gcc-15/libstdc++ ≡
+// clang-21/libc++) — the only axis that would expose an unordered_map iteration-order
+// leak in records_with_component / distinct_components / the dominant pick.
+TEST(DeterminismGate, EmitWhereOnlyDocumentByteIdentityGolden)
+{
+    // component is a string_view INTO the event; string literals have static storage, so
+    // the views stay valid for the whole test (the cube-suite ev() pattern). Empty
+    // component → a free-text line that carries no WHERE (not counted in coverage).
+    const auto ev = [](std::string_view tmpl, insight::LogLevel level, std::string_view component)
+    {
+        tok::CanonicalEvent e;
+        e.template_str = tmpl;
+        e.level = level;
+        e.component = component;
+        return e;
+    };
+
+    meta::MetaLogConfig cfg;
+    cfg.emit_where = true; // the Sift carrier — populate the cube-independent WHERE...
+    ASSERT_FALSE(cfg.emit_cube) << "this golden pins the cube-ABSENT shape; emit_cube must stay off";
+    meta::MetaLogEngine engine{cfg};
+
+    using Clock = std::chrono::system_clock;
+    const Clock::time_point t0{std::chrono::seconds{1700000000}};
+    const Clock::time_point t1{std::chrono::seconds{1700000060}};
+    const Clock::time_point t2{std::chrono::seconds{1700000120}};
+
+    // Window 1: PARTIAL coverage (a free-text template carries no component) over four
+    // distinct components — one of which is a per-template TIE (ping: zebra×2, alpha×2)
+    // the ascending-string tie-break MUST resolve to "alpha" identically on every stdlib.
+    engine.open_window(t0);
+    for (int i = 0; i < 6; ++i) engine.ingest_event(ev("login ok", insight::LogLevel::Info, "auth"));
+    for (int i = 0; i < 4; ++i) engine.ingest_event(ev("query slow", insight::LogLevel::Warn, "db"));
+    for (int i = 0; i < 2; ++i) engine.ingest_event(ev("ping", insight::LogLevel::Info, "zebra"));
+    for (int i = 0; i < 2; ++i) engine.ingest_event(ev("ping", insight::LogLevel::Info, "alpha"));
+    for (int i = 0; i < 3; ++i) engine.ingest_event(ev("starting up", insight::LogLevel::Info, ""));
+    const auto doc1{engine.close_window(t1)};
+
+    // Window 2: a db ERROR burst (the regression) over steady auth traffic; FULL coverage.
+    engine.open_window(t1);
+    for (int i = 0; i < 6; ++i) engine.ingest_event(ev("login ok", insight::LogLevel::Info, "auth"));
+    for (int i = 0; i < 5; ++i) engine.ingest_event(ev("pool timeout", insight::LogLevel::Error, "db"));
+    const auto doc2{engine.close_window(t2)};
+
+    // ── Coverage invariants (ALWAYS live): the document MUST carry the emit_where-only
+    //    shape, or a green golden would be hollow. Verbose on failure (CLAUDE.md).
+    ASSERT_FALSE(doc1.has_cube) << "emit_where must NOT build the cube — the Sift path is cube-free";
+    ASSERT_FALSE(doc2.has_cube);
+    ASSERT_TRUE(doc1.acquisition.has_value()) << "emit_where must emit the per-window acquisition block";
+    ASSERT_TRUE(doc2.acquisition.has_value());
+    EXPECT_EQ(doc1.acquisition->records_with_component, 14U)
+        << "located events = 6 auth + 4 db + 2 zebra + 2 alpha; the 3 free-text lines carry none";
+    EXPECT_EQ(doc1.acquisition->distinct_components, 4U) << "auth, db, alpha, zebra";
+    EXPECT_EQ(doc2.acquisition->records_with_component, 11U) << "6 auth + 5 db (all located)";
+    EXPECT_EQ(doc2.acquisition->distinct_components, 2U) << "auth, db";
+    std::set<std::string> labels;
+    for (const auto& entry : doc1.stats.top_k)
+        if (entry.dominant_component) labels.insert(*entry.dominant_component);
+    EXPECT_EQ(labels, (std::set<std::string>{"alpha", "auth", "db"}))
+        << "ping ties zebra/alpha → ascending picks 'alpha' (never zebra); the free-text "
+           "template carries no label (disengaged, never \"\")";
+
+    const std::string combined{meta::to_json(doc1) + "\n" + meta::to_json(doc2)};
+    const std::string digest{picosha2::hash256_hex_string(combined)};
+
+    // FROZEN 2026-06-23 (Argos) — the dedicated emit_where-only (cube-absent) Sift shape.
+    // Verified bit-identical at freeze across gcc-15.3/libstdc++ ≡ clang-21/libc++ (the
+    // cross-stdlib diagonal, the only axis that would expose an iteration-order leak in
+    // the new aggregate facts). Re-derive ONLY for an intentional contract change — and it
+    // must then hold across the cross-stdlib diagonal again (a bare mismatch = an
+    // emit_where wire / dominant-component determinism regression; sift_where_attribution.md
+    // D-WHERE-13).
+    constexpr std::string_view kGolden{
+        "39f786a15f485e9b7e99e0fe75d3f47ae70f7da6450cf158c0f76e2205e852c3"};
+    EXPECT_EQ(digest, kGolden)
+        << "emit_where-only document determinism golden mismatch — the cube-independent WHERE "
+           "wire is non-deterministic across this build, OR an intentional contract change needs "
+           "the golden re-derived (and re-verified across the cross-stdlib diagonal).\nactual digest: "
+        << digest << "\nDOC:\n"
+        << combined;
+}
+
 } // namespace
 
 // NOLINTEND
