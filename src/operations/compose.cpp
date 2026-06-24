@@ -506,9 +506,12 @@ std::optional<BehaviorBlock> merge_behavior(const MetaLogDocument& lhs, const Me
     behavior.ngram_size = lhs.behavior ? lhs.behavior->ngram_size : rhs.behavior->ngram_size;
     behavior.top_ngrams_size =
         lhs.behavior ? lhs.behavior->top_ngrams_size : rhs.behavior->top_ngrams_size;
-    std::map<std::vector<TemplateId>, std::uint64_t> seq_counts;
-    std::map<std::vector<TemplateId>, double> seq_prob_sum;
-    std::map<std::vector<TemplateId>, std::uint64_t> seq_prob_n;
+    // D-TIR-4(1): n-gram-sequence-keyed accumulators. unordered_map — the output
+    // `entries` is explicitly re-sorted below (count desc, sequence asc), so the
+    // iteration order here is not a determinism surface (ADR 0008).
+    std::unordered_map<std::vector<TemplateId>, std::uint64_t> seq_counts;
+    std::unordered_map<std::vector<TemplateId>, double> seq_prob_sum;
+    std::unordered_map<std::vector<TemplateId>, std::uint64_t> seq_prob_n;
     auto absorb = [&](const std::optional<BehaviorBlock>& block)
     {
         if (!block)

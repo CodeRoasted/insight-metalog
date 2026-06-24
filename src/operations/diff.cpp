@@ -136,10 +136,14 @@ void diff_ngram_delta(MetaLogDiff& out, const MetaLogDocument& previous,
         return;
     NGramDelta ngram_delta;
     ngram_delta.ngram_size = current.behavior->ngram_size;
-    std::map<std::vector<TemplateId>, double> prev_p;
+    // D-TIR-4(1): unordered point-lookup maps. new_ngrams / vanished_ngrams are
+    // iterated into output below, so — unlike rate_changed (sorted at the end) — they
+    // are explicitly sorted here to stay determinism-stable across stdlibs (ADR 0008:
+    // never emit unordered iteration order).
+    std::unordered_map<std::vector<TemplateId>, double> prev_p;
     for (const auto& entry : previous.behavior->top_ngrams)
         prev_p[entry.sequence] = entry.probability;
-    std::map<std::vector<TemplateId>, double> cur_p;
+    std::unordered_map<std::vector<TemplateId>, double> cur_p;
     for (const auto& entry : current.behavior->top_ngrams)
         cur_p[entry.sequence] = entry.probability;
     for (const auto& [seq, _sink] : cur_p)
@@ -148,6 +152,8 @@ void diff_ngram_delta(MetaLogDiff& out, const MetaLogDocument& previous,
     for (const auto& [seq, _sink] : prev_p)
         if (!cur_p.contains(seq))
             ngram_delta.vanished_ngrams.push_back(seq);
+    std::ranges::sort(ngram_delta.new_ngrams);
+    std::ranges::sort(ngram_delta.vanished_ngrams);
     for (const auto& [seq, cur_prob] : cur_p)
     {
         auto pp_it{prev_p.find(seq)};
