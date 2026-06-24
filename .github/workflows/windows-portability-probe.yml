@@ -33,6 +33,11 @@ on:
   # The determinism-gate cadence: the release-tag cut (auto-runs, gating the tag) + a weekly drift
   # catch + manual dispatch. NOT per-PR — per-PR coverage is metalog's own golden unit tests.
   workflow_dispatch:
+    inputs:
+      sibling_ref:
+        description: 'Ref to check out the canon SOURCE dep at — main (default), or an epic branch when validating a cross-repo cascade pre-merge (the goldens are mid-flight on that branch).'
+        default: 'main'
+        required: false
   push:
     tags: ['v[0-9]+.[0-9]+.[0-9]+']
   schedule:
@@ -105,11 +110,11 @@ jobs:
           New-Item -ItemType Directory -Force -Path "$env:CONAN_HOME/profiles" | Out-Null
           Copy-Item malf/profiles/windows-msvc-release "$env:CONAN_HOME/profiles/windows-msvc-release"
 
-      - name: Check out insight-canon source (the MSVC port lives on canon's main, not in any conan remote)
+      - name: Check out insight-canon source (canon's MSVC port; sibling_ref=main by default, the epic branch when validating a cascade)
         uses: actions/checkout@v5
         with:
           repository: CodeRoasted/insight-canon
-          ref: main
+          ref: ${{ inputs.sibling_ref || 'main' }}
           path: _canon
 
       - name: Export insight_canon (recipe + sources) into the local cache
