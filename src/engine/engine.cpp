@@ -120,7 +120,7 @@ void MetaLogEngine::open_window(Timestamp start)
     window_start_ = start;
     lines_observed_ = 0;
     buckets_.clear();
-    template_id_cache_.clear();
+    template_str_cache_.clear();
     content_template_index_.clear();
     content_templates_by_internal_id_.clear();
     recent_filled_ = 0;
@@ -136,31 +136,16 @@ void MetaLogEngine::open_window(Timestamp start)
 MetaLogEngine::TemplateLookup
 MetaLogEngine::content_template_id_for(const tokenization::CanonicalEvent& event)
 {
-    if (auto cached{template_id_cache_.find(event.template_id)};
-        cached != template_id_cache_.end() && cached->second.template_str == event.template_str)
+    // Fast path: template_str is the content-deterministic identity (stateless masker),
+    // so it maps to exactly ONE content_id — a hit returns without recomputing the SHA.
+    if (auto cached{template_str_cache_.find(event.template_str)};
+        cached != template_str_cache_.end())
     {
         return {.content_id = &cached->second.content_id,
                 .internal_id = cached->second.internal_id};
     }
 
     std::string content_id = compute_template_id(event.template_str);
-
-    // A Drain cluster whose template EVOLVED (its first literal occurrence later
-    // gained a wildcard) changes content_id mid-window. Re-attribute the prior
-    // occurrences, bucketed under the old literal template, to the new template so
-    // the cluster stays ONE entry. Otherwise the literal first occurrence is left
-    // as a count-1 singleton that a diff mis-reads as a vanished/new line — and for
-    // an error/warn template it surfaces despite the low count via severity
-    // promotion (the spurious "recovered"/"appeared" rows on identical errors).
-    //
-    // Guard on a real cluster id: canon assigns each Drain cluster a unique id >= 1,
-    // so "same id, changed template" is a genuine evolution. Id 0 is the reserved
-    // empty-content / unset sentinel and may front many unrelated templates (e.g.
-    // synthetic events), so it must NOT trigger a merge.
-    if (auto evolved{template_id_cache_.find(event.template_id)};
-        event.template_id != 0 && evolved != template_id_cache_.end() &&
-        evolved->second.content_id != content_id)
-        migrate_bucket(evolved->second.content_id, content_id, event.template_str);
 
     auto index_it{content_template_index_.find(content_id)};
     InternalTemplateID internal_id{};
@@ -175,57 +160,12 @@ MetaLogEngine::content_template_id_for(const tokenization::CanonicalEvent& event
         internal_id = index_it->second;
     }
 
-    TemplateCacheEntry entry{.template_str = std::string{event.template_str},
-                             .content_id = std::move(content_id),
-                             .internal_id = internal_id};
-    auto [iterator,
-          inserted]{template_id_cache_.insert_or_assign(event.template_id, std::move(entry))};
+    auto [iterator, inserted]{template_str_cache_.try_emplace(
+        std::string{event.template_str},
+        TemplateCacheEntry{.content_id = std::move(content_id), .internal_id = internal_id})};
     (void)inserted;
     return {.content_id = &iterator->second.content_id,
             .internal_id = iterator->second.internal_id};
-}
-
-void MetaLogEngine::migrate_bucket(const std::string& from_content_id,
-                                   const std::string& to_content_id,
-                                   std::string_view new_template_str)
-{
-    auto from_it{buckets_.find(from_content_id)};
-    if (from_it == buckets_.end())
-        return; // nothing accumulated under the old template yet
-
-    Bucket moved{std::move(from_it->second)};
-    buckets_.erase(from_it);
-
-    Bucket& dst{buckets_[to_content_id]};
-    const bool dst_existed{dst.count > 0};
-    dst.template_str.assign(new_template_str.begin(), new_template_str.end());
-    dst.count += moved.count;
-    // Earliest occurrence wins: an evolved cluster keeps its true debut ordinal so
-    // novelty doesn't read it as "newly emerged" just because its content_id changed.
-    dst.first_seen_index = dst_existed ? std::min(dst.first_seen_index, moved.first_seen_index)
-                                       : moved.first_seen_index;
-    for (const auto& [level, level_count] : moved.level_counts)
-        dst.level_counts[level] += level_count;
-    for (const auto& [role, role_count] : moved.role_counts)
-        dst.role_counts[role] += role_count;
-    for (const auto& [component, component_count] : moved.component_counts)
-        dst.component_counts[component] += component_count;
-
-    // Param histograms (only populated when config_.max_param_histograms > 0).
-    if (!moved.param_value_counts.empty())
-    {
-        if (dst.param_value_counts.size() < moved.param_value_counts.size())
-        {
-            dst.param_value_counts.resize(moved.param_value_counts.size());
-            dst.param_totals.resize(moved.param_value_counts.size(), 0);
-        }
-        for (std::size_t pi{0}; pi < moved.param_value_counts.size(); ++pi)
-        {
-            dst.param_totals[pi] += moved.param_totals[pi];
-            for (const auto& [value, value_count] : moved.param_value_counts[pi])
-                dst.param_value_counts[pi][value] += value_count;
-        }
-    }
 }
 
 void MetaLogEngine::account_ngram(const NGramKey& key)
@@ -1032,7 +972,7 @@ void MetaLogEngine::reset_window_state()
     window_start_.reset();
     lines_observed_ = 0;
     buckets_.clear();
-    template_id_cache_.clear();
+    template_str_cache_.clear();
     content_template_index_.clear();
     content_templates_by_internal_id_.clear();
     recent_filled_ = 0;

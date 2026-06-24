@@ -609,7 +609,13 @@ struct MetaLogConfig
     // (§15.1-2). The `retention_profile` names the retention parameters in effect
     // (top_k size, reservoir admission weights/size/diversity caps, salience
     // arithmetic — §3.1 / §3.7); MUST be bumped when any of those change.
-    std::optional<std::string> canonicalization_version;
+    //
+    // canonicalization_version DEFAULTS to the canon-owned constant (D-TID-16): the
+    // masking rules and the version that names them live together in canon, so a
+    // producer cannot silently leave old and new metalogs falsely comparable. Override
+    // only to express a different canonicalization contract (e.g. a test fixture).
+    std::optional<std::string> canonicalization_version{
+        std::string{insight::kCanonicalizationVersion}};
     std::optional<std::string> retention_profile;
 
     // Max number of wildcard positions to histogram per top_k entry.

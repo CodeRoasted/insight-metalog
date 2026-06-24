@@ -32,10 +32,10 @@ class MetaLogEngine
     // window's frequencies) is preserved across open/close.
     void open_window(Timestamp start);
 
-    // Account one observed canonical event. The first occurrence of a
-    // given template_id memorises its template_str (later occurrences
-    // only bump the counter — template strings are arena-stable in
-    // CanonicalEvent and assumed identical for identical IDs).
+    // Account one observed canonical event. The event's template_str is the
+    // content-deterministic identity (a pure function of the line's masked tokens —
+    // stateless_template_id.md); the first occurrence of a given template_str
+    // memorises it and later occurrences only bump the counter.
     void ingest_event(const tokenization::CanonicalEvent& event);
 
     // Close the current window and produce a spec-conformant document.
@@ -63,7 +63,6 @@ class MetaLogEngine
         // Ordinal of the event at which this template was first seen in the window
         // (== lines_observed_ before that event). Feeds the self-novelty axis: a
         // high value means the template EMERGED late (first-seen near lines_observed).
-        // Preserved as the minimum across Drain cluster migration (earliest wins).
         std::uint64_t first_seen_index{0};
         std::unordered_map<LogLevel, std::uint64_t> level_counts;
         // Announced structural roles seen for this template (→ salience).
@@ -102,18 +101,24 @@ class MetaLogEngine
 
     struct TemplateCacheEntry
     {
-        std::string template_str;
         std::string content_id;
         InternalTemplateID internal_id{};
     };
 
+    // Transparent hash so the per-event template_str_cache_ lookup takes a
+    // std::string_view (the arena-stable CanonicalEvent::template_str) WITHOUT
+    // constructing a std::string on the hot path — heterogeneous find/contains.
+    // Insertion (a cache miss, once per distinct template) still owns the key.
+    struct TransparentStringHash
+    {
+        using is_transparent = void;
+        [[nodiscard]] std::size_t operator()(std::string_view key) const noexcept
+        {
+            return std::hash<std::string_view>{}(key);
+        }
+    };
+
     [[nodiscard]] TemplateLookup content_template_id_for(const tokenization::CanonicalEvent& event);
-    // Re-attribute a bucket when a Drain cluster's template evolves mid-window
-    // (e.g. its first literal occurrence later gains a wildcard): merge the prior
-    // occurrences from the old content_id into the new one so the cluster stays a
-    // single template, never a stray literal singleton.
-    void migrate_bucket(const std::string& from_content_id, const std::string& to_content_id,
-                        std::string_view new_template_str);
     void account_ngram(const NGramKey& key);
 
     // Cold-path scratch computed once per close_window and consumed by the
@@ -184,7 +189,12 @@ class MetaLogEngine
     std::optional<Timestamp> window_start_;
     std::uint64_t lines_observed_{0};
     std::unordered_map<std::string, Bucket> buckets_;
-    std::unordered_map<TemplateID, TemplateCacheEntry> template_id_cache_;
+    // Per-window fast path: template_str → {content_id, internal_id}. Keyed on the
+    // content-deterministic template_str (no Drain cluster id any more), so it only
+    // saves the repeat SHA-256 — a template_str maps to exactly one content_id. The
+    // transparent hash lets a hit look up by string_view with zero allocation.
+    std::unordered_map<std::string, TemplateCacheEntry, TransparentStringHash, std::equal_to<>>
+        template_str_cache_;
     std::unordered_map<std::string, InternalTemplateID> content_template_index_;
     std::vector<std::string> content_templates_by_internal_id_;
 
