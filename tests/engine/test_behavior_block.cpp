@@ -64,8 +64,8 @@ TEST_F(BehaviorBlockTest, ProbabilityIsConditionalOnPrefix)
     auto doc{engine.close_window(start_ + std::chrono::seconds(1))};
 
     ASSERT_TRUE(doc.behavior.has_value());
-    const auto a_id{meta::MetaLogEngine::compute_template_id("alpha")};
-    const auto b_id{meta::MetaLogEngine::compute_template_id("beta")};
+    const auto a_id{insight::template_id_of("alpha")};
+    const auto b_id{insight::template_id_of("beta")};
     bool found_b_to_a = false;
     bool found_a_to_b = false;
     for (const auto& ng : doc.behavior->top_ngrams)

@@ -155,6 +155,10 @@ class MetaLogEngine
     void build_transition_graph(WindowAnalysis& analysis) const;
     [[nodiscard]] std::uint32_t surprise_of(const WindowAnalysis& analysis,
                                             const std::string& content_id) const noexcept;
+    // The TemplateId POD for a window content_id string (the engine still keys its
+    // per-window state by the content_id string; this bridges to the POD the domain
+    // entries carry — D-TIR-2). Cold path: called per top_k/reservoir entry.
+    [[nodiscard]] TemplateId template_id_for(const std::string& content_id) const;
     void stamp_envelope(MetaLogDocument& doc, Timestamp start, Timestamp end,
                         std::optional<ReportedWindowBounds> reported_bounds) const;
     void build_top_k(MetaLogDocument& doc, const WindowAnalysis& analysis) const;
@@ -196,7 +200,10 @@ class MetaLogEngine
     std::unordered_map<std::string, TemplateCacheEntry, TransparentStringHash, std::equal_to<>>
         template_str_cache_;
     std::unordered_map<std::string, InternalTemplateID> content_template_index_;
-    std::vector<std::string> content_templates_by_internal_id_;
+    // internal_id → the template's canon TemplateId POD (D-TIR-2). build_top_ngrams /
+    // build_branching / build_dominant_path index this to stamp the domain id without
+    // re-hashing; the "h:"+hex string is rendered only at the serialize seam.
+    std::vector<TemplateId> content_templates_by_internal_id_;
 
     // Recent internal template ID ring (size 2): [0] = last, [1] = second-last.
     // Only [0] is used at ngram_size=2; both are used at ngram_size=3.
@@ -217,7 +224,7 @@ class MetaLogEngine
     // Cross-window state for stability. Populated at the end of each
     // close_window with this window's per-template counts and end
     // timestamp; consumed at the start of the next close_window.
-    std::unordered_map<std::string, std::uint64_t> prev_freq_;
+    std::unordered_map<TemplateId, std::uint64_t> prev_freq_;
     std::uint64_t prev_total_{0};
     std::optional<std::string> prev_window_end_iso_;
 

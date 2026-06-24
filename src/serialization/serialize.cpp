@@ -511,12 +511,33 @@ dto::CubeDiff make_cube_diff(const CubeDiffBlock& diff)
     return out;
 }
 
+// D-TIR-2 render seam: the domain carries TemplateId PODs; the wire carries "h:"+hex
+// strings. These render an id / id-sequence at exactly this boundary (the only place the
+// string materialises). render(TemplateId) is canon's.
+[[nodiscard]] std::vector<std::string> render_sequence(const std::vector<TemplateId>& ids)
+{
+    std::vector<std::string> out;
+    out.reserve(ids.size());
+    for (const TemplateId id : ids)
+        out.push_back(insight::render(id));
+    return out;
+}
+[[nodiscard]] std::vector<std::vector<std::string>>
+render_sequences(const std::vector<std::vector<TemplateId>>& sequences)
+{
+    std::vector<std::vector<std::string>> out;
+    out.reserve(sequences.size());
+    for (const auto& sequence : sequences)
+        out.push_back(render_sequence(sequence));
+    return out;
+}
+
 // One top_k row, incl. the optional §3.5 per-param histograms (value_counts is
 // copied into a std::map so the wire is key-sorted, §15.6).
 dto::TopKEntry make_top_k_entry(const TopKEntry& entry)
 {
     dto::TopKEntry row;
-    row.template_id = entry.template_id;
+    row.template_id = insight::render(entry.template_id);
     row.count = entry.count;
     row.frequency = entry.frequency;
     // SPEC §3.4: inline `template` is optional.
@@ -549,7 +570,7 @@ dto::TopKEntry make_top_k_entry(const TopKEntry& entry)
 dto::ReservoirEntry make_reservoir_entry(const ReservoirEntry& entry)
 {
     dto::ReservoirEntry row;
-    row.template_id = entry.template_id;
+    row.template_id = insight::render(entry.template_id);
     row.count = entry.count;
     row.frequency = entry.frequency;
     if (!entry.template_str.empty())
@@ -606,17 +627,18 @@ dto::Behavior make_behavior(const BehaviorBlock& behavior)
     out_bh.top_ngrams_size = behavior.top_ngrams_size;
     out_bh.top_ngrams.reserve(behavior.top_ngrams.size());
     for (const auto& ngram : behavior.top_ngrams)
-        out_bh.top_ngrams.push_back(
-            {.sequence = ngram.sequence, .count = ngram.count, .probability = ngram.probability});
+        out_bh.top_ngrams.push_back({.sequence = render_sequence(ngram.sequence),
+                                     .count = ngram.count,
+                                     .probability = ngram.probability});
     out_bh.graph_edge_count = behavior.graph_edge_count;
     if (behavior.dominant_path && !behavior.dominant_path->empty())
-        out_bh.dominant_path = *behavior.dominant_path;
+        out_bh.dominant_path = render_sequence(*behavior.dominant_path);
     if (behavior.branching && !behavior.branching->empty())
     {
         std::vector<dto::BranchingEntry> rows;
         rows.reserve(behavior.branching->size());
         for (const auto& branch : *behavior.branching)
-            rows.push_back({.template_id = branch.template_id,
+            rows.push_back({.template_id = insight::render(branch.template_id),
                             .fanout = branch.fanout,
                             .total_outgoing = branch.total_outgoing,
                             .entropy_bits = branch.entropy_bits});
@@ -657,7 +679,13 @@ dto::Document make_document(const MetaLogDocument& doc)
                   .lines_observed = doc.window.lines_observed};
     out.source = make_source(doc.source);
     if (!doc.templates.empty())
-        out.templates = doc.templates;
+    {
+        // Render each TemplateId key to "h:"+hex for the wire object (D-TIR-2 seam).
+        std::map<std::string, std::string> rendered;
+        for (const auto& [template_id, template_str] : doc.templates)
+            rendered.emplace(insight::render(template_id), template_str);
+        out.templates = std::move(rendered);
+    }
     out.stats = make_stats(doc.stats);
     if (doc.behavior)
         out.behavior = make_behavior(*doc.behavior);
@@ -707,7 +735,7 @@ dto::Diff make_diff(const MetaLogDiff& diff)
         std::vector<dto::TemplateDelta> deltas;
         deltas.reserve(diff.template_deltas.size());
         for (const auto& template_delta : diff.template_deltas)
-            deltas.push_back({.template_id = template_delta.template_id,
+            deltas.push_back({.template_id = insight::render(template_delta.template_id),
                               .previous_count = template_delta.previous_count,
                               .current_count = template_delta.current_count,
                               .delta = template_delta.delta,
@@ -716,15 +744,15 @@ dto::Diff make_diff(const MetaLogDiff& diff)
         out.template_deltas = std::move(deltas);
     }
     if (!diff.new_templates.empty())
-        out.new_templates = diff.new_templates;
+        out.new_templates = render_sequence(diff.new_templates);
     if (!diff.vanished_templates.empty())
-        out.vanished_templates = diff.vanished_templates;
+        out.vanished_templates = render_sequence(diff.vanished_templates);
     if (!diff.branching_delta.empty())
     {
         std::vector<dto::BranchingDelta> deltas;
         deltas.reserve(diff.branching_delta.size());
         for (const auto& branch_delta : diff.branching_delta)
-            deltas.push_back({.template_id = branch_delta.template_id,
+            deltas.push_back({.template_id = insight::render(branch_delta.template_id),
                               .previous_entropy_bits = branch_delta.previous_entropy_bits,
                               .current_entropy_bits = branch_delta.current_entropy_bits,
                               .delta_bits = branch_delta.delta_bits});
@@ -735,15 +763,15 @@ dto::Diff make_diff(const MetaLogDiff& diff)
         dto::NGramDelta ngram_delta;
         ngram_delta.ngram_size = diff.ngram_delta->ngram_size;
         if (!diff.ngram_delta->new_ngrams.empty())
-            ngram_delta.new_ngrams = diff.ngram_delta->new_ngrams;
+            ngram_delta.new_ngrams = render_sequences(diff.ngram_delta->new_ngrams);
         if (!diff.ngram_delta->vanished_ngrams.empty())
-            ngram_delta.vanished_ngrams = diff.ngram_delta->vanished_ngrams;
+            ngram_delta.vanished_ngrams = render_sequences(diff.ngram_delta->vanished_ngrams);
         if (!diff.ngram_delta->rate_changed.empty())
         {
             std::vector<dto::NGramRateChange> changes;
             changes.reserve(diff.ngram_delta->rate_changed.size());
             for (const auto& rate_change : diff.ngram_delta->rate_changed)
-                changes.push_back({.sequence = rate_change.sequence,
+                changes.push_back({.sequence = render_sequence(rate_change.sequence),
                                    .previous_probability = rate_change.previous_probability,
                                    .current_probability = rate_change.current_probability,
                                    .delta = rate_change.delta});

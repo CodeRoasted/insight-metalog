@@ -373,8 +373,8 @@ TEST(ReservoirTest, TieBreakByTemplateIdAtEqualSalience)
     const auto doc{engine.close_window(start + std::chrono::seconds(60))};
 
     ASSERT_EQ(doc.stats.reservoir.size(), 1U);
-    const auto tid_alpha{meta::MetaLogEngine::compute_template_id("alpha")};
-    const auto tid_beta{meta::MetaLogEngine::compute_template_id("beta")};
+    const auto tid_alpha{insight::template_id_of("alpha")};
+    const auto tid_beta{insight::template_id_of("beta")};
     ASSERT_NE(tid_alpha, tid_beta);
     EXPECT_EQ(doc.stats.reservoir[0].template_id, std::min(tid_alpha, tid_beta))
         << "§3.7.2: at equal salience, the smaller template_id wins (got "

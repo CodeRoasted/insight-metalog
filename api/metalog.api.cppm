@@ -38,7 +38,7 @@ struct FieldHistogram
 
 struct TopKEntry
 {
-    std::string template_id;  // "h:" + 32 lowercase hex (spec §3.2)
+    TemplateId template_id;   // content hash POD (rendered to "h:"+hex at the serialize seam, spec §3.2)
     std::string template_str; // populated in-engine; serialiser may skip per config
     std::uint64_t count{0};
     double frequency{0.0};
@@ -234,7 +234,7 @@ struct CubeCardinalityStat
 // did NOT make top_k by frequency); excluded from the tail residual.
 struct ReservoirEntry
 {
-    std::string template_id;
+    TemplateId template_id;
     std::string template_str; // per template_emission mode, like TopKEntry
     std::uint64_t count{0};
     double frequency{0.0};
@@ -284,7 +284,7 @@ struct ReservoirEntry
 // Per-node branching statistics (MetaLog SPEC §4.2).
 struct BranchingEntry
 {
-    std::string template_id;
+    TemplateId template_id;
     std::uint64_t fanout{0};
     std::uint64_t total_outgoing{0};
     double entropy_bits{0.0};
@@ -338,7 +338,7 @@ struct StatsBlock
 // content-derived template_ids in observed order (size == ngram_size).
 struct NGramEntry
 {
-    std::vector<std::string> sequence;
+    std::vector<TemplateId> sequence;
     std::uint64_t count{0};
     double probability{0.0}; // p(last | prefix) — see spec §4
 };
@@ -349,7 +349,7 @@ struct BehaviorBlock
     std::vector<NGramEntry> top_ngrams;
     std::size_t top_ngrams_size{0};
     std::optional<std::uint64_t> graph_edge_count;
-    std::optional<std::vector<std::string>> dominant_path; // absent when not computed
+    std::optional<std::vector<TemplateId>> dominant_path; // absent when not computed
     std::optional<std::vector<BranchingEntry>> branching;  // absent when not computed
 };
 
@@ -470,7 +470,7 @@ struct MetaLogDocument
     StatsBlock stats{};
     std::optional<BehaviorBlock> behavior;
     std::optional<StabilityBlock> stability;
-    std::map<std::string, std::string> templates;           // optional dedup map (SPEC §3.4)
+    std::map<TemplateId, std::string> templates; // optional dedup map (SPEC §3.4); keys rendered at the wire seam
     std::optional<std::vector<ProvenanceEntry>> provenance; // absent unless composed (SPEC §12.4)
     // Processing-identifier strings (SPEC §2.4). Opaque names of the contract
     // under which the document was produced; gate `compose()` / diff
@@ -640,7 +640,7 @@ struct MetaLogConfig
 
 struct TemplateDelta
 {
-    std::string template_id;
+    TemplateId template_id;
     std::uint64_t previous_count{0};
     std::uint64_t current_count{0};
     std::int64_t delta{0};
@@ -650,7 +650,7 @@ struct TemplateDelta
 
 struct BranchingDelta
 {
-    std::string template_id;
+    TemplateId template_id;
     double previous_entropy_bits{0.0};
     double current_entropy_bits{0.0};
     double delta_bits{0.0};
@@ -658,7 +658,7 @@ struct BranchingDelta
 
 struct NGramRateChange
 {
-    std::vector<std::string> sequence;
+    std::vector<TemplateId> sequence;
     double previous_probability{0.0};
     double current_probability{0.0};
     double delta{0.0};
@@ -667,8 +667,8 @@ struct NGramRateChange
 struct NGramDelta
 {
     std::size_t ngram_size{2};
-    std::vector<std::vector<std::string>> new_ngrams;
-    std::vector<std::vector<std::string>> vanished_ngrams;
+    std::vector<std::vector<TemplateId>> new_ngrams;
+    std::vector<std::vector<TemplateId>> vanished_ngrams;
     std::vector<NGramRateChange> rate_changed;
 };
 
@@ -685,7 +685,7 @@ struct NGramDelta
 // value_counts map (identical convention as FieldHistogram::entropy_bits).
 struct FieldHistogramDelta
 {
-    std::string template_id;
+    TemplateId template_id;
     std::uint32_t param_index{0};
     double js_divergence{0.0};
     double previous_entropy_bits{0.0};
@@ -797,8 +797,8 @@ struct MetaLogDiff
     std::optional<double> js_divergence;
     std::optional<double> stability_score;
     std::vector<TemplateDelta> template_deltas;
-    std::vector<std::string> new_templates;
-    std::vector<std::string> vanished_templates;
+    std::vector<TemplateId> new_templates;
+    std::vector<TemplateId> vanished_templates;
     std::vector<BranchingDelta> branching_delta;
     std::optional<NGramDelta> ngram_delta;
     // Per-param distribution shift. Empty unless both documents were produced

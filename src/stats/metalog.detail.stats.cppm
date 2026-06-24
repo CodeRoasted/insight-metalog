@@ -162,12 +162,12 @@ struct DivergenceResult
 };
 
 [[nodiscard]] DivergenceResult
-divergences(const std::unordered_map<std::string, std::uint64_t>& cur, std::uint64_t cur_total,
-            const std::unordered_map<std::string, std::uint64_t>& prev, std::uint64_t prev_total);
+divergences(const std::unordered_map<TemplateId, std::uint64_t>& cur, std::uint64_t cur_total,
+            const std::unordered_map<TemplateId, std::uint64_t>& prev, std::uint64_t prev_total);
 
 [[nodiscard]] std::pair<std::uint64_t, std::uint64_t>
-new_and_vanished(const std::unordered_map<std::string, std::uint64_t>& cur,
-                 const std::unordered_map<std::string, std::uint64_t>& prev);
+new_and_vanished(const std::unordered_map<TemplateId, std::uint64_t>& cur,
+                 const std::unordered_map<TemplateId, std::uint64_t>& prev);
 
 // JS divergence between two per-param value-count maps.
 //

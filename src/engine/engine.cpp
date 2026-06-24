@@ -128,15 +128,19 @@ MetaLogEngine::content_template_id_for(const tokenization::CanonicalEvent& event
                 .internal_id = cached->second.internal_id};
     }
 
-    std::string content_id = compute_template_id(event.template_str);
+    // Compute the canon TemplateId POD once; render the "h:"+hex string for the engine's
+    // string-keyed per-window state (buckets_/index/cache). The POD is what the domain
+    // carries (D-TIR-2); the string stays the engine-internal key.
+    const TemplateId template_id{insight::template_id_of(event.template_str)};
+    std::string content_id{insight::render(template_id)};
 
     auto index_it{content_template_index_.find(content_id)};
     InternalTemplateID internal_id{};
     if (index_it == content_template_index_.end())
     {
         internal_id = static_cast<InternalTemplateID>(content_templates_by_internal_id_.size());
-        content_templates_by_internal_id_.push_back(content_id);
-        content_template_index_.emplace(content_templates_by_internal_id_.back(), internal_id);
+        content_templates_by_internal_id_.push_back(template_id);
+        content_template_index_.emplace(content_id, internal_id);
     }
     else
     {
@@ -425,6 +429,12 @@ std::uint32_t MetaLogEngine::surprise_of(const WindowAnalysis& analysis,
     return analysis.incoming_surprise[found->second];
 }
 
+TemplateId MetaLogEngine::template_id_for(const std::string& content_id) const
+{
+    // content_id was interned at ingest, so the index + the by-internal-id POD both exist.
+    return content_templates_by_internal_id_[content_template_index_.at(content_id)];
+}
+
 void MetaLogEngine::build_top_k(MetaLogDocument& doc, const WindowAnalysis& analysis) const
 {
     const auto& ordered = analysis.ordered;
@@ -439,7 +449,7 @@ void MetaLogEngine::build_top_k(MetaLogDocument& doc, const WindowAnalysis& anal
     for (std::size_t i = 0; i < top_k_cut; ++i)
     {
         TopKEntry entry;
-        entry.template_id = ordered[i].first;
+        entry.template_id = template_id_for(ordered[i].first);
         if (config_.template_emission == TemplateEmissionMode::Inline)
             entry.template_str = ordered[i].second->template_str;
         // Dedup mode populates the top-level doc.templates map below.
@@ -571,7 +581,7 @@ void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& ana
             ++kind_count;
         }
         ReservoirEntry entry;
-        entry.template_id = ordered[candidate.index].first;
+        entry.template_id = template_id_for(ordered[candidate.index].first);
         if (config_.template_emission == TemplateEmissionMode::Inline)
             entry.template_str = bucket.template_str;
         entry.count = bucket.count;
@@ -785,7 +795,7 @@ void MetaLogEngine::build_dominant_path(BehaviorBlock& behavior,
         return;
     const auto& transitions = analysis.transitions;
 
-    std::vector<std::string> path;
+    std::vector<TemplateId> path;
     std::unordered_set<InternalTemplateID> seen;
     path.reserve(config_.dominant_path_max_steps + 1U);
     seen.reserve(config_.dominant_path_max_steps + 1U);
@@ -826,15 +836,15 @@ MetaLogEngine::InternalTemplateID MetaLogEngine::dominant_path_start() const
 {
     InternalTemplateID start_id{0};
     std::uint64_t best_count{0};
-    for (InternalTemplateID id = 0; id < content_templates_by_internal_id_.size(); ++id)
+    // Iterate the (string-keyed) buckets and resolve each to its internal id; the
+    // (count desc, internal-id asc) tie-break makes the result iteration-order-independent
+    // (the engine keys buckets_ by content_id; the id maps via content_template_index_).
+    for (const auto& [content_id, bucket] : buckets_)
     {
-        const auto& tid{content_templates_by_internal_id_[id]};
-        auto bit{buckets_.find(tid)};
-        if (bit == buckets_.end())
-            continue;
-        if (bit->second.count > best_count || (bit->second.count == best_count && id < start_id))
+        const InternalTemplateID id{content_template_index_.at(content_id)};
+        if (bucket.count > best_count || (bucket.count == best_count && id < start_id))
         {
-            best_count = bit->second.count;
+            best_count = bucket.count;
             start_id = id;
         }
     }
@@ -850,10 +860,10 @@ void MetaLogEngine::build_stability(MetaLogDocument& doc, const WindowAnalysis& 
     // stability_score is 1 - js_divergence, in [0, 1] with log2 JS.
     if (config_.emit_stability && prev_window_end_iso_ && prev_total_ > 0 && lines_observed_ > 0)
     {
-        std::unordered_map<std::string, std::uint64_t> cur_freq;
+        std::unordered_map<TemplateId, std::uint64_t> cur_freq;
         cur_freq.reserve(ordered.size());
-        for (const auto& [tid, bucket] : buckets_)
-            cur_freq.emplace(tid, bucket.count);
+        for (const auto& [content_id, bucket] : buckets_)
+            cur_freq.emplace(template_id_for(content_id), bucket.count);
 
         const auto [kl_value,
                     js_value]{divergences(cur_freq, lines_observed_, prev_freq_, prev_total_)};
@@ -930,8 +940,8 @@ void MetaLogEngine::stash_prev_window(const MetaLogDocument& doc)
     {
         prev_freq_.clear();
         prev_freq_.reserve(buckets_.size());
-        for (const auto& [tid, bucket] : buckets_)
-            prev_freq_.emplace(tid, bucket.count);
+        for (const auto& [content_id, bucket] : buckets_)
+            prev_freq_.emplace(template_id_for(content_id), bucket.count);
         prev_total_ = lines_observed_;
         prev_window_end_iso_ = doc.window.end_iso;
     }
@@ -945,8 +955,8 @@ void MetaLogEngine::build_templates_map(MetaLogDocument& doc) const
         // Emit every distinct template_id observed in the window
         // (including tail templates) so consumers can resolve any id
         // referenced by stats/behavior.
-        for (const auto& [tid, bucket] : buckets_)
-            doc.templates.emplace(tid, bucket.template_str);
+        for (const auto& [content_id, bucket] : buckets_)
+            doc.templates.emplace(template_id_for(content_id), bucket.template_str);
     }
 }
 

@@ -15,6 +15,19 @@ namespace meta = insight::metalog;
 using insight::LogLevel;
 using insight::StructuralRole;
 
+// divergences/new_and_vanished are TemplateId-keyed (D-TIR-2). These primitives depend
+// only on the count distribution + which keys match across cur/prev, so mapping each
+// label → template_id_of(label) preserves every asserted value (distinct labels →
+// distinct ids; same label → same id).
+[[nodiscard]] std::unordered_map<insight::TemplateId, std::uint64_t>
+counts(std::initializer_list<std::pair<std::string_view, std::uint64_t>> items)
+{
+    std::unordered_map<insight::TemplateId, std::uint64_t> out;
+    for (const auto& [label, count] : items)
+        out.emplace(insight::template_id_of(label), count);
+    return out;
+}
+
 // ── shannon_entropy_bits ──────────────────────────────────────────────────────
 
 TEST(ShannonEntropy, ZeroTotalReturnsZero)
@@ -59,8 +72,8 @@ TEST(ShannonEntropy, ZeroBucketsAreSkipped)
 
 TEST(Divergences, ZeroTotalReturnsZero)
 {
-    std::unordered_map<std::string, std::uint64_t> cur{{"a", 10}};
-    std::unordered_map<std::string, std::uint64_t> prev{{"a", 10}};
+    const auto cur{counts({{"a", 10}})};
+    const auto prev{counts({{"a", 10}})};
     const auto result = meta::divergences(cur, 0, prev, 10);
     EXPECT_EQ(result.kl, 0.0);
     EXPECT_EQ(result.js, 0.0);
@@ -68,7 +81,7 @@ TEST(Divergences, ZeroTotalReturnsZero)
 
 TEST(Divergences, IdenticalDistributionsHaveLowDivergence)
 {
-    std::unordered_map<std::string, std::uint64_t> dist{{"a", 50}, {"b", 30}, {"c", 20}};
+    const auto dist{counts({{"a", 50}, {"b", 30}, {"c", 20}})};
     const auto result = meta::divergences(dist, 100, dist, 100);
     EXPECT_NEAR(result.kl, 0.0, 1e-6);
     EXPECT_NEAR(result.js, 0.0, 1e-6);
@@ -76,8 +89,8 @@ TEST(Divergences, IdenticalDistributionsHaveLowDivergence)
 
 TEST(Divergences, CompletelyDifferentKeysHasHighJs)
 {
-    std::unordered_map<std::string, std::uint64_t> cur{{"a", 100}};
-    std::unordered_map<std::string, std::uint64_t> prev{{"b", 100}};
+    const auto cur{counts({{"a", 100}})};
+    const auto prev{counts({{"b", 100}})};
     const auto result = meta::divergences(cur, 100, prev, 100);
     EXPECT_GT(result.js, 0.5);
     EXPECT_LE(result.js, 1.0);
@@ -85,8 +98,8 @@ TEST(Divergences, CompletelyDifferentKeysHasHighJs)
 
 TEST(Divergences, JsIsInUnitInterval)
 {
-    std::unordered_map<std::string, std::uint64_t> cur{{"a", 90}, {"b", 10}};
-    std::unordered_map<std::string, std::uint64_t> prev{{"b", 80}, {"c", 20}};
+    const auto cur{counts({{"a", 90}, {"b", 10}})};
+    const auto prev{counts({{"b", 80}, {"c", 20}})};
     const auto result = meta::divergences(cur, 100, prev, 100);
     EXPECT_GE(result.js, 0.0);
     EXPECT_LE(result.js, 1.0);
@@ -97,7 +110,7 @@ TEST(Divergences, JsIsInUnitInterval)
 
 TEST(NewAndVanished, IdenticalSetsHaveZeroCounts)
 {
-    std::unordered_map<std::string, std::uint64_t> m{{"a", 1}, {"b", 2}};
+    const auto m{counts({{"a", 1}, {"b", 2}})};
     const auto [added, gone] = meta::new_and_vanished(m, m);
     EXPECT_EQ(added, 0u);
     EXPECT_EQ(gone, 0u);
@@ -105,8 +118,8 @@ TEST(NewAndVanished, IdenticalSetsHaveZeroCounts)
 
 TEST(NewAndVanished, AllNewKeys)
 {
-    std::unordered_map<std::string, std::uint64_t> cur{{"x", 1}, {"y", 1}};
-    std::unordered_map<std::string, std::uint64_t> prev{{"a", 1}, {"b", 1}};
+    const auto cur{counts({{"x", 1}, {"y", 1}})};
+    const auto prev{counts({{"a", 1}, {"b", 1}})};
     const auto [added, gone] = meta::new_and_vanished(cur, prev);
     EXPECT_EQ(added, 2u);
     EXPECT_EQ(gone, 2u);
@@ -114,8 +127,8 @@ TEST(NewAndVanished, AllNewKeys)
 
 TEST(NewAndVanished, PartialOverlap)
 {
-    std::unordered_map<std::string, std::uint64_t> cur{{"a", 1}, {"b", 1}, {"c", 1}};
-    std::unordered_map<std::string, std::uint64_t> prev{{"a", 1}, {"d", 1}};
+    const auto cur{counts({{"a", 1}, {"b", 1}, {"c", 1}})};
+    const auto prev{counts({{"a", 1}, {"d", 1}})};
     const auto [added, gone] = meta::new_and_vanished(cur, prev);
     EXPECT_EQ(added, 2u); // b, c are new
     EXPECT_EQ(gone, 1u);  // d vanished
@@ -123,8 +136,8 @@ TEST(NewAndVanished, PartialOverlap)
 
 TEST(NewAndVanished, EmptyCurrent)
 {
-    std::unordered_map<std::string, std::uint64_t> prev{{"a", 1}, {"b", 1}};
-    const auto [added, gone] = meta::new_and_vanished({}, prev);
+    const auto prev{counts({{"a", 1}, {"b", 1}})};
+    const auto [added, gone] = meta::new_and_vanished(counts({}), prev);
     EXPECT_EQ(added, 0u);
     EXPECT_EQ(gone, 2u);
 }

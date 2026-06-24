@@ -64,9 +64,9 @@ SourceBlock common_source(const SourceBlock& lhs, const SourceBlock& rhs)
     return out;
 }
 
-void aggregate_top_k(std::unordered_map<std::string, std::uint64_t>& counts,
-                     std::unordered_map<std::string, std::string>& templates,
-                     std::unordered_map<std::string, std::optional<LogLevel>>& levels,
+void aggregate_top_k(std::unordered_map<TemplateId, std::uint64_t>& counts,
+                     std::unordered_map<TemplateId, std::string>& templates,
+                     std::unordered_map<TemplateId, std::optional<LogLevel>>& levels,
                      const MetaLogDocument& doc)
 {
     for (const auto& entry : doc.stats.top_k)
@@ -87,9 +87,9 @@ void aggregate_top_k(std::unordered_map<std::string, std::uint64_t>& counts,
 // across inputs a template that is top_k in one and reservoir in the other gets its
 // full merged count. Lets the composed top_k ranking and the re-derived reservoir
 // see the rare-salient templates' counts, which `aggregate_top_k` alone misses.
-void aggregate_reservoir(std::unordered_map<std::string, std::uint64_t>& counts,
-                         std::unordered_map<std::string, std::string>& templates,
-                         std::unordered_map<std::string, std::optional<LogLevel>>& levels,
+void aggregate_reservoir(std::unordered_map<TemplateId, std::uint64_t>& counts,
+                         std::unordered_map<TemplateId, std::string>& templates,
+                         std::unordered_map<TemplateId, std::optional<LogLevel>>& levels,
                          const MetaLogDocument& doc)
 {
     for (const auto& entry : doc.stats.reservoir)
@@ -180,11 +180,11 @@ merge_field_histograms(const std::vector<FieldHistogram>& lhs,
 // view, and the set of templates promoted into the re-derived reservoir.
 struct ComposeState
 {
-    std::unordered_map<std::string, std::uint64_t> counts;
-    std::unordered_map<std::string, std::string> templates;
-    std::unordered_map<std::string, std::optional<LogLevel>> levels;
-    std::vector<std::pair<std::string, std::uint64_t>> ordered;
-    std::unordered_set<std::string> reserved;
+    std::unordered_map<TemplateId, std::uint64_t> counts;
+    std::unordered_map<TemplateId, std::string> templates;
+    std::unordered_map<TemplateId, std::optional<LogLevel>> levels;
+    std::vector<std::pair<TemplateId, std::uint64_t>> ordered;
+    std::unordered_set<TemplateId> reserved;
 };
 
 // Fold both inputs' top_k + reservoir into the aggregation maps, then build the
@@ -217,7 +217,7 @@ void build_composed_top_k(MetaLogDocument& out, const ComposeState& state,
     const auto& ordered = state.ordered;
     const auto build_topk_index{[](const MetaLogDocument& doc)
                                 {
-                                    std::unordered_map<std::string, const TopKEntry*> index;
+                                    std::unordered_map<TemplateId, const TopKEntry*> index;
                                     index.reserve(doc.stats.top_k.size());
                                     for (const auto& entry : doc.stats.top_k)
                                         index.emplace(entry.template_id, &entry);
@@ -271,7 +271,7 @@ struct ComposeSalienceInfo
 // A below-composed-top_k template ranked for the re-derived reservoir.
 struct ComposeReservoirCandidate
 {
-    std::string template_id;
+    TemplateId template_id;
     std::uint32_t salience;
     std::uint32_t structural_surprise;
     std::uint32_t novelty;
@@ -291,7 +291,7 @@ collect_compose_reservoir_candidates(const MetaLogDocument& out, const ComposeSt
     const auto& levels = state.levels;
     const auto& templates = state.templates;
 
-    std::unordered_map<std::string, ComposeSalienceInfo> sal_info;
+    std::unordered_map<TemplateId, ComposeSalienceInfo> sal_info;
     const auto absorb_reservoir{[&](const MetaLogDocument& doc)
                                 {
                                     for (const auto& entry : doc.stats.reservoir)
@@ -312,7 +312,7 @@ collect_compose_reservoir_candidates(const MetaLogDocument& out, const ComposeSt
     absorb_reservoir(lhs);
     absorb_reservoir(rhs);
 
-    std::unordered_set<std::string> topk_ids;
+    std::unordered_set<TemplateId> topk_ids;
     topk_ids.reserve(out.stats.top_k.size());
     for (const auto& entry : out.stats.top_k)
         topk_ids.insert(entry.template_id);
@@ -506,9 +506,9 @@ std::optional<BehaviorBlock> merge_behavior(const MetaLogDocument& lhs, const Me
     behavior.ngram_size = lhs.behavior ? lhs.behavior->ngram_size : rhs.behavior->ngram_size;
     behavior.top_ngrams_size =
         lhs.behavior ? lhs.behavior->top_ngrams_size : rhs.behavior->top_ngrams_size;
-    std::map<std::vector<std::string>, std::uint64_t> seq_counts;
-    std::map<std::vector<std::string>, double> seq_prob_sum;
-    std::map<std::vector<std::string>, std::uint64_t> seq_prob_n;
+    std::map<std::vector<TemplateId>, std::uint64_t> seq_counts;
+    std::map<std::vector<TemplateId>, double> seq_prob_sum;
+    std::map<std::vector<TemplateId>, std::uint64_t> seq_prob_n;
     auto absorb = [&](const std::optional<BehaviorBlock>& block)
     {
         if (!block)

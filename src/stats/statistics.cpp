@@ -44,16 +44,16 @@ double shannon_entropy_bits(const std::vector<std::uint64_t>& counts, std::uint6
     return reducer.normalized_bits(static_cast<std::int64_t>(total));
 }
 
-DivergenceResult divergences(const std::unordered_map<std::string, std::uint64_t>& cur,
+DivergenceResult divergences(const std::unordered_map<TemplateId, std::uint64_t>& cur,
                              std::uint64_t cur_total,
-                             const std::unordered_map<std::string, std::uint64_t>& prev,
+                             const std::unordered_map<TemplateId, std::uint64_t>& prev,
                              std::uint64_t prev_total)
 {
     // Union of keys, in a defined (sorted) order. Pointers into the maps
-    // (no string copies). Integer accumulation below is order-invariant anyway,
+    // (no copies). Integer accumulation below is order-invariant anyway,
     // but the explicit order keeps the contract clear and avoids iterating an
     // unordered container for output.
-    std::vector<const std::string*> keys;
+    std::vector<const TemplateId*> keys;
     keys.reserve(cur.size() + prev.size());
     for (const auto& entry : cur)
         keys.push_back(&entry.first);
@@ -63,7 +63,7 @@ DivergenceResult divergences(const std::unordered_map<std::string, std::uint64_t
     if (keys.empty() || cur_total == 0 || prev_total == 0)
         return {.kl = 0.0, .js = 0.0};
     std::ranges::sort(keys,
-                      [](const std::string* lhs, const std::string* rhs) { return *lhs < *rhs; });
+                      [](const TemplateId* lhs, const TemplateId* rhs) { return *lhs < *rhs; });
 
     // Laplace smoothing (alpha = 1): with key_count = |union|, the smoothed
     // frequencies p = (cn+1)/cur_denom and q = (pn+1)/prev_denom are ratios of
@@ -83,7 +83,7 @@ DivergenceResult divergences(const std::unordered_map<std::string, std::uint64_t
     i128 kl_acc{0};
     i128 js_p_acc{0};
     i128 js_q_acc{0};
-    for (const std::string* keyp : keys)
+    for (const TemplateId* keyp : keys)
     {
         const auto cur_it{cur.find(*keyp)};
         const auto prev_it{prev.find(*keyp)};
@@ -115,8 +115,8 @@ DivergenceResult divergences(const std::unordered_map<std::string, std::uint64_t
 }
 
 std::pair<std::uint64_t, std::uint64_t>
-new_and_vanished(const std::unordered_map<std::string, std::uint64_t>& cur,
-                 const std::unordered_map<std::string, std::uint64_t>& prev)
+new_and_vanished(const std::unordered_map<TemplateId, std::uint64_t>& cur,
+                 const std::unordered_map<TemplateId, std::uint64_t>& prev)
 {
     std::uint64_t added = 0;
     std::uint64_t gone = 0;

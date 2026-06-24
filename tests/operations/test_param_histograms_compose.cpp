@@ -26,7 +26,7 @@ make_doc_with_histogram(std::string_view template_id, std::uint32_t param_index,
     doc.stats.unique_templates = 1;
     doc.stats.top_k_size = 8;
     meta::TopKEntry entry;
-    entry.template_id = std::string{template_id};
+    entry.template_id = insight::parse_template_id(template_id);
     entry.count = total;
     entry.frequency =
         lines_observed > 0 ? static_cast<double>(total) / static_cast<double>(lines_observed) : 0.0;
@@ -81,7 +81,7 @@ TEST(ParamHistogramsCompose, CarriesOneSidedHistogramUnchanged)
     rhs.stats.unique_templates = 1;
     rhs.stats.top_k_size = 8;
     meta::TopKEntry rhs_entry;
-    rhs_entry.template_id = "h:abc";
+    rhs_entry.template_id = insight::parse_template_id("h:abc");
     rhs_entry.count = 50;
     rhs.stats.top_k.push_back(std::move(rhs_entry)); // template present, NO histogram
 
@@ -122,7 +122,7 @@ TEST(ParamHistogramsCompose, NoHistogramsWhenInputsHaveNone)
     lhs.window.lines_observed = 100;
     lhs.stats.top_k_size = 8;
     meta::TopKEntry lhs_e;
-    lhs_e.template_id = "h:abc";
+    lhs_e.template_id = insight::parse_template_id("h:abc");
     lhs_e.count = 50;
     lhs.stats.top_k.push_back(std::move(lhs_e));
     const meta::MetaLogDocument rhs{lhs}; // same shape; no histograms anywhere

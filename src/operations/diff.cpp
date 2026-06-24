@@ -19,18 +19,18 @@ namespace insight::metalog
 
 namespace
 {
-[[nodiscard]] std::unordered_map<std::string, std::uint64_t> counts_of(const MetaLogDocument& doc)
+[[nodiscard]] std::unordered_map<TemplateId, std::uint64_t> counts_of(const MetaLogDocument& doc)
 {
-    std::unordered_map<std::string, std::uint64_t> out;
+    std::unordered_map<TemplateId, std::uint64_t> out;
     out.reserve(doc.stats.top_k.size());
     for (const auto& entry : doc.stats.top_k)
         out.emplace(entry.template_id, entry.count);
     return out;
 }
 
-[[nodiscard]] std::unordered_map<std::string, double> freqs_of(const MetaLogDocument& doc)
+[[nodiscard]] std::unordered_map<TemplateId, double> freqs_of(const MetaLogDocument& doc)
 {
-    std::unordered_map<std::string, double> out;
+    std::unordered_map<TemplateId, double> out;
     out.reserve(doc.stats.top_k.size());
     for (const auto& entry : doc.stats.top_k)
         out.emplace(entry.template_id, entry.frequency);
@@ -40,12 +40,12 @@ namespace
 // template_deltas: union of template_ids, each row's prev/cur count + delta +
 // frequencies; also collects new/vanished. Sorted by |delta| desc, id asc.
 void diff_template_deltas(MetaLogDiff& out,
-                          const std::unordered_map<std::string, std::uint64_t>& prev_counts,
-                          const std::unordered_map<std::string, std::uint64_t>& cur_counts,
-                          const std::unordered_map<std::string, double>& prev_freqs,
-                          const std::unordered_map<std::string, double>& cur_freqs)
+                          const std::unordered_map<TemplateId, std::uint64_t>& prev_counts,
+                          const std::unordered_map<TemplateId, std::uint64_t>& cur_counts,
+                          const std::unordered_map<TemplateId, double>& prev_freqs,
+                          const std::unordered_map<TemplateId, double>& cur_freqs)
 {
-    std::unordered_set<std::string> all_ids;
+    std::unordered_set<TemplateId> all_ids;
     all_ids.reserve(prev_counts.size() + cur_counts.size());
     for (const auto& [key, _sink] : prev_counts)
         all_ids.insert(key);
@@ -94,13 +94,13 @@ void diff_branching_delta(MetaLogDiff& out, const MetaLogDocument& previous,
         !previous.behavior->branching->empty() && current.behavior->branching &&
         !current.behavior->branching->empty())
     {
-        std::unordered_map<std::string, double> prev_h;
+        std::unordered_map<TemplateId, double> prev_h;
         for (const auto& branch : *previous.behavior->branching)
             prev_h[branch.template_id] = branch.entropy_bits;
-        std::unordered_map<std::string, double> cur_h;
+        std::unordered_map<TemplateId, double> cur_h;
         for (const auto& branch : *current.behavior->branching)
             cur_h[branch.template_id] = branch.entropy_bits;
-        std::unordered_set<std::string> ids;
+        std::unordered_set<TemplateId> ids;
         for (const auto& [key, _sink] : prev_h)
             ids.insert(key);
         for (const auto& [key, _sink] : cur_h)
@@ -136,10 +136,10 @@ void diff_ngram_delta(MetaLogDiff& out, const MetaLogDocument& previous,
         return;
     NGramDelta ngram_delta;
     ngram_delta.ngram_size = current.behavior->ngram_size;
-    std::map<std::vector<std::string>, double> prev_p;
+    std::map<std::vector<TemplateId>, double> prev_p;
     for (const auto& entry : previous.behavior->top_ngrams)
         prev_p[entry.sequence] = entry.probability;
-    std::map<std::vector<std::string>, double> cur_p;
+    std::map<std::vector<TemplateId>, double> cur_p;
     for (const auto& entry : current.behavior->top_ngrams)
         cur_p[entry.sequence] = entry.probability;
     for (const auto& [seq, _sink] : cur_p)
@@ -186,7 +186,7 @@ void diff_field_histogram_deltas(MetaLogDiff& out, const MetaLogDocument& previo
                                  const MetaLogDocument& current)
 {
     // Build lookup: template_id -> TopKEntry* for previous doc.
-    std::unordered_map<std::string, const TopKEntry*> prev_tke;
+    std::unordered_map<TemplateId, const TopKEntry*> prev_tke;
     for (const auto& entry : previous.stats.top_k)
         if (!entry.field_histograms.empty())
             prev_tke[entry.template_id] = &entry;
