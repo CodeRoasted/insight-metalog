@@ -431,8 +431,10 @@ std::uint32_t MetaLogEngine::surprise_of(const WindowAnalysis& analysis,
 
 TemplateId MetaLogEngine::template_id_for(const std::string& content_id) const
 {
-    // content_id was interned at ingest, so the index + the by-internal-id POD both exist.
-    return content_templates_by_internal_id_[content_template_index_.at(content_id)];
+    // content_id was interned at ingest, so the index + the by-internal-id POD both exist
+    // — find()->second over .at() skips the bounds-check/throw branch (no exceptions on
+    // the per-template window-build path; const method, so operator[] is unavailable).
+    return content_templates_by_internal_id_[content_template_index_.find(content_id)->second];
 }
 
 void MetaLogEngine::build_top_k(MetaLogDocument& doc, const WindowAnalysis& analysis) const
@@ -841,7 +843,7 @@ MetaLogEngine::InternalTemplateID MetaLogEngine::dominant_path_start() const
     // (the engine keys buckets_ by content_id; the id maps via content_template_index_).
     for (const auto& [content_id, bucket] : buckets_)
     {
-        const InternalTemplateID id{content_template_index_.at(content_id)};
+        const InternalTemplateID id{content_template_index_.find(content_id)->second};
         if (bucket.count > best_count || (bucket.count == best_count && id < start_id))
         {
             best_count = bucket.count;
