@@ -24,7 +24,6 @@ if(NOT TARGET insight::canon)
     find_package(insight_canon REQUIRED CONFIG)
 endif()
 find_package(glaze REQUIRED CONFIG)
-find_package(picosha2 REQUIRED CONFIG)
 
 ###########################################################
 #  Sources (1.5.2 domain decomposition, §11.9.11)
@@ -72,11 +71,11 @@ target_compile_features(insight_metalog PUBLIC cxx_std_23)
 add_library(insight::metalog ALIAS insight_metalog)
 
 # canon is imported by metalog's module units (consumers recompile them) → PUBLIC module link.
-# picosha2 is impl-only (engine.cpp, textual GMF). glaze (visible=False) must NOT reach the export
-# interface (§10.9/glaze-gotchas #5) — pull its includes build-only so the impl compiles its headers.
+# glaze (visible=False) must NOT reach the export interface (§10.9/glaze-gotchas #5) — pull its
+# includes build-only so the impl compiles its headers. (picosha2 moved to canon — D-TIR-1; it is
+# now a metalog TEST-only dep, linked on the test target below.)
 target_link_libraries(insight_metalog
-    PUBLIC  insight::canon
-    PRIVATE picosha2::picosha2)
+    PUBLIC  insight::canon)
 # glaze (visible=False, impl-only): scope its include to ONLY the .cpp that needs it (metalog_serialize),
 # NOT the target — a target-level include leaks into IMPORTED_CXX_MODULES_INCLUDE_DIRECTORIES, which
 # editable module consumers (detection/eidos) then evaluate → "glaze::glaze not found" in their graph.
@@ -115,7 +114,6 @@ export(EXPORT insight_metalogTargets
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/insight_metalog-config.cmake
 "include(CMakeFindDependencyMacro)
 find_dependency(insight_canon)
-find_dependency(picosha2)
 include(\"\${CMAKE_CURRENT_LIST_DIR}/insight_metalogTargets.cmake\")
 ")
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/insight_metalog-config.cmake
@@ -133,6 +131,7 @@ if(INSIGHT_METALOG_BUILD_TESTS)
     if(TEST_SOURCES)
         include(CTest)
         find_package(GTest REQUIRED CONFIG)
+        find_package(picosha2 REQUIRED CONFIG) # test-only: golden doc-digest hashing (D-TIR-1)
         enable_testing()
 
         # §11.9.7 white-box tests are MODULE MEMBERS: the test target RECOMPILES the module
@@ -185,7 +184,7 @@ if(INSIGHT_METALOG_BUILD_BENCHMARKS)
                 FILES    ${METALOG_PUBLIC_MODULE_UNITS} ${METALOG_DETAIL_MODULE_UNITS}
                          benchmarks/metalog.bench.cppm)
         target_link_libraries(insight_metalog_bench PRIVATE
-            insight::canon glaze::glaze picosha2::picosha2
+            insight::canon glaze::glaze
             benchmark::benchmark spdlog::spdlog)
         target_include_directories(insight_metalog_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
         target_compile_features(insight_metalog_bench PRIVATE cxx_std_23)

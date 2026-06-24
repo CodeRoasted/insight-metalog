@@ -54,11 +54,13 @@ class InsightMetalogConan(ConanFile):
         # glaze is the JSON serializer, used only in metalog_serialize.cpp and never
         # in a public header — a private, non-propagated build dependency.
         self.requires("glaze/7.4.0", visible=False)
-        self.requires("picosha2/1.0.0")
 
     def build_requirements(self):
         self.test_requires("gtest/1.17.0")
         self.test_requires("benchmark/1.9.5")
+        # picosha2 — TEST-ONLY now: the lib's template_id SHA-256 moved to canon (D-TIR-1),
+        # but the determinism/cube tests still hash full doc JSON for their golden digests.
+        self.test_requires("picosha2/1.0.0")
 
     def generate(self):
         tc = CMakeToolchain(self)
@@ -84,8 +86,7 @@ class InsightMetalogConan(ConanFile):
         # insight_canon handles spdlog/fmt internally; glaze is impl-only (not
         # propagated). Only these reach consumers:
         self.cpp_info.requires = [
-            "insight_canon::insight_canon",
-            "picosha2::picosha2"
+            "insight_canon::insight_canon"
         ]
         # Cross-package C++ modules (§10.7): defer to the package's OWN cmake config
         # (it carries FILE_SET CXX_MODULES; conan's generator does not emit it).

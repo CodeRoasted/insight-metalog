@@ -1,5 +1,4 @@
 module;
-#include <picosha2.h>
 
 module insight.metalog;
 import insight.metalog.internal;
@@ -35,26 +34,10 @@ constexpr std::size_t kHashRightShift{2U};
 
 std::string MetaLogEngine::compute_template_id(std::string_view canonical_template)
 {
-    constexpr std::size_t kSha256Bytes = 32;
-    std::array<unsigned char, kSha256Bytes> digest{};
-    picosha2::hash256(canonical_template.begin(), canonical_template.end(), digest.begin(),
-                      digest.end());
-
-    // Spec §3.2: id = "h:" + lower_hex of the first 16 SHA-256 bytes (32 hex chars).
-    constexpr std::size_t kTemplateIdBytes{16};
-    constexpr unsigned kNibbleMask{0xFU};
-    static constexpr std::array<char, 16> kHex{'0', '1', '2', '3', '4', '5', '6', '7',
-                                               '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
-    std::string out;
-    out.reserve(2 + (2 * kTemplateIdBytes)); // "h:" + two hex chars per byte
-    out.append("h:");
-    for (std::size_t i = 0; i < kTemplateIdBytes; ++i)
-    {
-        const auto byte{static_cast<unsigned>(digest[i])};
-        out.push_back(kHex[(byte >> 4) & kNibbleMask]);
-        out.push_back(kHex[byte & kNibbleMask]);
-    }
-    return out;
+    // Identity + the SHA-256 body now live in canon (insight_perf_template_id.md D-TIR-1).
+    // This still renders the "h:"+hex string here; D-TIR-2 carries the POD TemplateId
+    // through the domain and renders only at the serialize seam.
+    return insight::render(insight::template_id_of(canonical_template));
 }
 
 // ── Engine ─────────────────────────────────────────────────────
