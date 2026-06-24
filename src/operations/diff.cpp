@@ -136,32 +136,38 @@ void diff_ngram_delta(MetaLogDiff& out, const MetaLogDocument& previous,
         return;
     NGramDelta ngram_delta;
     ngram_delta.ngram_size = current.behavior->ngram_size;
-    // D-TIR-4(1): unordered point-lookup maps. new_ngrams / vanished_ngrams are
-    // iterated into output below, so — unlike rate_changed (sorted at the end) — they
-    // are explicitly sorted here to stay determinism-stable across stdlibs (ADR 0008:
-    // never emit unordered iteration order).
-    std::unordered_map<std::vector<TemplateId>, double> prev_p;
+    // D-TIR-4(2): scalar-NgramId point-lookup maps, value carrying the sequence for
+    // output. new_ngrams / vanished_ngrams are iterated into output, so — unlike
+    // rate_changed (sorted at the end) — they are explicitly sorted here to stay
+    // determinism-stable across stdlibs (ADR 0008: never emit unordered iteration order).
+    struct NgramProb
+    {
+        std::vector<TemplateId> sequence;
+        double probability{0.0};
+    };
+    std::unordered_map<NgramId, NgramProb> prev_p;
     for (const auto& entry : previous.behavior->top_ngrams)
-        prev_p[entry.sequence] = entry.probability;
-    std::unordered_map<std::vector<TemplateId>, double> cur_p;
+        prev_p[insight::ngram_id_of(entry.sequence)] = {entry.sequence, entry.probability};
+    std::unordered_map<NgramId, NgramProb> cur_p;
     for (const auto& entry : current.behavior->top_ngrams)
-        cur_p[entry.sequence] = entry.probability;
-    for (const auto& [seq, _sink] : cur_p)
-        if (!prev_p.contains(seq))
-            ngram_delta.new_ngrams.push_back(seq);
-    for (const auto& [seq, _sink] : prev_p)
-        if (!cur_p.contains(seq))
-            ngram_delta.vanished_ngrams.push_back(seq);
+        cur_p[insight::ngram_id_of(entry.sequence)] = {entry.sequence, entry.probability};
+    for (const auto& [id, cur] : cur_p)
+        if (!prev_p.contains(id))
+            ngram_delta.new_ngrams.push_back(cur.sequence);
+    for (const auto& [id, prev] : prev_p)
+        if (!cur_p.contains(id))
+            ngram_delta.vanished_ngrams.push_back(prev.sequence);
     std::ranges::sort(ngram_delta.new_ngrams);
     std::ranges::sort(ngram_delta.vanished_ngrams);
-    for (const auto& [seq, cur_prob] : cur_p)
+    for (const auto& [id, cur] : cur_p)
     {
-        auto pp_it{prev_p.find(seq)};
+        auto pp_it{prev_p.find(id)};
         if (pp_it == prev_p.end())
             continue;
-        const double delta = cur_prob - pp_it->second;
+        const double delta = cur.probability - pp_it->second.probability;
         if (std::abs(delta) > 0.0)
-            ngram_delta.rate_changed.push_back({seq, pp_it->second, cur_prob, delta});
+            ngram_delta.rate_changed.push_back(
+                {cur.sequence, pp_it->second.probability, cur.probability, delta});
     }
     std::ranges::sort(ngram_delta.rate_changed,
                       [](const NGramRateChange& lhs, const NGramRateChange& rhs)

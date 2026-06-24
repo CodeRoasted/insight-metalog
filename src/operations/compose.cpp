@@ -506,35 +506,44 @@ std::optional<BehaviorBlock> merge_behavior(const MetaLogDocument& lhs, const Me
     behavior.ngram_size = lhs.behavior ? lhs.behavior->ngram_size : rhs.behavior->ngram_size;
     behavior.top_ngrams_size =
         lhs.behavior ? lhs.behavior->top_ngrams_size : rhs.behavior->top_ngrams_size;
-    // D-TIR-4(1): n-gram-sequence-keyed accumulators. unordered_map — the output
-    // `entries` is explicitly re-sorted below (count desc, sequence asc), so the
-    // iteration order here is not a determinism surface (ADR 0008).
-    std::unordered_map<std::vector<TemplateId>, std::uint64_t> seq_counts;
-    std::unordered_map<std::vector<TemplateId>, double> seq_prob_sum;
-    std::unordered_map<std::vector<TemplateId>, std::uint64_t> seq_prob_n;
+    // D-TIR-4(2): one n-gram accumulator keyed on the scalar NgramId, carrying the
+    // sequence for output — replaces the three vector<TemplateId>-keyed maps. One O(L)
+    // id-compute + one fixed-width map op per entry instead of three sequence
+    // hashes+compares. The output `entries` is re-sorted below (count desc, sequence
+    // asc), so the map iteration order is not a determinism surface (ADR 0008).
+    struct NgramAccum
+    {
+        std::vector<TemplateId> sequence;
+        std::uint64_t count{0};
+        double prob_sum{0.0};
+        std::uint64_t prob_n{0};
+    };
+    std::unordered_map<NgramId, NgramAccum> acc;
     auto absorb = [&](const std::optional<BehaviorBlock>& block)
     {
         if (!block)
             return;
         for (const auto& entry : block->top_ngrams)
         {
-            seq_counts[entry.sequence] += entry.count;
-            seq_prob_sum[entry.sequence] += entry.probability * static_cast<double>(entry.count);
-            seq_prob_n[entry.sequence] += entry.count;
+            auto [iter, inserted]{acc.try_emplace(insight::ngram_id_of(entry.sequence))};
+            if (inserted)
+                iter->second.sequence = entry.sequence;
+            iter->second.count += entry.count;
+            iter->second.prob_sum += entry.probability * static_cast<double>(entry.count);
+            iter->second.prob_n += entry.count;
         }
     };
     absorb(lhs.behavior);
     absorb(rhs.behavior);
     std::vector<NGramEntry> entries;
-    entries.reserve(seq_counts.size());
-    for (auto& [seq, count] : seq_counts)
+    entries.reserve(acc.size());
+    for (auto& [id, accum] : acc)
     {
         NGramEntry entry;
-        entry.sequence = seq;
-        entry.count = count;
-        const auto sample_count{seq_prob_n[seq]};
+        entry.sequence = std::move(accum.sequence);
+        entry.count = accum.count;
         entry.probability =
-            sample_count > 0 ? seq_prob_sum[seq] / static_cast<double>(sample_count) : 0.0;
+            accum.prob_n > 0 ? accum.prob_sum / static_cast<double>(accum.prob_n) : 0.0;
         entries.push_back(std::move(entry));
     }
     std::ranges::sort(entries,
