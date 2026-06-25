@@ -443,4 +443,63 @@ TEST(CubeDeterminism, ByteIdentityGolden)
                                << combined;
 }
 
+// ── Order-independence (§16; the counts are an order-independent integer sum) ─────
+// The cube's three dims are PER-LINE-PURE functions of the event (level / component /
+// role), and each cell's COUNT is a plain sum — so the closed cube is invariant under ANY
+// ingest permutation. Build a varied window forward and row-reversed; the closed cubes must
+// be identical (per-cell coord+count, and cardinality). This is the single-component
+// property the playground 25/27/28/29/30/31 `CubeDimsArePerLinePureAndOrderIndependent`
+// proved through the full LogCraft replay — asserted here at the source, on the engine cube
+// itself, so the playground copies retire (re-homing, ROADMAP §1.6.2).
+TEST(CubeDeterminism, OrderIndependentUnderRowReversal)
+{
+    const std::vector<tok::CanonicalEvent> events{
+        ev("login ok", LogLevel::Info, "auth"),
+        ev("pool timeout", LogLevel::Error, "db"),
+        ev("cache miss", LogLevel::Warn, "cache"),
+        ev("login ok", LogLevel::Info, "auth"),
+        ev("request done", LogLevel::Info, "api", StructuralRole::GroupEnd),
+        ev("pool timeout", LogLevel::Error, "db"),
+        ev("batch begin", LogLevel::Info, "api", StructuralRole::GroupBegin),
+    };
+
+    const auto build_cube = [](const std::vector<tok::CanonicalEvent>& evs)
+    {
+        meta::MetaLogEngine engine{cube_cfg()};
+        const std::chrono::system_clock::time_point t0{};
+        engine.open_window(t0);
+        for (const auto& e : evs)
+            engine.ingest_event(e);
+        return engine.close_window(t0 + std::chrono::seconds{1});
+    };
+
+    // Canonical (level, where-leaf, role) → count extraction — order-independent by construction.
+    const auto cells_of = [](const meta::CubeBlock& cube)
+    {
+        std::map<std::tuple<std::string, std::string, std::string>, std::uint64_t> by_coord;
+        for (const auto& cell : cube.cells)
+        {
+            const std::string where_leaf{cell.coord.where && !cell.coord.where->empty()
+                                             ? cell.coord.where->back()
+                                             : std::string{"*"}};
+            by_coord[{cell.coord.level.value_or("*"), where_leaf,
+                      cell.coord.structural_role.value_or("*")}] += cell.count;
+        }
+        return by_coord;
+    };
+
+    const auto forward{build_cube(events)};
+    std::vector<tok::CanonicalEvent> reversed{events};
+    std::reverse(reversed.begin(), reversed.end());
+    const auto backward{build_cube(reversed)};
+
+    ASSERT_TRUE(forward.has_cube);
+    ASSERT_TRUE(backward.has_cube);
+    EXPECT_EQ(forward.cube.cell_count, backward.cube.cell_count)
+        << "closed cell count differs under row reversal";
+    EXPECT_EQ(cells_of(forward.cube), cells_of(backward.cube))
+        << "the closed cube must be identical under row reversal (per-line-pure dims, "
+           "order-independent counts)";
+}
+
 // NOLINTEND
