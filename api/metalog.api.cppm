@@ -63,6 +63,14 @@ class TemplateRegistry
     }
     [[nodiscard]] std::size_t size() const noexcept { return table_.size(); }
     void clear() noexcept { table_.clear(); }
+    // Union another registry in (first writer wins, so an existing id keeps its string — the masker is
+    // a pure fn, so a shared id always maps to the same bytes). Used to merge per-shard / per-window
+    // registries into one display vocabulary (e.g. sharded pipeline union, baseline∪changed in diff).
+    void merge(const TemplateRegistry& other)
+    {
+        for (const auto& [template_id, template_str] : other.table_)
+            table_.try_emplace(template_id, template_str);
+    }
 
   private:
     std::unordered_map<TemplateId, std::string> table_;
