@@ -258,7 +258,12 @@ class MetaLogEngine
 // truncated to those sizes. `template_emission` comes from `lhs` too.
 //
 // Stability is dropped (meaningless across composed inputs).
-[[nodiscard]] MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs);
+// `keep_template_str` (default true) materialises the display-only `template_str` on the merged
+// document. Pass FALSE when the result is consumed only by the id-based path (the pyramid's
+// diff-only baselines) to skip the O(Σcompose × templates) copy — template_str lives outside the
+// pyramid, resolved at display from the engine registry (D-TIR-5, insight_perf_template_id.md §6).
+[[nodiscard]] MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs,
+                                      bool keep_template_str = true);
 
 // Compute the pair-wise difference between two MetaLog documents.
 // `previous` is the earlier document; `current` is the later one.

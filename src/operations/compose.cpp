@@ -67,19 +67,25 @@ SourceBlock common_source(const SourceBlock& lhs, const SourceBlock& rhs)
 void aggregate_top_k(std::unordered_map<TemplateId, std::uint64_t>& counts,
                      std::unordered_map<TemplateId, std::string>& templates,
                      std::unordered_map<TemplateId, std::optional<LogLevel>>& levels,
-                     const MetaLogDocument& doc)
+                     const MetaLogDocument& doc, bool keep_template_str)
 {
     for (const auto& entry : doc.stats.top_k)
     {
         counts[entry.template_id] += entry.count;
-        if (!entry.template_str.empty() && !templates.contains(entry.template_id))
+        // template_str is a DISPLAY attribute, never read off a composed document (diff is
+        // id-based; detectors read the raw doc). The pyramid composes diff-only baselines and
+        // passes keep_template_str=false so the O(Σcompose × templates) copy is never paid
+        // (D-TIR-5 — "out of the pyramid"). Counts + levels (the decision signal) always carry.
+        if (keep_template_str && !entry.template_str.empty() &&
+            !templates.contains(entry.template_id))
             templates.emplace(entry.template_id, entry.template_str);
         if (entry.dominant_level && !levels.contains(entry.template_id))
             levels.emplace(entry.template_id, entry.dominant_level);
     }
-    for (const auto& [tid, tstr] : doc.templates)
-        if (!templates.contains(tid))
-            templates.emplace(tid, tstr);
+    if (keep_template_str)
+        for (const auto& [tid, tstr] : doc.templates)
+            if (!templates.contains(tid))
+                templates.emplace(tid, tstr);
 }
 
 // Fold a document's RESERVOIR mass into the same maps. A template is disjoint
@@ -90,12 +96,13 @@ void aggregate_top_k(std::unordered_map<TemplateId, std::uint64_t>& counts,
 void aggregate_reservoir(std::unordered_map<TemplateId, std::uint64_t>& counts,
                          std::unordered_map<TemplateId, std::string>& templates,
                          std::unordered_map<TemplateId, std::optional<LogLevel>>& levels,
-                         const MetaLogDocument& doc)
+                         const MetaLogDocument& doc, bool keep_template_str)
 {
     for (const auto& entry : doc.stats.reservoir)
     {
         counts[entry.template_id] += entry.count;
-        if (!entry.template_str.empty() && !templates.contains(entry.template_id))
+        if (keep_template_str && !entry.template_str.empty() &&
+            !templates.contains(entry.template_id))
             templates.emplace(entry.template_id, entry.template_str);
         if (entry.dominant_level && !levels.contains(entry.template_id))
             levels.emplace(entry.template_id, entry.dominant_level);
@@ -190,12 +197,12 @@ struct ComposeState
 // Fold both inputs' top_k + reservoir into the aggregation maps, then build the
 // count-desc / id-asc ordering the composed top_k and tail draw from.
 void aggregate_and_order(ComposeState& state, const MetaLogDocument& lhs,
-                         const MetaLogDocument& rhs)
+                         const MetaLogDocument& rhs, bool keep_template_str)
 {
-    aggregate_top_k(state.counts, state.templates, state.levels, lhs);
-    aggregate_top_k(state.counts, state.templates, state.levels, rhs);
-    aggregate_reservoir(state.counts, state.templates, state.levels, lhs);
-    aggregate_reservoir(state.counts, state.templates, state.levels, rhs);
+    aggregate_top_k(state.counts, state.templates, state.levels, lhs, keep_template_str);
+    aggregate_top_k(state.counts, state.templates, state.levels, rhs, keep_template_str);
+    aggregate_reservoir(state.counts, state.templates, state.levels, lhs, keep_template_str);
+    aggregate_reservoir(state.counts, state.templates, state.levels, rhs, keep_template_str);
 
     state.ordered.assign(state.counts.begin(), state.counts.end());
     std::ranges::sort(state.ordered,
@@ -561,7 +568,8 @@ std::optional<BehaviorBlock> merge_behavior(const MetaLogDocument& lhs, const Me
 
 } // namespace
 
-MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
+MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs,
+                        bool keep_template_str)
 {
     // §2.4 gate fires BEFORE any merging — incompatible inputs MUST fail loudly,
     // not produce a hybrid document the consumer can't reason about.
@@ -589,7 +597,7 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
     out.source = common_source(lhs.source, rhs.source);
 
     ComposeState state;
-    aggregate_and_order(state, lhs, rhs);
+    aggregate_and_order(state, lhs, rhs, keep_template_str);
     out.stats.top_k_size = lhs.stats.top_k_size;
     out.stats.unique_templates = state.ordered.size();
 
