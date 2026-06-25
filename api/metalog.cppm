@@ -251,7 +251,13 @@ class MetaLogEngine
 // OMITTED, never emitted as empty/zero/false (one document -> one byte
 // sequence). Consumers MUST treat an absent field as equivalent to its
 // empty/zero/false value (SPEC §0: producers omit, consumers read lenient).
-[[nodiscard]] std::string to_json(const MetaLogDocument& doc);
+// D-TIR-5 field-drop (cascade Stage 2): the display-only `template_str` is sourced from the
+// engine-owned TemplateRegistry at this seam (prefer-registry / field-fallback). The registry param is
+// defaulted to an empty table while the cascade lands — engine-built docs pass `engine.registry()` to
+// exercise the registry path; hand-built docs fall back to the per-entry field, byte-identical. Stage 4
+// drops the default + the per-entry field, making the registry a required serialise input.
+[[nodiscard]] std::string to_json(const MetaLogDocument& doc,
+                                  const TemplateRegistry& registry = TemplateRegistry{});
 
 // Free serialiser for the diff document (SPEC §13). Same restrictive,
 // omit-empty discipline as the document serialiser above.

@@ -60,7 +60,7 @@ int main(int argc, char** argv)
         engine.open_window(Clock::time_point{std::chrono::seconds{1700000000}});
         ml::nearfull::emit_window(engine);
         const auto doc{engine.close_window(Clock::time_point{std::chrono::seconds{1700000060}})};
-        std::cout << ml::to_json(doc) << "\n";
+        std::cout << ml::to_json(doc, engine.registry()) << "\n";
         return 0;
     }
 
@@ -110,7 +110,8 @@ int main(int argc, char** argv)
         engine.ingest_event(events[i]);
     const auto doc2{engine.close_window(window_end)};
 
-    std::cout << ml::to_json(doc1) << "\n" << ml::to_json(doc2) << "\n";
+    std::cout << ml::to_json(doc1, engine.registry()) << "\n"
+              << ml::to_json(doc2, engine.registry()) << "\n";
     return 0;
 }
 

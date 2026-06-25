@@ -532,9 +532,22 @@ render_sequences(const std::vector<std::vector<TemplateId>>& sequences)
     return out;
 }
 
+// D-TIR-5 field-drop: resolve the display-only `template_str` preferring the engine-owned
+// TemplateRegistry, falling back to the per-entry field while the cascade is mid-flight. The two
+// sources are byte-identical for engine-built docs (the engine interns the same masked str it stores
+// in the field), so the wire is byte-identical across the staged drop; the fallback only carries
+// hand-built docs whose caller passes an empty registry. The membership/gate stays on field-emptiness
+// (the Inline/Dedup emission signal) until Stage 4 moves that signal onto the document explicitly.
+[[nodiscard]] std::string resolve_template_str(const TemplateRegistry& registry, TemplateId template_id,
+                                               const std::string& fallback)
+{
+    const std::string_view from_registry{registry.lookup(template_id)};
+    return from_registry.empty() ? fallback : std::string{from_registry};
+}
+
 // One top_k row, incl. the optional §3.5 per-param histograms (value_counts is
 // copied into a std::map so the wire is key-sorted, §15.6).
-dto::TopKEntry make_top_k_entry(const TopKEntry& entry)
+dto::TopKEntry make_top_k_entry(const TopKEntry& entry, const TemplateRegistry& registry)
 {
     dto::TopKEntry row;
     row.template_id = insight::render(entry.template_id);
@@ -542,7 +555,7 @@ dto::TopKEntry make_top_k_entry(const TopKEntry& entry)
     row.frequency = entry.frequency;
     // SPEC §3.4: inline `template` is optional.
     if (!entry.template_str.empty())
-        row.tmpl = entry.template_str;
+        row.tmpl = resolve_template_str(registry, entry.template_id, entry.template_str);
     if (entry.dominant_level)
         row.level = level_to_spec_string(*entry.dominant_level);
     if (entry.dominant_component)
@@ -567,14 +580,14 @@ dto::TopKEntry make_top_k_entry(const TopKEntry& entry)
 }
 
 // One salience-reservoir row: the rare-salient template plus why it was kept.
-dto::ReservoirEntry make_reservoir_entry(const ReservoirEntry& entry)
+dto::ReservoirEntry make_reservoir_entry(const ReservoirEntry& entry, const TemplateRegistry& registry)
 {
     dto::ReservoirEntry row;
     row.template_id = insight::render(entry.template_id);
     row.count = entry.count;
     row.frequency = entry.frequency;
     if (!entry.template_str.empty())
-        row.tmpl = entry.template_str;
+        row.tmpl = resolve_template_str(registry, entry.template_id, entry.template_str);
     if (entry.dominant_level)
         row.level = level_to_spec_string(*entry.dominant_level);
     if (entry.dominant_component)
@@ -590,7 +603,7 @@ dto::ReservoirEntry make_reservoir_entry(const ReservoirEntry& entry)
     return row;
 }
 
-dto::Stats make_stats(const StatsBlock& stats)
+dto::Stats make_stats(const StatsBlock& stats, const TemplateRegistry& registry)
 {
     dto::Stats out;
     out.unique_templates = stats.unique_templates;
@@ -600,7 +613,7 @@ dto::Stats make_stats(const StatsBlock& stats)
     out.entropy_bits = stats.entropy_bits;
     out.top_k.reserve(stats.top_k.size());
     for (const auto& entry : stats.top_k)
-        out.top_k.push_back(make_top_k_entry(entry));
+        out.top_k.push_back(make_top_k_entry(entry, registry));
     if (stats.tail_summary)
         out.tail_summary =
             dto::TailSummary{.tail_template_count = stats.tail_summary->tail_template_count,
@@ -614,7 +627,7 @@ dto::Stats make_stats(const StatsBlock& stats)
         std::vector<dto::ReservoirEntry> rows;
         rows.reserve(stats.reservoir.size());
         for (const auto& entry : stats.reservoir)
-            rows.push_back(make_reservoir_entry(entry));
+            rows.push_back(make_reservoir_entry(entry, registry));
         out.reservoir = std::move(rows);
     }
     return out;
@@ -666,7 +679,7 @@ std::vector<dto::Provenance> make_provenance(const std::vector<ProvenanceEntry>&
     return prov;
 }
 
-dto::Document make_document(const MetaLogDocument& doc)
+dto::Document make_document(const MetaLogDocument& doc, const TemplateRegistry& registry)
 {
     dto::Document out;
     out.metalog_version = doc.metalog_version;
@@ -683,10 +696,11 @@ dto::Document make_document(const MetaLogDocument& doc)
         // Render each TemplateId key to "h:"+hex for the wire object (D-TIR-2 seam).
         std::map<std::string, std::string> rendered;
         for (const auto& [template_id, template_str] : doc.templates)
-            rendered.emplace(insight::render(template_id), template_str);
+            rendered.emplace(insight::render(template_id),
+                             resolve_template_str(registry, template_id, template_str));
         out.templates = std::move(rendered);
     }
-    out.stats = make_stats(doc.stats);
+    out.stats = make_stats(doc.stats, registry);
     if (doc.behavior)
         out.behavior = make_behavior(*doc.behavior);
     if (doc.stability)
@@ -800,9 +814,9 @@ dto::Diff make_diff(const MetaLogDiff& diff)
 
 } // namespace
 
-std::string to_json(const MetaLogDocument& doc)
+std::string to_json(const MetaLogDocument& doc, const TemplateRegistry& registry)
 {
-    const dto::Document out{make_document(doc)};
+    const dto::Document out{make_document(doc, registry)};
     std::string buf;
     // Serialising a fully-formed value to a growable string cannot fail.
     (void)glz::write<kWriteOpts>(out, buf);
