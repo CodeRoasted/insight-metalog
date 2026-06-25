@@ -52,6 +52,11 @@ class MetaLogEngine
     // string: "h:" + lower_hex(SHA-256(utf8)[0:16]).
     [[nodiscard]] static std::string compute_template_id(std::string_view canonical_template);
 
+    // The TemplateId -> template_str registry (D-TIR-5): the single home of the display-only
+    // template_str, accumulated across windows. Injected at the serialize/explain seams to resolve
+    // the strings the per-window documents no longer carry.
+    [[nodiscard]] const TemplateRegistry& registry() const noexcept { return registry_; }
+
   private:
     static constexpr std::size_t kMaxTrackedNgramSize = 3;
     using InternalTemplateID = std::uint64_t;
@@ -204,6 +209,10 @@ class MetaLogEngine
     // build_branching / build_dominant_path index this to stamp the domain id without
     // re-hashing; the "h:"+hex string is rendered only at the serialize seam.
     std::vector<TemplateId> content_templates_by_internal_id_;
+    // D-TIR-5: the single TemplateId -> template_str home (display-only), accumulated across windows
+    // and injected at the serialize/explain seams. template_str is dropped from the per-window
+    // document entries that flow through the pyramid.
+    TemplateRegistry registry_;
 
     // Recent internal template ID ring (size 2): [0] = last, [1] = second-last.
     // Only [0] is used at ngram_size=2; both are used at ngram_size=3.

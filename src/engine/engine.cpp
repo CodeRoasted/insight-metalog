@@ -141,6 +141,10 @@ MetaLogEngine::content_template_id_for(const tokenization::CanonicalEvent& event
         internal_id = static_cast<InternalTemplateID>(content_templates_by_internal_id_.size());
         content_templates_by_internal_id_.push_back(template_id);
         content_template_index_.emplace(content_id, internal_id);
+        // D-TIR-5: the engine's registry is the single home of the display-only template_str,
+        // interned once per unique id and resolved at the serialize/explain seams. Accumulates
+        // across windows (the vocabulary), so older docs/baselines resolve by id.
+        registry_.intern(template_id, event.template_str);
     }
     else
     {

@@ -36,6 +36,38 @@ struct FieldHistogram
     std::uint64_t approximate_cardinality{0};
 };
 
+// TemplateRegistry (D-TIR-5): the single TemplateId -> template_str association, owned OUTSIDE the
+// per-window document (the engine owns one; Sift/diff callers own a local one), injected at the display
+// seams (serialize / explain). template_str is a pure DISPLAY attribute — never read on the decision
+// path — so it does not belong in the entries that flow through the pyramid; this is its one home.
+// Append-only, intern-once-per-id (same id => same canon-masked content, so first writer wins). Backed
+// by node-stable std::unordered_map, so returned string_views stay valid for the registry's lifetime.
+class TemplateRegistry
+{
+  public:
+    // Intern (first writer wins); returns a view stable for the registry's lifetime.
+    std::string_view intern(TemplateId template_id, std::string_view template_str)
+    {
+        const auto [iter, inserted]{table_.try_emplace(template_id, template_str)};
+        return iter->second;
+    }
+    // The interned string for `template_id`, or "" if unknown.
+    [[nodiscard]] std::string_view lookup(TemplateId template_id) const noexcept
+    {
+        const auto iter{table_.find(template_id)};
+        return iter != table_.end() ? std::string_view{iter->second} : std::string_view{};
+    }
+    [[nodiscard]] bool contains(TemplateId template_id) const noexcept
+    {
+        return table_.contains(template_id);
+    }
+    [[nodiscard]] std::size_t size() const noexcept { return table_.size(); }
+    void clear() noexcept { table_.clear(); }
+
+  private:
+    std::unordered_map<TemplateId, std::string> table_;
+};
+
 struct TopKEntry
 {
     TemplateId template_id;   // content hash POD (rendered to "h:"+hex at the serialize seam, spec §3.2)
