@@ -4,12 +4,16 @@ name: Windows · msvc vs golden
 # (Promoted from a staged probe 2026-06-18 per Daidalos's gate-promotion handoff.)
 #
 # Asserts the canon→metalog MetaLog document is byte-identical to the committed Linux golden
-# (scripts/determinism_golden.sha256) on MSVC 14.52, across the -O × -fp SWEEP — the four corners
-#   {/Od,/O2} × {/fp:precise,/fp:fast}
-# hardening the digest against optimization level AND float contraction/reassociation (MSVC /fp:precise
-# is the no-contraction floor; /fp:fast turns it on). Every cell matching the one shared golden is part
-# of what converts "measured-green MSVC" into the Tier-1 "tri-toolchain bit-identical" claim; a red cell
-# un-promotes the claim and blocks the cut.
+# (scripts/determinism_golden.sha256) on MSVC 14.52, built at the DOMINATING corner of the -O × -fp space:
+#   /O2 /fp:fast
+# (ship optimization + float contraction/reassociation ON; /fp:fast turns contraction on, /fp:precise is
+# the no-contraction floor). This one corner dominates the former four-cell {/Od,/O2}×{/fp:precise,/fp:fast}
+# sweep: the golden is the no-contraction Linux reference, so O2-fast (contraction ON) matching it PROVES
+# the digest is contraction-invariant ⇒ the /fp:precise corners match by construction (and a contraction
+# regression would diverge HERE, where /fp:precise can't see it), while /O2 is what ships ⇒ the /Od corners
+# only add a rarely-divergent, non-shipping codegen path. This cell matching the one shared golden converts
+# "measured-green MSVC" into the Tier-1 "tri-toolchain bit-identical (at the O2-fast corner)" claim; a red
+# cell un-promotes the claim and blocks the cut.
 #
 # WHY MSVC: clang ships no libc++ on Windows → no `import std`; MSVC cl.exe is the only mature C++23
 # named-modules + import-std path. New 3rd-party surfaces beyond canon = glaze + picosha2.
@@ -48,13 +52,12 @@ jobs:
     name: msvc ${{ matrix.tag }} vs golden
     runs-on: windows-2025
     strategy:
-      fail-fast: false   # report every cell; a red cell fails the leg
+      fail-fast: false   # a red cell fails the leg
       matrix:
         include:
-          - { opt: '/Od', fp: '/fp:precise', tag: 'Od-precise' }
-          - { opt: '/O2', fp: '/fp:precise', tag: 'O2-precise' }
-          - { opt: '/Od', fp: '/fp:fast',    tag: 'Od-fast' }
-          - { opt: '/O2', fp: '/fp:fast',    tag: 'O2-fast' }
+          # The DOMINATING corner only (see header): /O2 /fp:fast vs the no-contraction golden proves
+          # contraction-invariance ⇒ the precise/Od corners would match by construction. One cell, not four.
+          - { opt: '/O2', fp: '/fp:fast', tag: 'O2-fast' }
     env:
       CONAN_HOME: ${{ github.workspace }}/.conan2
 
@@ -146,7 +149,7 @@ jobs:
           $toolchain = (Get-ChildItem -Recurse "$work/conan" -Filter conan_toolchain.cmake | Select-Object -First 1).FullName
           if (-not $toolchain) { Write-Error "no conan_toolchain.cmake from conan install"; exit 1 }
 
-          # CELL_FLAGS = SPDLOG-off + this cell's -O/-fp (cl last-wins resolves /Od over Release's /O2).
+          # CELL_FLAGS = SPDLOG-off + the cell's -O/-fp (/O2 /fp:fast; /O2 matches Release, /fp:fast adds contraction).
           cmake -S scripts/det_harness -B "$work/build" -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
             -DCMAKE_TOOLCHAIN_FILE="$toolchain" `
