@@ -133,6 +133,21 @@ constexpr std::size_t kStageWindowSize{4'000};
     return counts;
 }
 
+// divergences() is keyed by the content-derived TemplateId POD (template distribution) since the perf
+// review; histogram_js() is keyed by the field VALUE string (value distribution) — hence two helpers.
+[[nodiscard]] std::unordered_map<insight::TemplateId, std::uint64_t>
+make_id_count_map(std::size_t n, std::uint64_t seed, std::size_t key_shift)
+{
+    SplitMix64 rng{seed};
+    std::unordered_map<insight::TemplateId, std::uint64_t> counts;
+    counts.reserve(n);
+    for (std::size_t i{0}; i < n; ++i)
+        // key_shift overlaps the two maps partially (a shared vocabulary + a private tail).
+        counts.emplace(insight::template_id_of("tmpl_" + std::to_string(i + key_shift)),
+                       1U + (rng.next() % 4096U));
+    return counts;
+}
+
 [[nodiscard]] std::unordered_map<std::string, std::uint64_t>
 make_count_map(std::size_t n, std::uint64_t seed, std::size_t key_shift)
 {
@@ -140,8 +155,7 @@ make_count_map(std::size_t n, std::uint64_t seed, std::size_t key_shift)
     std::unordered_map<std::string, std::uint64_t> counts;
     counts.reserve(n);
     for (std::size_t i{0}; i < n; ++i)
-        // key_shift overlaps the two maps partially (a shared vocabulary + a private tail).
-        counts.emplace("tmpl_" + std::to_string(i + key_shift), 1U + (rng.next() % 4096U));
+        counts.emplace("val_" + std::to_string(i + key_shift), 1U + (rng.next() % 4096U));
     return counts;
 }
 
@@ -149,6 +163,15 @@ make_count_map(std::size_t n, std::uint64_t seed, std::size_t key_shift)
 {
     std::uint64_t total{0};
     for (const std::uint64_t count : counts)
+        total += count;
+    return total;
+}
+
+[[nodiscard]] std::uint64_t
+total_of(const std::unordered_map<insight::TemplateId, std::uint64_t>& counts) noexcept
+{
+    std::uint64_t total{0};
+    for (const auto& [key, count] : counts)
         total += count;
     return total;
 }
@@ -411,8 +434,8 @@ BENCHMARK(BM_ShannonEntropy)->Arg(64)->Arg(128)->Arg(192)->Unit(benchmark::kNano
 void BM_Divergences(benchmark::State& state)
 {
     const auto n{static_cast<std::size_t>(state.range(0))}; // n = keys PER SIDE (top_k ≈ 64)
-    const auto cur{make_count_map(n, 0x5EED'0002, 0)};
-    const auto prev{make_count_map(n, 0x5EED'0003, n / 4)}; // 75% vocabulary overlap
+    const auto cur{make_id_count_map(n, 0x5EED'0002, 0)};
+    const auto prev{make_id_count_map(n, 0x5EED'0003, n / 4)}; // 75% vocabulary overlap
     const std::uint64_t cur_total{total_of(cur)};
     const std::uint64_t prev_total{total_of(prev)};
     for (auto _ : state)
