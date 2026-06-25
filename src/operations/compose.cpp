@@ -65,27 +65,18 @@ SourceBlock common_source(const SourceBlock& lhs, const SourceBlock& rhs)
 }
 
 void aggregate_top_k(std::unordered_map<TemplateId, std::uint64_t>& counts,
-                     std::unordered_map<TemplateId, std::string>& templates,
                      std::unordered_map<TemplateId, std::optional<LogLevel>>& levels,
-                     const MetaLogDocument& doc, bool keep_template_str)
+                     const MetaLogDocument& doc)
 {
+    // Counts + levels are the decision signal a composed document carries. The display template_str
+    // is gone (D-TIR-5 field-drop): it lived only for serialise/explain, resolved by id from the
+    // engine registry — never read off a composed (diff-only) document.
     for (const auto& entry : doc.stats.top_k)
     {
         counts[entry.template_id] += entry.count;
-        // template_str is a DISPLAY attribute, never read off a composed document (diff is
-        // id-based; detectors read the raw doc). The pyramid composes diff-only baselines and
-        // passes keep_template_str=false so the O(Σcompose × templates) copy is never paid
-        // (D-TIR-5 — "out of the pyramid"). Counts + levels (the decision signal) always carry.
-        if (keep_template_str && !entry.template_str.empty() &&
-            !templates.contains(entry.template_id))
-            templates.emplace(entry.template_id, entry.template_str);
         if (entry.dominant_level && !levels.contains(entry.template_id))
             levels.emplace(entry.template_id, entry.dominant_level);
     }
-    if (keep_template_str)
-        for (const auto& [tid, tstr] : doc.templates)
-            if (!templates.contains(tid))
-                templates.emplace(tid, tstr);
 }
 
 // Fold a document's RESERVOIR mass into the same maps. A template is disjoint
@@ -94,16 +85,12 @@ void aggregate_top_k(std::unordered_map<TemplateId, std::uint64_t>& counts,
 // full merged count. Lets the composed top_k ranking and the re-derived reservoir
 // see the rare-salient templates' counts, which `aggregate_top_k` alone misses.
 void aggregate_reservoir(std::unordered_map<TemplateId, std::uint64_t>& counts,
-                         std::unordered_map<TemplateId, std::string>& templates,
                          std::unordered_map<TemplateId, std::optional<LogLevel>>& levels,
-                         const MetaLogDocument& doc, bool keep_template_str)
+                         const MetaLogDocument& doc)
 {
     for (const auto& entry : doc.stats.reservoir)
     {
         counts[entry.template_id] += entry.count;
-        if (keep_template_str && !entry.template_str.empty() &&
-            !templates.contains(entry.template_id))
-            templates.emplace(entry.template_id, entry.template_str);
         if (entry.dominant_level && !levels.contains(entry.template_id))
             levels.emplace(entry.template_id, entry.dominant_level);
     }
@@ -188,7 +175,6 @@ merge_field_histograms(const std::vector<FieldHistogram>& lhs,
 struct ComposeState
 {
     std::unordered_map<TemplateId, std::uint64_t> counts;
-    std::unordered_map<TemplateId, std::string> templates;
     std::unordered_map<TemplateId, std::optional<LogLevel>> levels;
     std::vector<std::pair<TemplateId, std::uint64_t>> ordered;
     std::unordered_set<TemplateId> reserved;
@@ -197,12 +183,12 @@ struct ComposeState
 // Fold both inputs' top_k + reservoir into the aggregation maps, then build the
 // count-desc / id-asc ordering the composed top_k and tail draw from.
 void aggregate_and_order(ComposeState& state, const MetaLogDocument& lhs,
-                         const MetaLogDocument& rhs, bool keep_template_str)
+                         const MetaLogDocument& rhs)
 {
-    aggregate_top_k(state.counts, state.templates, state.levels, lhs, keep_template_str);
-    aggregate_top_k(state.counts, state.templates, state.levels, rhs, keep_template_str);
-    aggregate_reservoir(state.counts, state.templates, state.levels, lhs, keep_template_str);
-    aggregate_reservoir(state.counts, state.templates, state.levels, rhs, keep_template_str);
+    aggregate_top_k(state.counts, state.levels, lhs);
+    aggregate_top_k(state.counts, state.levels, rhs);
+    aggregate_reservoir(state.counts, state.levels, lhs);
+    aggregate_reservoir(state.counts, state.levels, rhs);
 
     state.ordered.assign(state.counts.begin(), state.counts.end());
     std::ranges::sort(state.ordered,
@@ -219,7 +205,6 @@ void aggregate_and_order(ComposeState& state, const MetaLogDocument& lhs,
 void build_composed_top_k(MetaLogDocument& out, const ComposeState& state,
                           const MetaLogDocument& lhs, const MetaLogDocument& rhs)
 {
-    const auto& templates = state.templates;
     const auto& levels = state.levels;
     const auto& ordered = state.ordered;
     const auto build_topk_index{[](const MetaLogDocument& doc)
@@ -241,8 +226,6 @@ void build_composed_top_k(MetaLogDocument& out, const ComposeState& state,
     {
         TopKEntry entry;
         entry.template_id = ordered[i].first;
-        if (auto tmpl{templates.find(entry.template_id)}; tmpl != templates.end())
-            entry.template_str = tmpl->second; // preserved when at least one input had it inline
         entry.count = ordered[i].second;
         entry.frequency = total_lines > 0.0 ? static_cast<double>(entry.count) / total_lines : 0.0;
         if (auto level_it{levels.find(entry.template_id)}; level_it != levels.end())
@@ -296,7 +279,6 @@ collect_compose_reservoir_candidates(const MetaLogDocument& out, const ComposeSt
 {
     const auto& counts = state.counts;
     const auto& levels = state.levels;
-    const auto& templates = state.templates;
 
     std::unordered_map<TemplateId, ComposeSalienceInfo> sal_info;
     const auto absorb_reservoir{[&](const MetaLogDocument& doc)
@@ -333,11 +315,14 @@ collect_compose_reservoir_candidates(const MetaLogDocument& out, const ComposeSt
         const std::uint64_t cnt{cit != counts.end() ? cit->second : 0};
         const auto lit{levels.find(tid)};
         const std::optional<LogLevel> lvl{lit != levels.end() ? lit->second : std::nullopt};
-        const auto tit{templates.find(tid)};
-        const std::string_view tstr{tit != templates.end() ? std::string_view{tit->second}
-                                                           : std::string_view{}};
-        const auto sal{salience_score(lvl, info.role, tstr, cnt, out.window.lines_observed,
-                                      info.structural_surprise, info.novelty)};
+        // template_str is gone from composed documents (D-TIR-5). looks_like_failure's lexicon cue is
+        // redundant here: a reservoir candidate is folded from inputs that were ALREADY admitted by
+        // salience (carrying level + structural_surprise/novelty, the dominant severity axes); canon
+        // also lifts declared failure markers to LogLevel::Error, captured by `lvl`. The composed
+        // re-derivation re-ranks on those carried signals, not on re-parsing the string.
+        const auto sal{salience_score(lvl, info.role, std::string_view{}, cnt,
+                                      out.window.lines_observed, info.structural_surprise,
+                                      info.novelty)};
         if (sal > 0U)
             res_cands.push_back(
                 ComposeReservoirCandidate{.template_id = tid,
@@ -359,7 +344,6 @@ void rederive_reservoir(MetaLogDocument& out, ComposeState& state, const MetaLog
                         const MetaLogDocument& rhs)
 {
     const auto& counts = state.counts;
-    const auto& templates = state.templates;
     const auto& levels = state.levels;
     auto& reserved = state.reserved;
     const auto total_lines = static_cast<double>(out.window.lines_observed);
@@ -380,8 +364,6 @@ void rederive_reservoir(MetaLogDocument& out, ComposeState& state, const MetaLog
     {
         ReservoirEntry entry;
         entry.template_id = cand.template_id;
-        if (auto tmpl{templates.find(cand.template_id)}; tmpl != templates.end())
-            entry.template_str = tmpl->second;
         const auto cit{counts.find(cand.template_id)};
         entry.count = cit != counts.end() ? cit->second : 0;
         entry.frequency = total_lines > 0.0 ? static_cast<double>(entry.count) / total_lines : 0.0;
@@ -568,8 +550,7 @@ std::optional<BehaviorBlock> merge_behavior(const MetaLogDocument& lhs, const Me
 
 } // namespace
 
-MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs,
-                        bool keep_template_str)
+MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
 {
     // §2.4 gate fires BEFORE any merging — incompatible inputs MUST fail loudly,
     // not produce a hybrid document the consumer can't reason about.
@@ -597,7 +578,7 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs,
     out.source = common_source(lhs.source, rhs.source);
 
     ComposeState state;
-    aggregate_and_order(state, lhs, rhs, keep_template_str);
+    aggregate_and_order(state, lhs, rhs);
     out.stats.top_k_size = lhs.stats.top_k_size;
     out.stats.unique_templates = state.ordered.size();
 
@@ -605,9 +586,9 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs,
     rederive_reservoir(out, state, lhs, rhs);
     build_composed_tail(out, state, lhs, rhs);
 
-    // Templates dedup map: union (matches SPEC §12).
-    for (auto& [tid, tstr] : state.templates)
-        out.templates.emplace(tid, std::move(tstr));
+    // Display template strings are no longer carried on a composed document (D-TIR-5): they resolve by
+    // id from the engine registry at serialise. A composed doc keeps the default Inline emission; its
+    // Dedup membership (dedup_template_ids) is unused since composed docs are diff-only.
 
     // Stability dropped per SPEC §12.1.
     out.provenance = merge_provenance(lhs, rhs);

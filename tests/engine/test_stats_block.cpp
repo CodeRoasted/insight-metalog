@@ -176,7 +176,7 @@ TEST(MetaLogEngineStats, TailSummarySerialisedToJsonAtomically)
         engine.ingest_event(make_event("a"));
     engine.ingest_event(make_event("b"));
     auto doc{engine.close_window(t0 + std::chrono::seconds(1))};
-    const std::string json = meta::to_json(doc);
+    const std::string json = meta::to_json(doc, engine.registry());
 
     auto parsed = glz::read_json<glz::generic>(json);
     ASSERT_TRUE(parsed.has_value()) << "serialised output did not parse: " << json;

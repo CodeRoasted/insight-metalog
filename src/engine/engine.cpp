@@ -299,6 +299,9 @@ void MetaLogEngine::stamp_envelope(MetaLogDocument& doc, Timestamp start, Timest
     doc.metalog_version = "0.6.0";
     doc.producer.version = config_.producer_version;
     doc.source = source_;
+    // D-TIR-5 field-drop: the doc carries the emission policy it was built under so the serialiser
+    // knows how to render template strings (by id, from the registry) now the string fields are gone.
+    doc.emission = config_.template_emission;
 
     // Reported bounds: the deterministic parseable-ts envelope when supplied (MUST 3),
     // else the open/close machinery times. Duration tracks the reported span.
@@ -456,10 +459,9 @@ void MetaLogEngine::build_top_k(MetaLogDocument& doc, const WindowAnalysis& anal
     {
         TopKEntry entry;
         entry.template_id = template_id_for(ordered[i].first);
-        if (config_.template_emission == TemplateEmissionMode::Inline)
-            entry.template_str = ordered[i].second->template_str;
-        // Dedup mode populates the top-level doc.templates map below.
-        // IdOnly mode emits neither.
+        // D-TIR-5 field-drop: the display template_str is no longer copied onto the entry — it lives
+        // in the engine registry (interned at ingest), resolved by id at the serialize/explain seams
+        // per doc.emission. Dedup membership is built in build_templates_map below.
         entry.count = ordered[i].second->count;
         entry.frequency = total > 0.0 ? static_cast<double>(entry.count) / total : 0.0;
         entry.dominant_level = dominant_level_of(ordered[i].second->level_counts);
@@ -588,8 +590,7 @@ void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& ana
         }
         ReservoirEntry entry;
         entry.template_id = template_id_for(ordered[candidate.index].first);
-        if (config_.template_emission == TemplateEmissionMode::Inline)
-            entry.template_str = bucket.template_str;
+        // D-TIR-5 field-drop: template_str resolved by id from the registry at the display seams.
         entry.count = bucket.count;
         entry.frequency = total > 0.0 ? static_cast<double>(bucket.count) / total : 0.0;
         entry.dominant_level = level;
@@ -955,14 +956,18 @@ void MetaLogEngine::stash_prev_window(const MetaLogDocument& doc)
 
 void MetaLogEngine::build_templates_map(MetaLogDocument& doc) const
 {
-    // ── templates dedup map (SPEC §3.4) ──
+    // ── templates dedup membership (SPEC §3.4) ──
     if (config_.template_emission == TemplateEmissionMode::Dedup)
     {
-        // Emit every distinct template_id observed in the window
-        // (including tail templates) so consumers can resolve any id
-        // referenced by stats/behavior.
+        // Record every distinct template_id observed in the window (including tail
+        // templates) so consumers can resolve any id referenced by stats/behavior. The
+        // display strings come from the engine registry at the serialize seam (D-TIR-5);
+        // this carries the per-window SET only (the registry is global, so it cannot
+        // reconstruct which ids belong to this window). Sorted for a deterministic wire.
+        doc.dedup_template_ids.reserve(buckets_.size());
         for (const auto& [content_id, bucket] : buckets_)
-            doc.templates.emplace(template_id_for(content_id), bucket.template_str);
+            doc.dedup_template_ids.push_back(template_id_for(content_id));
+        std::ranges::sort(doc.dedup_template_ids);
     }
 }
 

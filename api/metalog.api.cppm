@@ -70,8 +70,9 @@ class TemplateRegistry
 
 struct TopKEntry
 {
-    TemplateId template_id;   // content hash POD (rendered to "h:"+hex at the serialize seam, spec §3.2)
-    std::string template_str; // populated in-engine; serialiser may skip per config
+    TemplateId template_id; // content hash POD (rendered to "h:"+hex at the serialize seam, spec §3.2).
+                            // The display template_str lives in the engine-owned TemplateRegistry
+                            // (D-TIR-5 field-drop), resolved by id at the serialize/explain seams.
     std::uint64_t count{0};
     double frequency{0.0};
     std::optional<LogLevel> dominant_level;
@@ -266,8 +267,8 @@ struct CubeCardinalityStat
 // did NOT make top_k by frequency); excluded from the tail residual.
 struct ReservoirEntry
 {
-    TemplateId template_id;
-    std::string template_str; // per template_emission mode, like TopKEntry
+    TemplateId template_id; // display template_str resolved by id from the engine TemplateRegistry
+                            // at the serialize/explain seams (D-TIR-5 field-drop), like TopKEntry.
     std::uint64_t count{0};
     double frequency{0.0};
     std::optional<LogLevel> dominant_level;
@@ -493,6 +494,17 @@ struct ProvenanceEntry
     std::optional<ReDerivationCoordinate> coordinate;
 };
 
+// Template-string emission mode (SPEC §3.4). Defined before MetaLogDocument so the document can carry
+// the mode it was built under: the serialiser reads it to decide how to render template strings
+// (resolved by id from the engine-owned registry) once the per-entry/per-doc string fields are gone —
+// the wire signal that used to travel implicitly via which string fields were populated.
+enum class TemplateEmissionMode : std::uint8_t
+{
+    Inline = 0, // emit `template` inside each top_k entry (back-compat default)
+    Dedup = 1,  // emit `templates` top-level map only; no inline strings
+    IdOnly = 2, // omit template strings entirely (consumer resolves out-of-band)
+};
+
 struct MetaLogDocument
 {
     std::string metalog_version{"0.6.0"};
@@ -502,7 +514,13 @@ struct MetaLogDocument
     StatsBlock stats{};
     std::optional<BehaviorBlock> behavior;
     std::optional<StabilityBlock> stability;
-    std::map<TemplateId, std::string> templates; // optional dedup map (SPEC §3.4); keys rendered at the wire seam
+    // D-TIR-5 field-drop: the display strings live in the engine-owned TemplateRegistry, resolved by
+    // id at the serialize/explain seams. `emission` is the policy this doc was built under (the wire
+    // signal that used to travel implicitly via which string fields were populated). In Dedup mode
+    // `dedup_template_ids` is the full per-window template SET (incl. tail) whose ids the wire
+    // `templates` map renders — membership only; strings come from the registry.
+    TemplateEmissionMode emission{TemplateEmissionMode::Inline}; // policy this doc was built under
+    std::vector<TemplateId> dedup_template_ids; // Dedup mode only: the SPEC §3.4 dedup-map membership
     std::optional<std::vector<ProvenanceEntry>> provenance; // absent unless composed (SPEC §12.4)
     // Processing-identifier strings (SPEC §2.4). Opaque names of the contract
     // under which the document was produced; gate `compose()` / diff
@@ -537,14 +555,6 @@ struct MetaLogDocument
 };
 
 // ── Producer configuration ─────────────────────────────────────
-
-// Template-string emission mode (SPEC §3.4).
-enum class TemplateEmissionMode : std::uint8_t
-{
-    Inline = 0, // emit `template` inside each top_k entry (back-compat default)
-    Dedup = 1,  // emit `templates` top-level map only; no inline strings
-    IdOnly = 2, // omit template strings entirely (consumer resolves out-of-band)
-};
 
 struct MetaLogConfig
 {

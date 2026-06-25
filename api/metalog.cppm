@@ -251,13 +251,12 @@ class MetaLogEngine
 // OMITTED, never emitted as empty/zero/false (one document -> one byte
 // sequence). Consumers MUST treat an absent field as equivalent to its
 // empty/zero/false value (SPEC §0: producers omit, consumers read lenient).
-// D-TIR-5 field-drop (cascade Stage 2): the display-only `template_str` is sourced from the
-// engine-owned TemplateRegistry at this seam (prefer-registry / field-fallback). The registry param is
-// defaulted to an empty table while the cascade lands — engine-built docs pass `engine.registry()` to
-// exercise the registry path; hand-built docs fall back to the per-entry field, byte-identical. Stage 4
-// drops the default + the per-entry field, making the registry a required serialise input.
-[[nodiscard]] std::string to_json(const MetaLogDocument& doc,
-                                  const TemplateRegistry& registry = TemplateRegistry{});
+// D-TIR-5 field-drop: the display-only `template_str` no longer lives on the document — it is resolved
+// by id from the engine-owned TemplateRegistry at this seam, per `doc.emission` (Inline → per-entry
+// `template`; Dedup → the top-level `templates` map over `doc.dedup_template_ids`; IdOnly → neither).
+// The registry MUST contain every id the document references (the engine interns every template at
+// ingest); pass `engine.registry()`. A hand-built document needs a registry seeded with its strings.
+[[nodiscard]] std::string to_json(const MetaLogDocument& doc, const TemplateRegistry& registry);
 
 // Free serialiser for the diff document (SPEC §13). Same restrictive,
 // omit-empty discipline as the document serialiser above.
@@ -270,15 +269,13 @@ class MetaLogEngine
 // unique_templates union, time-axis envelope). See SPEC §12.
 //
 // `top_k_size` and `top_ngrams_size` come from `lhs`; the result is
-// truncated to those sizes. `template_emission` comes from `lhs` too.
+// truncated to those sizes.
 //
-// Stability is dropped (meaningless across composed inputs).
-// `keep_template_str` (default true) materialises the display-only `template_str` on the merged
-// document. Pass FALSE when the result is consumed only by the id-based path (the pyramid's
-// diff-only baselines) to skip the O(Σcompose × templates) copy — template_str lives outside the
-// pyramid, resolved at display from the engine registry (D-TIR-5, insight_perf_template_id.md §6).
-[[nodiscard]] MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs,
-                                      bool keep_template_str = true);
+// Stability is dropped (meaningless across composed inputs). A composed document carries no display
+// template_str — it is id-only; the display string resolves by id from the engine registry at the
+// serialize/explain seams (D-TIR-5, insight_perf_template_id.md §6). Counts + levels (the decision
+// signal) always carry.
+[[nodiscard]] MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs);
 
 // Compute the pair-wise difference between two MetaLog documents.
 // `previous` is the earlier document; `current` is the later one.

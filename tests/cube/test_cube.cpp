@@ -225,7 +225,8 @@ namespace
 {
 // Two single-window documents under a shared contract, so diff() does not trip the
 // §2.4 gate. Window B introduces an (ERROR, db) burst absent from window A.
-[[nodiscard]] std::pair<meta::MetaLogDocument, meta::MetaLogDocument> two_windows()
+[[nodiscard]] std::pair<meta::MetaLogDocument, meta::MetaLogDocument>
+two_windows(meta::TemplateRegistry* out_registry = nullptr)
 {
     auto cfg{cube_cfg()};
     cfg.canonicalization_version = "canon-cube-test";
@@ -247,6 +248,8 @@ namespace
     for (int i = 0; i < 5; ++i)
         engine.ingest_event(ev("pool timeout", LogLevel::Error, "db")); // the burst
     const auto cur{engine.close_window(t2)};
+    if (out_registry != nullptr)
+        *out_registry = engine.registry(); // D-TIR-5: registry resolves template strings at serialise
     return {prev, cur};
 }
 } // namespace
@@ -388,7 +391,7 @@ TEST(CubeReservoirCross, SalientEntryCarriesLocation)
     ASSERT_TRUE(doc.has_cube);
     const meta::ReservoirEntry* fatal{nullptr};
     for (const auto& entry : doc.stats.reservoir)
-        if (entry.template_str == "disk failed")
+        if (entry.template_id == insight::template_id_of("disk failed"))
             fatal = &entry;
     ASSERT_NE(fatal, nullptr) << "the rare fatal must be in the reservoir";
     ASSERT_TRUE(fatal->cube_coord.has_value()) << "§16.6: a salient entry carries its cube LOCATION";
@@ -426,10 +429,11 @@ TEST(CubeMustOne, TreeAcceptedDagRejected)
 // contract change (and re-verify across the cross-stdlib diagonal).
 TEST(CubeDeterminism, ByteIdentityGolden)
 {
-    const auto [prev, cur]{two_windows()};
+    meta::TemplateRegistry registry;
+    const auto [prev, cur]{two_windows(&registry)};
     const auto diff{meta::diff(prev, cur)};
-    const std::string combined{meta::to_json(prev) + "\n" + meta::to_json(cur) + "\n" +
-                               meta::to_json(diff)};
+    const std::string combined{meta::to_json(prev, registry) + "\n" + meta::to_json(cur, registry) +
+                               "\n" + meta::to_json(diff)};
     const std::string digest{picosha2::hash256_hex_string(combined)};
 
     constexpr std::string_view kGolden{

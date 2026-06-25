@@ -25,7 +25,8 @@ namespace
 // Feed N frequent benign Info templates plus one rare event, with a small top_k
 // so the rare event is below it. Returns the closed document.
 meta::MetaLogDocument run_with_rare_event(const tok::CanonicalEvent& rare, std::size_t top_k,
-                                          std::size_t reservoir_size)
+                                          std::size_t reservoir_size,
+                                          meta::TemplateRegistry* out_registry = nullptr)
 {
     meta::MetaLogEngine engine{meta::MetaLogConfig{
         .top_k_size = top_k, .reservoir_size = reservoir_size, .emit_stability = false}};
@@ -38,18 +39,31 @@ meta::MetaLogDocument run_with_rare_event(const tok::CanonicalEvent& rare, std::
         engine.ingest_event(make_event("delta steady event"));
     }
     engine.ingest_event(rare); // one occurrence — rank last by frequency
-    return engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{60});
+    auto doc{engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{60})};
+    if (out_registry != nullptr)
+        *out_registry = engine.registry(); // D-TIR-5: caller serialises via the engine registry
+    return doc;
 }
 
+// D-TIR-5 field-drop: entries carry only the content-derived TemplateId now (template_str moved to the
+// registry). A membership check computes the expected id from the string (the stateless masker is a
+// pure fn — same string → same id the engine assigned) and compares ids; no registry needed.
 [[nodiscard]] bool reservoir_has(const meta::MetaLogDocument& doc, std::string_view tmpl)
 {
+    const auto id{insight::template_id_of(tmpl)};
     return std::ranges::any_of(doc.stats.reservoir,
-                               [&](const auto& entry) { return entry.template_str == tmpl; });
+                               [&](const auto& entry) { return entry.template_id == id; });
 }
 [[nodiscard]] bool top_k_has(const meta::MetaLogDocument& doc, std::string_view tmpl)
 {
+    const auto id{insight::template_id_of(tmpl)};
     return std::ranges::any_of(doc.stats.top_k,
-                               [&](const auto& entry) { return entry.template_str == tmpl; });
+                               [&](const auto& entry) { return entry.template_id == id; });
+}
+// A single entry's identity check (TopK or Reservoir), by content-derived id.
+[[nodiscard]] bool entry_is(const auto& entry, std::string_view tmpl)
+{
+    return entry.template_id == insight::template_id_of(tmpl);
 }
 } // namespace
 
@@ -63,7 +77,7 @@ TEST(ReservoirTest, RareErrorAdmittedBelowTopK)
     ASSERT_TRUE(reservoir_has(doc, "connection refused to db"))
         << "a rare severe event must survive in the salience reservoir, not the tail";
     for (const auto& entry : doc.stats.reservoir)
-        if (entry.template_str == "connection refused to db")
+        if (entry_is(entry, "connection refused to db"))
         {
             EXPECT_GT(entry.salience, 0U);
             EXPECT_EQ(entry.dominant_level, insight::LogLevel::Error);
@@ -135,7 +149,7 @@ TEST(ReservoirTest, StructuralSurpriseAdmitsRecurringOffPathBranch)
     ASSERT_TRUE(reservoir_has(doc, "took alternate cache path"))
         << "structural_surprise must retain a benign Info branch reached via a rare transition";
     for (const auto& entry : doc.stats.reservoir)
-        if (entry.template_str == "took alternate cache path")
+        if (entry_is(entry, "took alternate cache path"))
         {
             EXPECT_GT(entry.structural_surprise, 0U)
                 << "retention must be attributed to structural_surprise, not severity";
@@ -173,7 +187,7 @@ TEST(ReservoirTest, NoveltyAdmitsLateEmergingBenignTemplate)
     ASSERT_TRUE(reservoir_has(doc, "cache warmer started"))
         << "self-novelty must retain a benign template that emerged late in the window";
     for (const auto& entry : doc.stats.reservoir)
-        if (entry.template_str == "cache warmer started")
+        if (entry_is(entry, "cache warmer started"))
         {
             EXPECT_GT(entry.novelty, 0U)
                 << "retention must be attributed to novelty, not severity/structure";
@@ -190,10 +204,11 @@ TEST(ReservoirTest, NoveltyAdmitsLateEmergingBenignTemplate)
 TEST(ReservoirTest, SerialisedToJsonWithAttribution)
 {
     auto rare{make_event("connection refused to db", insight::LogLevel::Error)};
-    const auto doc{run_with_rare_event(rare, /*top_k=*/3, /*reservoir_size=*/8)};
+    meta::TemplateRegistry registry;
+    const auto doc{run_with_rare_event(rare, /*top_k=*/3, /*reservoir_size=*/8, &registry)};
     ASSERT_FALSE(doc.stats.reservoir.empty());
 
-    const std::string json = meta::to_json(doc);
+    const std::string json = meta::to_json(doc, registry);
     auto parsed = glz::read_json<glz::generic>(json);
     ASSERT_TRUE(parsed.has_value()) << "serialised output did not parse: " << json;
     ASSERT_TRUE((*parsed)["stats"].contains("reservoir")) << json;
@@ -219,7 +234,7 @@ TEST(ReservoirTest, EmptyReservoirOmittedFromJson)
     for (int i = 0; i < 10; ++i)
         engine.ingest_event(make_event("steady"));
     const auto doc{engine.close_window(t0 + std::chrono::seconds(1))};
-    const std::string json = meta::to_json(doc);
+    const std::string json = meta::to_json(doc, engine.registry());
     auto parsed = glz::read_json<glz::generic>(json);
     ASSERT_TRUE(parsed.has_value()) << json;
     EXPECT_FALSE((*parsed)["stats"].contains("reservoir")) << json;
@@ -252,7 +267,7 @@ TEST(ReservoirTest, SurvivesComposeWithStructuralSurprise)
     ASSERT_TRUE(reservoir_has(lhs, "took alternate cache path"));
     std::uint32_t lhs_surprise{0};
     for (const auto& e : lhs.stats.reservoir)
-        if (e.template_str == "took alternate cache path")
+        if (entry_is(e, "took alternate cache path"))
             lhs_surprise = e.structural_surprise;
     ASSERT_GT(lhs_surprise, 0U);
 
@@ -274,7 +289,7 @@ TEST(ReservoirTest, SurvivesComposeWithStructuralSurprise)
     ASSERT_TRUE(reservoir_has(composed, "took alternate cache path"))
         << "compose() must carry the rare-salient template, not drop it to the tail";
     for (const auto& e : composed.stats.reservoir)
-        if (e.template_str == "took alternate cache path")
+        if (entry_is(e, "took alternate cache path"))
         {
             EXPECT_GT(e.structural_surprise, 0U)
                 << "structural_surprise must persist through compose";
@@ -430,7 +445,8 @@ TEST(ReDerivationCoordinate, SerialisesCoordinate)
     const auto start{std::chrono::system_clock::now()};
     engine.open_window(start);
     engine.ingest_event(make_event("alpha"));
-    const std::string json{meta::to_json(engine.close_window(start + std::chrono::seconds(1)))};
+    const auto doc{engine.close_window(start + std::chrono::seconds(1))};
+    const std::string json{meta::to_json(doc, engine.registry())};
 
     const auto parsed{glz::read_json<glz::generic>(json)};
     ASSERT_TRUE(parsed.has_value()) << "serialised output did not parse: " << json;
@@ -460,7 +476,7 @@ TEST(ReDerivationCoordinate, ReservoirEntryCarriesWithinWindowOrdinal)
 
     bool found{false};
     for (const auto& entry : doc.stats.reservoir)
-        if (entry.template_str == "connection refused to db")
+        if (entry_is(entry, "connection refused to db"))
         {
             found = true;
             ASSERT_TRUE(entry.within_window_ordinal.has_value())
@@ -521,7 +537,9 @@ TEST(ReDerivationCoordinate, ComposedSerialisesAsChildrenOnlyXOR)
     const auto t0{std::chrono::system_clock::now()};
     const auto composed{
         meta::compose(build("seed=1", t0), build("seed=2", t0 + std::chrono::seconds(30)))};
-    const std::string json{meta::to_json(composed)};
+    // This test asserts the coordinate XOR encoding, not template strings — an empty registry is
+    // sufficient (composed docs are id-only; their display strings resolve from the engine registry).
+    const std::string json{meta::to_json(composed, meta::TemplateRegistry{})};
 
     const auto parsed{glz::read_json<glz::generic>(json)};
     ASSERT_TRUE(parsed.has_value()) << "serialised composed doc did not parse: " << json;

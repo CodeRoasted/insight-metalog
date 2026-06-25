@@ -32,7 +32,7 @@ TEST(FieldHistogramSerializationTest, ValueCountsEmittedKeySorted)
         engine.ingest_event(ev.event);
     }
     const auto doc{engine.close_window(t0 + std::chrono::seconds(1))};
-    const std::string json{meta::to_json(doc)};
+    const std::string json{meta::to_json(doc, engine.registry())};
 
     ASSERT_NE(json.find("\"param_histograms\""), std::string::npos)
         << "param_histograms must be emitted when max_param_histograms > 0.\n"
@@ -57,7 +57,7 @@ TEST(FieldHistogramSerializationTest, ValueCountsEmittedKeySorted)
         << "param_histograms must serialise integer-only & key-sorted (no entropy_bits).\n"
         << json;
 
-    EXPECT_EQ(meta::to_json(doc), json) << "serialisation must be byte-identical on repeat.";
+    EXPECT_EQ(meta::to_json(doc, engine.registry()), json) << "serialisation must be byte-identical on repeat.";
 }
 
 TEST(FieldHistogramSerializationTest, OmittedWhenDisabled)
@@ -71,7 +71,7 @@ TEST(FieldHistogramSerializationTest, OmittedWhenDisabled)
         engine.ingest_event(ev.event);
     }
     const auto doc{engine.close_window(t0 + std::chrono::seconds(1))};
-    const std::string json{meta::to_json(doc)};
+    const std::string json{meta::to_json(doc, engine.registry())};
 
     EXPECT_EQ(json.find("param_histograms"), std::string::npos)
         << "param_histograms must be omitted on the default path (byte-unchanged docs).\n"
@@ -95,6 +95,7 @@ TEST(FieldHistogramSerializationTest, BoundedDocumentOverhead)
 
     const auto build{
         [&](std::size_t max_param_histograms)
+            -> std::pair<meta::MetaLogDocument, meta::TemplateRegistry>
         {
             meta::MetaLogEngine engine{meta::MetaLogConfig{
                 .top_k_size = kTemplates,
@@ -114,13 +115,14 @@ TEST(FieldHistogramSerializationTest, BoundedDocumentOverhead)
                     engine.ingest_event(pe.event);
                 }
             }
-            return engine.close_window(t0 + std::chrono::seconds(1));
+            auto doc{engine.close_window(t0 + std::chrono::seconds(1))};
+            return {std::move(doc), engine.registry()};
         }};
 
-    const auto doc_with{build(kMaxHist)};
-    const auto doc_without{build(0)};
-    const std::string json_with{meta::to_json(doc_with)};
-    const std::string json_without{meta::to_json(doc_without)};
+    const auto [doc_with, reg_with]{build(kMaxHist)};
+    const auto [doc_without, reg_without]{build(0)};
+    const std::string json_with{meta::to_json(doc_with, reg_with)};
+    const std::string json_without{meta::to_json(doc_without, reg_without)};
 
     ASSERT_FALSE(doc_with.stats.top_k.empty());
     ASSERT_GT(json_with.size(), json_without.size()) << "histograms must add bytes";

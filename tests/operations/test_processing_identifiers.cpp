@@ -20,7 +20,8 @@ namespace
 {
 [[nodiscard]] meta::MetaLogDocument
 build_doc_with_identifiers(const std::optional<std::string>& canon,
-                           const std::optional<std::string>& retention)
+                           const std::optional<std::string>& retention,
+                           meta::TemplateRegistry* out_registry = nullptr)
 {
     meta::MetaLogConfig cfg{.top_k_size = 8};
     cfg.canonicalization_version = canon;
@@ -29,7 +30,10 @@ build_doc_with_identifiers(const std::optional<std::string>& canon,
     const auto start{std::chrono::system_clock::now()};
     engine.open_window(start);
     engine.ingest_event(make_event("alpha"));
-    return engine.close_window(start + std::chrono::seconds(60));
+    auto doc{engine.close_window(start + std::chrono::seconds(60))};
+    if (out_registry != nullptr)
+        *out_registry = engine.registry();
+    return doc;
 }
 } // namespace
 
@@ -95,8 +99,9 @@ TEST(ProcessingIdentifiers, DiffMatchingIdentifiersSucceeds)
 
 TEST(ProcessingIdentifiers, SerialisesAtDocumentRoot)
 {
-    const auto doc{build_doc_with_identifiers("canon-1", "retention-A")};
-    const std::string json{meta::to_json(doc)};
+    meta::TemplateRegistry registry;
+    const auto doc{build_doc_with_identifiers("canon-1", "retention-A", &registry)};
+    const std::string json{meta::to_json(doc, registry)};
     const auto parsed{glz::read_json<glz::generic>(json)};
     ASSERT_TRUE(parsed.has_value()) << json;
     EXPECT_TRUE((*parsed).contains("canonicalization_version")) << json;

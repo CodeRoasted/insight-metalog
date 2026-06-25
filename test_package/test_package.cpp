@@ -53,7 +53,7 @@ TEST(InsightMetaLogPackage, ProducesSpecConformantDocument)
 
     // to_json() now emits a serialised glaze string; re-parse it generically to
     // assert the on-the-wire contract (keys/values), as an external consumer would.
-    const std::string serialized = to_json(doc);
+    const std::string serialized = to_json(doc, engine.registry());
     auto parsed = glz::read_json<glz::generic>(serialized);
     ASSERT_TRUE(parsed.has_value()) << "serialised output did not parse: " << serialized;
     auto& json = *parsed;
@@ -105,7 +105,7 @@ TEST(InsightMetaLogPackage, SecondWindowEmitsStability)
     EXPECT_LT(d2.stability->js_divergence, 1e-6);
     EXPECT_GT(d2.stability->stability_score, 0.999);
 
-    const std::string serialized = to_json(d2);
+    const std::string serialized = to_json(d2, engine.registry());
     auto parsed = glz::read_json<glz::generic>(serialized);
     ASSERT_TRUE(parsed.has_value()) << "serialised output did not parse: " << serialized;
     auto& json = *parsed;

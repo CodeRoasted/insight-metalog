@@ -63,7 +63,7 @@ TEST(DeterminismGate, FullDocumentByteIdentityGolden)
     ingest_window(2); // window 2: ~50% errors → divergence / stability vs window 1
     const auto doc2{engine.close_window(t2)};
 
-    const std::string combined{meta::to_json(doc1) + "\n" + meta::to_json(doc2)};
+    const std::string combined{meta::to_json(doc1, engine.registry()) + "\n" + meta::to_json(doc2, engine.registry())};
     const std::string digest{picosha2::hash256_hex_string(combined)};
 
     // Re-derived 2026-06-15 (was 5782e7…) for the metalog 0.6.0 format-version bump
@@ -146,7 +146,7 @@ TEST(DeterminismGate, ReservoirNearFullByteIdentityGolden)
         << "the reservoir boundary must be structural_surprise-driven so the F5-M8 hazard "
            "(a non-deterministic surprise score) flips bag membership; none were.";
 
-    const std::string doc_json{meta::to_json(doc)};
+    const std::string doc_json{meta::to_json(doc, engine.registry())};
     const std::string digest{picosha2::hash256_hex_string(doc_json)};
 
     // FROZEN 2026-06-16 (Argos) — the F5-M8 freeze gate is satisfied. Heph's root fix landed (the
@@ -244,7 +244,7 @@ TEST(DeterminismGate, EmitWhereOnlyDocumentByteIdentityGolden)
         << "ping ties zebra/alpha → ascending picks 'alpha' (never zebra); the free-text "
            "template carries no label (disengaged, never \"\")";
 
-    const std::string combined{meta::to_json(doc1) + "\n" + meta::to_json(doc2)};
+    const std::string combined{meta::to_json(doc1, engine.registry()) + "\n" + meta::to_json(doc2, engine.registry())};
     const std::string digest{picosha2::hash256_hex_string(combined)};
 
     // FROZEN 2026-06-23 (Argos) — the dedicated emit_where-only (cube-absent) Sift shape.
