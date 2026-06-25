@@ -84,6 +84,36 @@ TEST(ReservoirTest, RareErrorAdmittedBelowTopK)
         }
 }
 
+// The negative control of RareErrorAdmittedBelowTopK — re-homes 10's FatalNotRetainedWithoutReservoir
+// (the F1 recall=0 baseline). With the reservoir OFF, a rare severe event below top_k by frequency is
+// retained by NEITHER path: it collapses into the tail. The salience reservoir is exactly what flips
+// this 0→1 (RareErrorAdmittedBelowTopK is the same input with the reservoir on).
+TEST(ReservoirTest, RareErrorNotRetainedWithoutReservoir)
+{
+    auto rare{make_event("connection refused to db", insight::LogLevel::Error)};
+    const auto doc{run_with_rare_event(rare, /*top_k=*/3, /*reservoir_size=*/0)};
+
+    EXPECT_TRUE(doc.stats.reservoir.empty()) << "reservoir off → no salience retention path";
+    EXPECT_FALSE(top_k_has(doc, "connection refused to db"))
+        << "the rare error is below top_k by frequency (one occurrence vs the steady benign 100s)";
+    EXPECT_FALSE(reservoir_has(doc, "connection refused to db"))
+        << "with the reservoir off the rare severe event is tail dust — retained nowhere (the F1 "
+           "recall=0 baseline the salience reservoir flips to 1)";
+}
+
+// The frequency path itself — re-homes 10's FatalRetainedAtGenerousTopK_SignalExists. With a top_k
+// budget exceeding the template cardinality the rare event sits in top_k directly (no reservoir
+// needed) — the control proving the signal is present, distinct from the salience path.
+TEST(ReservoirTest, RareErrorRetainedAtGenerousTopKWithoutReservoir)
+{
+    auto rare{make_event("connection refused to db", insight::LogLevel::Error)};
+    // run_with_rare_event feeds 4 steady templates + the 1 rare = 5 distinct; top_k 16 ≫ 5.
+    const auto doc{run_with_rare_event(rare, /*top_k=*/16, /*reservoir_size=*/0)};
+    EXPECT_TRUE(top_k_has(doc, "connection refused to db"))
+        << "a top_k budget exceeding cardinality retains the rare event by frequency alone";
+    EXPECT_TRUE(doc.stats.reservoir.empty()) << "no reservoir was configured";
+}
+
 TEST(ReservoirTest, TerminatorRoleIsSalient)
 {
     auto rare{make_event("##[error]Process completed with exit code 2.", insight::LogLevel::Error)};
