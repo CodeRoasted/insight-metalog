@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       INSIGHT_CANON_REPO: CodeRoasted/insight-canon
-      CR_PIN_INSIGHT_CANON: '1.6.2'
+      CR_PIN_INSIGHT_CANON: '1.6.3'
 
     steps:
       - uses: actions/checkout@v5
