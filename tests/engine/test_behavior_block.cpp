@@ -168,6 +168,103 @@ TEST_F(BehaviorBlockTest, BoundedNgramKeysCapDistinctEntries)
     EXPECT_LE(doc.behavior->top_ngrams.size(), 4U);
 }
 
+// ── O2 trace-scoped graph: the de-pollution proof (insight_otel_epic.md O2 checkpoint) ──
+// The measure-first gate. Two concurrent transactions, fully interleaved in the GLOBAL order:
+//   trace A: "alpha step1" -> "alpha step2" -> "alpha step3"
+//   trace B: "beta step1"  -> "beta step2"  -> "beta step3"
+// Emitted round-robin (a1,b1,a2,b2,a3,b3) across several instances, so EVERY globally-adjacent
+// pair crosses traces. The global-order n-gram graph therefore sees ONLY cross-trace NOISE edges
+// and not a single real within-trace transition — exactly the structural_surprise pollution O2
+// exists to kill. With OTEL trace context, O2's per-trace ring forms each n-gram WITHIN its
+// transaction, recovering the real transitions and emitting ZERO noise. The same events, the only
+// difference being whether the trace_id is present, must produce a strictly cleaner graph — else
+// trace-scoping is not earning its cost.
+TEST_F(BehaviorBlockTest, OtelTraceScopingDepollutesConcurrentInterleave)
+{
+    constexpr int kInstances{4};
+    const auto a1{make_event("alpha step1")};
+    const auto a2{make_event("alpha step2")};
+    const auto a3{make_event("alpha step3")};
+    const auto b1{make_event("beta step1")};
+    const auto b2{make_event("beta step2")};
+    const auto b3{make_event("beta step3")};
+
+    const auto build = [&](bool with_trace)
+    {
+        meta::MetaLogEngine engine{meta::MetaLogConfig{.top_k_size = 16, .top_ngrams_size = 32}};
+        engine.open_window(start_);
+        for (int instance = 0; instance < kInstances; ++instance)
+        {
+            const std::uint64_t trace_a{1000U + static_cast<std::uint64_t>(instance)};
+            const std::uint64_t trace_b{2000U + static_cast<std::uint64_t>(instance)};
+            const auto emit = [&](tok::CanonicalEvent event, std::uint64_t trace_value)
+            {
+                if (with_trace)
+                {
+                    event.trace.present = true;
+                    event.trace.trace_id = insight::TraceId{trace_value};
+                }
+                engine.ingest_event(event);
+            };
+            // Round-robin interleave: every adjacent global pair crosses traces.
+            emit(a1, trace_a);
+            emit(b1, trace_b);
+            emit(a2, trace_a);
+            emit(b2, trace_b);
+            emit(a3, trace_a);
+            emit(b3, trace_b);
+        }
+        return engine.close_window(start_ + std::chrono::seconds(60));
+    };
+
+    const auto scoped{build(true)};
+    const auto global{build(false)};
+    ASSERT_TRUE(scoped.behavior.has_value());
+    ASSERT_TRUE(global.behavior.has_value());
+
+    // The 4 real within-trace transitions (TemplateId pairs); any other bigram is cross-trace
+    // noise.
+    const std::array<std::pair<insight::TemplateId, insight::TemplateId>, 4> real_edges{{
+        {insight::template_id_of("alpha step1"), insight::template_id_of("alpha step2")},
+        {insight::template_id_of("alpha step2"), insight::template_id_of("alpha step3")},
+        {insight::template_id_of("beta step1"), insight::template_id_of("beta step2")},
+        {insight::template_id_of("beta step2"), insight::template_id_of("beta step3")},
+    }};
+    const auto count_edges = [&](const meta::MetaLogDocument& doc)
+    {
+        int real{0};
+        int noise{0};
+        for (const auto& ngram : doc.behavior->top_ngrams)
+        {
+            if (ngram.sequence.size() != 2)
+                continue;
+            bool is_real{false};
+            for (const auto& edge : real_edges)
+                if (ngram.sequence[0] == edge.first && ngram.sequence[1] == edge.second)
+                {
+                    is_real = true;
+                    break;
+                }
+            (is_real ? real : noise)++;
+        }
+        return std::pair{real, noise};
+    };
+
+    const auto [scoped_real, scoped_noise]{count_edges(scoped)};
+    const auto [global_real, global_noise]{count_edges(global)};
+
+    // The de-pollution number, pinned exactly (deterministic fixture). Trace-scoped recovers ALL
+    // 4 real transitions and emits ZERO cross-trace noise; the global-order graph, under this
+    // concurrency, sees NO real transition and only its 6 cross-trace/boundary noise edges.
+    EXPECT_EQ(scoped_real, 4) << "trace-scoping must recover every within-trace transition";
+    EXPECT_EQ(scoped_noise, 0) << "trace-scoping must emit no cross-trace edge";
+    EXPECT_EQ(global_real, 0) << "the global-order graph cannot see a within-trace transition here";
+    EXPECT_EQ(global_noise, 6) << "the global-order graph is pure cross-trace noise";
+    // The gate: trace-scoping is strictly cleaner (it beats the global-order baseline).
+    EXPECT_LT(scoped_noise, global_noise)
+        << "O2 trace-scoping must reduce structural noise vs the global-order graph";
+}
+
 } // namespace
 
 // NOLINTEND

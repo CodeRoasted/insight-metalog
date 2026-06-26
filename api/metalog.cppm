@@ -98,6 +98,17 @@ class MetaLogEngine
         [[nodiscard]] std::size_t operator()(const NGramKey& key) const noexcept;
     };
 
+    // The recent-template-id ring an n-gram is formed over (size 2): [0]=last, [1]=2nd-last.
+    // One global ring for non-OTEL ingest (the pre-OTEL behaviour, byte-identical), and one
+    // ring PER ACTIVE TRACE for OTEL inputs (O2) so a bigram/trigram is formed WITHIN a
+    // transaction, not across the global concurrent interleave. NOT a per-trace sub-fingerprint
+    // (OR3) — just the two ids needed to close the next edge into the shared global graph.
+    struct NgramRing
+    {
+        std::array<InternalTemplateID, 2> recent{};
+        std::size_t filled{0};
+    };
+
     struct TemplateLookup
     {
         const std::string* content_id{nullptr};
@@ -125,6 +136,13 @@ class MetaLogEngine
 
     [[nodiscard]] TemplateLookup content_template_id_for(const tokenization::CanonicalEvent& event);
     void account_ngram(const NGramKey& key);
+    // Form + account the n-gram(s) ending at `internal_id` over `ring`, then shift it into the
+    // ring. O2: the SAME logic for the global ring (non-OTEL) and each per-trace ring (OTEL), so
+    // the n-gram graph is identical for non-OTEL inputs and trace-scoped for OTEL inputs.
+    void account_ngram_into(NgramRing& ring, InternalTemplateID internal_id);
+    // The per-trace ring for `trace_id` (O2), creating it on first sight under the
+    // max_active_traces cap with deterministic FIFO eviction of the oldest-inserted trace.
+    [[nodiscard]] NgramRing& trace_ring_for(TraceId trace_id);
 
     // Cold-path scratch computed once per close_window and consumed by the
     // build_* steps below: the count-sorted bucket view, the template transition
@@ -214,10 +232,16 @@ class MetaLogEngine
     // document entries that flow through the pyramid.
     TemplateRegistry registry_;
 
-    // Recent internal template ID ring (size 2): [0] = last, [1] = second-last.
-    // Only [0] is used at ngram_size=2; both are used at ngram_size=3.
-    std::array<InternalTemplateID, 2> recent_{};
-    std::size_t recent_filled_{0};
+    // The global recent-template-id ring — the non-OTEL n-gram path (pre-OTEL behaviour,
+    // byte-identical). Only [0] is used at ngram_size=2; both at ngram_size=3.
+    NgramRing global_ring_{};
+    // O2 trace-scoping (D-OTEL-1): one ring per active OTEL trace, so an n-gram is formed
+    // within a transaction, not across the global concurrent interleave. Bounded by
+    // config_.max_active_traces with deterministic FIFO eviction; trace_ring_fifo_ holds the
+    // insertion order (oldest at front). Point-lookup only — never iterated, so the
+    // unordered_map order is not a determinism surface. Empty for non-OTEL streams.
+    std::unordered_map<TraceId, NgramRing> trace_rings_;
+    std::deque<TraceId> trace_ring_fifo_;
 
     // n-gram table: compact per-window internal template IDs -> count. We translate to
     // content-derived spec IDs only when building the document.

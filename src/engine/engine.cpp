@@ -106,8 +106,9 @@ void MetaLogEngine::open_window(Timestamp start)
     template_str_cache_.clear();
     content_template_index_.clear();
     content_templates_by_internal_id_.clear();
-    recent_filled_ = 0;
-    recent_.fill(0);
+    global_ring_ = {};
+    trace_rings_.clear();
+    trace_ring_fifo_.clear();
     ngram_counts_.clear();
     ngram_total_ = 0;
     cube_base_.clear();
@@ -175,6 +176,52 @@ void MetaLogEngine::account_ngram(const NGramKey& key)
     ++ngram_total_;
 }
 
+void MetaLogEngine::account_ngram_into(NgramRing& ring, InternalTemplateID internal_id)
+{
+    // Bigram needs >=1 prior id in the ring; trigram needs >=2. (Identical formation to the
+    // pre-OTEL global-ring path — only the ring it reads changes, so non-OTEL output is
+    // byte-identical and OTEL output is trace-scoped.)
+    if (config_.ngram_size == 2 && ring.filled >= 1)
+    {
+        NGramKey key{.size = 2};
+        key.ids[0] = ring.recent[0];
+        key.ids[1] = internal_id;
+        account_ngram(key);
+    }
+    else if (config_.ngram_size == 3 && ring.filled >= 2)
+    {
+        NGramKey key{.size = 3};
+        key.ids[0] = ring.recent[1];
+        key.ids[1] = ring.recent[0];
+        key.ids[2] = internal_id;
+        account_ngram(key);
+    }
+
+    // Shift ring: [1] = old [0]; [0] = internal_id.
+    ring.recent[1] = ring.recent[0];
+    ring.recent[0] = internal_id;
+    if (ring.filled < 2)
+        ++ring.filled;
+}
+
+MetaLogEngine::NgramRing& MetaLogEngine::trace_ring_for(TraceId trace_id)
+{
+    if (auto iterator{trace_rings_.find(trace_id)}; iterator != trace_rings_.end())
+        return iterator->second;
+    // First sight of this trace. Enforce the active-trace bound (OR3) with deterministic FIFO
+    // eviction of the oldest-inserted trace (front of the queue). A ring is just 2 ids, so
+    // eviction costs at most one cross-record edge for the evicted trace, never its membership.
+    // max_active_traces == 0 disables the bound (caller's explicit choice).
+    if (config_.max_active_traces > 0 && trace_rings_.size() >= config_.max_active_traces &&
+        !trace_ring_fifo_.empty())
+    {
+        trace_rings_.erase(trace_ring_fifo_.front());
+        trace_ring_fifo_.pop_front();
+    }
+    trace_ring_fifo_.push_back(trace_id);
+    return trace_rings_[trace_id]; // value-initialised NgramRing (filled = 0)
+}
+
 void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
 {
     if (!window_start_)
@@ -237,28 +284,15 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
         }
     }
 
-    // n-gram update. Bigram needs >=1 prior id; trigram needs >=2.
-    if (config_.ngram_size == 2 && recent_filled_ >= 1)
-    {
-        NGramKey key{.size = 2};
-        key.ids[0] = recent_[0];
-        key.ids[1] = lookup.internal_id;
-        account_ngram(key);
-    }
-    else if (config_.ngram_size == 3 && recent_filled_ >= 2)
-    {
-        NGramKey key{.size = 3};
-        key.ids[0] = recent_[1];
-        key.ids[1] = recent_[0];
-        key.ids[2] = lookup.internal_id;
-        account_ngram(key);
-    }
-
-    // Shift ring: [1] = old [0]; [0] = id.
-    recent_[1] = recent_[0];
-    recent_[0] = lookup.internal_id;
-    if (recent_filled_ < 2)
-        ++recent_filled_;
+    // n-gram update (insight_otel_epic.md O2 — the trace-scoped graph). An OTEL event forms its
+    // n-gram WITHIN its trace (the per-trace ring), so a bigram/trigram is "B followed A inside
+    // ONE transaction", not across the global concurrent interleave — de-polluting dominant_path
+    // / structural_surprise under concurrency. A non-OTEL event uses the single global ring (the
+    // pre-OTEL path, byte-identical). Both rings feed the SAME bounded ngram_counts_ graph
+    // (one fingerprint, no fork — O2): the per-trace n-grams aggregate into the global graph,
+    // never a per-trace sub-fingerprint (OR3).
+    NgramRing& ring{event.trace.present ? trace_ring_for(event.trace.trace_id) : global_ring_};
+    account_ngram_into(ring, lookup.internal_id);
 }
 
 MetaLogDocument MetaLogEngine::close_window(Timestamp end,
@@ -979,8 +1013,9 @@ void MetaLogEngine::reset_window_state()
     template_str_cache_.clear();
     content_template_index_.clear();
     content_templates_by_internal_id_.clear();
-    recent_filled_ = 0;
-    recent_.fill(0);
+    global_ring_ = {};
+    trace_rings_.clear();
+    trace_ring_fifo_.clear();
     ngram_counts_.clear();
     ngram_total_ = 0;
     cube_base_.clear();

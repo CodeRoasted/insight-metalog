@@ -571,6 +571,7 @@ struct MetaLogConfig
     static constexpr std::size_t kDefaultMaxNgramKeys = 4096;
     static constexpr std::size_t kDefaultTopBranchingSize = 64;
     static constexpr std::size_t kDefaultDominantPathMaxSteps = 8;
+    static constexpr std::size_t kDefaultMaxActiveTraces = 4096;
 
     // Max entries kept in stats.top_k; the rest are summarised into
     // tail_count / tail_unique. Default 64 (~10 KB envelope per spec
@@ -600,6 +601,14 @@ struct MetaLogConfig
     // in. Once the cap is reached, counts on existing keys keep
     // updating but new keys are dropped. Bounds memory.
     std::size_t max_ngram_keys{kDefaultMaxNgramKeys};
+
+    // O2 trace-scoping (insight_otel_epic.md D-OTEL-1, OR3): max concurrent OTEL traces whose
+    // n-gram ring is held at once. A ring is just the last 1–2 template ids — NOT a per-trace
+    // sub-fingerprint. On overflow the oldest-inserted trace's ring is evicted (deterministic
+    // FIFO), losing at most one cross-record edge for that trace, never its membership. Bounds
+    // per-window state at O(active traces), not O(traces). Consulted ONLY for OTEL inputs
+    // (events carrying a trace_id); non-OTEL ingest uses the single global ring at zero cost.
+    std::size_t max_active_traces{kDefaultMaxActiveTraces};
 
     // When true (default), the engine remembers the previous closed
     // window's template frequencies and emits a stability block on
