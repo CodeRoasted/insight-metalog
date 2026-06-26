@@ -602,6 +602,14 @@ struct MetaLogConfig
     // updating but new keys are dropped. Bounds memory.
     std::size_t max_ngram_keys{kDefaultMaxNgramKeys};
 
+    // O2 trace-scoping master switch (insight_otel_epic.md O2). Default true: an OTEL event
+    // forms its n-gram WITHIN its trace. false is the CONTROL ARM — even OTEL events fall back
+    // to the global ring, reproducing the polluted global-order graph on the SAME input (the
+    // config mirror of the unit gate's with_trace=false arm; the scenario signal
+    // trace_scoping_disabled_control sets it). Non-OTEL ingest is byte-identical either way
+    // (no trace context → the global ring is taken regardless), so the flag is OTEL-only.
+    bool trace_scoping_enabled{true};
+
     // O2 trace-scoping (insight_otel_epic.md D-OTEL-1, OR3): max concurrent OTEL traces whose
     // n-gram ring is held at once. A ring is just the last 1–2 template ids — NOT a per-trace
     // sub-fingerprint. On overflow the oldest-inserted trace's ring is evicted (deterministic

@@ -291,7 +291,9 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
     // pre-OTEL path, byte-identical). Both rings feed the SAME bounded ngram_counts_ graph
     // (one fingerprint, no fork — O2): the per-trace n-grams aggregate into the global graph,
     // never a per-trace sub-fingerprint (OR3).
-    NgramRing& ring{event.trace.present ? trace_ring_for(event.trace.trace_id) : global_ring_};
+    NgramRing& ring{(config_.trace_scoping_enabled && event.trace.present)
+                        ? trace_ring_for(event.trace.trace_id)
+                        : global_ring_};
     account_ngram_into(ring, lookup.internal_id);
 }
 

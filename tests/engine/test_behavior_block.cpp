@@ -189,9 +189,10 @@ TEST_F(BehaviorBlockTest, OtelTraceScopingDepollutesConcurrentInterleave)
     const auto b2{make_event("beta step2")};
     const auto b3{make_event("beta step3")};
 
-    const auto build = [&](bool with_trace)
+    const auto build = [&](bool with_trace, bool trace_scoping_enabled)
     {
-        meta::MetaLogEngine engine{meta::MetaLogConfig{.top_k_size = 16, .top_ngrams_size = 32}};
+        meta::MetaLogEngine engine{meta::MetaLogConfig{
+            .top_k_size = 16, .top_ngrams_size = 32, .trace_scoping_enabled = trace_scoping_enabled}};
         engine.open_window(start_);
         for (int instance = 0; instance < kInstances; ++instance)
         {
@@ -217,8 +218,12 @@ TEST_F(BehaviorBlockTest, OtelTraceScopingDepollutesConcurrentInterleave)
         return engine.close_window(start_ + std::chrono::seconds(60));
     };
 
-    const auto scoped{build(true)};
-    const auto global{build(false)};
+    const auto scoped{build(true, true)};
+    const auto global{build(false, true)};
+    // The CONTROL ARM: trace context IS present, but trace_scoping_enabled=false → the engine
+    // falls back to the global ring, so the SAME OTEL input reproduces the polluted graph. This
+    // is the config flag that drives the scenario's trace_scoping_disabled_control arm.
+    const auto control{build(true, false)};
     ASSERT_TRUE(scoped.behavior.has_value());
     ASSERT_TRUE(global.behavior.has_value());
 
@@ -252,6 +257,7 @@ TEST_F(BehaviorBlockTest, OtelTraceScopingDepollutesConcurrentInterleave)
 
     const auto [scoped_real, scoped_noise]{count_edges(scoped)};
     const auto [global_real, global_noise]{count_edges(global)};
+    const auto [control_real, control_noise]{count_edges(control)};
 
     // The de-pollution number, pinned exactly (deterministic fixture). Trace-scoped recovers ALL
     // 4 real transitions and emits ZERO cross-trace noise; the global-order graph, under this
@@ -263,6 +269,10 @@ TEST_F(BehaviorBlockTest, OtelTraceScopingDepollutesConcurrentInterleave)
     // The gate: trace-scoping is strictly cleaner (it beats the global-order baseline).
     EXPECT_LT(scoped_noise, global_noise)
         << "O2 trace-scoping must reduce structural noise vs the global-order graph";
+    // The control arm (trace_scoping_enabled=false on OTEL input) reproduces the global-order
+    // graph EXACTLY — proof the flag is a true A/B on the same input (the scenario control arm).
+    EXPECT_EQ(control_real, global_real) << "scoping-disabled control must match the global graph";
+    EXPECT_EQ(control_noise, global_noise) << "scoping-disabled control must match the global graph";
 }
 
 } // namespace
