@@ -284,6 +284,30 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
         }
     }
 
+    // W1 ordinal observations (§4A.4 D-W1-2): bin each declared ordinal value (canon
+    // kOrdinalFieldCatalog) onto its schedule's log2 ladder. Same batch / full-fidelity gate as
+    // param histograms; field-keyed (not positional) — never collides with param_value_counts.
+    if (config_.max_param_histograms > 0 && !event.ordinals.empty())
+    {
+        for (const auto& observation : event.ordinals)
+        {
+            auto [ord_it, ord_inserted]{
+                bucket.ordinal_accumulators.try_emplace(std::string{observation.field_name})};
+            auto& accumulator{ord_it->second};
+            if (ord_inserted)
+            {
+                accumulator.schedule = observation.schedule;
+                accumulator.counts.assign(ordinal_schedule_bins(observation.schedule), 0U);
+            }
+            const std::uint32_t bin{ordinal_bin_index(observation.schedule, observation.value)};
+            if (bin < accumulator.counts.size())
+            {
+                ++accumulator.counts[bin];
+                ++accumulator.total;
+            }
+        }
+    }
+
     // n-gram update (insight_otel_epic.md O2 — the trace-scoped graph). An OTEL event forms its
     // n-gram WITHIN its trace (the per-trace ring), so a bigram/trigram is "B followed A inside
     // ONE transaction", not across the global concurrent interleave — de-polluting dominant_path
@@ -532,6 +556,29 @@ void MetaLogEngine::build_top_k(MetaLogDocument& doc, const WindowAnalysis& anal
                 // HLL approximate cardinality (SPEC §3.5).
                 hist.approximate_cardinality = hll_state_->estimate(content_id, pi);
                 entry.field_histograms.push_back(std::move(hist));
+            }
+        }
+
+        // W1 ordinal histograms (§4A.4 D-W1-2) — field-keyed, emitted in deterministic field-name
+        // order (the accumulator map is unordered → sort to keep the wire/golden replay-stable).
+        if (config_.max_param_histograms > 0)
+        {
+            const auto& bucket{*ordered[i].second};
+            std::vector<const std::string*> ordinal_fields;
+            ordinal_fields.reserve(bucket.ordinal_accumulators.size());
+            for (const auto& [field_name, _accumulator] : bucket.ordinal_accumulators)
+                ordinal_fields.push_back(&field_name);
+            std::ranges::sort(ordinal_fields, [](const std::string* lhs, const std::string* rhs)
+                              { return *lhs < *rhs; });
+            for (const std::string* field_name : ordinal_fields)
+            {
+                const auto& accumulator{bucket.ordinal_accumulators.at(*field_name)};
+                OrdinalHistogram hist;
+                hist.field_name = *field_name;
+                hist.schedule_id = std::string{ordinal_schedule_id(accumulator.schedule)};
+                hist.counts = accumulator.counts;
+                hist.total = accumulator.total;
+                entry.ordinal_histograms.push_back(std::move(hist));
             }
         }
 

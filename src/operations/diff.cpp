@@ -249,6 +249,65 @@ void diff_field_histogram_deltas(MetaLogDiff& out, const MetaLogDocument& previo
                       });
 }
 
+// The ordinal histogram for `field_name` within a top_k entry, or nullptr.
+[[nodiscard]] const OrdinalHistogram* find_ordinal_histogram(const TopKEntry& entry,
+                                                             std::string_view field_name)
+{
+    for (const auto& hist : entry.ordinal_histograms)
+        if (hist.field_name == field_name)
+            return &hist;
+    return nullptr;
+}
+
+// ordinal_histogram_deltas (§4A.4 D-W1-1/4 — the W1 channel): per-(template_id, ordinal field)
+// pairing of the two windows' binned ordinal histograms. Only for (template_id, field_name) present
+// in BOTH top_k lists with ordinal_histograms. Carries both sides' raw counts + totals +
+// schedule_ids — eidos gates on the schedule_ids matching (the D-W1-4 comparability gate) then
+// computes the exact-integer Wasserstein-1 distance. Deterministic order (template_id, field_name).
+void diff_ordinal_histogram_deltas(MetaLogDiff& out, const MetaLogDocument& previous,
+                                   const MetaLogDocument& current)
+{
+    std::unordered_map<TemplateId, const TopKEntry*> prev_tke;
+    for (const auto& entry : previous.stats.top_k)
+        if (!entry.ordinal_histograms.empty())
+            prev_tke[entry.template_id] = &entry;
+
+    for (const auto& curr_entry : current.stats.top_k)
+    {
+        if (curr_entry.ordinal_histograms.empty())
+            continue;
+        auto prev_it = prev_tke.find(curr_entry.template_id);
+        if (prev_it == prev_tke.end())
+            continue;
+        const auto& prev_entry = *prev_it->second;
+
+        for (const auto& curr_oh : curr_entry.ordinal_histograms)
+        {
+            const OrdinalHistogram* prev_oh{find_ordinal_histogram(prev_entry, curr_oh.field_name)};
+            if (prev_oh == nullptr)
+                continue;
+            OrdinalHistogramDelta ohd;
+            ohd.template_id = curr_entry.template_id;
+            ohd.field_name = curr_oh.field_name;
+            ohd.previous_schedule_id = prev_oh->schedule_id;
+            ohd.current_schedule_id = curr_oh.schedule_id;
+            ohd.previous_counts = prev_oh->counts;
+            ohd.current_counts = curr_oh.counts;
+            ohd.previous_total = prev_oh->total;
+            ohd.current_total = curr_oh.total;
+            out.ordinal_histogram_deltas.push_back(std::move(ohd));
+        }
+    }
+
+    std::ranges::sort(out.ordinal_histogram_deltas,
+                      [](const OrdinalHistogramDelta& lhs, const OrdinalHistogramDelta& rhs)
+                      {
+                          if (lhs.template_id != rhs.template_id)
+                              return lhs.template_id < rhs.template_id;
+                          return lhs.field_name < rhs.field_name;
+                      });
+}
+
 // tail_delta: pairwise change in long-tail shape. Only when BOTH documents carry
 // a tail_summary (a one-sided tail is appearance/vanishing, expressed by the
 // template-level signals). Stateless before/after/delta; consumers decide
@@ -311,6 +370,7 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
     diff_branching_delta(out, previous, current);
     diff_ngram_delta(out, previous, current);
     diff_field_histogram_deltas(out, previous, current);
+    diff_ordinal_histogram_deltas(out, previous, current); // W1 (§4A.4 D-W1-1/4)
     diff_tail_delta(out, previous, current);
     // SPEC §13.6 cube_diff — the emerging border. Emitted only when both documents
     // carried a cube and their axes match (the §2.4 gate above already ensures equal

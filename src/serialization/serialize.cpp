@@ -87,6 +87,17 @@ struct ParamHistogram
     std::optional<std::uint64_t> approximate_cardinality; // omit when 0 (not computed)
 };
 
+// W1 ordinal histogram (§4A.4 D-W1-2): the field-keyed binned carrier. `counts` is the full,
+// uncapped tail over the schedule's frozen log2 ladder; `schedule_id` is the eidos comparability
+// key. Reflected by member name (no glaze override needed), like ParamHistogram.
+struct OrdinalHistogram
+{
+    std::string field_name;
+    std::string schedule_id;
+    std::vector<std::uint64_t> counts;
+    std::uint64_t total{0};
+};
+
 struct TopKEntry
 {
     std::string template_id;
@@ -99,16 +110,20 @@ struct TopKEntry
     // max_param_histograms (batch / full-fidelity path); omitted otherwise
     // (skip_null_members), so default and streaming documents are byte-unchanged.
     std::optional<std::vector<ParamHistogram>> param_histograms;
+    // W1 ordinal histograms (§4A.4 D-W1-2). Present only when the producer enabled
+    // max_param_histograms AND the template carried a declared ordinal field; omitted otherwise
+    // (skip_null_members) → non-ordinal documents are byte-identical (D-W1-4).
+    std::optional<std::vector<OrdinalHistogram>> ordinal_histograms;
 
     // glaze rename: `tmpl` -> "template" (a C++ keyword), every other field by
     // reflection.
     struct glaze
     {
         using T = TopKEntry;
-        static constexpr auto value =
-            glz::object("template_id", &T::template_id, "count", &T::count, "frequency",
-                        &T::frequency, "template", &T::tmpl, "level", &T::level, "component",
-                        &T::component, "param_histograms", &T::param_histograms);
+        static constexpr auto value = glz::object(
+            "template_id", &T::template_id, "count", &T::count, "frequency", &T::frequency,
+            "template", &T::tmpl, "level", &T::level, "component", &T::component, "param_histograms",
+            &T::param_histograms, "ordinal_histograms", &T::ordinal_histograms);
     };
 };
 
@@ -574,6 +589,18 @@ dto::TopKEntry make_top_k_entry(const TopKEntry& entry, const TemplateRegistry& 
             hists.push_back(std::move(param_hist));
         }
         row.param_histograms = std::move(hists);
+    }
+    // W1 ordinal histograms (§4A.4 D-W1-2) — emitted only when present (omit-when-empty).
+    if (!entry.ordinal_histograms.empty())
+    {
+        std::vector<dto::OrdinalHistogram> ordinals;
+        ordinals.reserve(entry.ordinal_histograms.size());
+        for (const auto& hist : entry.ordinal_histograms)
+            ordinals.push_back(dto::OrdinalHistogram{.field_name = hist.field_name,
+                                                     .schedule_id = hist.schedule_id,
+                                                     .counts = hist.counts,
+                                                     .total = hist.total});
+        row.ordinal_histograms = std::move(ordinals);
     }
     return row;
 }

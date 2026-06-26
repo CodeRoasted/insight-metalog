@@ -36,6 +36,40 @@ struct FieldHistogram
     std::uint64_t approximate_cardinality{0};
 };
 
+// W1 ordinal carrier (§4A.4 D-W1-2): a per-template, FIELD-keyed binned histogram for a declared
+// ordinal field (canon kOrdinalFieldCatalog). Counts over the schedule's frozen log2 ladder — full
+// tail, NO frequency cap (B is small + fixed, so the carrier is bounded by construction; this is
+// exactly the representation the 4A.2 high-card suppression was a stopgap for). A distinct stream
+// from the positional, categorical `field_histograms`/`value_counts`: a field is ordinal XOR
+// categorical (D-W1-5), so the two never collide. Populated only when
+// MetaLogConfig::max_param_histograms > 0 (the batch / full-fidelity value-tracking path); empty
+// (omitted on the wire) otherwise → non-ordinal documents stay byte-identical (D-W1-4).
+struct OrdinalHistogram
+{
+    std::string field_name;  // the declared ordinal field (e.g. "latency_ms") — surfaced on the
+                             // diff row for `attributable_to` (D-W1-3)
+    std::string schedule_id; // the versioned schedule id (the eidos diff comparability key, D-W1-4)
+    std::vector<std::uint64_t> counts; // counts[B] over the schedule's log2 ladder
+    std::uint64_t total{0};            // Σcounts (the per-field observation count = N for W1)
+};
+
+// The W1 ladder (§4A.4 D-W1-2): map a canonical-unit value onto its log2-octave bin index for
+// `schedule`, clamped to [0, B-1]. Pure integer — floor(log2) by a shift loop, no float, no edge
+// table; this IS the frozen, versioned ladder (metalog owns binning; eidos is ladder-agnostic at
+// w=1). `value` is non-negative (canon's parser rejects negatives); 0 and 1 fall in bin 0.
+[[nodiscard]] constexpr std::uint32_t ordinal_bin_index(OrdinalSchedule schedule,
+                                                        std::int64_t value) noexcept
+{
+    const std::uint32_t bins{ordinal_schedule_bins(schedule)};
+    if (bins == 0U || value <= 1)
+        return 0U;
+    std::uint32_t octave{0U};
+    for (std::uint64_t magnitude{static_cast<std::uint64_t>(value)}; magnitude > 1U;
+         magnitude >>= 1U)
+        ++octave;
+    return octave < bins ? octave : bins - 1U;
+}
+
 // TemplateRegistry (D-TIR-5): the single TemplateId -> template_str association, owned OUTSIDE the
 // per-window document (the engine owns one; Sift/diff callers own a local one), injected at the display
 // seams (serialize / explain). template_str is a pure DISPLAY attribute — never read on the decision
@@ -94,6 +128,10 @@ struct TopKEntry
     std::optional<std::string> dominant_component;
     // Empty unless MetaLogConfig::max_param_histograms > 0.
     std::vector<FieldHistogram> field_histograms;
+    // W1 ordinal histograms (§4A.4 D-W1-2), field-keyed — one per declared ordinal field seen on
+    // this template. Empty unless MetaLogConfig::max_param_histograms > 0. Sibling to
+    // field_histograms; never collides (a field is ordinal XOR categorical, D-W1-5).
+    std::vector<OrdinalHistogram> ordinal_histograms;
 };
 
 // Per-window acquisition self-assessment (SPEC §16.x; sift_where_attribution.md
@@ -775,6 +813,25 @@ struct FieldHistogramDelta
     std::int64_t cardinality_delta{0};
 };
 
+// Per-(template_id, ordinal field) pairing of two windows' binned ordinal histograms (§4A.4
+// D-W1-1/4 — the W1 channel). Carries BOTH sides' raw counts + totals + schedule_ids; the eidos
+// diff checks the schedule_ids match (the comparability gate, D-W1-4, like canonicalization_version
+// at diff.cpp) then computes the exact-integer 1-D Wasserstein-1 earth-mover distance, its
+// direction, and the {field}_shift bucket — metalog carries the counts, eidos owns the distance (it
+// is ladder-agnostic at w=1). Only populated when the same (template_id, field_name) appears in
+// BOTH documents' ordinal_histograms.
+struct OrdinalHistogramDelta
+{
+    TemplateId template_id;
+    std::string field_name;
+    std::string previous_schedule_id;
+    std::string current_schedule_id;
+    std::vector<std::uint64_t> previous_counts;
+    std::vector<std::uint64_t> current_counts;
+    std::uint64_t previous_total{0};
+    std::uint64_t current_total{0};
+};
+
 struct DocumentRef
 {
     std::string window_start_iso;
@@ -872,6 +929,11 @@ struct MetaLogDiff
     // with max_param_histograms > 0 and share at least one template_id.
     // Sorted by js_divergence descending (highest shift first).
     std::vector<FieldHistogramDelta> field_histogram_deltas;
+    // W1 ordinal distribution drift (§4A.4). Empty unless both documents were produced with
+    // max_param_histograms > 0 and share a (template_id, declared-ordinal field). Carries both
+    // sides' binned counts; the eidos diff computes the Wasserstein-1 distance. Sorted by
+    // (template_id, field_name). See OrdinalHistogramDelta.
+    std::vector<OrdinalHistogramDelta> ordinal_histogram_deltas;
     // Long-tail shape change. Present only when both documents carried a
     // tail_summary. See TailDelta.
     std::optional<TailDelta> tail_delta;

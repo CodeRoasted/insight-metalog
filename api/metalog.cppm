@@ -83,6 +83,18 @@ class MetaLogEngine
         // Populated only when config_.max_param_histograms > 0.
         std::vector<std::unordered_map<std::string, std::uint64_t>> param_value_counts;
         std::vector<std::uint64_t> param_totals;
+        // W1 ordinal accumulator (§4A.4 D-W1-2): per declared ordinal field (canon
+        // kOrdinalFieldCatalog) seen on this template, its schedule + binned counts over the
+        // schedule's log2 ladder. field_name → accumulator. Populated only when
+        // config_.max_param_histograms > 0; field-keyed (not positional), so it never collides
+        // with param_value_counts (a field is ordinal XOR categorical, D-W1-5).
+        struct OrdinalAccumulator
+        {
+            OrdinalSchedule schedule{};
+            std::vector<std::uint64_t> counts; // sized to the schedule's B on first observation
+            std::uint64_t total{0};
+        };
+        std::unordered_map<std::string, OrdinalAccumulator> ordinal_accumulators;
     };
 
     struct NGramKey
