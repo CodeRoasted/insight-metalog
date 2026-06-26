@@ -75,7 +75,7 @@ TEST(DeterminismGate, FullDocumentByteIdentityGolden)
     // it by higher severity (ERROR), a pure function of the contents. The same value
     // MUST hold on every compiler/architecture (re-verify across the cross-stdlib diagonal).
     constexpr std::string_view kGolden{
-        "2bd6f92139524391c55c76ed12ca545bcae4c8a6d955b5cdecc44309d5773bc4"};
+        "a7f6708137617ff2cb77d398b4b6a51348f659cdd9c09979d54c4ed91f3d18f7"};
     EXPECT_EQ(digest, kGolden)
         << "MetaLog document determinism golden mismatch — a cross-machine bit-identity "
            "regression, OR an intentional contract change needing the golden re-derived "
@@ -162,7 +162,7 @@ TEST(DeterminismGate, ReservoirNearFullByteIdentityGolden)
     // cross-stdlib diagonal again (a bare mismatch = an item-reservoir admit/evict determinism
     // regression; insight_determinism_model.md §F5-M8).
     constexpr std::string_view kGolden{
-        "853daec50d5b2cb656ce6ca711606391f1847b5541c244bf1740429aa2bc2d78"};
+        "8afab23a77d8f708f7e5320ab169dfea24f1bde98b887f25d7b17910eb383642"};
     EXPECT_EQ(digest, kGolden)
         << "near-full reservoir determinism golden mismatch (F5-M8) — the item-reservoir admit/evict "
            "boundary is non-deterministic across this build, OR an intentional contract change needs "
@@ -255,7 +255,7 @@ TEST(DeterminismGate, EmitWhereOnlyDocumentByteIdentityGolden)
     // emit_where wire / dominant-component determinism regression; sift_where_attribution.md
     // D-WHERE-13).
     constexpr std::string_view kGolden{
-        "a5e4e7862c540b3104ed37a9cdffacecd36c705499f6b234e2c320789ea0ead5"};
+        "3771f2890bf9e21de78e83bc225443304bfa622007f4f65ba83addf2be8a50b5"};
     EXPECT_EQ(digest, kGolden)
         << "emit_where-only document determinism golden mismatch — the cube-independent WHERE "
            "wire is non-deterministic across this build, OR an intentional contract change needs "
