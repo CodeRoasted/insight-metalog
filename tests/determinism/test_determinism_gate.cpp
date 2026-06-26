@@ -264,6 +264,68 @@ TEST(DeterminismGate, EmitWhereOnlyDocumentByteIdentityGolden)
         << combined;
 }
 
+// ── W1 ordinal binned-carrier determinism golden (§4A.4 D-W1-2) ───────────────
+// Freezes the W1 binned ordinal carrier: a multi-octave latency-drift window produces
+// TopKEntry.ordinal_histograms (integer counts over the frozen log2 ladder). The carrier is pure
+// integer counts — trivially cross-stdlib bit-identical — but the golden pins the BINNING (the new
+// metalog computation: ordinal_bin_index + the schedule's bin count) so a ladder/scale regression is
+// caught, and pins the additive-gated WIRE shape (the `ordinal_histograms` block keeps
+// metalog_version). The W1 distance itself is an eidos pure-integer function of these counts
+// (det::FixedReducer — NO new 128-bit surface, so it inherits the cross-machine proof the entropy/KL
+// goldens above already carry; the eidos bucket/direction are frozen by playground fixture 35). The
+// advisory display double is excluded by construction (it never reaches the wire). RELEASE-BLOCKING:
+// re-verify across the cross-stdlib diagonal + MSVC anchor (same bar OTEL cleared).
+TEST(DeterminismGate, OrdinalCarrierByteIdentityGolden)
+{
+    meta::MetaLogConfig cfg;
+    cfg.max_param_histograms = 2; // the batch / full-fidelity gate the ordinal carrier rides
+    meta::MetaLogEngine engine{cfg};
+    using Clock = std::chrono::system_clock;
+    const Clock::time_point t0{std::chrono::seconds{1700000000}};
+    const Clock::time_point t1{std::chrono::seconds{1700000060}};
+
+    // A deterministic latency spread across several octaves on one template (ms → ns by ×1e6).
+    constexpr std::array<std::int64_t, 6> kLatenciesMs{12, 45, 130, 480, 1100, 6000};
+    constexpr std::int64_t kNanosPerMilli{1'000'000};
+    engine.open_window(t0);
+    for (int i = 0; i < 120; ++i)
+    {
+        const std::array<insight::OrdinalObservation, 1> obs{
+            {{.field_name = "latency_ms",
+              .schedule = insight::OrdinalSchedule::DurationLog2Ns,
+              .value = kLatenciesMs.at(static_cast<std::size_t>(i) % kLatenciesMs.size()) *
+                       kNanosPerMilli}}};
+        tok::CanonicalEvent ev;
+        ev.template_str = "db query completed";
+        ev.ordinals = obs; // span valid through ingest
+        engine.ingest_event(ev);
+    }
+    const auto doc{engine.close_window(t1)};
+
+    // Coverage invariant (ALWAYS live): the carrier MUST be populated, else the golden is hollow.
+    ASSERT_FALSE(doc.stats.top_k.empty());
+    const auto& entry{doc.stats.top_k.front()};
+    ASSERT_EQ(entry.ordinal_histograms.size(), 1U)
+        << "the ordinal carrier must be populated for the W1 golden to mean anything";
+    EXPECT_EQ(entry.ordinal_histograms.front().field_name, "latency_ms");
+    EXPECT_EQ(entry.ordinal_histograms.front().schedule_id, "dur-log2-ns-v1");
+    EXPECT_EQ(entry.ordinal_histograms.front().total, 120U);
+
+    const std::string doc_json{meta::to_json(doc, engine.registry())};
+    const std::string digest{picosha2::hash256_hex_string(doc_json)};
+    // GREEN-FROZEN on the first run (clang-21/libc++); MUST hold across the cross-stdlib diagonal +
+    // the MSVC anchor. Re-derive ONLY for an intentional carrier/ladder contract change.
+    constexpr std::string_view kGolden{
+        "c5a539e4ee213b9562d657afca7747359b722ce6f422316246b8a6d8c924603e"};
+    EXPECT_EQ(digest, kGolden)
+        << "W1 ordinal binned-carrier determinism golden mismatch — a cross-machine bit-identity "
+           "regression in the binning/ladder, OR an intentional contract change needing the golden "
+           "re-derived (and re-verified across the cross-stdlib diagonal + MSVC anchor).\nactual "
+           "digest: "
+        << digest << "\nDOC:\n"
+        << doc_json;
+}
+
 } // namespace
 
 // NOLINTEND
