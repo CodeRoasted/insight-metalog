@@ -398,6 +398,216 @@ TEST(ReservoirTest, DiversityCapCoversDistinctKinds)
         << "the cap preserves a reservoir slot for the distinct failure kind";
 }
 
+// ── D-RNK-2 (§5.2) — the error-class RETENTION RESERVE (the P5 recall fix) ──────
+// The §6.7 P5 loss: a real `testTimeout (FAILED)` was correctly classified Error-class but
+// EVICTED from the metalog reservoir in a high-cardinality window — non-failure salience
+// (novelty / structural-surprise) out-competed the low-frequency failure for the bounded M
+// slots. The fix is at RETENTION, not the eidos significance cut (which is downstream of the
+// loss): a bounded floor of M slots is reserved for error-class templates (dominant_level ∈
+// {Error,Fatal} or Terminator) and admitted in Phase 1 — AHEAD of the general pool and
+// EXEMPT from the per-kind cap — so non-failure salience can no longer evict a real failure.
+//
+// THE RED (paired with its negative control — the file's RareError{Admitted,NotRetained}
+// idiom): the SAME high-cardinality window, with reservoir_error_reserve OFF vs ON. The
+// window holds a steady top_k bed, K=3 distinct STRONG-off-path benign Info branches whose
+// structural-surprise salience (StrongOffPath=90 × rarity) OUT-SCORES the rare Error failure
+// (Error=80 × rarity), and one rare Error failure below top_k by frequency. With the reserve
+// OFF the surprise branches fill M and the failure is tail dust; with the reserve ON the
+// failure is guaranteed a slot DESPITE its lower salience — a branch yields its slot to it.
+// [[sift-failure-lexicon-must-be-outcome-aware]] [[sift-forcing-corpus-fatigue-vs-catch]]
+namespace
+{
+constexpr std::array<std::string_view, 3> kSurpriseBranches{
+    "took alternate cache path", "took fallback dns route", "took degraded retry queue"};
+
+// Build a high-cardinality window: dominant path A→B→C ×200 (fills top_k), then K=3
+// recurring off-path branches A→B→Xi→C ×3 each (p = 3/209 < 2% → StrongOffPath surprise 90),
+// then one rare Error failure (below top_k, salience 80×rarity < the branches' 90×rarity).
+[[nodiscard]] meta::MetaLogDocument build_high_card_window(std::size_t error_reserve)
+{
+    meta::MetaLogEngine engine{meta::MetaLogConfig{.top_k_size = 3,
+                                                   .reservoir_size = 3,
+                                                   .reservoir_per_kind_cap = 0, // isolate the reserve
+                                                   .reservoir_error_reserve = error_reserve,
+                                                   .emit_stability = false}};
+    engine.open_window(std::chrono::system_clock::time_point{});
+    for (int rep = 0; rep < 200; ++rep)
+    {
+        engine.ingest_event(make_event("alpha request received"));
+        engine.ingest_event(make_event("beta verify token"));
+        engine.ingest_event(make_event("gamma response sent"));
+    }
+    for (const std::string_view branch : kSurpriseBranches)
+        for (int rep = 0; rep < 3; ++rep)
+        {
+            engine.ingest_event(make_event("alpha request received"));
+            engine.ingest_event(make_event("beta verify token"));
+            engine.ingest_event(make_event(std::string{branch}, insight::LogLevel::Info));
+            engine.ingest_event(make_event("gamma response sent"));
+        }
+    engine.ingest_event(make_event("connection refused to db", insight::LogLevel::Error));
+    return engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{60});
+}
+
+[[nodiscard]] std::size_t branches_retained(const meta::MetaLogDocument& doc)
+{
+    return static_cast<std::size_t>(std::ranges::count_if(
+        kSurpriseBranches, [&](std::string_view b) { return reservoir_has(doc, b); }));
+}
+} // namespace
+
+TEST(ReservoirTest, ErrorClassReserveRetainsFailureAgainstNonFailureStorm)
+{
+    // Reserve ON: the rare Error failure is GUARANTEED a slot; one surprise branch yields.
+    const auto with_reserve{build_high_card_window(/*error_reserve=*/1)};
+    ASSERT_TRUE(reservoir_has(with_reserve, "connection refused to db"))
+        << "the error-class reserve must retain the rare real failure in a high-card window";
+    EXPECT_FALSE(top_k_has(with_reserve, "connection refused to db"))
+        << "the failure is below top_k by frequency — retention is the reserve's doing, not top_k";
+    EXPECT_EQ(branches_retained(with_reserve), 2U)
+        << "exactly one higher-salience non-failure branch yielded its slot to the reserved failure";
+
+    // The reserve overrode salience ORDER: the retained failure scores LESS than the branches
+    // that kept their slots — proving it was admitted by the reserve, not by out-scoring them.
+    std::uint32_t error_salience{0};
+    std::uint32_t min_branch_salience{std::numeric_limits<std::uint32_t>::max()};
+    for (const auto& e : with_reserve.stats.reservoir)
+    {
+        if (entry_is(e, "connection refused to db"))
+            error_salience = e.salience;
+        else
+            min_branch_salience = std::min(min_branch_salience, e.salience);
+    }
+    EXPECT_LT(error_salience, min_branch_salience)
+        << "the reserve admitted a LOWER-salience failure (" << error_salience
+        << ") over higher-salience non-failure templates (min retained " << min_branch_salience
+        << ") — that is the whole point of the reserve";
+
+    // The negative control (reserve OFF): the identical window evicts the failure — the
+    // surprise storm fills M and the real failure is tail dust. This is the P5 loss, made
+    // a standing assertion; the reserve flips it 0→1.
+    const auto no_reserve{build_high_card_window(/*error_reserve=*/0)};
+    EXPECT_FALSE(reservoir_has(no_reserve, "connection refused to db"))
+        << "without the reserve, non-failure salience evicts the real failure (the §6.7 P5 loss)";
+    EXPECT_EQ(branches_retained(no_reserve), 3U)
+        << "without the reserve, all three higher-salience non-failure branches keep the slots";
+}
+
+// The reserve is EXEMPT from the per-kind diversity cap (load-bearing — §5.2). The cap
+// governs only the GENERAL pool: it bounds how many exemplars of one (role×level) kind the
+// pool admits, which would otherwise limit error-class templates too. The reserve admits
+// error-class failures ahead of and outside that cap, so MULTIPLE distinct failures survive
+// even when the cap would keep only one in the general pool.
+TEST(ReservoirTest, ErrorClassReserveIsExemptFromPerKindCap)
+{
+    const auto build{[](std::size_t error_reserve)
+                     {
+                         meta::MetaLogEngine engine{meta::MetaLogConfig{
+                             .top_k_size = 3,
+                             .reservoir_size = 4,
+                             .reservoir_per_kind_cap = 1, // general pool: ≤1 per (role×level) kind
+                             .reservoir_error_reserve = error_reserve,
+                             .emit_stability = false}};
+                         engine.open_window(std::chrono::system_clock::time_point{});
+                         for (int rep = 0; rep < 100; ++rep)
+                         {
+                             engine.ingest_event(make_event("alpha steady event"));
+                             engine.ingest_event(make_event("beta steady event"));
+                             engine.ingest_event(make_event("gamma steady event"));
+                         }
+                         // Four DISTINCT rare Error failures — all the SAME kind (None × Error),
+                         // so the per-kind cap=1 admits only ONE via the general pool.
+                         engine.ingest_event(make_event("disk write failed on shard 1", insight::LogLevel::Error));
+                         engine.ingest_event(make_event("auth token rejected by peer", insight::LogLevel::Error));
+                         engine.ingest_event(make_event("query deadline exceeded", insight::LogLevel::Error));
+                         engine.ingest_event(make_event("replica fell out of quorum", insight::LogLevel::Error));
+                         return engine.close_window(std::chrono::system_clock::time_point{} +
+                                                    std::chrono::seconds{60});
+                     }};
+    const auto error_count{[](const meta::MetaLogDocument& doc)
+                           {
+                               return std::ranges::count_if(doc.stats.reservoir, [](const auto& e)
+                                                            { return e.dominant_level ==
+                                                                     insight::LogLevel::Error; });
+                           }};
+
+    const auto capped_only{build(/*error_reserve=*/0)};
+    EXPECT_EQ(error_count(capped_only), 1)
+        << "with no reserve, the per-kind cap=1 keeps only ONE of the four distinct failures";
+
+    const auto with_reserve{build(/*error_reserve=*/4)};
+    EXPECT_GT(error_count(with_reserve), 1)
+        << "the reserve is EXEMPT from the per-kind cap — multiple distinct failures survive";
+}
+
+// ── D-PROV-1 (§3.1) — the echoed-source salience gate, at the ENGINE altitude ───
+// The salience FUNCTION is locked by stats:SalienceScore.EchoedSourceSkipsFailureCueTier.
+// This is its engine-level twin: it proves the bucket-level `all_echoed_source` AND-reduction
+// (engine.cpp:244 — a template is "all echoed" only while EVERY event forming it is echoed
+// source; one runtime occurrence makes it false) AND that the engine threads it into the
+// salience computation, so an all-echoed `…failed…` template (level already demoted to
+// Unknown by canon A1) is NOT admitted to the reservoir, while the SAME text seen once as a
+// real runtime event IS. The function lock cannot catch a regression in that wiring/reduction.
+TEST(ReservoirTest, AllEchoedFailureTemplateNotAdmittedButRuntimeOccurrenceRescues)
+{
+    const auto echoed_event{[](std::string_view tmpl)
+                            {
+                                // canon A1 demotes an echoed line's level to Unknown and sets
+                                // the flag; mirror that exact shape here.
+                                auto ev{make_event(tmpl, insight::LogLevel::Unknown)};
+                                ev.echoed_source = true;
+                                return ev;
+                            }};
+
+    // The echoed run is ingested FIRST and self-loops (first-seen ≈ 0 → novelty 0; self-loop →
+    // structural-surprise 0), so the failure-cue tier is the ONLY axis that could make it
+    // salient — isolating the echoed gate. (A LATE-emerging template would be lifted by novelty
+    // regardless of the gate, which would not test the gate at all.)
+
+    // (a) An ALL-echoed failure template — every occurrence is echoed CI script source.
+    {
+        meta::MetaLogEngine engine{
+            meta::MetaLogConfig{.top_k_size = 3, .reservoir_size = 8, .emit_stability = false}};
+        engine.open_window(std::chrono::system_clock::time_point{});
+        for (int rep = 0; rep < 3; ++rep)
+            engine.ingest_event(echoed_event("Download failed after 3 attempts"));
+        for (int rep = 0; rep < 100; ++rep)
+        {
+            engine.ingest_event(make_event("alpha steady event"));
+            engine.ingest_event(make_event("beta steady event"));
+            engine.ingest_event(make_event("gamma steady event"));
+        }
+        const auto doc{engine.close_window(std::chrono::system_clock::time_point{} +
+                                           std::chrono::seconds{60})};
+        EXPECT_FALSE(reservoir_has(doc, "Download failed after 3 attempts"))
+            << "an all-echoed failure template (script source) must NOT be salient-as-failure — "
+               "the level-blind failure-cue tier is skipped, so it scores 0 and is not admitted";
+    }
+
+    // (b) The AND-reduction minimal pair: the SAME template seen ONCE as a real runtime event
+    // (echoed_source=false) makes the bucket NOT all-echoed → the failure-cue tier stands → it
+    // is admitted. One genuine runtime occurrence rescues the failure's salience.
+    {
+        meta::MetaLogEngine engine{
+            meta::MetaLogConfig{.top_k_size = 3, .reservoir_size = 8, .emit_stability = false}};
+        engine.open_window(std::chrono::system_clock::time_point{});
+        engine.ingest_event(echoed_event("Download failed after 3 attempts"));        // echoed
+        engine.ingest_event(echoed_event("Download failed after 3 attempts"));        // echoed
+        engine.ingest_event(make_event("Download failed after 3 attempts"));          // runtime!
+        for (int rep = 0; rep < 100; ++rep)
+        {
+            engine.ingest_event(make_event("alpha steady event"));
+            engine.ingest_event(make_event("beta steady event"));
+            engine.ingest_event(make_event("gamma steady event"));
+        }
+        const auto doc{engine.close_window(std::chrono::system_clock::time_point{} +
+                                           std::chrono::seconds{60})};
+        EXPECT_TRUE(reservoir_has(doc, "Download failed after 3 attempts"))
+            << "one real runtime occurrence makes all_echoed_source false → failure-cue tier "
+               "stands → the template is admitted (the AND-reduction rescues a real failure)";
+    }
+}
+
 // SPEC §3.7.2 normative MUST: salience admission is salience-ranked with a
 // deterministic **tie-break by template_id**, so a given input under a given
 // retention_profile yields a bit-identical reservoir. Two templates with equal
