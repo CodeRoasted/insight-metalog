@@ -176,8 +176,9 @@ std::uint32_t novelty_band(std::uint64_t first_seen_index, std::uint64_t lines,
 }
 
 std::uint32_t salience_score(std::optional<LogLevel> level, StructuralRole role,
-                             std::string_view tmpl, std::uint64_t count, std::uint64_t lines,
-                             std::uint32_t structural_surprise, std::uint32_t novelty) noexcept
+                             std::string_view tmpl, bool echoed_source, std::uint64_t count,
+                             std::uint64_t lines, std::uint32_t structural_surprise,
+                             std::uint32_t novelty) noexcept
 {
     // severity 0..100, multi-signal max (robust to any single signal missing).
     std::uint32_t severity{0};
@@ -200,7 +201,12 @@ std::uint32_t salience_score(std::optional<LogLevel> level, StructuralRole role,
             break;
         }
     }
-    if (looks_like_failure(tmpl))
+    // D-PROV-1 (§3.1): the failure-cue tier is the LEVEL-BLIND re-promoter — it fires on the
+    // template text regardless of the per-event level. For an all-echoed template (script source,
+    // not a runtime event) A1 already demoted the level to Unknown; skip this tier too, or it
+    // re-promotes the echoed `…failed…` template above the real failure. A template seen even once
+    // as a runtime event is not all-echoed → the tier (and its genuine level salience) stands.
+    if (!echoed_source && looks_like_failure(tmpl))
         severity = std::max(severity, kBandFailureCue);
     // Severity-confidence tiers run declared > level-keyword > token-lexicon. A
     // DECLARED failure marker (StructuralRole::Terminator, e.g. `##[error]`) would

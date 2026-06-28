@@ -70,6 +70,13 @@ class MetaLogEngine
         // high value means the template EMERGED late (first-seen near lines_observed).
         std::uint64_t first_seen_index{0};
         std::unordered_map<LogLevel, std::uint64_t> level_counts;
+        // D-PROV-1 (§3.1): true iff EVERY event that formed this template was echoed script
+        // source (no real runtime occurrence). AND-reduced over the events (order-independent →
+        // deterministic). When true, the salience failure-cue tier is skipped — the level-blind
+        // tier would otherwise re-promote an echoed `…failed…` template that A1 already demoted
+        // to Unknown level. A template seen even once as a real runtime event is NOT all-echoed,
+        // so its genuine level/role salience stands.
+        bool all_echoed_source{true};
         // Announced structural roles seen for this template (→ salience).
         // Dominant role feeds the salience severity signal (Terminator = severe).
         std::unordered_map<StructuralRole, std::uint64_t> role_counts;

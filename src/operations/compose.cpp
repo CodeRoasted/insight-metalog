@@ -319,9 +319,11 @@ collect_compose_reservoir_candidates(const MetaLogDocument& out, const ComposeSt
         // redundant here: a reservoir candidate is folded from inputs that were ALREADY admitted by
         // salience (carrying level + structural_surprise/novelty, the dominant severity axes); canon
         // also lifts declared failure markers to LogLevel::Error, captured by `lvl`. The composed
-        // re-derivation re-ranks on those carried signals, not on re-parsing the string.
-        const auto sal{salience_score(lvl, info.role, std::string_view{}, cnt,
-                                      out.window.lines_observed, info.structural_surprise,
+        // re-derivation re-ranks on those carried signals, not on re-parsing the string. The
+        // failure-cue tier is moot on an empty tmpl, so the D-PROV-1 echoed_source gate is a no-op
+        // here → pass false (the composed input carries no per-line provenance).
+        const auto sal{salience_score(lvl, info.role, std::string_view{}, /*echoed_source=*/false,
+                                      cnt, out.window.lines_observed, info.structural_surprise,
                                       info.novelty)};
         if (sal > 0U)
             res_cands.push_back(

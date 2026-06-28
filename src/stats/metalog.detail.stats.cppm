@@ -213,10 +213,13 @@ dominant_component_of(const std::unordered_map<std::string, std::uint64_t>& comp
 
 // Deterministic, quantized salience: (severity ⊕ structural_surprise ⊕ novelty) ⊗
 // rarity. Returns 0 for a non-salient template (so rare-benign noise never enters
-// the reservoir). Integer math only — no float (I5).
+// the reservoir). Integer math only — no float (I5). `echoed_source` (D-PROV-1 §3.1):
+// when true the LEVEL-BLIND failure-cue tier is skipped (an all-echoed `…failed…`
+// template must not be re-promoted after A1 demoted its level to Unknown).
 [[nodiscard]] std::uint32_t salience_score(std::optional<LogLevel> level, StructuralRole role,
-                                           std::string_view tmpl, std::uint64_t count,
-                                           std::uint64_t lines, std::uint32_t structural_surprise,
+                                           std::string_view tmpl, bool echoed_source,
+                                           std::uint64_t count, std::uint64_t lines,
+                                           std::uint32_t structural_surprise,
                                            std::uint32_t novelty) noexcept;
 
 // ── Wire-format helpers ───────────────────────────────────────────────────────

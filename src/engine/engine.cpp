@@ -239,6 +239,9 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
     ++bucket.count;
     ++bucket.level_counts[event.level];
     ++bucket.role_counts[event.structural_role]; // announced role → salience
+    // D-PROV-1 (§3.1): a template is "all echoed" only while every event forming it is echoed
+    // source. AND-reduction (order-independent) — one real runtime occurrence makes it false.
+    bucket.all_echoed_source = bucket.all_echoed_source && event.echoed_source;
     ++lines_observed_;
 
     // SPEC §16 cube: accumulate the per-EVENT joint (level, component, role). Gated on
@@ -616,7 +619,8 @@ MetaLogEngine::collect_reservoir_candidates(const WindowAnalysis& analysis) cons
         const auto novelty{novelty_band(bucket.first_seen_index, lines_observed_, bucket.count)};
         const auto sal{salience_score(dominant_level_of(bucket.level_counts),
                                       dominant_role_of(bucket.role_counts), bucket.template_str,
-                                      bucket.count, lines_observed_, surprise, novelty)};
+                                      bucket.all_echoed_source, bucket.count, lines_observed_,
+                                      surprise, novelty)};
         if (sal > 0U)
             candidates.push_back(ReservoirCandidate{
                 .index = i, .salience = sal, .structural_surprise = surprise, .novelty = novelty});
@@ -625,8 +629,9 @@ MetaLogEngine::collect_reservoir_candidates(const WindowAnalysis& analysis) cons
 }
 
 // Admit candidates to the reservoir in salience order (SPEC §3.7.2 MUST: tie-break
-// by template_id for a bit-identical reservoir), bounded by reservoir_size and the
-// per-kind (structural_role × dominant_level) diversity cap.
+// by template_id for a bit-identical reservoir), bounded by reservoir_size, with a
+// guaranteed error-class RESERVE (D-RNK-2 §5.2) ahead of the per-kind
+// (structural_role × dominant_level) diversity cap on the general pool.
 void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& analysis,
                                     std::vector<ReservoirCandidate>& candidates,
                                     std::unordered_set<std::string>& reserved) const
@@ -644,9 +649,16 @@ void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& ana
                               return lhs.salience > rhs.salience;
                           return ordered[lhs.index].first < ordered[rhs.index].first;
                       });
-    // Admit in salience order, up to M total, capping exemplars PER KIND
-    // (structural_role × dominant_level) for diversity. A "kind" key
-    // packs the two small enums into one integer for a cheap counter map.
+
+    // The error class (D-RNK-2 §5.2) — mirrors eidos `reservoir_is_error_class`: the
+    // verdict-anchored-failure signal at the metalog layer (after D-OUT-4).
+    const auto error_class{[](StructuralRole role, std::optional<LogLevel> level) noexcept
+                           {
+                               return role == StructuralRole::Terminator ||
+                                      level == LogLevel::Error || level == LogLevel::Fatal;
+                           }};
+    // Per-kind diversity key for the general pool: packs the two small enums into one
+    // integer counter so M optimises COVERAGE of distinct salient kinds over depth.
     constexpr unsigned kKindRoleShift{8U};
     const auto kind_key{
         [](StructuralRole role, std::optional<LogLevel> level) noexcept
@@ -655,12 +667,83 @@ void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& ana
             return static_cast<std::uint16_t>((static_cast<std::uint16_t>(role) << kKindRoleShift) |
                                               lvl);
         }};
-    std::unordered_map<std::uint16_t, std::size_t> per_kind;
+    // Build + push one reservoir entry for an already-decided candidate; mark it reserved
+    // (excluded from the tail residual, SPEC §3.7.3). level/role are passed in so the two
+    // admission phases compute the dominant maps once.
+    const auto admit_one{
+        [&](const ReservoirCandidate& candidate, std::optional<LogLevel> level,
+            StructuralRole role)
+        {
+            const Bucket& bucket{*ordered[candidate.index].second};
+            ReservoirEntry entry;
+            entry.template_id = template_id_for(ordered[candidate.index].first);
+            // D-TIR-5 field-drop: template_str resolved by id from the registry at display seams.
+            entry.count = bucket.count;
+            entry.frequency = total > 0.0 ? static_cast<double>(bucket.count) / total : 0.0;
+            entry.dominant_level = level;
+            entry.structural_role = role;
+            entry.structural_surprise = candidate.structural_surprise;
+            entry.novelty = candidate.novelty;
+            entry.salience = candidate.salience;
+            // §15.4 sub-coordinate: re-express the reconciled first-seen ordinal, bounded by M.
+            // Only when a coordinate is configured (a sub-part of the document coordinate).
+            if (config_.source_ref)
+                entry.within_window_ordinal = bucket.first_seen_index;
+            // WHERE label + §16.6 reservoir→cell cross — both derive from the one dominant
+            // component (computed once). The label (D-WHERE-2) rides emit_cube || emit_where; the
+            // cube cross (LOCATION-only {level, where}, read-only) rides emit_cube. Empty component
+            // → disengaged label; cube_location maps it to the aggregated-WHERE star.
+            if (config_.emit_cube || config_.emit_where)
+            {
+                auto component{dominant_component_of(bucket.component_counts)};
+                if (config_.emit_cube)
+                    entry.cube_coord = cube::cube_location(level, component);
+                if (!component.empty())
+                    entry.dominant_component = std::move(component);
+            }
+            stats.reservoir.push_back(std::move(entry));
+            reserved.insert(ordered[candidate.index].first);
+        }};
+
     stats.reservoir.reserve(std::min(config_.reservoir_size, candidates.size()));
+
+    // ── Phase 1: the error-class reserve (D-RNK-2 §5.2) ──
+    // A bounded floor of slots admitted to error-class templates by salience (then template_id),
+    // EXEMPT from the per-kind cap, BEFORE the general pool — so non-failure salience (novelty /
+    // structural-surprise) can never crowd a real failure out of a high-cardinality window. The
+    // reserve is for failure DEPTH: a genuine failure storm overflows the reserve and the
+    // top-by-salience failures are kept (the salience/template_id order already does this). Clamped
+    // to M. 0 = disabled.
+    const auto reserve{std::min(config_.reservoir_error_reserve, config_.reservoir_size)};
+    if (reserve > 0)
+    {
+        std::size_t reserved_used{0};
+        for (const auto& candidate : candidates)
+        {
+            if (reserved_used >= reserve || stats.reservoir.size() >= config_.reservoir_size)
+                break;
+            const Bucket& bucket{*ordered[candidate.index].second};
+            const auto level{dominant_level_of(bucket.level_counts)};
+            const auto role{dominant_role_of(bucket.role_counts)};
+            if (!error_class(role, level))
+                continue;
+            admit_one(candidate, level, role);
+            ++reserved_used;
+        }
+    }
+
+    // ── Phase 2: the general pool ──
+    // Fill the remaining slots in salience order under the per-kind diversity cap. Candidates
+    // already taken by the reserve are skipped (they are in `reserved`). The per-kind counters
+    // start fresh — the reserve is a separate, exempt budget; this cap governs only the general
+    // pool, so an error-class template beyond the reserve still competes here under its kind cap.
+    std::unordered_map<std::uint16_t, std::size_t> per_kind;
     for (const auto& candidate : candidates)
     {
         if (stats.reservoir.size() >= config_.reservoir_size)
             break;
+        if (reserved.contains(ordered[candidate.index].first))
+            continue; // promoted by the reserve in phase 1
         const Bucket& bucket{*ordered[candidate.index].second};
         const auto level{dominant_level_of(bucket.level_counts)};
         const auto role{dominant_role_of(bucket.role_counts)};
@@ -671,36 +754,7 @@ void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& ana
                 continue; // this kind is already covered — keep M for other kinds
             ++kind_count;
         }
-        ReservoirEntry entry;
-        entry.template_id = template_id_for(ordered[candidate.index].first);
-        // D-TIR-5 field-drop: template_str resolved by id from the registry at the display seams.
-        entry.count = bucket.count;
-        entry.frequency = total > 0.0 ? static_cast<double>(bucket.count) / total : 0.0;
-        entry.dominant_level = level;
-        entry.structural_role = role;
-        entry.structural_surprise = candidate.structural_surprise;
-        entry.novelty = candidate.novelty;
-        entry.salience = candidate.salience;
-        // §15.4 sub-coordinate: re-express the reconciled first-seen ordinal,
-        // bounded by M. Only when a coordinate is configured (it is a sub-part
-        // of the document coordinate; meaningless without one).
-        if (config_.source_ref)
-            entry.within_window_ordinal = bucket.first_seen_index;
-        // WHERE label + §16.6 reservoir→cell cross — both derive from the one dominant
-        // component (computed once). The label (D-WHERE-2) rides emit_cube || emit_where;
-        // the cube cross (LOCATION-only {level, where}, read-only, carries no salience)
-        // rides emit_cube. Empty component → disengaged label (never "" as a location);
-        // cube_location maps it to the aggregated-WHERE star.
-        if (config_.emit_cube || config_.emit_where)
-        {
-            auto component{dominant_component_of(bucket.component_counts)};
-            if (config_.emit_cube)
-                entry.cube_coord = cube::cube_location(level, component);
-            if (!component.empty())
-                entry.dominant_component = std::move(component);
-        }
-        stats.reservoir.push_back(std::move(entry));
-        reserved.insert(ordered[candidate.index].first);
+        admit_one(candidate, level, role);
     }
 }
 

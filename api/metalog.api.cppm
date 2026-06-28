@@ -627,6 +627,18 @@ struct MetaLogConfig
     // (test_query_0/_1/… FAILED) and crowds out a different failure. 0 = no cap.
     std::size_t reservoir_per_kind_cap{0};
 
+    // Error-class retention RESERVE (D-RNK-2 §5.2): a bounded floor of the M slots
+    // held exclusively for error-class templates (dominant_level ∈ {Error, Fatal} or
+    // role Terminator — the verdict-anchored-failure signal at the metalog layer), so
+    // non-failure salience (novelty / structural-surprise) can NEVER evict a real
+    // failure from a high-cardinality window. The reserve is admitted by salience then
+    // template_id and is EXEMPT from the per-kind cap (its purpose is failure DEPTH —
+    // a genuine failure storm keeps its top by salience; the per-kind cap governs only
+    // the general pool's diversity). 0 = disabled (default — no reserve). Clamped to
+    // reservoir_size. Schema-neutral: a retention policy, not template identity → no
+    // canonicalization_version / wire-version bump.
+    std::size_t reservoir_error_reserve{0};
+
     // Order of n-gram emitted in the behaviour block. Spec emits a
     // single order per document. Must be 2 or 3.
     std::size_t ngram_size{2};
