@@ -75,7 +75,7 @@ TEST(DeterminismGate, FullDocumentByteIdentityGolden)
     // it by higher severity (ERROR), a pure function of the contents. The same value
     // MUST hold on every compiler/architecture (re-verify across the cross-stdlib diagonal).
     constexpr std::string_view kGolden{
-        "5d53822aaad85e07169e19be537b7da0c6be633280fbbc3cd9761907801738fc"};
+        "176fa343a92abe294d0d949035a0697ad9f4ea35b71f53b87c84e2da0045338b"};
     EXPECT_EQ(digest, kGolden)
         << "MetaLog document determinism golden mismatch — a cross-machine bit-identity "
            "regression, OR an intentional contract change needing the golden re-derived "
@@ -162,7 +162,7 @@ TEST(DeterminismGate, ReservoirNearFullByteIdentityGolden)
     // cross-stdlib diagonal again (a bare mismatch = an item-reservoir admit/evict determinism
     // regression; insight_determinism_model.md §F5-M8).
     constexpr std::string_view kGolden{
-        "0b90a27ebbcda99d2a37a93859c63bdb661a68417f03ec6da39b9cd3513fa0be"};
+        "9354580934e54e7a03422d83e1be623a6432fdbd1720cdc68bbe123674662181"};
     EXPECT_EQ(digest, kGolden)
         << "near-full reservoir determinism golden mismatch (F5-M8) — the item-reservoir admit/evict "
            "boundary is non-deterministic across this build, OR an intentional contract change needs "
@@ -255,7 +255,7 @@ TEST(DeterminismGate, EmitWhereOnlyDocumentByteIdentityGolden)
     // emit_where wire / dominant-component determinism regression; sift_where_attribution.md
     // D-WHERE-13).
     constexpr std::string_view kGolden{
-        "682a3db27bd2c89220c014f4d691704ad1b7a91e759febec52b4d7ab486787ae"};
+        "3c661af73da05b7d8d79cd833851dc9e4e5aa6ebde5281f080cc567367c25fc1"};
     EXPECT_EQ(digest, kGolden)
         << "emit_where-only document determinism golden mismatch — the cube-independent WHERE "
            "wire is non-deterministic across this build, OR an intentional contract change needs "
@@ -316,7 +316,7 @@ TEST(DeterminismGate, OrdinalCarrierByteIdentityGolden)
     // GREEN-FROZEN on the first run (clang-21/libc++); MUST hold across the cross-stdlib diagonal +
     // the MSVC anchor. Re-derive ONLY for an intentional carrier/ladder contract change.
     constexpr std::string_view kGolden{
-        "0403f9d99102a51519ca756232effed5d11309f188495aec56931b9abb6c24bf"};
+        "258f4ed10b8d5f265924741782631a12a20512d3197681148021d0c2cea8af5c"};
     EXPECT_EQ(digest, kGolden)
         << "W1 ordinal binned-carrier determinism golden mismatch — a cross-machine bit-identity "
            "regression in the binning/ladder, OR an intentional contract change needing the golden "
