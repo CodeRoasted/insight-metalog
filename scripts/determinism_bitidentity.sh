@@ -36,6 +36,14 @@
 # non-zero on any divergence, or if either diagonal leg fails to build (a one-leg gate is hollow).
 set -uo pipefail
 
+# --freeze: after the cross-stdlib check PASSES, (re)write the cross-OS golden (determinism_golden.txt
+# + .sha256) from the gcc/ship anchor leg's corpus portion — for a DELIBERATE engine-output change (e.g.
+# a canonicalization_version bump). Mirrors fuzz/cross_build_determinism.sh + canon/det_public_proof.sh,
+# closing the gate-coherence gap (this gate previously had no freeze, so the golden was reseeded by hand —
+# the un-reproducible step that rots, [[determinism-golden-freshness-gate]]). Default (no flag): assert.
+FREEZE=0
+[ "${1:-}" = "--freeze" ] && { FREEZE=1; shift; }
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 META="$(cd "$SCRIPT_DIR/.." && pwd)"
 CANON="$(cd "$META/../insight-canon" && pwd)"
@@ -198,6 +206,28 @@ for ctag in "${builds[@]}"; do
   if cmp -s "$WORK/$ref.out" "$WORK/$ctag.out"; then st=IDENTICAL; else st=DIVERGENT; rc=1; fi
   printf "  %-28s %s\n" "$ctag" "$st"
 done
+
+# --freeze: redefine the cross-OS golden from the gcc/ship anchor leg's corpus portion. Only AFTER the
+# built cells agree (rc==0) — a freeze on a cross-stdlib break would bake non-determinism in as truth.
+# The golden is the x86_64/libstdc++ ship reference the windows-portability-probe matches MSVC against,
+# so refuse to freeze from a non-gcc anchor (set DETERMINISM_LEGS so gcc15-libstdcxx is builds[0]). Skip
+# the MSVC anchor compare — we are *redefining* the golden, not asserting against the old one.
+if [ "$FREEZE" -eq 1 ]; then
+  [ $rc -eq 0 ] || { echo "REFUSE FREEZE: built cells diverge (cross-stdlib break) — fix determinism before freezing."; exit 1; }
+  case "$ref" in
+    gcc15-libstdcxx-*) : ;;
+    *) echo "REFUSE FREEZE: reference '$ref' is not a gcc leg; the golden is the x86 gcc/ship anchor."
+       echo "  Re-run with DETERMINISM_LEGS=\"gcc15-libstdcxx clang21-libcxx\" so gcc15-libstdcxx is builds[0]."; exit 2 ;;
+  esac
+  sed '/^### --reservoir-nearfull/,$d' "$WORK/$ref.out" >"$GOLDEN_TXT"
+  sha256sum "$GOLDEN_TXT" | awk '{print $1}' >"$SCRIPT_DIR/determinism_golden.sha256"
+  echo "FROZEN cross-OS golden ← $ref (corpus portion, reservoir stripped):"
+  echo "  $GOLDEN_TXT"
+  echo "  determinism_golden.sha256 = $(cat "$SCRIPT_DIR/determinism_golden.sha256")"
+  echo "  Review the diff, commit both, then run windows-portability-probe.yml to re-prove MSVC == this golden."
+  exit 0
+fi
+
 # CROSS-OS anchor (MSVC): the corpus PORTION of the reference (before the reservoir marker) must equal
 # the committed golden, which the windows probe verifies == real MSVC. The golden is corpus-only; the
 # reservoir's cross-OS is F5-M8-gated, so it rides the built legs only, NOT this MSVC anchor.
