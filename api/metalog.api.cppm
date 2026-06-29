@@ -12,7 +12,7 @@ export namespace insight::metalog
 
 // Per-template per-wildcard-position value frequency table.
 //
-// Drain maps variable token positions to <*>, making field values invisible
+// The canon masker maps variable token positions to <*>, making field values invisible
 // to downstream detection.  FieldHistogram re-surfaces the empirical
 // distribution P(value | template_id, param_index) for each wildcarded
 // position, giving the drift and sequence banks a causal axis to observe.
