@@ -76,39 +76,77 @@ struct OrdinalHistogram
 // path — so it does not belong in the entries that flow through the pyramid; this is its one home.
 // Append-only, intern-once-per-id (same id => same canon-masked content, so first writer wins). Backed
 // by node-stable std::unordered_map, so returned string_views stay valid for the registry's lifetime.
+// Every member is defined OUT OF LINE (below), non-inline, ON PURPOSE — never fold these back into
+// the class body. `table_` is a std::unordered_map keyed on TemplateId, which is exported from
+// insight.canon (a module-attached type). gcc-15 emits the map's out-of-line std::_Hashtable members
+// (_M_reset, _M_update_bbegin, …) with *internal* linkage for a module-attached key, so an inlined
+// copy/move/merge/intern in a *consumer* TU leaves them unresolved at link (surfaces only once the
+// consumer lives in a separate link unit — e.g. the insight-playground unit/contract target split).
+// Keeping the ops non-inline emits them once into libinsight_metalog; consumers just call the
+// external symbol. TemplateRegistry is a pure DISPLAY structure (never on the decision path), so the
+// forgone inlining is perf-immaterial. clang is unaffected — this is correctness-preserving there.
 class TemplateRegistry
 {
   public:
+    TemplateRegistry();
+    TemplateRegistry(const TemplateRegistry&);
+    TemplateRegistry(TemplateRegistry&&);
+    TemplateRegistry& operator=(const TemplateRegistry&);
+    TemplateRegistry& operator=(TemplateRegistry&&);
+    ~TemplateRegistry();
+
     // Intern (first writer wins); returns a view stable for the registry's lifetime.
-    std::string_view intern(TemplateId template_id, std::string_view template_str)
-    {
-        const auto [iter, inserted]{table_.try_emplace(template_id, template_str)};
-        return iter->second;
-    }
+    std::string_view intern(TemplateId template_id, std::string_view template_str);
     // The interned string for `template_id`, or "" if unknown.
-    [[nodiscard]] std::string_view lookup(TemplateId template_id) const noexcept
-    {
-        const auto iter{table_.find(template_id)};
-        return iter != table_.end() ? std::string_view{iter->second} : std::string_view{};
-    }
-    [[nodiscard]] bool contains(TemplateId template_id) const noexcept
-    {
-        return table_.contains(template_id);
-    }
-    [[nodiscard]] std::size_t size() const noexcept { return table_.size(); }
-    void clear() noexcept { table_.clear(); }
+    [[nodiscard]] std::string_view lookup(TemplateId template_id) const noexcept;
+    [[nodiscard]] bool contains(TemplateId template_id) const noexcept;
+    [[nodiscard]] std::size_t size() const noexcept;
+    void clear() noexcept;
     // Union another registry in (first writer wins, so an existing id keeps its string — the masker is
     // a pure fn, so a shared id always maps to the same bytes). Used to merge per-shard / per-window
     // registries into one display vocabulary (e.g. sharded pipeline union, baseline∪changed in diff).
-    void merge(const TemplateRegistry& other)
-    {
-        for (const auto& [template_id, template_str] : other.table_)
-            table_.try_emplace(template_id, template_str);
-    }
+    void merge(const TemplateRegistry& other);
 
   private:
     std::unordered_map<TemplateId, std::string> table_;
 };
+
+// Out-of-line definitions (see the class note): the sole home of table_'s std::_Hashtable member
+// instantiations, emitted once into libinsight_metalog. `= default` keeps the exact special-member
+// semantics (incl. deduced noexcept) the implicit declarations had.
+TemplateRegistry::TemplateRegistry() = default;
+TemplateRegistry::TemplateRegistry(const TemplateRegistry&) = default;
+TemplateRegistry::TemplateRegistry(TemplateRegistry&&) = default;
+TemplateRegistry& TemplateRegistry::operator=(const TemplateRegistry&) = default;
+TemplateRegistry& TemplateRegistry::operator=(TemplateRegistry&&) = default;
+TemplateRegistry::~TemplateRegistry() = default;
+
+std::string_view TemplateRegistry::intern(TemplateId template_id, std::string_view template_str)
+{
+    const auto [iter, inserted]{table_.try_emplace(template_id, template_str)};
+    return iter->second;
+}
+
+std::string_view TemplateRegistry::lookup(TemplateId template_id) const noexcept
+{
+    const auto iter{table_.find(template_id)};
+    return iter != table_.end() ? std::string_view{iter->second} : std::string_view{};
+}
+
+bool TemplateRegistry::contains(TemplateId template_id) const noexcept
+{
+    return table_.contains(template_id);
+}
+
+std::size_t TemplateRegistry::size() const noexcept { return table_.size(); }
+
+void TemplateRegistry::clear() noexcept { table_.clear(); }
+
+void TemplateRegistry::merge(const TemplateRegistry& other)
+{
+    for (const auto& [template_id, template_str] : other.table_)
+        table_.try_emplace(template_id, template_str);
+}
 
 struct TopKEntry
 {
