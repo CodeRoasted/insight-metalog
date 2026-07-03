@@ -158,7 +158,7 @@ jobs:
       - name: Measure + publish the benchmark
         uses: CodeRoasted/malf-toolchain/.github/actions/publish-benchmark@main
         with:
-          label: insight-metalog
+          outputs: insight_metalog_bench=insight-metalog
           tag: ${{ steps.tag.outputs.tag }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
