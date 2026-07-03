@@ -90,9 +90,9 @@ class TemplateRegistry
   public:
     TemplateRegistry();
     TemplateRegistry(const TemplateRegistry&);
-    TemplateRegistry(TemplateRegistry&&);
+    TemplateRegistry(TemplateRegistry&&) noexcept;
     TemplateRegistry& operator=(const TemplateRegistry&);
-    TemplateRegistry& operator=(TemplateRegistry&&);
+    TemplateRegistry& operator=(TemplateRegistry&&) noexcept;
     ~TemplateRegistry();
 
     // Intern (first writer wins); returns a view stable for the registry's lifetime.
@@ -111,42 +111,11 @@ class TemplateRegistry
     std::unordered_map<TemplateId, std::string> table_;
 };
 
-// Out-of-line definitions (see the class note): the sole home of table_'s std::_Hashtable member
-// instantiations, emitted once into libinsight_metalog. `= default` keeps the exact special-member
-// semantics (incl. deduced noexcept) the implicit declarations had.
-TemplateRegistry::TemplateRegistry() = default;
-TemplateRegistry::TemplateRegistry(const TemplateRegistry&) = default;
-TemplateRegistry::TemplateRegistry(TemplateRegistry&&) = default;
-TemplateRegistry& TemplateRegistry::operator=(const TemplateRegistry&) = default;
-TemplateRegistry& TemplateRegistry::operator=(TemplateRegistry&&) = default;
-TemplateRegistry::~TemplateRegistry() = default;
-
-std::string_view TemplateRegistry::intern(TemplateId template_id, std::string_view template_str)
-{
-    const auto [iter, inserted]{table_.try_emplace(template_id, template_str)};
-    return iter->second;
-}
-
-std::string_view TemplateRegistry::lookup(TemplateId template_id) const noexcept
-{
-    const auto iter{table_.find(template_id)};
-    return iter != table_.end() ? std::string_view{iter->second} : std::string_view{};
-}
-
-bool TemplateRegistry::contains(TemplateId template_id) const noexcept
-{
-    return table_.contains(template_id);
-}
-
-std::size_t TemplateRegistry::size() const noexcept { return table_.size(); }
-
-void TemplateRegistry::clear() noexcept { table_.clear(); }
-
-void TemplateRegistry::merge(const TemplateRegistry& other)
-{
-    for (const auto& [template_id, template_str] : other.table_)
-        table_.try_emplace(template_id, template_str);
-}
+// Every member is defined OUT OF LINE in the implementation unit src/metalog.api.impl.cpp, NOT here
+// in the interface — on purpose, for two compilers at once (see the class note above): gcc-15 needs
+// them non-inline (table_'s std::_Hashtable members, module-attached key), and MSVC re-emits an
+// out-of-line `= default` special member defined in a module *interface* into every importer
+// (LNK2005), so the interface must only DECLARE them. Never fold these back into the interface.
 
 struct TopKEntry
 {
