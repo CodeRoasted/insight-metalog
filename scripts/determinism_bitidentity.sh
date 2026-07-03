@@ -46,7 +46,11 @@ FREEZE=0
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 META="$(cd "$SCRIPT_DIR/.." && pwd)"
-CANON="$(cd "$META/../insight-canon" && pwd)"
+# canon SOURCE root (the harness add_subdirectory-builds it per cell). Defaults to the sibling checkout;
+# DETERMINISM_CANON_ROOT overrides it for CI, where insight-canon is checked out into a job-local path
+# (e.g. $GITHUB_WORKSPACE/_canon) rather than a sibling of metalog.
+CANON="${DETERMINISM_CANON_ROOT:-$META/../insight-canon}"
+[ -d "$CANON" ] && CANON="$(cd "$CANON" && pwd)"
 HARNESS="$SCRIPT_DIR/det_harness"
 FIXTURE="$SCRIPT_DIR/determinism_fixture.cpp"
 
@@ -104,7 +108,20 @@ declare -A LEG_SPEC=(
   [gcc15-libstdcxx]="g++-15:gcc-15:$GCC_PROFILE"     # cxx-bin:cc-bin:conan-profile
   [clang21-libcxx]="clang++-21:clang-21:$CLANG_PROFILE"
 )
+# DETERMINISM_LEG (singular) = the canon-golden-workflow interface: run ONE compiler per job so the
+# cross-stdlib property comes from the workflow's compare of the per-leg digests (gcc-x86 == clang-x86),
+# exactly like canon's det_public_proof.sh. Maps to the single LEG_SPEC key; overrides DETERMINISM_LEGS.
+case "${DETERMINISM_LEG:-}" in
+  gcc)   DETERMINISM_LEGS="gcc15-libstdcxx" ;;
+  clang) DETERMINISM_LEGS="clang21-libcxx" ;;
+  '')    : ;;
+  *) echo "::error::unknown DETERMINISM_LEG='$DETERMINISM_LEG' (expected gcc|clang)" >&2; exit 2 ;;
+esac
 read -ra LINUX_LEGS <<<"${DETERMINISM_LEGS:-clang21-libcxx}"
+# DETERMINISM_OUT = the cross-leg-agreement mode (canon's model): emit THIS leg's full digest for the
+# workflow to byte-compare against every other leg (gcc/clang × x86/arm64 + MSVC). The committed-golden
+# MSVC anchor is then redundant — the compare IS the cross-OS assertion — so drop it in this mode.
+[ -n "${DETERMINISM_OUT:-}" ] && DETERMINISM_MSVC=0
 DETERMINISM_MSVC="${DETERMINISM_MSVC:-1}"
 GOLDEN_TXT="$SCRIPT_DIR/determinism_golden.txt"
 
@@ -248,6 +265,12 @@ fi
 if [ $rc -eq 0 ]; then
   echo "PASS: byte-identical across ${#builds[@]} built cell(s)$([ "$DETERMINISM_MSVC" = 1 ] && echo ' + MSVC golden') —"
   echo "  corpus (cross-stdlib + cross-OS) and --reservoir-nearfull."
+  # Cross-leg mode: emit this leg's full digest (corpus + reservoir, byte-identical across its own
+  # -O×-ffp cells above) for the Determinism-Golden-Proof workflow to compare against every other leg.
+  if [ -n "${DETERMINISM_OUT:-}" ]; then
+    cp "$WORK/$ref.out" "$DETERMINISM_OUT"
+    echo "emitted digest → $DETERMINISM_OUT  (leg '${LINUX_LEGS[*]}', $(sha256sum "$WORK/$ref.out" | cut -c1-16)…)"
+  fi
 else
   echo "FAIL: determinism divergence."
   echo "  vs msvc(golden) ⇒ CROSS-OS break; vs another built cell ⇒ cross-stdlib or -O/-ffp break."

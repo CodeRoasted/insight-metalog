@@ -1,0 +1,70 @@
+name: Release
+
+# On a vX.Y.Z tag (or manual re-run): Lint -> CI -> Determinism Golden Proof (gate) -> Release ->
+# attach the golden. The golden gate runs the 5-leg cross-toolchain/ISA/OS matrix (canon+metalog tower
+# from source) and only proceeds if every leg's digest is byte-identical; the agreed digest (the
+# validated golden) is then attached to the Release as a per-release artifact (never committed). CI is
+# the single tag entry point.
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to publish (vMAJOR.MINOR.PATCH)'
+        required: true
+
+permissions:
+  contents: write        # release + attach-golden create/upload the Release
+  actions: write
+
+jobs:
+  lint:
+    uses: ./.github/workflows/lint.yml
+    secrets: inherit
+
+  ci:
+    needs: lint
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+
+  # The 5-leg determinism gate — blocks the release unless every leg's digest agrees.
+  golden:
+    needs: ci
+    uses: ./.github/workflows/golden.yaml
+
+  release:
+    needs: golden
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-release.yml@main
+    with:
+      tag: ${{ github.event.inputs.tag || github.ref_name }}
+      packages: 'insight_metalog:.'
+      # metalog vendors insight_canon from its PUBLIC release for the conan create.
+      vendor: |
+        insight_canon 1.7.1 CodeRoasted/insight-canon public
+      benchmark: 'insight_metalog_bench=insight-metalog'
+    secrets: inherit
+
+  # Attach the validated golden (produced by the golden gate) to the Release — per-release, not committed.
+  # Asset name is kept as metalog.determinism_golden.txt so the Hub evidence pipeline (publish-to-hub.yml
+  # / publish_hub_evidence.py) keeps finding it.
+  attach-golden:
+    needs: [release, golden]
+    runs-on: ${{ vars.CI_RUNS_ON || 'ubuntu-latest' }}
+    steps:
+      - name: Download the validated golden
+        uses: actions/download-artifact@v7
+        with:
+          name: determinism-golden
+
+      - name: Attach the golden (+ sha256) to the Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}   # no checkout here — gh can't infer the repo from .git, name it
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          mv determinism-golden.txt metalog.determinism_golden.txt
+          sha256sum metalog.determinism_golden.txt | awk '{ print $1"  metalog.determinism_golden.txt" }' > metalog.determinism_golden.txt.sha256
+          gh release upload "$TAG" metalog.determinism_golden.txt metalog.determinism_golden.txt.sha256 --clobber
