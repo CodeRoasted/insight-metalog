@@ -11,14 +11,6 @@ on:
     tags: [ "v[0-9]+.[0-9]+.[0-9]+" ]
   pull_request:
     branches: [main]
-    paths:
-      - 'api/**'
-      - 'src/**'
-      - 'tests/**'
-      - 'benchmarks/**'
-      - 'CMakeLists.txt'
-      - 'conanfile.py'
-      - '.github/workflows/ci.yml'
 
 jobs:
   build:
