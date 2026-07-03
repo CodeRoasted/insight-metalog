@@ -1,58 +1,41 @@
 name: CI
-permissions:
-  contents: write
-  pull-requests: write   # Sift dogfood: comment on same-repo PRs + seed on push; fork PRs skipped (read-only token anyway)
-  actions: write         # Sift dogfood: upload the baseline-log artifact (+ read for last-green resolution)
 
 on:
+  workflow_call:
+  # Also the Sift baseline seed: a no-PR dispatch of THIS "CI" workflow on main uploads its build.log as
+  # the last-green baseline PR renders diff against. Reseed manually (solo-dev; no CI on every push).
   workflow_dispatch:
-  push:
-    branches: [ main ]
-    tags: [ "v[0-9]+.[0-9]+.[0-9]+" ]
   pull_request:
-    branches: [main]
+    branches: [ main ]
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    env:
-      INSIGHT_CANON_REPO: CodeRoasted/insight-canon
-      CR_PIN_INSIGHT_CANON: '1.7.1'
+  ci:
+    permissions:
+      contents: read
+      actions: read
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-ci.yml@main
+    with:
+      # metalog vendors insight_canon from its PUBLIC release, then builds the single root package
+      # (test=true runs the full gtest suite; create=true verifies packaging + test_package).
+      vendor: |
+        insight_canon 1.7.1 CodeRoasted/insight-canon public
+      modules: '.'
+      # PUBLIC repo: sift-mode: public renders the Sift comment fork-safe (read-only token); the
+      # sift-post job below posts it.
+      sift-mode: public
+    secrets: inherit
 
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Provision gcc-15.3 toolchain (PR124309 fix; replaces PPA gcc-15 = 15.2)
-        uses: CodeRoasted/malf-toolchain/.github/actions/setup-gcc153@main
-
-      - name: Setup build env (apt + CMake 4.3.x + Conan + dep cache + canonical profile)
-        uses: CodeRoasted/malf-toolchain/.github/actions/setup-build-env@main
-
-      - name: Vendor insight_canon from insight-canon release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          bash scripts/ci_fetch_conan_package.sh insight_canon "$CR_PIN_INSIGHT_CANON" "$INSIGHT_CANON_REPO"
-
-      - name: Start build-log capture (the conan-module step below appends; Sift diffs it)
-        run: truncate --size 0 "$GITHUB_WORKSPACE/build.log"
-
-      - name: Build + test metalog
-        # single-module (the package is the repo root) → module '.'. test=true runs the full gtest
-        # suite (conan install + cmake build + ctest); `conan create` alone only runs test_package.
-        # create=true also verifies packaging + test_package consumes it. Both mirror to build.log.
-        uses: CodeRoasted/malf-toolchain/.github/actions/conan-module@main
-        with:
-          module: '.'
-          test: 'true'
-          create: 'true'
-
-      - name: Sift — structural diff of this run's build+test log (advisory)
-        if: ${{ always() && github.event.pull_request.head.repo.fork != true }}
-        continue-on-error: true    # advisory: a Sift error must NEVER fail this build
-        uses: CodeRoasted/sift-action@v1
-        with:
-          log: build.log
-          fail-on: none
-          commit-comment: regression
-          build-status: ${{ job.status == 'success' && 'green' || 'red' }}
+  # Post the comment the `ci` build rendered to the sift-comment artifact. Separate job so `ci` (which
+  # runs PR code) stays read-only; only THIS job holds pull-requests: write, and it runs no PR code —
+  # it just posts the pre-rendered artifact of this same run. Same-repo PRs only: a fork PR's
+  # pull_request run is read-only, so posting is capped anyway (external forks get no comment).
+  sift-post:
+    needs: ci
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true }}
+    permissions:
+      pull-requests: write
+      actions: read
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-sift-post.yml@main
+    with:
+      run-id: ${{ github.run_id }}
+    secrets: inherit
