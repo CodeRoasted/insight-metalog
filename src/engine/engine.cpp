@@ -244,20 +244,18 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
     bucket.all_echoed_source = bucket.all_echoed_source && event.echoed_source;
     ++lines_observed_;
 
-    // SPEC §16 cube: accumulate the per-EVENT joint (level, component, role). Gated on
-    // emit_cube == false (default) → one predicted-not-taken branch, zero extra work on
-    // the hot path (same discipline as max_param_histograms). The component string_view
-    // is arena-stable only within the window, so it is COPIED into the keys.
-    if (config_.emit_cube)
-        ++cube_base_[std::make_tuple(event.level, std::string{event.component},
-                                     event.structural_role)];
+    // SPEC §16 cube: accumulate the per-EVENT joint (level, component, role) — ALWAYS
+    // (the cube is unconditional; the collapse guardrail bounds its cardinality, §C). The
+    // component string_view is arena-stable only within the window, so it is COPIED into
+    // the keys.
+    ++cube_base_[std::make_tuple(event.level, std::string{event.component},
+                                 event.structural_role)];
 
     // Per-template component marginal — the WHERE carrier (D-WHERE-2/3) and the §16.6
-    // reservoir cross. Needed by the cube AND the cube-independent Sift WHERE, so it is
-    // gated on emit_cube || emit_where (both default false → one extra predicted-not-taken
-    // branch on the default hot path). Empty components are not counted (records_with_component
-    // then counts only located records).
-    if ((config_.emit_cube || config_.emit_where) && !event.component.empty())
+    // reservoir cross, feeding both the cube and the leaf `dominant_component`. Always
+    // accumulated. Empty components are not counted (records_with_component then counts
+    // only located records).
+    if (!event.component.empty())
         ++bucket.component_counts[std::string{event.component}];
 
     // Per-param field histogram accumulation.
@@ -342,8 +340,8 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end,
 
     build_behavior(doc, analysis);
     build_stability(doc, analysis);
-    build_cube(doc);        // SPEC §16 — only when config_.emit_cube
-    build_acquisition(doc); // D-WHERE-4/5 — only when emit_where || emit_cube
+    build_cube(doc);        // SPEC §16 — always (unconditional; collapse-bounded, §C)
+    build_acquisition(doc); // D-WHERE-4/5 — always (the window's dimension self-assessment)
 
     // Carry this window's frequencies for the next window's stability, emit the
     // §3.4 dedup map, then drop the per-window state.
@@ -528,14 +526,13 @@ void MetaLogEngine::build_top_k(MetaLogDocument& doc, const WindowAnalysis& anal
         entry.count = ordered[i].second->count;
         entry.frequency = total > 0.0 ? static_cast<double>(entry.count) / total : 0.0;
         entry.dominant_level = dominant_level_of(ordered[i].second->level_counts);
-        // WHERE label (D-WHERE-2): the dominant functional source, independent of the
-        // cube. component_counts is empty unless emit_cube || emit_where, so the gate
-        // skips the cold-path lookup entirely on the default path; an empty result stays
-        // a disengaged optional (never "" as a location).
-        if (config_.emit_cube || config_.emit_where)
-            if (auto component{dominant_component_of(ordered[i].second->component_counts)};
-                !component.empty())
-                entry.dominant_component = std::move(component);
+        // WHERE label (D-WHERE-2): the dominant functional source — the LEAF WHERE
+        // (Sift's finding-WHERE on RankedChange), independent of the cube. Always
+        // computed; an empty component_counts (a free-text window) leaves it a disengaged
+        // optional (never "" as a location).
+        if (auto component{dominant_component_of(ordered[i].second->component_counts)};
+            !component.empty())
+            entry.dominant_component = std::move(component);
 
         // Per-param field histograms — only when enabled.
         if (config_.max_param_histograms > 0)
@@ -690,14 +687,12 @@ void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& ana
             if (config_.source_ref)
                 entry.within_window_ordinal = bucket.first_seen_index;
             // WHERE label + §16.6 reservoir→cell cross — both derive from the one dominant
-            // component (computed once). The label (D-WHERE-2) rides emit_cube || emit_where; the
-            // cube cross (LOCATION-only {level, where}, read-only) rides emit_cube. Empty component
-            // → disengaged label; cube_location maps it to the aggregated-WHERE star.
-            if (config_.emit_cube || config_.emit_where)
+            // component (computed once), always. The label (D-WHERE-2) is the leaf WHERE; the
+            // cube cross (LOCATION-only {level, where}, read-only) feeds the cube. Empty
+            // component → disengaged label; cube_location maps it to the aggregated-WHERE star.
             {
                 auto component{dominant_component_of(bucket.component_counts)};
-                if (config_.emit_cube)
-                    entry.cube_coord = cube::cube_location(level, component);
+                entry.cube_coord = cube::cube_location(level, component);
                 if (!component.empty())
                     entry.dominant_component = std::move(component);
             }
@@ -1036,8 +1031,6 @@ void MetaLogEngine::build_stability(MetaLogDocument& doc, const WindowAnalysis& 
 // frozen window → a pure function of that set, bit-identical cross-stdlib/OS (§16.9).
 void MetaLogEngine::build_cube(MetaLogDocument& doc) const
 {
-    if (!config_.emit_cube)
-        return;
     std::vector<cube::BaseRow> base;
     base.reserve(cube_base_.size());
     for (const auto& [key, count] : cube_base_)
@@ -1062,8 +1055,6 @@ void MetaLogEngine::build_cube(MetaLogDocument& doc) const
 // only states the facts.
 void MetaLogEngine::build_acquisition(MetaLogDocument& doc) const
 {
-    if (!(config_.emit_where || config_.emit_cube))
-        return;
     AcquisitionBlock acquisition;
     std::unordered_set<std::string> distinct;
     for (const auto& [content_id, bucket] : buckets_)

@@ -128,7 +128,7 @@ struct TopKEntry
     // The template's dominant functional source (canon `component` — "src/auth",
     // a build job): the per-template WHERE *label* (sift_where_attribution.md
     // D-WHERE-2). Populated from dominant_component_of(bucket.component_counts) at
-    // build_top_k, independent of the cube, when emit_where || emit_cube. EMPTY
+    // build_top_k, independent of the cube, always. EMPTY
     // (disengaged) when the format carried no component — never "" masquerading as
     // a location. Whether it is *surfaced* on a finding is decided window-level off
     // the acquisition block (D-WHERE-6), not by this field's presence.
@@ -148,9 +148,11 @@ struct TopKEntry
 // own cubeability"), instead of four format checks that drift. NOT a baked verdict.
 // A pure function of the frozen ordered window (no float, no float→int, no
 // wall-clock); the counts are order-independent → bit-identical cross-stdlib.
-// Present only when emit_where || emit_cube. Extensible-by-addition: burstiness /
-// mixing_proxy / the adaptive convergence-window land later (measure-gated /
-// OTEL-gated) — the seed below is the `component` axis only.
+// Always present. Carries the window's dimension self-assessment (§6.1.1). Extensible-
+// by-addition, emit-gated (a field ships only when its formula is corpus-picked AND a
+// consumer needs it): burstiness / mixing_proxy / a convergence readout stay DEFERRED
+// (no stubs). The dimension-metadata below (component coverage + the WHERE-tree
+// cardinality-per-depth + the joint quantities) feeds the collapse guardrail (§C).
 struct AcquisitionBlock
 {
     // `component`-axis coverage facts. records_with_component = events that carried
@@ -161,15 +163,15 @@ struct AcquisitionBlock
     [[nodiscard]] bool operator==(const AcquisitionBlock&) const noexcept = default;
 };
 
-// ── Cube (SPEC §16, EXPERIMENTAL) ──────────────────────────────
+// ── Cube (SPEC §16) ────────────────────────────────────────────
 //
 // Intra-window joint categorical condensation: a CLOSED cube over a small, fixed
 // set of low-card categorical axes (level × structural_role × where-chain). An
 // attributor/projector, not a detector — given events already marked interesting
 // elsewhere, it answers "what is the smallest conjunction characterising them".
-// ADDITIVE and removable in a single revert (§16.8): emitted only when the
-// producer opts in (MetaLogConfig::emit_cube); never the source of truth for any
-// 1-D marginal in v0.6.0.
+// ALWAYS emitted (1.7.2) and permanently in the canonicalization_version comparability
+// contract; its cardinality is bounded by the per-window collapse guardrail (§C). Never
+// the source of truth for any 1-D marginal.
 
 // One axis descriptor (§16.2). kind=="categorical" is a flat low-card category
 // (cell value = a string); kind=="chain" is a single-parent roll-up hierarchy
@@ -326,10 +328,10 @@ struct ReservoirEntry
     double frequency{0.0};
     std::optional<LogLevel> dominant_level;
     // The template's dominant functional source (canon `component`) — the WHERE
-    // *label* (D-WHERE-2), mirroring TopKEntry. Populated independent of the cube
-    // when emit_where || emit_cube; EMPTY when the format carried no component.
-    // Distinct from `cube_coord` (the §16.6 LOCATION cross, emit_cube-only): this
-    // is the cube-independent carrier the Sift WHERE rides.
+    // *label* (D-WHERE-2), mirroring TopKEntry. Populated independent of the cube,
+    // always; EMPTY when the format carried no component. Distinct from `cube_coord`
+    // (the §16.6 LOCATION cross): this is the cube-independent carrier the Sift WHERE
+    // rides.
     std::optional<std::string> dominant_component;
     StructuralRole structural_role{StructuralRole::None};
     // Structural-surprise band (0..100): how off-path this template is, derived
@@ -361,8 +363,8 @@ struct ReservoirEntry
     // one-way (cube geometry → item location): restores the WHERE of a salient template
     // the (capped) emerging border never surfaced. A PURE FUNCTION of the entry's
     // (dominant level, dominant component); carries NO salience back into the cube and
-    // never re-ranks a cell or the border. Populated only when a cube block is emitted
-    // (MetaLogConfig::emit_cube). `structural_role` is intentionally left unset — the
+    // never re-ranks a cell or the border. Always populated (the cube is always built).
+    // `structural_role` is intentionally left unset — the
     // cross is LOCATION (severity + where), not the full cube cell.
     std::optional<CubeCoord> cube_coord;
 };
@@ -584,9 +586,10 @@ struct MetaLogDocument
     // configured with a source_ref; a composed document carries `children` instead
     // of addressing a single source. Absent otherwise.
     std::optional<ReDerivationCoordinate> coordinate;
-    // Intra-window cube (SPEC §16) — joint categorical condensation. EXPERIMENTAL,
-    // additive: present (has_cube) only when the producer opted in (MetaLogConfig::emit_cube).
-    // !has_cube = "no joint-categorical information available". The cube is part of the
+    // Intra-window cube (SPEC §16) — joint categorical condensation. ALWAYS built for a
+    // raw window (has_cube = true), collapse-bounded (§C). has_cube survives as the
+    // representation's presence flag: a COMPOSED document clears it only on an axis
+    // mismatch (!has_cube = "no comparable joint available"). The cube is part of the
     // §2.4 comparability contract (axes frozen per canonicalization_version /
     // retention_profile); two cubes diff into a cube_diff only when their axes match.
     //
@@ -599,9 +602,9 @@ struct MetaLogDocument
     bool has_cube{false};
     CubeBlock cube{};
     // Per-window acquisition self-assessment (sift_where_attribution.md D-WHERE-4):
-    // the window's structural facts seeding the WHERE disposition (and, later, the
-    // cube-axis / format-relative gate). Present only when the producer set
-    // emit_where (or emit_cube). All-integer, so std::optional is sound here (the
+    // the window's structural facts seeding the WHERE disposition + the cube-dimension
+    // self-assessment (§6.1.1, feeds the collapse guardrail). Always present.
+    // All-integer, so std::optional is sound here (the
     // bool+inline workaround the cube needs is for vector-owning optionals copied in
     // consumer module TUs; AcquisitionBlock is trivially copyable).
     std::optional<AcquisitionBlock> acquisition;
@@ -694,29 +697,13 @@ struct MetaLogConfig
     // Reported as producer.version in the envelope.
     std::string producer_version{"0.6.0"};
 
-    // Intra-window cube emission (SPEC §16) — EXPERIMENTAL, additive. false (default)
-    // = no cube block, zero overhead on the ingest hot path (one predicted-not-taken
-    // branch per ingest_event, same discipline as max_param_histograms). true builds a
-    // CLOSED cube over the v0.6.0 reference axes (level × structural_role × where-chain,
-    // WHERE grounded in canon `component`) at close_window, plus the §16.6
-    // reservoir→cell cross on each reservoir entry. Removable in a single revert
-    // (§16.8): the cube is never the source of truth for any 1-D marginal. A producer
-    // emitting a cube MUST bump canonicalization_version (the cube joins the §2.4
-    // comparability contract) — that bump is the caller's, set via the field above.
-    bool emit_cube{false};
-
-    // WHERE-carrier emission (sift_where_attribution.md D-WHERE-3) — additive,
-    // gated. false (default) = no per-template `dominant_component`, no `acquisition`
-    // block, zero overhead on the InSight streaming hot path (one predicted-not-taken
-    // branch per ingest_event, the same discipline as emit_cube). true populates
-    // Bucket::component_counts, the per-template `dominant_component`, and the
-    // per-window `acquisition` block — independent of the cube. Sift's diff_logs sets
-    // it true. emit_cube IMPLIES emit_where (the cube already needs the component
-    // marginal), so every gate below tests `emit_cube || emit_where`. Unlike the cube
-    // (§16) this is NOT part of the canonicalization_version contract: canon
-    // extraction is unchanged, only the leaf schema gains a derived field + block
-    // (metalog schema bump, D-WHERE-13).
-    bool emit_where{false};
+    // NOTE (1.7.2): the cube (SPEC §16), the per-template `dominant_component` WHERE
+    // leaf (D-WHERE-2), and the per-window `acquisition` block are ALWAYS emitted — the
+    // former `emit_cube`/`emit_where` opt-in gates are removed. The cube is permanently
+    // in the §2.4 `canonicalization_version` comparability contract, and its cardinality
+    // is bounded by the per-window dimensional-collapse guardrail (cube_perf_and_collapse.md
+    // §C). The acquisition block carries the window's dimension self-assessment (raw facts;
+    // the admissibility verdict is a shared consumer-side predicate, never a wire mask).
 
     // Re-derivation source (SPEC §15). When set, close_window stamps a coordinate
     // on the document (source_ref + the window's event-time bounds). The engine does

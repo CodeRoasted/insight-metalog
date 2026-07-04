@@ -34,10 +34,8 @@ ev(std::string_view tmpl, LogLevel level, std::string_view component,
 
 [[nodiscard]] meta::MetaLogConfig cube_cfg()
 {
-    return meta::MetaLogConfig{.reservoir_size = 8,
-                               .reservoir_per_kind_cap = 4,
-                               .emit_stability = false,
-                               .emit_cube = true};
+    return meta::MetaLogConfig{
+        .reservoir_size = 8, .reservoir_per_kind_cap = 4, .emit_stability = false};
 }
 
 // Find a closed cell by its (optional) level + (optional) where-leaf + (optional) role.
@@ -80,13 +78,13 @@ ev(std::string_view tmpl, LogLevel level, std::string_view component,
 
 // ── Block shape & condensation (§16.1/§16.2/§16.4) ──────────────────────────────
 
-TEST(CubeBlock, OffByDefault)
+TEST(CubeBlock, AlwaysBuiltEvenOnDefaultConfig)
 {
-    meta::MetaLogEngine engine; // default config: emit_cube == false
+    meta::MetaLogEngine engine; // 1.7.2: the cube is unconditional (no opt-in flag)
     engine.open_window(std::chrono::system_clock::time_point{});
     engine.ingest_event(ev("login ok", LogLevel::Info, "auth"));
     const auto doc{engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
-    EXPECT_FALSE(doc.has_cube) << "the cube is additive — absent unless emit_cube is set";
+    EXPECT_TRUE(doc.has_cube) << "the cube is always built (1.7.2 always-on)";
 }
 
 // ── §13 cardinality monitor (the PURE compute; the eidos pipeline emits the WARN) ───────────────
@@ -310,12 +308,13 @@ TEST(CubeDiff, OmittedWhenOneSideHasNoCube)
     with_cube.ingest_event(ev("a", LogLevel::Info, "auth"));
     const auto doc_cube{with_cube.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
 
-    auto cfg2{cfg};
-    cfg2.emit_cube = false;
-    meta::MetaLogEngine no_cube{cfg2};
-    no_cube.open_window(std::chrono::system_clock::time_point{});
-    no_cube.ingest_event(ev("a", LogLevel::Info, "auth"));
-    const auto doc_plain{no_cube.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
+    // The cube is always built for a raw window; the only way a doc carries no cube is a
+    // COMPOSED axis-mismatch clearing has_cube (§16.7). Simulate that side here.
+    meta::MetaLogEngine other{cfg};
+    other.open_window(std::chrono::system_clock::time_point{});
+    other.ingest_event(ev("a", LogLevel::Info, "auth"));
+    auto doc_plain{other.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
+    doc_plain.has_cube = false;
 
     EXPECT_FALSE(meta::diff(doc_cube, doc_plain).has_cube_diff)
         << "§13.6: a cube_diff needs a cube on BOTH sides";
@@ -360,12 +359,13 @@ TEST(CubeCompose, OmittedWhenOneSideHasNoCube)
     a.ingest_event(ev("t", LogLevel::Info, "auth"));
     const auto with{a.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
 
-    auto cfg2{cfg};
-    cfg2.emit_cube = false;
-    meta::MetaLogEngine b{cfg2};
+    // A no-cube side now arises only from a prior composed axis-mismatch (has_cube
+    // cleared); simulate it to exercise the §16.7 "omit when either side lacks a cube" guard.
+    meta::MetaLogEngine b{cfg};
     b.open_window(std::chrono::system_clock::time_point{});
     b.ingest_event(ev("t", LogLevel::Info, "auth"));
-    const auto without{b.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
+    auto without{b.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
+    without.has_cube = false;
 
     EXPECT_FALSE(meta::compose(with, without).has_cube)
         << "§16.7: when either input omits a cube, the composed cube is omitted";
@@ -375,8 +375,7 @@ TEST(CubeCompose, OmittedWhenOneSideHasNoCube)
 
 TEST(CubeReservoirCross, SalientEntryCarriesLocation)
 {
-    meta::MetaLogConfig cfg{
-        .top_k_size = 2, .reservoir_size = 8, .emit_stability = false, .emit_cube = true};
+    meta::MetaLogConfig cfg{.top_k_size = 2, .reservoir_size = 8, .emit_stability = false};
     meta::MetaLogEngine engine{cfg};
     engine.open_window(std::chrono::system_clock::time_point{});
     for (int i = 0; i < 50; ++i)

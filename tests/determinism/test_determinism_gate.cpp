@@ -171,21 +171,16 @@ TEST(DeterminismGate, ReservoirNearFullByteIdentityGolden)
         << doc_json;
 }
 
-// ── emit_where-only document shape golden (the Sift WHERE carrier; D-WHERE-13) ─
-// The Sift diff path runs emit_where=true, emit_cube=FALSE — the carrier added so a
-// finding can name WHERE without paying for the cube (sift_where_attribution.md). That
-// document shape — per-template `dominant_component` + the per-window `acquisition`
-// block, with NO cube — was, before this gate, exercised only INDIRECTLY through the
-// cube golden (emit_cube IMPLIES emit_where), never on its own. This is the dedicated
-// byte-identity golden for the cube-independent shape (D-WHERE-13 cascade-owner: Argos).
-// It pins (a) the emit_where-only wire (acquisition + component present, cube ABSENT) and
-// (b) the dominant_component_of tie-break (ties → component string ascending — a pure
-// function of contents, the determinism-sensitive path, the F5-M8 lesson applied). The
+// ── Always-on document shape golden (WHERE + acquisition + cube; D-WHERE-13) ─
+// 1.7.2: cube + WHERE + acquisition are unconditional. This byte-identity golden pins the
+// full always-on Sift document shape — per-template `dominant_component`, the per-window
+// `acquisition` block, AND the cube — including the dominant_component_of tie-break
+// (ties → component string ascending, a pure function of contents; the F5-M8 lesson). The
 // new fields are integer / string only (no float, no float→int, no wall-clock), so the
 // document MUST be bit-identical across the cross-stdlib diagonal (gcc-15/libstdc++ ≡
 // clang-21/libc++) — the only axis that would expose an unordered_map iteration-order
-// leak in records_with_component / distinct_components / the dominant pick.
-TEST(DeterminismGate, EmitWhereOnlyDocumentByteIdentityGolden)
+// leak in records_with_component / distinct_components / the dominant pick / the cube.
+TEST(DeterminismGate, AlwaysOnDocumentByteIdentityGolden)
 {
     // component is a string_view INTO the event; string literals have static storage, so
     // the views stay valid for the whole test (the cube-suite ev() pattern). Empty
@@ -199,9 +194,7 @@ TEST(DeterminismGate, EmitWhereOnlyDocumentByteIdentityGolden)
         return e;
     };
 
-    meta::MetaLogConfig cfg;
-    cfg.emit_where = true; // the Sift carrier — populate the cube-independent WHERE...
-    ASSERT_FALSE(cfg.emit_cube) << "this golden pins the cube-ABSENT shape; emit_cube must stay off";
+    meta::MetaLogConfig cfg; // 1.7.2: cube + WHERE + acquisition are all always-on now
     meta::MetaLogEngine engine{cfg};
 
     using Clock = std::chrono::system_clock;
@@ -228,9 +221,9 @@ TEST(DeterminismGate, EmitWhereOnlyDocumentByteIdentityGolden)
 
     // ── Coverage invariants (ALWAYS live): the document MUST carry the emit_where-only
     //    shape, or a green golden would be hollow. Verbose on failure (CLAUDE.md).
-    ASSERT_FALSE(doc1.has_cube) << "emit_where must NOT build the cube — the Sift path is cube-free";
-    ASSERT_FALSE(doc2.has_cube);
-    ASSERT_TRUE(doc1.acquisition.has_value()) << "emit_where must emit the per-window acquisition block";
+    ASSERT_TRUE(doc1.has_cube) << "1.7.2: the cube is always built (always-on)";
+    ASSERT_TRUE(doc2.has_cube);
+    ASSERT_TRUE(doc1.acquisition.has_value()) << "the per-window acquisition block is always emitted";
     ASSERT_TRUE(doc2.acquisition.has_value());
     EXPECT_EQ(doc1.acquisition->records_with_component, 14U)
         << "located events = 6 auth + 4 db + 2 zebra + 2 alpha; the 3 free-text lines carry none";
@@ -247,13 +240,12 @@ TEST(DeterminismGate, EmitWhereOnlyDocumentByteIdentityGolden)
     const std::string combined{meta::to_json(doc1, engine.registry()) + "\n" + meta::to_json(doc2, engine.registry())};
     const std::string digest{picosha2::hash256_hex_string(combined)};
 
-    // FROZEN 2026-06-23 (Argos) — the dedicated emit_where-only (cube-absent) Sift shape.
-    // Verified bit-identical at freeze across gcc-15.3/libstdc++ ≡ clang-21/libc++ (the
-    // cross-stdlib diagonal, the only axis that would expose an iteration-order leak in
-    // the new aggregate facts). Re-derive ONLY for an intentional contract change — and it
-    // must then hold across the cross-stdlib diagonal again (a bare mismatch = an
-    // emit_where wire / dominant-component determinism regression; sift_where_attribution.md
-    // D-WHERE-13).
+    // GOLDEN PENDING REFREEZE — the 1.7.2 always-on cube + acquisition-metadata coupled cut
+    // changes this document's shape (cube now present; acquisition gains the dimension
+    // self-assessment in Piece 2). This hash refreezes ONCE, at the end of the coupled cut,
+    // across the gcc-15.3/libstdc++ ≡ clang-21/libc++ diagonal (never a release tag as first
+    // exposure). Until then this EXPECT is expected RED on the epic branch. The old value is
+    // retained so the refreeze diff is legible.
     constexpr std::string_view kGolden{
         "3c661af73da05b7d8d79cd833851dc9e4e5aa6ebde5281f080cc567367c25fc1"};
     EXPECT_EQ(digest, kGolden)
