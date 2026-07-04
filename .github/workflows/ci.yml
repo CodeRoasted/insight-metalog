@@ -2,8 +2,6 @@ name: CI
 
 on:
   workflow_call:
-  # Also the Sift baseline seed: a no-PR dispatch of THIS "CI" workflow on main uploads its build.log as
-  # the last-green baseline PR renders diff against. Reseed manually (solo-dev; no CI on every push).
   workflow_dispatch:
   pull_request:
     branches: [ main ]
