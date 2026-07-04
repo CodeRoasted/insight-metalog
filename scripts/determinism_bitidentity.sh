@@ -65,25 +65,13 @@ echo "build parallelism: $JOBS jobs (MemAvailable=${mem_gb}GB cpu=$ncpu)"
 #     integer/fixed-point det core is -ffp-INVARIANT, so these MUST stay identical; a divergent -ffp
 #     cell is a det_math gap. (-DNDEBUG is fixed from Release; only -O / -ffp vary per cell.)
 #
-# LEGS — CONFIGURABLE, 2 or 3. Two KINDS of leg, byte-compared to each other:
-#   • BUILT Linux toolchains (DETERMINISM_LEGS, space-separated keys of LEG_SPEC) — each builds the
-#     canon+metalog tower across the -O/-ffp corners and runs the fixtures. gcc-15/libstdc++ ≡
-#     clang-21/libc++ = the cross-STDLIB diagonal (the only axis that exposes an unordered_* order
-#     leak, i.e. F5-M8).
-#   • the MSVC leg — NOT built here (Linux bash can't run cl.exe); it enters as the committed CORPUS
-#     golden (determinism_golden.txt), which the per-repo windows-portability-probe.yml independently
-#     verifies == real MSVC. Comparing a Linux leg's corpus to it asserts CROSS-OS bit-identity.
-#       - DEFAULT now: clang(built) + MSVC(golden) = 2 legs. gcc is OUT because CI has no /opt/gcc-15.3
-#         (its profile pins from-source 15.3 for PR124309; PPA is 15.2 → module tower ICEs).
-#       - once /opt/gcc-15.3 is provisioned: DETERMINISM_LEGS="gcc15-libstdcxx clang21-libcxx" →
-#         gcc(built) + clang(built) + MSVC(golden) = the full 3-leg diagonal.
-#       - DETERMINISM_MSVC=0 drops the MSVC anchor (pure Linux cross-stdlib run).
-# The conan PROFILE per leg is overridable so the SAME tower gate runs on a 2nd ISA: the arm64
-# determinism leg sets DETERMINISM_GCC_PROFILE=linux-gcc15-arm64-release /
-# DETERMINISM_CLANG_PROFILE=linux-clang21-libcxx-arm64-release (the only x86↔arm64 difference is the
-# profile's arch/-march; g++-15/clang++-21 are wired identically on both ISAs). Defaults are the x86
-# profiles → the x86 gate is byte-unchanged. The MSVC golden anchor is shared, so an arm64 corpus
-# matching it IS the cross-ISA bit-identity assertion (insight_determinism_model.md § cross-ISA).
+# LEG — golden.yaml runs ONE leg per CI job via DETERMINISM_LEG (gcc|clang), keyed into LEG_SPEC below.
+# The cross-STDLIB property (gcc-15/libstdc++ ≡ clang-21/libc++ — the only axis that exposes an
+# unordered_* iteration-order leak, F5-M8), cross-ISA, and cross-OS are all the golden.yaml `compare` of
+# every leg's emitted digest; this script proves only THIS leg's -O/-ffp sweep-invariance and emits.
+# The conan PROFILE per leg is overridable so the SAME driver runs on a 2nd ISA: the arm64 legs inject
+# DETERMINISM_GCC_PROFILE=linux-gcc15-arm64-release / DETERMINISM_CLANG_PROFILE=linux-clang21-libcxx-arm64-release
+# (the only x86↔arm64 difference is the profile's arch/-march; the compiler binaries are wired identically).
 GCC_PROFILE="${DETERMINISM_GCC_PROFILE:-linux-gcc15-release}"
 CLANG_PROFILE="${DETERMINISM_CLANG_PROFILE:-linux-clang21-libcxx-release}"
 declare -A LEG_SPEC=(
