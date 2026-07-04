@@ -17,6 +17,8 @@ on:
 
 permissions:
   contents: write        # release + attach-golden create/upload the Release
+  # Sift needed permissions (PR + actions write)
+  pull-requests: write
   actions: write
 
 jobs:
