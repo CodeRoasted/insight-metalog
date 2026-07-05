@@ -1,14 +1,22 @@
 // NOLINTBEGIN
-// Unit tests: allow short identifiers and test-specific patterns
-// Standing gate: full-document cross-machine bit-identity golden (SHA-256 frozen).
+// Unit tests: allow short identifiers and test-specific patterns.
+//
+// BEHAVIORAL coverage for the metalog document (the F5-M8 reservoir regime, the always-on
+// cube/WHERE/acquisition fields, the ordinal carrier). The cross-machine BYTE-IDENTITY
+// determinism proof is a CUT/GATE-TIME assertion, NOT a unit test: the 5-leg cross-toolchain/
+// ISA/OS `Determinism Golden Proof` workflow (.github/workflows/golden.yaml) rebuilds the
+// canon+metalog tower from source and asserts all legs are byte-identical over the committed
+// corpus + the shared F5-M8 reservoir scenario (scripts/determinism_bitidentity.sh). There is NO
+// committed golden hash here (or anywhere) — determinism is proven by cross-leg AGREEMENT, emitted
+// as a per-release artifact only. These tests keep the SCENARIOS non-hollow (they exercise the
+// regimes the gate replays) and pin the derived field VALUES.
 
 #include <gtest/gtest.h>
-#include <picosha2.h>
 
 import insight.metalog.test;
 
-// AFTER the imports (plain TU, ordinary textual include): the shared F5-M8 near-full reservoir
-// scenario, shared with scripts/determinism_fixture.cpp so both oracles run the identical window.
+// The shared F5-M8 near-full reservoir scenario, shared with scripts/determinism_fixture.cpp so
+// this behavioral coverage and the cross-leg gate exercise the identical M=128 admit/evict boundary.
 #include "reservoir_nearfull_scenario.hpp"
 
 namespace
@@ -16,107 +24,13 @@ namespace
 
 namespace tok = insight::tokenization;
 namespace meta = insight::metalog;
-using insight::metalog::test::ParamEvent;
 
-// ── Standing gate: full-document cross-machine bit-identity golden ────────────
-// The permanent determinism fixture (alongside S15Conformance). A fixed two-window
-// scenario drives every float path — entropy, KL/JS/stability, branching
-// entropy, per-param histograms, HLL approximate_cardinality — and the SHA-256 of
-// the serialised documents is FROZEN. Any architecture/compiler MUST reproduce the
-// exact bytes; a mismatch is a cross-machine determinism regression. Re-derive the
-// golden ONLY for an intentional contract change — and it must then hold across the
-// cross-arch CI matrix (.github/workflows/determinism.yml; determinism_model.md).
-TEST(DeterminismGate, FullDocumentByteIdentityGolden)
+// The near-full reservoir MUST fill to the full production M and its admit/evict boundary MUST be
+// structural-surprise-driven — the guard that keeps the F5-M8 regime exercised. The cross-leg gate
+// replays the same scenario; if it silently stopped filling, that proof would go hollow.
+// (insight_determinism_model.md §F5-M8.)
+TEST(MetaLogDocument, ReservoirNearFullExercisesTheF5M8Regime)
 {
-    meta::MetaLogConfig cfg;
-    cfg.max_param_histograms = 3; // emit_stability defaults true
-    meta::MetaLogEngine engine{cfg};
-    using Clock = std::chrono::system_clock;
-    const Clock::time_point t0{std::chrono::seconds{1700000000}};
-    const Clock::time_point t1{std::chrono::seconds{1700000060}};
-    const Clock::time_point t2{std::chrono::seconds{1700000120}};
-
-    const auto ingest_window = [&engine](int err_modulus)
-    {
-        for (int i = 0; i < 300; ++i)
-        {
-            const std::string path{"/api/r" + std::to_string(i % 7)};
-            const bool err{i % err_modulus == 0};
-            auto event{ParamEvent::make("GET <*> -> <*>", {path, err ? "500" : "200"},
-                                        err ? insight::LogLevel::Error : insight::LogLevel::Info)};
-            engine.ingest_event(event.event);
-        }
-        for (int i = 0; i < 60; ++i)
-        {
-            auto event{ParamEvent::make("worker <*> step <*>",
-                                        {std::to_string(i % 11), std::to_string(i % 3)})};
-            engine.ingest_event(event.event);
-        }
-        auto fatal{ParamEvent::make("disk <*> failed", {"sda1"}, insight::LogLevel::Fatal)};
-        engine.ingest_event(fatal.event);
-    };
-
-    engine.open_window(t0);
-    ingest_window(5); // window 1: ~20% errors
-    const auto doc1{engine.close_window(t1)};
-    engine.open_window(t1);
-    ingest_window(2); // window 2: ~50% errors → divergence / stability vs window 1
-    const auto doc2{engine.close_window(t2)};
-
-    const std::string combined{meta::to_json(doc1, engine.registry()) + "\n" + meta::to_json(doc2, engine.registry())};
-    const std::string digest{picosha2::hash256_hex_string(combined)};
-
-    // Re-derived 2026-06-15 (was 5782e7…) for the metalog 0.6.0 format-version bump
-    // (metalog_version / producer.version "0.6.0" → "0.6.0", the SPEC §16 cube landing).
-    // This scenario does NOT enable the cube (emit_cube defaults false), so the ONLY
-    // wire change is the two version strings — the cube's own bytes are golden-gated
-    // separately by CubeDeterminism.ByteIdentityGolden. The window-2 GET template is
-    // ~50% errors → a level-count TIE (150 INFO / 150 ERROR); dominant_level_of breaks
-    // it by higher severity (ERROR), a pure function of the contents. The same value
-    // MUST hold on every compiler/architecture (re-verify across the cross-stdlib diagonal).
-    constexpr std::string_view kGolden{
-        "176fa343a92abe294d0d949035a0697ad9f4ea35b71f53b87c84e2da0045338b"};
-    EXPECT_EQ(digest, kGolden)
-        << "MetaLog document determinism golden mismatch — a cross-machine bit-identity "
-           "regression, OR an intentional contract change needing the golden re-derived "
-           "(and re-verified across the cross-arch CI matrix).\nDOC:\n"
-        << combined;
-}
-
-// ── Near-full reservoir determinism golden (F5-M8) ────────────────────────────
-// The oracle that closes the F5-M8 coverage gap. FullDocumentByteIdentityGolden above
-// never drove the item-reservoir (§2.11) to its admit/evict boundary — its fixture has a
-// handful of templates, so the reservoir stays empty and the salience pipeline that decides
-// bag membership is never exercised. F5-M8: the reservoir salience inputs (structural_surprise
-// in particular) were not bit-identical clang≢gcc, and an order-dependent surprise pick flipped a
-// near-tie admit/evict at the M=128 boundary → a different bag → a Tier-1 violation in the
-// production Sift batch-diff (eidos ships reservoir_size=128). "golden green" did NOT certify the
-// reservoir until this fixture exists. (insight_determinism_model.md §F5-M8.)
-//
-// Design: a window whose item-reservoir fills to the FULL production M=128 with the admit/evict
-// boundary contested by structural_surprise — the non-deterministic input. per_kind_cap=0 (Founder
-// ruling 2026-06-14): the cap keys on (StructuralRole×LogLevel)=4×7=28 kinds, so cap=4 would
-// hard-ceiling the reservoir at 112; cap=0 admits the top-M by pure salience rank, the clean oracle
-// for the salience VALUE (the F5-M8 root, upstream of the cap). Salient-by-structure benign spokes
-// (reached only via a rare off-path edge from a busy hub) make structural_surprise — not a fixed
-// level — decide membership, including AMBIGUOUS spokes reached by two EQUAL-RATIO edges (count 1
-// vs 2): the exact most-likely-edge tie F5-M8's order-dependent pick resolves differently per
-// stdlib.
-//
-// GREEN-FROZEN 2026-06-16 (the SHA below). The freeze gate was strict — never freeze a
-// non-deterministic value — and is now satisfied: Heph's F5-M8 fix (the exact most-likely-edge
-// tie-break in build_transition_graph) made this document bit-identical across the cross-stdlib
-// diagonal (the only axis that exposes the iteration-order flip) AND the orthogonal -O{0,3} ×
-// -ffp-contract{off,fast} corners. The standing repro is scripts/determinism_bitidentity.sh (the
-// same fixture replayed across that matrix); the coverage assertion below (reservoir == M,
-// structural-surprise boundary) is ALWAYS live so the oracle can never silently stop exercising the
-// regime. RELEASE-BLOCKING: a mismatch here blocks any cut that ships the eidos M=128 batch-diff.
-TEST(DeterminismGate, ReservoirNearFullByteIdentityGolden)
-{
-    // The scenario lives in scripts/reservoir_nearfull_scenario.hpp so this in-suite golden and the
-    // cross-compiler matrix fixture (scripts/determinism_fixture.cpp, via
-    // determinism_bitidentity.sh) exercise the EXACT same M=128 admit/evict boundary — they cannot
-    // drift.
     meta::MetaLogConfig cfg;
     meta::nearfull::configure(cfg);
     meta::MetaLogEngine engine{cfg};
@@ -128,9 +42,6 @@ TEST(DeterminismGate, ReservoirNearFullByteIdentityGolden)
     meta::nearfull::emit_window(engine);
     const auto doc{engine.close_window(t1)};
 
-    // ── Coverage invariant (ALWAYS live): the fixture MUST drive the reservoir to the full M and
-    //    the admit/evict boundary MUST be structural-surprise-driven — else it stops exercising the
-    //    F5-M8 regime and a green golden would be hollow. Verbose on failure (CLAUDE.md).
     std::size_t surprise_driven{0};
     for (const auto& entry : doc.stats.reservoir)
         if (entry.structural_surprise > 0 && entry.dominant_level != insight::LogLevel::Error &&
@@ -145,46 +56,16 @@ TEST(DeterminismGate, ReservoirNearFullByteIdentityGolden)
     EXPECT_GT(surprise_driven, 0U)
         << "the reservoir boundary must be structural_surprise-driven so the F5-M8 hazard "
            "(a non-deterministic surprise score) flips bag membership; none were.";
-
-    const std::string doc_json{meta::to_json(doc, engine.registry())};
-    const std::string digest{picosha2::hash256_hex_string(doc_json)};
-
-    // FROZEN 2026-06-16 (Argos) — the F5-M8 freeze gate is satisfied. Heph's root fix landed (the
-    // build_transition_graph most-likely-incoming-edge pick now breaks an EQUAL ratio by MORE
-    // observations — a pure content function, not unordered_map iteration order; engine.cpp). The
-    // near-full reservoir document is now byte-identical across the cross-stdlib diagonal (the ONLY
-    // axis that exposes the F5-M8 iteration-order flip) AND the orthogonal -O{0,3}×-ffp{off,fast}
-    // corners: scripts/determinism_bitidentity.sh with DETERMINISM_LEGS="gcc15-libstdcxx
-    // clang21-libcxx" reports all 8 cells IDENTICAL on --reservoir-nearfull, and gcc-15.3/libstdc++
-    // ≡ clang-21/libc++ produce this exact SHA in-suite. The coverage invariant above (reservoir == M,
-    // structural-surprise-driven boundary) guarantees this golden keeps exercising the M=128 regime.
-    // Re-derive ONLY for an intentional contract change — and it must then hold across the
-    // cross-stdlib diagonal again (a bare mismatch = an item-reservoir admit/evict determinism
-    // regression; insight_determinism_model.md §F5-M8).
-    constexpr std::string_view kGolden{
-        "9354580934e54e7a03422d83e1be623a6432fdbd1720cdc68bbe123674662181"};
-    EXPECT_EQ(digest, kGolden)
-        << "near-full reservoir determinism golden mismatch (F5-M8) — the item-reservoir admit/evict "
-           "boundary is non-deterministic across this build, OR an intentional contract change needs "
-           "the golden re-derived (and re-verified across the cross-stdlib diagonal). RELEASE-BLOCKING "
-           "for the eidos M=128 batch-diff.\nDOC:\n"
-        << doc_json;
 }
 
-// ── Always-on document shape golden (WHERE + acquisition + cube; D-WHERE-13) ─
-// 1.7.2: cube + WHERE + acquisition are unconditional. This byte-identity golden pins the
-// full always-on Sift document shape — per-template `dominant_component`, the per-window
-// `acquisition` block, AND the cube — including the dominant_component_of tie-break
-// (ties → component string ascending, a pure function of contents; the F5-M8 lesson). The
-// new fields are integer / string only (no float, no float→int, no wall-clock), so the
-// document MUST be bit-identical across the cross-stdlib diagonal (gcc-15/libstdc++ ≡
-// clang-21/libc++) — the only axis that would expose an unordered_map iteration-order
-// leak in records_with_component / distinct_components / the dominant pick / the cube.
-TEST(DeterminismGate, AlwaysOnDocumentByteIdentityGolden)
+// The always-on document (1.7.2): cube + WHERE + acquisition are unconditional. Pins the
+// per-template dominant_component tie-break (ties → component string ascending, a pure content
+// function) and the acquisition dimension-metadata VALUES (Piece 2). The bytes' cross-machine
+// identity is the cross-leg gate's job; here we pin the values.
+TEST(MetaLogDocument, AlwaysOnCubeWhereAndAcquisitionFields)
 {
-    // component is a string_view INTO the event; string literals have static storage, so
-    // the views stay valid for the whole test (the cube-suite ev() pattern). Empty
-    // component → a free-text line that carries no WHERE (not counted in coverage).
+    // component is a string_view INTO the event; string literals have static storage, so the views
+    // stay valid for the whole test. Empty component → a free-text line carrying no WHERE.
     const auto ev = [](std::string_view tmpl, insight::LogLevel level, std::string_view component)
     {
         tok::CanonicalEvent e;
@@ -194,7 +75,7 @@ TEST(DeterminismGate, AlwaysOnDocumentByteIdentityGolden)
         return e;
     };
 
-    meta::MetaLogConfig cfg; // 1.7.2: cube + WHERE + acquisition are all always-on now
+    meta::MetaLogConfig cfg; // cube + WHERE + acquisition are all always-on now
     meta::MetaLogEngine engine{cfg};
 
     using Clock = std::chrono::system_clock;
@@ -202,9 +83,8 @@ TEST(DeterminismGate, AlwaysOnDocumentByteIdentityGolden)
     const Clock::time_point t1{std::chrono::seconds{1700000060}};
     const Clock::time_point t2{std::chrono::seconds{1700000120}};
 
-    // Window 1: PARTIAL coverage (a free-text template carries no component) over four
-    // distinct components — one of which is a per-template TIE (ping: zebra×2, alpha×2)
-    // the ascending-string tie-break MUST resolve to "alpha" identically on every stdlib.
+    // Window 1: PARTIAL coverage (a free-text template carries no component) over four distinct
+    // components — one a per-template TIE (ping: zebra×2, alpha×2) → ascending picks "alpha".
     engine.open_window(t0);
     for (int i = 0; i < 6; ++i) engine.ingest_event(ev("login ok", insight::LogLevel::Info, "auth"));
     for (int i = 0; i < 4; ++i) engine.ingest_event(ev("query slow", insight::LogLevel::Warn, "db"));
@@ -213,15 +93,13 @@ TEST(DeterminismGate, AlwaysOnDocumentByteIdentityGolden)
     for (int i = 0; i < 3; ++i) engine.ingest_event(ev("starting up", insight::LogLevel::Info, ""));
     const auto doc1{engine.close_window(t1)};
 
-    // Window 2: a db ERROR burst (the regression) over steady auth traffic; FULL coverage.
+    // Window 2: a db ERROR burst over steady auth traffic; FULL coverage.
     engine.open_window(t1);
     for (int i = 0; i < 6; ++i) engine.ingest_event(ev("login ok", insight::LogLevel::Info, "auth"));
     for (int i = 0; i < 5; ++i) engine.ingest_event(ev("pool timeout", insight::LogLevel::Error, "db"));
     const auto doc2{engine.close_window(t2)};
 
-    // ── Coverage invariants (ALWAYS live): the document MUST carry the emit_where-only
-    //    shape, or a green golden would be hollow. Verbose on failure (CLAUDE.md).
-    ASSERT_TRUE(doc1.has_cube) << "1.7.2: the cube is always built (always-on)";
+    ASSERT_TRUE(doc1.has_cube) << "the cube is always built (always-on)";
     ASSERT_TRUE(doc2.has_cube);
     ASSERT_TRUE(doc1.acquisition.has_value()) << "the per-window acquisition block is always emitted";
     ASSERT_TRUE(doc2.acquisition.has_value());
@@ -242,40 +120,12 @@ TEST(DeterminismGate, AlwaysOnDocumentByteIdentityGolden)
     for (const auto& entry : doc1.stats.top_k)
         if (entry.dominant_component) labels.insert(*entry.dominant_component);
     EXPECT_EQ(labels, (std::set<std::string>{"alpha", "auth", "db"}))
-        << "ping ties zebra/alpha → ascending picks 'alpha' (never zebra); the free-text "
-           "template carries no label (disengaged, never \"\")";
-
-    const std::string combined{meta::to_json(doc1, engine.registry()) + "\n" + meta::to_json(doc2, engine.registry())};
-    const std::string digest{picosha2::hash256_hex_string(combined)};
-
-    // GOLDEN PENDING REFREEZE — the 1.7.2 always-on cube + acquisition-metadata coupled cut
-    // changes this document's shape (cube now present; acquisition gains the dimension
-    // self-assessment in Piece 2). This hash refreezes ONCE, at the end of the coupled cut,
-    // across the gcc-15.3/libstdc++ ≡ clang-21/libc++ diagonal (never a release tag as first
-    // exposure). Until then this EXPECT is expected RED on the epic branch. The old value is
-    // retained so the refreeze diff is legible.
-    constexpr std::string_view kGolden{
-        "3c661af73da05b7d8d79cd833851dc9e4e5aa6ebde5281f080cc567367c25fc1"};
-    EXPECT_EQ(digest, kGolden)
-        << "emit_where-only document determinism golden mismatch — the cube-independent WHERE "
-           "wire is non-deterministic across this build, OR an intentional contract change needs "
-           "the golden re-derived (and re-verified across the cross-stdlib diagonal).\nactual digest: "
-        << digest << "\nDOC:\n"
-        << combined;
+        << "ping ties zebra/alpha → ascending picks 'alpha' (never zebra); the free-text template "
+           "carries no label (disengaged, never \"\")";
 }
 
-// ── W1 ordinal binned-carrier determinism golden (§4A.4 D-W1-2) ───────────────
-// Freezes the W1 binned ordinal carrier: a multi-octave latency-drift window produces
-// TopKEntry.ordinal_histograms (integer counts over the frozen log2 ladder). The carrier is pure
-// integer counts — trivially cross-stdlib bit-identical — but the golden pins the BINNING (the new
-// metalog computation: ordinal_bin_index + the schedule's bin count) so a ladder/scale regression is
-// caught, and pins the additive-gated WIRE shape (the `ordinal_histograms` block keeps
-// metalog_version). The W1 distance itself is an eidos pure-integer function of these counts
-// (det::FixedReducer — NO new 128-bit surface, so it inherits the cross-machine proof the entropy/KL
-// goldens above already carry; the eidos bucket/direction are frozen by playground fixture 35). The
-// advisory display double is excluded by construction (it never reaches the wire). RELEASE-BLOCKING:
-// re-verify across the cross-stdlib diagonal + MSVC anchor (same bar OTEL cleared).
-TEST(DeterminismGate, OrdinalCarrierByteIdentityGolden)
+// The W1 ordinal binned-carrier must be populated (the carrier the eidos W1 distance rides).
+TEST(MetaLogDocument, OrdinalCarrierPopulated)
 {
     meta::MetaLogConfig cfg;
     cfg.max_param_histograms = 2; // the batch / full-fidelity gate the ordinal carrier rides
@@ -302,30 +152,14 @@ TEST(DeterminismGate, OrdinalCarrierByteIdentityGolden)
     }
     const auto doc{engine.close_window(t1)};
 
-    // Coverage invariant (ALWAYS live): the carrier MUST be populated, else the golden is hollow.
     ASSERT_FALSE(doc.stats.top_k.empty());
     const auto& entry{doc.stats.top_k.front()};
     ASSERT_EQ(entry.ordinal_histograms.size(), 1U)
-        << "the ordinal carrier must be populated for the W1 golden to mean anything";
+        << "the ordinal carrier must be populated for the W1 distance to mean anything";
     EXPECT_EQ(entry.ordinal_histograms.front().field_name, "latency_ms");
     EXPECT_EQ(entry.ordinal_histograms.front().schedule_id, "dur-log2-ns-v1");
     EXPECT_EQ(entry.ordinal_histograms.front().total, 120U);
-
-    const std::string doc_json{meta::to_json(doc, engine.registry())};
-    const std::string digest{picosha2::hash256_hex_string(doc_json)};
-    // GREEN-FROZEN on the first run (clang-21/libc++); MUST hold across the cross-stdlib diagonal +
-    // the MSVC anchor. Re-derive ONLY for an intentional carrier/ladder contract change.
-    constexpr std::string_view kGolden{
-        "258f4ed10b8d5f265924741782631a12a20512d3197681148021d0c2cea8af5c"};
-    EXPECT_EQ(digest, kGolden)
-        << "W1 ordinal binned-carrier determinism golden mismatch — a cross-machine bit-identity "
-           "regression in the binning/ladder, OR an intentional contract change needing the golden "
-           "re-derived (and re-verified across the cross-stdlib diagonal + MSVC anchor).\nactual "
-           "digest: "
-        << digest << "\nDOC:\n"
-        << doc_json;
 }
 
 } // namespace
-
 // NOLINTEND

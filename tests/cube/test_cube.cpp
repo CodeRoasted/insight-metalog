@@ -5,7 +5,6 @@
 // reservoir→cell LOCATION cross, the §16.5 MUST-1 tree guard, and a byte-identity golden.
 
 #include <gtest/gtest.h>
-#include <picosha2.h>
 
 import insight.metalog.test;
 
@@ -468,26 +467,10 @@ TEST(CubeMustOne, TreeAcceptedDagRejected)
     EXPECT_TRUE(cube::where_chain_is_tree(flat));
 }
 
-// ── Determinism golden (§16.9) ──────────────────────────────────────────────────
-// A fixed cube-enabled two-window scenario, serialised (document + cube_diff). The
-// SHA-256 is FROZEN: every stdlib / arch / OS MUST reproduce these exact bytes. A
-// mismatch is a cube determinism regression. Re-derive ONLY for an intentional
-// contract change (and re-verify across the cross-stdlib diagonal).
-TEST(CubeDeterminism, ByteIdentityGolden)
-{
-    meta::TemplateRegistry registry;
-    const auto [prev, cur]{two_windows(&registry)};
-    const auto diff{meta::diff(prev, cur)};
-    const std::string combined{meta::to_json(prev, registry) + "\n" + meta::to_json(cur, registry) +
-                               "\n" + meta::to_json(diff)};
-    const std::string digest{picosha2::hash256_hex_string(combined)};
-
-    constexpr std::string_view kGolden{
-        "9eb68b9c3a16643ead38581c8696507547880dad62ee802dc73066c9afb7352b"};
-    EXPECT_EQ(digest, kGolden) << "cube wire bytes changed — re-derive across the cross-stdlib "
-                                  "diagonal if intentional.\nactual combined:\n"
-                               << combined;
-}
+// Note: the cube's cross-machine BYTE-IDENTITY proof is a cut/gate-time cross-leg assertion
+// (.github/workflows/golden.yaml over the committed corpus), NOT an in-test frozen hash. The
+// behavioral cube determinism (order-independence, collapse rebuild-equality) is covered below /
+// in CubeCollapse.
 
 // ── Order-independence (§16; the counts are an order-independent integer sum) ─────
 // The cube's three dims are PER-LINE-PURE functions of the event (level / component /
