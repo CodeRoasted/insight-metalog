@@ -70,6 +70,116 @@ struct OrdinalHistogram
     return octave < bins ? octave : bins - 1U;
 }
 
+// The scale-relative magnitude of a W1 ordinal drift (§4A.4). How far the binned value
+// distribution moved along its log2-octave ladder, in coarse octave bands. The octave measure is
+// inherently SCALE-RELATIVE — a distance is proportional (400→800 ms and 40→80 ms are both +1
+// octave, 100 ms is HIGH for a 10 ms op and NONE for a 2 s op), so the ladder IS the normalization:
+// the differential-axis scale-relativity mandate is met WITHOUT any median/IQR divide. NONE means
+// within-noise (sub-octave jitter). This bucket is BOTH the eidos OrdinalDrift row's magnitude AND
+// the Attribution Cube's first differential axis (latency_shift) — metalog owns the ladder AND the
+// distance, one home, consumed by both.
+enum class OrdinalShift : std::uint8_t
+{
+    None = 0, // within-noise (no drift surfaced)
+    Low = 1,
+    Med = 2,
+    High = 3,
+};
+
+[[nodiscard]] inline std::string_view to_string(OrdinalShift shift) noexcept
+{
+    switch (shift)
+    {
+    case OrdinalShift::None:
+        return "none";
+    case OrdinalShift::Low:
+        return "low";
+    case OrdinalShift::Med:
+        return "med";
+    case OrdinalShift::High:
+        return "high";
+    }
+    return "none";
+}
+
+// Which way mass moved along the ladder. Metalog reports the raw, semantics-free direction; the
+// eidos diff owns the operator-facing regression/recovery Polarity (Up = higher values = slower /
+// larger = worse; Down = faster / smaller = better), and the Attribution Cube's latency_shift axis
+// emerges on Up only (the upward-only MECH default, cube_differential_axes.md §7.4).
+enum class OrdinalDriftDirection : std::uint8_t
+{
+    None = 0, // neutral (no net movement)
+    Up = 1,   // mass moved UP the ladder (higher values)
+    Down = 2, // mass moved DOWN the ladder (lower values)
+};
+
+// A W1 ordinal-drift verdict: the scale-relative shift bucket + the direction mass moved.
+struct OrdinalDrift
+{
+    OrdinalShift shift{OrdinalShift::None};
+    OrdinalDriftDirection direction{OrdinalDriftDirection::None};
+};
+
+// The exact 1-D Wasserstein-1 (earth-mover) distance between two binned ordinal histograms on the
+// SAME schedule (§4A.4 D-W1-1), reduced to a shift bucket + direction. numerator =
+// Σ_i |CumA_i·N_b − CumB_i·N_a| (w=1, the log ladder), accumulated in a signed 128-bit integer via
+// det::FixedReducer (order-independent, exact, cross-stdlib + MSVC bit-identical); direction =
+// sign(Σ_i (CumB_i·N_a − CumA_i·N_b)). The bucket is an EXACT integer cross-multiply against frozen
+// octave thresholds θ_k (no float, no division, no float→int — [[det-math-f5-determinism]]), so the
+// verdict is replay-stable and golden-frozen. The θ_k are pre-registered (anti-endogamy): ≥5 octaves
+// → HIGH, ≥2 → MED, ≥0.5 → LOW, below → NONE. A zero total (or empty histogram) is a degenerate
+// pairing → {NONE, None}; the caller still gates the schedule-id comparability (D-W1-4).
+[[nodiscard]] inline OrdinalDrift ordinal_w1(const std::vector<std::uint64_t>& previous,
+                                             const std::vector<std::uint64_t>& current,
+                                             std::uint64_t previous_total, std::uint64_t current_total)
+{
+    using insight::det::i128;
+    using insight::det::u128;
+
+    // Frozen octave thresholds θ_k on W1 = numerator/(Na·Nb). Compared by EXACT integer cross-
+    // multiply: the drift reaches level k ⟺ numerator·θden ≥ θnum·Na·Nb. Conservative-biased —
+    // a real regime shift must never read NONE. FROZEN from scenario-35's measured numerators.
+    constexpr std::int64_t kHighNum{5}, kHighDen{1}; // ≥ 5 octaves → HIGH  (measured pole 9.96)
+    constexpr std::int64_t kMedNum{2}, kMedDen{1};   // ≥ 2 octaves → MED   (interior, pinned)
+    constexpr std::int64_t kLowNum{1}, kLowDen{2};   // ≥ 0.5 octave → LOW; below → NONE (pole 0.14)
+
+    if (previous_total == 0 || current_total == 0)
+        return {}; // degenerate pairing — denom would be 0; no drift is defined
+
+    const i128 total_a{static_cast<i128>(u128{previous_total})};
+    const i128 total_b{static_cast<i128>(u128{current_total})};
+    insight::det::FixedReducer numerator_reducer; // Σ |CumA·Nb − CumB·Na|
+    insight::det::FixedReducer direction_reducer; // Σ (CumB·Na − CumA·Nb)
+    std::uint64_t cum_a{0};
+    std::uint64_t cum_b{0};
+    const std::size_t bins{std::min(previous.size(), current.size())};
+    for (std::size_t i{0}; i < bins; ++i)
+    {
+        cum_a += previous[i];
+        cum_b += current[i];
+        const i128 a_term{static_cast<i128>(u128{cum_a}) * total_b}; // CumA·Nb
+        const i128 b_term{static_cast<i128>(u128{cum_b}) * total_a}; // CumB·Na
+        const i128 signed_term{b_term + (-a_term)};                  // CumB·Na − CumA·Nb
+        direction_reducer.add_fixed(signed_term);
+        numerator_reducer.add_fixed(signed_term >= i128{0} ? signed_term : -signed_term);
+    }
+
+    const i128 numerator{numerator_reducer.raw()};
+    const i128 denom{total_a * total_b};
+    const auto reaches{[&](std::int64_t threshold_num, std::int64_t threshold_den)
+                       { return (numerator * i128{threshold_den}) >= (i128{threshold_num} * denom); }};
+    OrdinalDrift drift;
+    drift.shift = reaches(kHighNum, kHighDen) ? OrdinalShift::High
+                  : reaches(kMedNum, kMedDen) ? OrdinalShift::Med
+                  : reaches(kLowNum, kLowDen) ? OrdinalShift::Low
+                                              : OrdinalShift::None;
+    const i128 direction{direction_reducer.raw()};
+    drift.direction = !(direction >= i128{0}) ? OrdinalDriftDirection::Up   // mass UP → worse
+                      : (direction >= i128{1} ? OrdinalDriftDirection::Down // mass DOWN → better
+                                              : OrdinalDriftDirection::None);
+    return drift;
+}
+
 // TemplateRegistry (D-TIR-5): the single TemplateId -> template_str association, owned OUTSIDE the
 // per-window document (the engine owns one; Sift/diff callers own a local one), injected at the display
 // seams (serialize / explain). template_str is a pure DISPLAY attribute — never read on the decision
