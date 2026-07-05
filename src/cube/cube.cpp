@@ -80,6 +80,12 @@ namespace
     if (cell.pinned(Dim::Role))
         coord.structural_role = std::string{
             to_string(static_cast<StructuralRole>(cell.value[static_cast<std::size_t>(Dim::Role)]))};
+    // Diff-only differential axis (§4): a pinned LatencyShift slot renders its ordinal band. Never
+    // pinned in a stored cube (SHIFT_NONE ≡ kStar is the aggregated baseline), so a stored coord
+    // omits the key. The slot only ever holds Low/Med/High (NONE is the star, never pinned).
+    if (cell.pinned(Dim::LatencyShift))
+        coord.latency_shift = std::string{
+            to_string(static_cast<OrdinalShift>(cell.value[static_cast<std::size_t>(Dim::LatencyShift)]))};
     return coord;
 }
 
@@ -128,12 +134,12 @@ where_paths_of(const std::vector<CubeCell>& cells)
         Cell src;
     };
     std::vector<GenEvent> events;
-    events.reserve(base.size() * (std::size_t{1} << kNumDims)); // upper bound: B·2ⁿ
+    events.reserve(base.size() * (std::size_t{1} << kCellDims)); // upper bound: B·2ⁿ
     for (const auto& [tuple, multiplicity] : base)
     {
-        std::array<std::size_t, kNumDims> pinned_dims{};
+        std::array<std::size_t, kCellDims> pinned_dims{};
         std::size_t pinned{0};
-        for (std::size_t dim{0}; dim < kNumDims; ++dim)
+        for (std::size_t dim{0}; dim < kCellDims; ++dim)
             if (tuple.value[dim] != kStar)
                 pinned_dims[pinned++] = dim;
         const std::uint32_t subsets{1U << pinned};
@@ -541,6 +547,19 @@ void stamp_collapse(std::vector<CubeAxis>& axes, const CollapseState& state)
     return axes;
 }
 
+// The diff-only latency_shift differential-axis descriptor (cube_differential_axes.md §4): an
+// ORDINAL chain SHIFT_NONE < LOW < MED < HIGH — a degenerate tree, so monotone-compatible with the
+// emerging border, and collapse-compatible via the UP_TO band semantic. Appended to a cube_diff's
+// axes ONLY when a component shifted upward; a stored cube never carries it (it stays 3-D).
+[[nodiscard]] CubeAxis latency_shift_axis()
+{
+    return CubeAxis{.name = "latency_shift",
+                    .kind = "ordinal",
+                    .chain = std::nullopt,
+                    .floor_depth = std::nullopt,
+                    .band_floor = std::nullopt};
+}
+
 // Build the closed cube, then BOUND it: closure-first, collapse-if-over-budget, re-close, iterate.
 // `initial` seeds the collapse depth (default none for a raw window; compose seeds the min common
 // collapse so the merge is never finer than its coarsest member, §C3).
@@ -585,7 +604,7 @@ void stamp_collapse(std::vector<CubeAxis>& axes, const CollapseState& state)
     std::vector<bool> has_parent(cells.size(), false);
     std::vector<bool> has_child(cells.size(), false);
     for (std::size_t i{0}; i < cells.size(); ++i)
-        for (std::size_t dim{0}; dim < kNumDims; ++dim)
+        for (std::size_t dim{0}; dim < kCellDims; ++dim)
         {
             if (!cells[i].pinned(static_cast<Dim>(dim)))
                 continue;
@@ -690,7 +709,9 @@ CubeCoord cube_location(std::optional<LogLevel> level, std::string_view componen
     return coord;
 }
 
-std::optional<CubeDiffBlock> cube_diff_of(const CubeBlock& previous, const CubeBlock& current)
+std::optional<CubeDiffBlock>
+cube_diff_of(const CubeBlock& previous, const CubeBlock& current,
+             const std::unordered_map<std::string, OrdinalShift>& current_shift_by_component)
 {
     // §C3 compare-at-min: two cubes at DIFFERENT collapse depths (one banded {TRACE,DEBUG}→DEBUG, the
     // other kept TRACE) cannot be compared at their native coords — read BOTH at the minimal common
@@ -704,15 +725,39 @@ std::optional<CubeDiffBlock> cube_diff_of(const CubeBlock& previous, const CubeB
     const auto [prev_base, prev_dict]{interned_base_of(previous)};
     const auto [cur_base, cur_dict]{interned_base_of(current)};
     const std::vector<std::string> labels{merge_dicts(prev_dict, cur_dict)};
-    const PopulatedCube cube_prev{
-        populate(remap_base(collapsed_base(prev_base, common), prev_dict, labels))};
-    const PopulatedCube cube_cur{
-        populate(remap_base(collapsed_base(cur_base, common), cur_dict, labels))};
+
+    // The latency_shift differential axis (§4), diff-time only. The BASELINE projection is uniformly
+    // SHIFT_NONE ≡ kStar, so prev is used as-is (its LatencyShift slot is never pinned). The CURRENT
+    // projection pins LatencyShift for a component that shifted UPWARD (≥LOW) — mapped by WHERE label
+    // through the shared dictionary. NONE is never pinned (it IS the star baseline), so a shifted
+    // component's WHERE-aggregate cell stays balanced across the diff (no spurious vanishing) while
+    // its (…, latency_shift=HIGH) cell EMERGES against the implicit all-NONE baseline. When the map is
+    // empty (no comparable ordinal data, or nothing shifted) this is a no-op → the plain 3-D border.
+    BaseMultiset prev_remapped{remap_base(collapsed_base(prev_base, common), prev_dict, labels)};
+    BaseMultiset cur_remapped{remap_base(collapsed_base(cur_base, common), cur_dict, labels)};
+    const bool has_shift{!current_shift_by_component.empty()};
+    if (has_shift)
+        for (auto& row : cur_remapped)
+        {
+            const std::uint32_t where_id{row.first.value[static_cast<std::size_t>(Dim::Where)]};
+            if (where_id == kStar)
+                continue; // no component → no shift attribution
+            const auto found{current_shift_by_component.find(labels[where_id])};
+            if (found != current_shift_by_component.end() && found->second != OrdinalShift::None)
+                row.first.value[static_cast<std::size_t>(Dim::LatencyShift)] =
+                    static_cast<std::uint32_t>(found->second);
+        }
+    const PopulatedCube cube_prev{populate(prev_remapped)};
+    const PopulatedCube cube_cur{populate(cur_remapped)};
 
     CubeDiffBlock diff;
     diff.axes = collapsed_axes(common);
+    if (has_shift)
+        diff.axes.push_back(latency_shift_axis());
     // emerging: appeared (anti = prev, monotone = cur). vanishing: the dual via the role
     // swap (anti = cur, monotone = prev) — same predicate, count_cur ≤ θ_was ∧ count_prev ≥ θ_now.
+    // The shift only ever pins on the CURRENT side, so it participates in emergence only — a shifted
+    // component's star-aggregate is balanced (vanishing sees the 3-D projection, unchanged).
     CubeBorder emerging{border_of(cube_prev, cube_cur, cube_prev, cube_cur, labels)};
     CubeBorder vanishing{border_of(cube_cur, cube_prev, cube_prev, cube_cur, labels)};
     if (!emerging.lower.empty() || !emerging.upper.empty())

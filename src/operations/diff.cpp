@@ -334,6 +334,73 @@ void diff_tail_delta(MetaLogDiff& out, const MetaLogDocument& previous,
     }
 }
 
+// ── latency_shift differential axis (cube_differential_axes.md §4) ──
+// The Attribution Cube's first differential dimension: a per-component latency shift the emerging
+// border reads at diff time. Metalog owns the ladder + the W1 distance, so the whole computation
+// lives here; the cube (detail.cube) only consumes the finished map.
+
+// A component's summed latency distribution for this document: every top_k entry's DurationLog2Ns
+// ordinal histogram, attributed to the entry's dominant_component (the per-component MECH
+// granularity — §7.3; the finer per-(template,component) is the deferred alternative). All duration
+// fields share the frozen 48-bin ladder, so their counts are directly summable. Deterministic:
+// integer sums over the ordered top_k, order-independent.
+struct ComponentOrdinal
+{
+    std::vector<std::uint64_t> counts;
+    std::uint64_t total{0};
+};
+
+[[nodiscard]] std::unordered_map<std::string, ComponentOrdinal>
+aggregate_duration_by_component(const MetaLogDocument& doc)
+{
+    const std::string_view duration_schedule{ordinal_schedule_id(OrdinalSchedule::DurationLog2Ns)};
+    std::unordered_map<std::string, ComponentOrdinal> by_component;
+    for (const auto& entry : doc.stats.top_k)
+    {
+        if (!entry.dominant_component || entry.dominant_component->empty())
+            continue; // no WHERE label → no per-component shift attribution
+        for (const auto& hist : entry.ordinal_histograms)
+        {
+            if (hist.schedule_id != duration_schedule)
+                continue; // only the latency/duration ladder feeds latency_shift (size/bytes is not it)
+            ComponentOrdinal& agg{by_component[*entry.dominant_component]};
+            if (agg.counts.size() < hist.counts.size())
+                agg.counts.resize(hist.counts.size(), 0);
+            for (std::size_t i{0}; i < hist.counts.size(); ++i)
+                agg.counts[i] += hist.counts[i];
+            agg.total += hist.total;
+        }
+    }
+    return by_component;
+}
+
+// The per-component upward latency shift map the cube's diff-only latency_shift axis reads. For each
+// component present in BOTH windows with a comparable duration distribution, the exact W1 shift
+// bucket; kept ONLY when the shift is ≥LOW AND upward (a regression — mass moved UP the ladder,
+// §7.4 upward-only MECH). Recoveries and within-noise never enter the map (they are the SHIFT_NONE
+// baseline). Used for point lookup only (never iterated into content) → the unordered_map is not a
+// determinism surface; the (component → bucket) SET is a deterministic function of the inputs.
+[[nodiscard]] std::unordered_map<std::string, OrdinalShift>
+component_latency_shifts(const MetaLogDocument& previous, const MetaLogDocument& current)
+{
+    const std::unordered_map<std::string, ComponentOrdinal> prev_by_component{
+        aggregate_duration_by_component(previous)};
+    const std::unordered_map<std::string, ComponentOrdinal> cur_by_component{
+        aggregate_duration_by_component(current)};
+    std::unordered_map<std::string, OrdinalShift> shifts;
+    for (const auto& [component, cur_agg] : cur_by_component)
+    {
+        const auto prev_it{prev_by_component.find(component)};
+        if (prev_it == prev_by_component.end())
+            continue; // absent in baseline → no comparable distribution (no A-side to diff against)
+        const OrdinalDrift drift{ordinal_w1(prev_it->second.counts, cur_agg.counts,
+                                            prev_it->second.total, cur_agg.total)};
+        if (drift.shift != OrdinalShift::None && drift.direction == OrdinalDriftDirection::Up)
+            shifts.emplace(component, drift.shift);
+    }
+    return shifts;
+}
+
 } // namespace
 
 MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current)
@@ -381,7 +448,12 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
     // MetaLogDocument::cube to bool+value does not apply to it.
     if (previous.has_cube && current.has_cube)
     {
-        if (auto cube_diff{cube::cube_diff_of(previous.cube, current.cube)})
+        // The diff-only latency_shift differential axis (§4): a per-component upward latency shift the
+        // emerging border reads. Computed from the two documents' ordinal histograms (metalog owns the
+        // ladder + W1); empty when neither carries comparable duration data → the plain 3-D border.
+        const std::unordered_map<std::string, OrdinalShift> latency_shifts{
+            component_latency_shifts(previous, current)};
+        if (auto cube_diff{cube::cube_diff_of(previous.cube, current.cube, latency_shifts)})
         {
             out.cube_diff = std::move(*cube_diff);
             out.has_cube_diff = true;

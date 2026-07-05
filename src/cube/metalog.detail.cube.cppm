@@ -25,12 +25,28 @@ export namespace insight::metalog::cube
 // WHERE is a single-level chain in v0.6.0 (grounded in canon `component`); the chain
 // representation carries the roll-up mechanism so the 1.5.5 dimensional-shrink lands
 // with NO schema change (floor_depth shrinks, cells roll up — §16.3).
+// The STORED cube's dimension count (Level, Where, Role) — the reference-axes count and the
+// "fully-pinned base observation" arity (recover_base). UNCHANGED at 3: the stored cube stays 3D.
 inline constexpr std::size_t kNumDims{3};
+
+// The physical Cell width: kNumDims stored dims + ONE diff-only differential dimension
+// (Dim::LatencyShift, cube_differential_axes.md §4). The shift axis exists ONLY inside
+// cube_diff_of; in a STORED cube its slot is UNIFORMLY kStar (unpinned), so every stored cube is
+// byte-identical to the 3-dim cube (a uniformly-star slot never pins, never generalizes, and — being
+// the max value-id — never distinguishes the §16.4 canonical order). The lattice primitives iterate
+// kCellDims so the diff can pin the shift; the stored build simply never sets it.
+inline constexpr std::size_t kCellDims{4};
+
 enum class Dim : std::uint8_t
 {
     Level = 0,
     Where = 1,
     Role = 2,
+    // Diff-only differential dimension (§4). Uniformly kStar in a stored cube; pinned in cube_diff
+    // only for a component whose latency (DurationLog2Ns) distribution shifted upward (≥LOW). The
+    // A-side (baseline) projection is uniformly SHIFT_NONE ≡ kStar, so a NONE→≥LOW crossing is an
+    // ordinary Emerging-Border emergence with the shift as a 4th diff-only axis.
+    LatencyShift = 3,
 };
 
 // '*' ("any") sentinel for an unpinned dimension's value-id; numeric max so it sorts
@@ -49,7 +65,7 @@ inline constexpr std::uint64_t kThetaNow{1};
 // cell with no kStar EXCEPT possibly Where (an empty-component event has no WHERE).
 struct Cell
 {
-    std::array<std::uint32_t, kNumDims> value{kStar, kStar, kStar};
+    std::array<std::uint32_t, kCellDims> value{kStar, kStar, kStar, kStar};
 
     [[nodiscard]] constexpr bool pinned(Dim dim) const noexcept
     {
@@ -58,7 +74,7 @@ struct Cell
     [[nodiscard]] constexpr std::uint8_t pinned_mask() const noexcept
     {
         std::uint8_t mask{0};
-        for (std::size_t i{0}; i < kNumDims; ++i)
+        for (std::size_t i{0}; i < kCellDims; ++i)
             if (value[i] != kStar)
                 mask = static_cast<std::uint8_t>(mask | (1U << i));
         return mask;
@@ -90,7 +106,7 @@ struct Cell
 [[nodiscard]] constexpr Cell generalize(const Cell& base, std::uint8_t mask) noexcept
 {
     Cell out{};
-    for (std::size_t dim{0}; dim < kNumDims; ++dim)
+    for (std::size_t dim{0}; dim < kCellDims; ++dim)
         out.value[dim] = ((mask >> dim) & 1U) ? base.value[dim] : kStar;
     return out;
 }
@@ -100,7 +116,7 @@ struct Cell
 [[nodiscard]] constexpr Cell meet(const Cell& lhs, const Cell& rhs) noexcept
 {
     Cell out{};
-    for (std::size_t dim{0}; dim < kNumDims; ++dim)
+    for (std::size_t dim{0}; dim < kCellDims; ++dim)
         out.value[dim] = (lhs.value[dim] == rhs.value[dim]) ? lhs.value[dim] : kStar;
     return out;
 }
@@ -110,7 +126,7 @@ struct Cell
 // count(c) = max{ count(c*) : c* closed, is_ancestor(c, c*) } (§16.4 lossless recovery).
 [[nodiscard]] constexpr bool is_ancestor(const Cell& general, const Cell& base) noexcept
 {
-    for (std::size_t dim{0}; dim < kNumDims; ++dim)
+    for (std::size_t dim{0}; dim < kCellDims; ++dim)
         if (general.value[dim] != kStar && general.value[dim] != base.value[dim])
             return false;
     return true;
@@ -193,8 +209,18 @@ struct BaseRow
 // gates on has_cube) — this helper takes CubeBlock by ref and owns only the axes-equality
 // gate. (The cube DTOs are bool+value, not optional<…>, since MSVC miscompiles synthesized
 // optional copies of the vector-owning cube types. [[msvc-port-stdlib-isms]])
-[[nodiscard]] std::optional<CubeDiffBlock> cube_diff_of(const CubeBlock& previous,
-                                                        const CubeBlock& current);
+//
+// `current_shift_by_component` is the diff-time latency_shift dimension (cube_differential_axes.md
+// §4): a per-component upward (≥LOW) latency shift map the CALLER computes from the two documents'
+// ordinal histograms (metalog::diff). When NON-empty, the emerging border gains the 4th diff-only
+// axis — the CURRENT projection pins Dim::LatencyShift for a shifted component, the BASELINE stays
+// uniformly SHIFT_NONE (kStar) — and `axes` carries the ordinal latency_shift descriptor. When empty
+// (the default — no comparable ordinal data, or nothing shifted), the diff is the plain 3-D border,
+// byte-identical to before. NONE is never pinned (it IS the star baseline), so a shifted component's
+// aggregate cell is unchanged (no spurious vanishing) while its (…, latency_shift=HIGH) cell emerges.
+[[nodiscard]] std::optional<CubeDiffBlock>
+cube_diff_of(const CubeBlock& previous, const CubeBlock& current,
+             const std::unordered_map<std::string, OrdinalShift>& current_shift_by_component = {});
 
 // Compose two cube blocks (§16.7 / §12.1): the distributive counts merge, but the
 // closure does NOT — the merged cube is RE-CLOSED from the recovered base. nullopt

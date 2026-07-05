@@ -136,6 +136,10 @@ struct CubeCoord
     std::optional<std::string> level;
     std::optional<std::vector<std::string>> where;
     std::optional<std::string> structural_role;
+    // Diff-only ordinal differential axis (cube_differential_axes.md §4); present only on a
+    // cube_diff border cell whose component shifted upward, absent on a stored cell (skip_null_members
+    // omits it — the wire object stays open over axis names).
+    std::optional<std::string> latency_shift;
 };
 
 // Cube axis descriptor (SPEC §16.2). chain + floor_depth present only for kind=="chain".
@@ -466,6 +470,7 @@ dto::CubeCoord make_cube_coord(const CubeCoord& coord)
     out.level = coord.level;
     out.where = coord.where;
     out.structural_role = coord.structural_role;
+    out.latency_shift = coord.latency_shift;
     return out;
 }
 

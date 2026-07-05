@@ -169,14 +169,21 @@ struct OrdinalDrift
     const auto reaches{[&](std::int64_t threshold_num, std::int64_t threshold_den)
                        { return (numerator * i128{threshold_den}) >= (i128{threshold_num} * denom); }};
     OrdinalDrift drift;
-    drift.shift = reaches(kHighNum, kHighDen) ? OrdinalShift::High
-                  : reaches(kMedNum, kMedDen) ? OrdinalShift::Med
-                  : reaches(kLowNum, kLowDen) ? OrdinalShift::Low
-                                              : OrdinalShift::None;
+    if (reaches(kHighNum, kHighDen))
+        drift.shift = OrdinalShift::High;
+    else if (reaches(kMedNum, kMedDen))
+        drift.shift = OrdinalShift::Med;
+    else if (reaches(kLowNum, kLowDen))
+        drift.shift = OrdinalShift::Low;
+    // else: within-noise → OrdinalShift::None (the default)
+
     const i128 direction{direction_reducer.raw()};
-    drift.direction = !(direction >= i128{0}) ? OrdinalDriftDirection::Up   // mass UP → worse
-                      : (direction >= i128{1} ? OrdinalDriftDirection::Down // mass DOWN → better
-                                              : OrdinalDriftDirection::None);
+    if (!(direction >= i128{0}))
+        drift.direction = OrdinalDriftDirection::Up; // mass UP the ladder → slower/larger → worse
+    else if (direction >= i128{1})
+        drift.direction = OrdinalDriftDirection::Down; // mass DOWN → faster/smaller → better
+    // else: perfectly balanced → OrdinalDriftDirection::None (the default)
+
     return drift;
 }
 
@@ -338,6 +345,12 @@ struct CubeCoord
     std::optional<std::string> level;              // categorical: severity
     std::optional<std::vector<std::string>> where; // chain: WHERE prefix-path
     std::optional<std::string> structural_role;    // categorical: KIND-FRAMING marker
+    // Ordinal differential axis, DIFF-TIME ONLY (cube_differential_axes.md §4): the scale-relative
+    // latency (DurationLog2Ns) shift bucket ("low"|"med"|"high") a component's distribution crossed
+    // into. Present ONLY on a cube_diff emerging-border cell whose component shifted upward; ALWAYS
+    // absent on a stored cube cell (SHIFT_NONE is the aggregated baseline, never pinned). The wire
+    // object stays open over axis names — a stored coord omits it, unchanged.
+    std::optional<std::string> latency_shift;
     [[nodiscard]] bool operator==(const CubeCoord&) const noexcept = default;
 };
 
