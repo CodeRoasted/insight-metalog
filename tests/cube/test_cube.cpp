@@ -181,6 +181,101 @@ TEST(CubeCollapse, CompareAtMinDiffsAcrossDifferentCollapseDepths)
         << "compare-at-min must be deterministic";
 }
 
+// Severity-safety (§C3, the critical guard): under budget pressure, LEVEL banding grows from the
+// BOTTOM and NEVER crosses the ERROR/FATAL frontier. Here 2000 components each emit all six levels;
+// even the maximal band (floor 4 = {Trace,Debug,Info,Warn}→Warn — the ceiling, kMaxLevelBandFloor=
+// Error) leaves 3 distinct levels × 2000 comps ≫ 4096, so the guardrail MUST drop WHERE (depth 1→0)
+// rather than band ERROR or FATAL. The frontier is sacred: {ERROR,FATAL} stay distinct at any pressure.
+TEST(CubeCollapse, SeverityFrontierNeverCrossedWhereCollapsesInstead)
+{
+    static std::vector<std::string> comps; // static storage → the component string_views stay valid
+    if (comps.empty())
+        for (int i = 0; i < 2000; ++i)
+            comps.push_back("svc_" + std::to_string(i));
+    const auto build{[&]
+                     {
+                         meta::MetaLogEngine engine{cube_cfg()};
+                         engine.open_window(std::chrono::system_clock::time_point{});
+                         for (const auto& comp : comps)
+                         {
+                             engine.ingest_event(ev("t", LogLevel::Trace, comp));
+                             engine.ingest_event(ev("t", LogLevel::Debug, comp));
+                             engine.ingest_event(ev("t", LogLevel::Info, comp));
+                             engine.ingest_event(ev("t", LogLevel::Warn, comp));
+                             engine.ingest_event(ev("t", LogLevel::Error, comp));
+                             engine.ingest_event(ev("t", LogLevel::Fatal, comp));
+                         }
+                         return engine.close_window(std::chrono::system_clock::time_point{} +
+                                                    std::chrono::seconds{60});
+                     }};
+    const auto doc{build()};
+    ASSERT_TRUE(doc.has_cube);
+    EXPECT_LE(doc.cube.cell_count, meta::CubeCardinalityStat::kCellsHard)
+        << "the guardrail must still bound the cube; got " << doc.cube.cell_count;
+
+    std::optional<std::uint32_t> level_band;
+    std::optional<std::uint32_t> where_depth;
+    for (const auto& axis : doc.cube.axes)
+    {
+        if (axis.name == "level")
+            level_band = axis.band_floor;
+        if (axis.name == "where")
+            where_depth = axis.floor_depth;
+    }
+    // LEVEL banding climbed to the frontier ceiling and stopped — it merged everything UP TO Warn
+    // (floor 4) but never Error(4)/Fatal(5).
+    ASSERT_TRUE(level_band.has_value()) << "LEVEL banding must have fired under this pressure";
+    EXPECT_EQ(*level_band, 4U)
+        << "band_floor must top out at the frontier boundary (Warn); it must NEVER reach FATAL — got "
+        << *level_band;
+    // The frontier survives: ERROR and FATAL are DISTINCT cells, never fused, full mass each.
+    const meta::CubeCell* err{find_cell(doc.cube, "ERROR", std::nullopt, "None")};
+    const meta::CubeCell* fat{find_cell(doc.cube, "FATAL", std::nullopt, "None")};
+    ASSERT_NE(err, nullptr) << "ERROR must survive collapse (frontier never banded)";
+    ASSERT_NE(fat, nullptr) << "FATAL must survive collapse (frontier never banded)";
+    EXPECT_EQ(err->count, 2000U) << "every ERROR event retained";
+    EXPECT_EQ(fat->count, 2000U) << "every FATAL event retained";
+    // Because LEVEL alone could not fit without crossing the frontier, a DIFFERENT axis collapsed:
+    // WHERE dropped to the root (depth 0). This is the "collapse WHERE instead" clause, proven live.
+    EXPECT_EQ(where_depth.value_or(1U), 0U)
+        << "WHERE must collapse when LEVEL banding maxes out below the frontier and still overflows";
+    EXPECT_EQ(doc.cube, build().cube) << "the collapse policy must be deterministic (F5-M8)";
+}
+
+// Closure-first / low-card stays full-depth (§C3): a window that fits after CLOSURE alone must NOT
+// collapse — no LEVEL banding, full WHERE depth. Closure is lossless and applied always; collapse is
+// lossy and applied only when over budget. A low-cardinality window degrades nothing.
+TEST(CubeCollapse, ClosureFirstNoCollapseWhenUnderBudget)
+{
+    constexpr std::array<std::string_view, 10> kComps{"auth",  "db",      "cache", "web",     "api",
+                                                      "ledger", "quota",  "index", "replica", "manifest"};
+    meta::MetaLogEngine engine{cube_cfg()};
+    engine.open_window(std::chrono::system_clock::time_point{});
+    for (const auto comp : kComps) // 10 comps × {Info, Error} = 20 base cells ≪ 4096 budget
+    {
+        engine.ingest_event(ev("t", LogLevel::Info, comp));
+        engine.ingest_event(ev("t", LogLevel::Error, comp));
+    }
+    const auto doc{engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{60})};
+    ASSERT_TRUE(doc.has_cube);
+    EXPECT_LT(doc.cube.cell_count, meta::CubeCardinalityStat::kCellsHard)
+        << "the low-card cube must fit after closure alone; got " << doc.cube.cell_count;
+
+    std::optional<std::uint32_t> level_band;
+    std::optional<std::uint32_t> where_depth;
+    for (const auto& axis : doc.cube.axes)
+    {
+        if (axis.name == "level")
+            level_band = axis.band_floor;
+        if (axis.name == "where")
+            where_depth = axis.floor_depth;
+    }
+    EXPECT_FALSE(level_band.has_value())
+        << "a fitting window must NOT band LEVEL (closure-first — nothing degraded)";
+    EXPECT_EQ(where_depth.value_or(1U), 1U)
+        << "a fitting window must keep FULL WHERE depth (no truncation)";
+}
+
 // ── §13 cardinality monitor (the PURE compute; the eidos pipeline emits the WARN) ───────────────
 
 TEST(CubeCardinality, CountsDistinctPerAxisFromTheClosedCube)
