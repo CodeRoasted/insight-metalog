@@ -1070,15 +1070,15 @@ void MetaLogEngine::build_acquisition(MetaLogDocument& doc) const
     // grows once the WHERE tree deepens; the collapse reads it to pick a truncation depth.
     acquisition.where_cardinality_per_depth.push_back(acquisition.distinct_components);
 
-    // Joint cube quantities, read off the closed cube (build_cube ran first): P_closed and
-    // ∏|dimᵢ| — the per-window collapse guardrail's trigger inputs (§C3). Pure integer, order-
-    // independent (a set-cardinality / a product), so bit-identical cross-stdlib (§16.9).
+    // Per-dimension cardinality (level, role) + P_closed, read off the closed cube (build_cube ran
+    // first). The per-window collapse guardrail's trigger inputs + the mandatory cardinality signal.
+    // Pure integer, order-independent (set-cardinalities), so bit-identical cross-stdlib (§16.9).
+    // (WHERE cardinality == distinct_components above == card.per_axis[Component], so not re-stored.)
     const CubeCardinalityStat card{cube_cardinality(doc.cube)};
     acquisition.closed_cells = card.cells;
-    acquisition.dimension_product =
-        static_cast<std::uint64_t>(
-            card.per_axis[static_cast<std::size_t>(CardinalityAxis::Level)]) *
-        card.per_axis[static_cast<std::size_t>(CardinalityAxis::Component)] *
+    acquisition.level_cardinality =
+        card.per_axis[static_cast<std::size_t>(CardinalityAxis::Level)];
+    acquisition.role_cardinality =
         card.per_axis[static_cast<std::size_t>(CardinalityAxis::Role)];
 
     doc.acquisition = acquisition;

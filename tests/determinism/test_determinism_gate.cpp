@@ -114,8 +114,9 @@ TEST(MetaLogDocument, AlwaysOnCubeWhereAndAcquisitionFields)
         << "depth-1 WHERE tree → one per-depth entry == distinct_components";
     EXPECT_EQ(doc1.acquisition->closed_cells, doc1.cube.cell_count)
         << "P_closed == the closed cube's cell count";
-    EXPECT_GT(doc1.acquisition->dimension_product, 0U)
-        << "∏|dimᵢ| = level × component × role distinct (> 0 on a non-empty window)";
+    // Per-dimension cardinality (the mandatory cardinality signal): distinct count per cube axis.
+    EXPECT_EQ(doc1.acquisition->level_cardinality, 2U) << "distinct levels observed: INFO, WARN";
+    EXPECT_EQ(doc1.acquisition->role_cardinality, 1U) << "distinct roles observed: None only";
     std::set<std::string> labels;
     for (const auto& entry : doc1.stats.top_k)
         if (entry.dominant_component) labels.insert(*entry.dominant_component);

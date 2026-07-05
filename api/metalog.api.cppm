@@ -161,24 +161,28 @@ struct AcquisitionBlock
     std::uint64_t records_with_component{0};
     std::uint64_t distinct_components{0};
 
-    // ── Dimension-metadata for the collapse guardrail (§6.1.1 / cube_perf_and_collapse §C) ──
-    // Raw facts (no verdict). The trigger inputs the per-window collapse reads at close.
+    // ── Per-dimension cardinality + dimension-metadata (§6.1.1 / cube_perf_and_collapse §C) ──
+    // Raw facts (no verdict). The MANDATORY cardinality signal: the observed distinct-value COUNT
+    // per cube dimension {level, where(=distinct_components), role}. This is CARDINALITY, never the
+    // count-per-value distribution (that stays the histogram's, F11). Publishing each dimension
+    // (not just the ∏ product) is what tells a consumer WHICH dimension is exploding — the input the
+    // collapse's LEVEL-vs-WHERE choice and the operator both need. WHERE is the open axis that can
+    // explode; level/role are bounded enums (their cardinality is small but still reported).
+    std::uint64_t level_cardinality{0}; // distinct log levels observed (the cube's level axis)
+    std::uint64_t role_cardinality{0};  // distinct structural_roles observed (the cube's role axis)
 
     // WHERE-tree distinct-cardinality-per-depth (truncate-and-recount), COARSEST → finest:
     // where_cardinality_per_depth[d] = distinct WHERE prefixes truncated to depth d+1. The
     // WHERE axis is a single depth-1 chain (`[component]`) today, so this is a ONE-element
     // vector == distinct_components; it is shaped per-depth for the forward multi-depth WHERE
     // tree (namespace ▸ service ▸ instance) that the collapse's prefix-truncation coarsens.
-    // F11: this is CARDINALITY (distinct counts), never count-per-value — that stays the
-    // histogram's (a bounded enum's cardinality cannot explode; only the open WHERE tree can).
     std::vector<std::uint64_t> where_cardinality_per_depth;
 
-    // The joint cube quantities. closed_cells = P_closed (the cube's condensed cell count) —
-    // the collapse's budget trigger; dimension_product = ∏|dimᵢ| (level × where × role distinct)
-    // — the combinatorial upper bound B ≤ ∏|dimᵢ|. Both read off the closed cube (built before
-    // this block), so they are pure integer functions of the frozen window (§16.9).
+    // P_closed — the cube's condensed cell count (the collapse guardrail's budget trigger). Read
+    // off the closed cube (built before this block); a pure integer function of the window (§16.9).
+    // The combinatorial upper bound ∏|dimᵢ| is DERIVABLE (level × distinct_components × role), so it
+    // is not stored — the per-dimension factors above are the richer, non-redundant signal.
     std::uint64_t closed_cells{0};
-    std::uint64_t dimension_product{0};
 
     [[nodiscard]] bool operator==(const AcquisitionBlock&) const noexcept = default;
 };

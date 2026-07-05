@@ -200,10 +200,11 @@ struct ReservoirEntry
 struct Acquisition
 {
     std::uint64_t records_with_component{0};
-    std::uint64_t distinct_components{0};
+    std::uint64_t distinct_components{0};                   // WHERE (component) axis cardinality
+    std::uint64_t level_cardinality{0};                     // per-dimension cardinality: level
+    std::uint64_t role_cardinality{0};                      // per-dimension cardinality: role
     std::vector<std::uint64_t> where_cardinality_per_depth; // coarsest → finest (§6.1.1)
-    std::uint64_t closed_cells{0};    // P_closed — the cube's condensed cell count
-    std::uint64_t dimension_product{0}; // ∏|dimᵢ| — the combinatorial upper bound
+    std::uint64_t closed_cells{0};                          // P_closed — condensed cell count
 };
 
 struct Stats
@@ -762,9 +763,10 @@ dto::Document make_document(const MetaLogDocument& doc, const TemplateRegistry& 
         out.acquisition = dto::Acquisition{
             .records_with_component = doc.acquisition->records_with_component,
             .distinct_components = doc.acquisition->distinct_components,
+            .level_cardinality = doc.acquisition->level_cardinality,
+            .role_cardinality = doc.acquisition->role_cardinality,
             .where_cardinality_per_depth = doc.acquisition->where_cardinality_per_depth,
-            .closed_cells = doc.acquisition->closed_cells,
-            .dimension_product = doc.acquisition->dimension_product};
+            .closed_cells = doc.acquisition->closed_cells};
     return out;
 }
 
