@@ -64,10 +64,9 @@ struct DocCorpus
     std::vector<meta::MetaLogDocument> docs;
 };
 
-[[nodiscard]] meta::MetaLogConfig stage_config(bool emit_cube) noexcept
+[[nodiscard]] meta::MetaLogConfig stage_config() noexcept
 {
-    meta::MetaLogConfig config;
-    config.emit_cube = emit_cube;
+    meta::MetaLogConfig config; // cube + WHERE + acquisition are always-on (1.7.2)
     config.top_k_size = 64;
     config.top_ngrams_size = 32;
     config.max_ngram_keys = 4096;
@@ -75,8 +74,7 @@ struct DocCorpus
     return config;
 }
 
-[[nodiscard]] DocCorpus make_doc_corpus(std::size_t window_count, std::size_t window_size,
-                                        bool emit_cube)
+[[nodiscard]] DocCorpus make_doc_corpus(std::size_t window_count, std::size_t window_size)
 {
     DocCorpus corpus;
     for (std::size_t i{0}; i < kComponentCount; ++i)
@@ -85,7 +83,7 @@ struct DocCorpus
         corpus.templates.push_back("template #" + std::to_string(i) +
                                    " value=<*> latency_ms=<*> code=<*>");
 
-    const meta::MetaLogConfig config{stage_config(emit_cube)};
+    const meta::MetaLogConfig config{stage_config()};
     const auto base{std::chrono::system_clock::time_point{std::chrono::seconds{1'700'000'000}}};
     for (std::size_t w{0}; w < window_count; ++w)
     {
@@ -185,11 +183,10 @@ total_of(const std::unordered_map<std::string, std::uint64_t>& counts) noexcept
     return total;
 }
 
-// ── compose() / diff() — piece 1 (no-cube) + piece 3 (the cube=on − cube=off gap) ─────────────
+// ── compose() / diff() — the always-on cube path (its cost incl. the collapse guardrail) ───────
 void BM_Compose(benchmark::State& state)
 {
-    const bool emit_cube{state.range(0) != 0};
-    const DocCorpus corpus{make_doc_corpus(kStageWindowCount, kStageWindowSize, emit_cube)};
+    const DocCorpus corpus{make_doc_corpus(kStageWindowCount, kStageWindowSize)};
     std::size_t i{0};
     for (auto _ : state)
     {
@@ -198,14 +195,13 @@ void BM_Compose(benchmark::State& state)
         benchmark::DoNotOptimize(composed);
         ++i;
     }
-    state.SetLabel(emit_cube ? "compose cube=on" : "compose cube=off");
+    state.SetLabel("compose (cube always-on)");
 }
-BENCHMARK(BM_Compose)->Arg(0)->Arg(1)->Unit(benchmark::kMicrosecond);
+BENCHMARK(BM_Compose)->Unit(benchmark::kMicrosecond);
 
 void BM_Diff(benchmark::State& state)
 {
-    const bool emit_cube{state.range(0) != 0};
-    const DocCorpus corpus{make_doc_corpus(kStageWindowCount, kStageWindowSize, emit_cube)};
+    const DocCorpus corpus{make_doc_corpus(kStageWindowCount, kStageWindowSize)};
     std::size_t i{0};
     for (auto _ : state)
     {
@@ -214,9 +210,9 @@ void BM_Diff(benchmark::State& state)
         benchmark::DoNotOptimize(delta);
         ++i;
     }
-    state.SetLabel(emit_cube ? "diff cube=on" : "diff cube=off");
+    state.SetLabel("diff (cube always-on)");
 }
-BENCHMARK(BM_Diff)->Arg(0)->Arg(1)->Unit(benchmark::kMicrosecond);
+BENCHMARK(BM_Diff)->Unit(benchmark::kMicrosecond);
 
 // ── cube primitives — piece 3 in isolation ───────────────────────────────────────────────────
 [[nodiscard]] std::vector<cube::BaseRow> make_base_rows(std::span<const std::string> components)
@@ -265,7 +261,7 @@ BENCHMARK(BM_BuildClosedCube)->Unit(benchmark::kMicrosecond);
 
 void BM_ComposeCubes(benchmark::State& state)
 {
-    const DocCorpus corpus{make_doc_corpus(2, kStageWindowSize, /*emit_cube=*/true)};
+    const DocCorpus corpus{make_doc_corpus(2, kStageWindowSize)};
     const meta::CubeBlock& lhs{corpus.docs[0].cube};
     const meta::CubeBlock& rhs{corpus.docs[1].cube};
     for (auto _ : state)
@@ -279,7 +275,7 @@ BENCHMARK(BM_ComposeCubes)->Unit(benchmark::kMicrosecond);
 
 void BM_CubeDiffOf(benchmark::State& state)
 {
-    const DocCorpus corpus{make_doc_corpus(2, kStageWindowSize, /*emit_cube=*/true)};
+    const DocCorpus corpus{make_doc_corpus(2, kStageWindowSize)};
     const meta::CubeBlock& prev{corpus.docs[0].cube};
     const meta::CubeBlock& cur{corpus.docs[1].cube};
     for (auto _ : state)

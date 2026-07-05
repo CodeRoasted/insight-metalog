@@ -204,30 +204,20 @@ BENCHMARK(BM_MetaLogIngest_FieldHistograms)
     ->Arg(3) // track all 3 param slots
     ->Unit(benchmark::kMicrosecond);
 
-// ── WHERE-carrier ingest-cost benchmark (D-WHERE-3 graduate-or-keep) ───────────
+// ── WHERE-carrier ingest-cost benchmark ────────────────────────────────────────
 //
-// Measures the marginal cost of populating the per-template component marginal
-// (Bucket::component_counts) inside ingest_event() when emit_where is on — the
-// open question in the WHERE design: is it negligible enough to graduate to
-// unconditional (delete the flag), or does the string-keyed map increment justify
-// keeping the default-false gate?
-//
-// state.range(0): 0 → emit_where OFF (baseline, one predicted-not-taken branch)
-//                 1 → emit_where ON  (component_counts increment per located event)
-//
-// Every event carries a low-card component (the realistic structured case), so the
-// ON path does its full work (no empty-component short-circuit). Compare ns_per_event
-// against the FieldHistograms baseline to size the cost relative to level_counts (an
-// enum-keyed increment, always on) — the component marginal is the same shape PLUS a
-// short-string allocation + hash for the map key.
+// Measures the always-on cost of populating the per-template component marginal
+// (Bucket::component_counts) inside ingest_event(). The graduate-or-keep question is
+// settled — WHERE (and the cube + acquisition) are unconditional (1.7.2) — so this
+// tracks the absolute cost we always pay. Every event carries a low-card component
+// (the realistic structured case). Compare ns_per_event against the FieldHistograms
+// baseline to size the cost relative to level_counts (an enum-keyed increment) — the
+// component marginal is the same shape PLUS a short-string allocation + hash for the key.
 void BM_MetaLogIngest_Where(benchmark::State& state)
 {
-    const bool emit_where{state.range(0) != 0};
-
     meta::MetaLogConfig config;
     config.top_k_size = 64;
     config.top_ngrams_size = 32;
-    config.emit_where = emit_where;
 
     constexpr std::size_t kEvents{1'000};
     // A handful of low-card subsystems — the F3b functional-source shape (NOT host).
@@ -271,10 +261,7 @@ void BM_MetaLogIngest_Where(benchmark::State& state)
         static_cast<double>(total_events),
         benchmark::Counter::kIsRate | benchmark::Counter::kInvert, benchmark::Counter::kIs1000);
 }
-BENCHMARK(BM_MetaLogIngest_Where)
-    ->Arg(0) // emit_where off (baseline)
-    ->Arg(1) // emit_where on
-    ->Unit(benchmark::kMicrosecond);
+BENCHMARK(BM_MetaLogIngest_Where)->Unit(benchmark::kMicrosecond);
 
 } // namespace
 

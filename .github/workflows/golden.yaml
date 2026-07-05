@@ -276,6 +276,14 @@ jobs:
             if ($p.ExitCode -ne 0) { throw "det_fixture --reservoir-nearfull failed (exit $($p.ExitCode))" }
             $b = [System.IO.File]::ReadAllBytes($tmp)
             $fs.Write($b, 0, $b.Length)
+            # The §C3 --cube-collapse section (same header + order as the Linux legs — must match).
+            $chdr = [System.Text.Encoding]::ASCII.GetBytes("### --cube-collapse (§C3 dimensional-collapse guardrail) ###`n")
+            $fs.Write($chdr, 0, $chdr.Length)
+            $tmp = "$work/cube_collapse.out"
+            $p = Start-Process -FilePath $fixture -ArgumentList "--cube-collapse" -NoNewWindow -Wait -PassThru -RedirectStandardOutput $tmp
+            if ($p.ExitCode -ne 0) { throw "det_fixture --cube-collapse failed (exit $($p.ExitCode))" }
+            $b = [System.IO.File]::ReadAllBytes($tmp)
+            $fs.Write($b, 0, $b.Length)
           } finally { $fs.Close() }
           Copy-Item $outPath "$env:GITHUB_WORKSPACE/digest-msvc.txt"
           Write-Host "MSVC digest sha256: $((Get-FileHash -Algorithm SHA256 -Path digest-msvc.txt).Hash.ToLower())"

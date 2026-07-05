@@ -172,12 +172,16 @@ if [ "${#builds[@]}" -eq 0 ] || [ "${#builds[@]}" -ne "$expected" ]; then
 fi
 
 # Each cell emits the committed corpus (5 files) THEN --reservoir-nearfull (the F5-M8 synthetic M=128
-# scenario). Compare every built cell to the reference — byte-identity across the leg's -O/-ffp sweep.
+# scenario) THEN --cube-collapse (the §C3 cube dimensional-collapse guardrail — a window that FIRES a
+# collapse, so its content-driven axis-selection tie-break is proven cross-leg). Compare every built
+# cell to the reference — byte-identity across the leg's -O/-ffp sweep.
 for ctag in "${builds[@]}"; do
   : >"$WORK/$ctag.out"
   for f in $CORPUS; do echo "### $(basename "$f") ###" >>"$WORK/$ctag.out"; "${BIN[$ctag]}" "$f" >>"$WORK/$ctag.out" 2>/dev/null; done
   echo "### --reservoir-nearfull (F5-M8 synthetic M=128) ###" >>"$WORK/$ctag.out"
   "${BIN[$ctag]}" --reservoir-nearfull >>"$WORK/$ctag.out" 2>/dev/null
+  echo "### --cube-collapse (§C3 dimensional-collapse guardrail) ###" >>"$WORK/$ctag.out"
+  "${BIN[$ctag]}" --cube-collapse >>"$WORK/$ctag.out" 2>/dev/null
 done
 rc=0; ref="${builds[0]}"
 echo "reference: $ref  sha=$(sha256sum "$WORK/$ref.out" | cut -c1-16)"

@@ -30,8 +30,9 @@
 import insight.canon;
 import insight.metalog;
 
-// AFTER the imports (plain TU): the shared F5-M8 near-full reservoir scenario, shared with the
-// in-suite golden (tests/determinism/test_determinism_gate.cpp) so both run the identical window.
+// AFTER the imports (plain TU): the shared synthetic scenarios — the F5-M8 near-full reservoir and
+// the §C3 cube collapse — shared with the in-suite tests so both oracles run the identical windows.
+#include "cube_collapse_scenario.hpp"
 #include "reservoir_nearfull_scenario.hpp"
 
 int main(int argc, char** argv)
@@ -41,8 +42,28 @@ int main(int argc, char** argv)
 #endif
     if (argc < 2)
     {
-        std::cerr << "usage: determinism_fixture <corpus | --reservoir-nearfull>\n";
+        std::cerr << "usage: determinism_fixture <corpus | --reservoir-nearfull | --cube-collapse>\n";
         return 2;
+    }
+
+    // §C3 cube dimensional-collapse oracle: a SYNTHETIC cardinality-explosion window (not a tokenized
+    // corpus) that FIRES the guardrail — the closed cube exceeds the budget and the LEVEL banding
+    // {Trace,Debug}→Debug collapses it. Its axis-selection tie-break is an F5-M8-class content
+    // decision (a declared total order), so the emitted collapsed document MUST be byte-identical
+    // across every leg/arch/OS, or the collapse policy is non-deterministic. Same window as the
+    // in-suite CubeCollapse behavioral tests.
+    if (std::string{argv[1]} == "--cube-collapse")
+    {
+        namespace ml = insight::metalog;
+        ml::MetaLogConfig cfg;
+        ml::cube_collapse::configure(cfg);
+        ml::MetaLogEngine engine{cfg};
+        using Clock = std::chrono::system_clock;
+        engine.open_window(Clock::time_point{std::chrono::seconds{1700000000}});
+        ml::cube_collapse::emit_window(engine);
+        const auto doc{engine.close_window(Clock::time_point{std::chrono::seconds{1700000060}})};
+        std::cout << ml::to_json(doc, engine.registry()) << "\n";
+        return 0;
     }
 
     // F5-M8 near-full reservoir oracle: a SYNTHETIC scenario (not a tokenized corpus), driven by a
