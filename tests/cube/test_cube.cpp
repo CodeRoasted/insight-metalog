@@ -6,6 +6,10 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
+#include <string>
+#include <string_view>
+
 import insight.metalog.test;
 
 namespace
@@ -672,6 +676,277 @@ TEST(CubeDeterminism, OrderIndependentUnderRowReversal)
     EXPECT_EQ(cells_of(forward.cube), cells_of(backward.cube))
         << "the closed cube must be identical under row reversal (per-line-pure dims, "
            "order-independent counts)";
+}
+
+// ── The latency_shift differential axis (cube_differential_axes.md §4/§7.4) ─────────────
+// The seam proof (Daidalos → Kleio): the Attribution Cube's first DIFFERENTIAL dimension is
+// SIGNED + polarity-MUTE. A per-component latency shift EMERGES a cube_diff cell for EITHER
+// direction (up = higher/slower, down = lower/faster); metalog judges NEITHER good/bad — the
+// reading (up→regression, down→recovery) lives in eidos classify (already proven:
+// insight-eidos/diff/tests/classify/ordinal_drift_test.cpp — MultiOctaveUp/DownIsHigh…). This
+// suite owns the ENRICHMENT half: both directions enrich symmetrically, only the SIGN encodes
+// previous→current orientation, and an unmoved latency emits nothing (no false emergence).
+//
+// Homing: metalog integration (engine → diff → cube_diff), NOT a LogCraft e2e — the axis is a
+// pure diff-phase function of two windows' DurationLog2Ns histograms; the seam it needs is
+// metalog↔eidos, and the "do(latency drift)" intervention is realized here at its surgical
+// home (hold everything, move only payments' latency).
+//
+// Determinism: fixed seed-free integer ladder (floor(log2 ns), 48 bins); single worker; the
+// (component → drift) map is a deterministic function of the inputs. No wall clock, no float→int.
+
+namespace
+{
+constexpr std::int64_t kMsToNs{1'000'000}; // DurationLog2Ns schedule is nanoseconds
+// 100 ms → 1e8 ns → bin 26; 100 s → 1e11 ns → bin 36. A 10-octave move ⇒ W1 HIGH bucket.
+constexpr std::int64_t kLowLatencyMs{100};
+constexpr std::int64_t kHighLatencyMs{100'000};
+constexpr int kComponentCount{6};
+
+// cube_cfg() + ordinal histograms enabled (the same-as-param batch gate) + a shared processing
+// contract so diff() never trips the §2.4 comparability gate.
+[[nodiscard]] meta::MetaLogConfig latency_cfg()
+{
+    auto cfg{cube_cfg()};
+    cfg.max_param_histograms = 2; // >0 enables ordinal (DurationLog2Ns) histograms
+    cfg.canonicalization_version = "canon-latshift-test";
+    cfg.retention_profile = "rp-latshift-test";
+    return cfg;
+}
+
+// Ingest `count` events on `tmpl`/`level`/`component`, each carrying a latency_ms observation at
+// `value_ms`. The ordinals span is rebuilt per event and valid through ingest (which copies).
+void ingest_latency(meta::MetaLogEngine& engine, std::string_view tmpl, LogLevel level,
+                    std::string_view component, std::int64_t value_ms, int count)
+{
+    for (int i = 0; i < count; ++i)
+    {
+        const std::array<insight::OrdinalObservation, 1> obs{
+            {{.field_name = "latency_ms",
+              .schedule = insight::OrdinalSchedule::DurationLog2Ns,
+              .value = value_ms * kMsToNs}}};
+        auto e{ev(tmpl, level, component)};
+        e.ordinals = obs; // span valid through this ingest call
+        engine.ingest_event(e);
+    }
+}
+
+// A prev/cur pair on ONE engine (shared registry, like two_windows). payments shifts from
+// `prev_ms` → `cur_ms`; auth is a STABLE second component carrying no latency — it keeps
+// payments' WHERE cell from collapsing as redundant (§16 single-component closure), so the
+// shifted (…, where=payments, latency_shift) cell is a real pinned coord, not the aggregate.
+[[nodiscard]] std::pair<meta::MetaLogDocument, meta::MetaLogDocument>
+latency_shift_windows(std::int64_t prev_ms, std::int64_t cur_ms)
+{
+    meta::MetaLogEngine engine{latency_cfg()};
+    const std::chrono::system_clock::time_point t0{};
+    const auto t1{t0 + std::chrono::seconds{60}};
+    const auto t2{t0 + std::chrono::seconds{120}};
+
+    engine.open_window(t0);
+    ingest_latency(engine, "charge card <*>", LogLevel::Info, "payments", prev_ms, kComponentCount);
+    for (int i = 0; i < kComponentCount; ++i)
+        engine.ingest_event(ev("auth ok", LogLevel::Info, "auth"));
+    const auto prev{engine.close_window(t1)};
+
+    engine.open_window(t1);
+    ingest_latency(engine, "charge card <*>", LogLevel::Info, "payments", cur_ms, kComponentCount);
+    for (int i = 0; i < kComponentCount; ++i)
+        engine.ingest_event(ev("auth ok", LogLevel::Info, "auth"));
+    const auto cur{engine.close_window(t2)};
+    return {prev, cur};
+}
+
+[[nodiscard]] std::string border_where_leaf(const meta::CubeBorderCell& cell)
+{
+    if (cell.coord.where && !cell.coord.where->empty())
+        return cell.coord.where->back();
+    return "*";
+}
+
+[[nodiscard]] bool has_latency_shift_axis(const meta::CubeDiffBlock& diff)
+{
+    for (const auto& axis : diff.axes)
+        if (axis.name == "latency_shift")
+            return true;
+    return false;
+}
+
+// Scan both border regions (emerging + vanishing, lower + upper) for a cell carrying a
+// latency_shift coord at where-leaf `component`. The shift only ever pins on the CURRENT side,
+// so a real match lands in emerging — vanishing is scanned so the control test can prove NONE.
+[[nodiscard]] const meta::CubeBorderCell* find_shift_cell(const meta::CubeDiffBlock& diff,
+                                                          std::string_view component)
+{
+    const auto scan{[&](const meta::CubeBorder& border) -> const meta::CubeBorderCell*
+                    {
+                        for (const auto* region : {&border.lower, &border.upper})
+                            for (const auto& cell : *region)
+                                if (cell.coord.latency_shift && border_where_leaf(cell) == component)
+                                    return &cell;
+                        return nullptr;
+                    }};
+    if (diff.has_emerging)
+        if (const auto* hit{scan(diff.emerging)})
+            return hit;
+    if (diff.has_vanishing)
+        if (const auto* hit{scan(diff.vanishing)})
+            return hit;
+    return nullptr;
+}
+
+// Any border cell carrying a latency_shift coord (regardless of component) — the control's
+// "no false emergence anywhere" guard.
+[[nodiscard]] bool any_shift_cell(const meta::CubeDiffBlock& diff)
+{
+    const auto in{[](const meta::CubeBorder& border)
+                  {
+                      for (const auto* region : {&border.lower, &border.upper})
+                          for (const auto& cell : *region)
+                              if (cell.coord.latency_shift)
+                                  return true;
+                      return false;
+                  }};
+    return (diff.has_emerging && in(diff.emerging)) || (diff.has_vanishing && in(diff.vanishing));
+}
+
+// Verbose-on-failure dump: every border cell's (region, level, where, latency_shift).
+[[nodiscard]] std::string shift_dump(const meta::CubeDiffBlock& diff)
+{
+    std::string out{"cube_diff cells [region · level · where · latency_shift]:\n"};
+    const auto emit{[&](std::string_view region, const meta::CubeBorder& border)
+                    {
+                        for (const auto* part : {&border.lower, &border.upper})
+                            for (const auto& cell : *part)
+                            {
+                                out += "  ";
+                                out += region;
+                                out += " · ";
+                                out += cell.coord.level.value_or("*");
+                                out += " · ";
+                                out += border_where_leaf(cell);
+                                out += " · ";
+                                out += cell.coord.latency_shift.value_or("<none>");
+                                out += '\n';
+                            }
+                    }};
+    if (diff.has_emerging)
+        emit("emerging", diff.emerging);
+    if (diff.has_vanishing)
+        emit("vanishing", diff.vanishing);
+    if (!diff.has_emerging && !diff.has_vanishing)
+        out += "  <no border>\n";
+    return out;
+}
+
+// "up_high" → "high" — the magnitude band, stripped of its direction sign.
+[[nodiscard]] std::string magnitude_suffix(const std::string& band)
+{
+    const auto underscore{band.find('_')};
+    return underscore == std::string::npos ? band : band.substr(underscore + 1);
+}
+} // namespace
+
+// Drift arm — do(latency drift UP) at payments ⇒ an emerging cell (where=payments) carrying a
+// SIGNED up_* band. eidos then reads this as a regression (proven eidos-side).
+TEST(CubeDiffLatencyShift, DriftUpEmergesUpShiftCell)
+{
+    const auto [prev, cur]{latency_shift_windows(kLowLatencyMs, kHighLatencyMs)};
+    const auto diff{meta::diff(prev, cur)};
+
+    ASSERT_TRUE(diff.has_cube_diff) << "a latency shift on payments must produce a cube_diff";
+    EXPECT_TRUE(has_latency_shift_axis(diff.cube_diff))
+        << "the latency_shift axis must be declared when a component shifted\n"
+        << shift_dump(diff.cube_diff);
+    const meta::CubeBorderCell* cell{find_shift_cell(diff.cube_diff, "payments")};
+    ASSERT_NE(cell, nullptr) << "expected an emerging (where=payments, latency_shift=up_*) cell\n"
+                             << shift_dump(diff.cube_diff);
+    ASSERT_TRUE(cell->coord.latency_shift.has_value());
+    EXPECT_EQ(*cell->coord.latency_shift, "up_high")
+        << "10-octave UP shift ⇒ up_high; got " << *cell->coord.latency_shift;
+}
+
+// Recovery arm + the polarity-MUTE regression proof — do(latency recovery / DOWN) at payments
+// ⇒ an emerging cell carrying a SIGNED down_* band. This is the load-bearing assertion: the
+// enrichment is polarity-MUTE, so the DOWN cell IS present. An up-clipped enrichment (the
+// b60ec47 regression this proof guards) would drop it. eidos reads it as recovery (no alarm).
+TEST(CubeDiffLatencyShift, RecoveryDownEmergesDownShiftCell)
+{
+    const auto [prev, cur]{latency_shift_windows(kHighLatencyMs, kLowLatencyMs)};
+    const auto diff{meta::diff(prev, cur)};
+
+    ASSERT_TRUE(diff.has_cube_diff) << "a DOWN latency shift must ALSO produce a cube_diff";
+    const meta::CubeBorderCell* cell{find_shift_cell(diff.cube_diff, "payments")};
+    ASSERT_NE(cell, nullptr)
+        << "REGRESSION GUARD: the DOWN cell must be present (polarity-MUTE, not up-clipped)\n"
+        << shift_dump(diff.cube_diff);
+    ASSERT_TRUE(cell->coord.latency_shift.has_value());
+    EXPECT_EQ(*cell->coord.latency_shift, "down_high")
+        << "10-octave DOWN shift ⇒ down_high; got " << *cell->coord.latency_shift;
+}
+
+// Control arm — payments' latency does NOT move (a real, ACTIVE diff: a new 'cache' component
+// emerges structurally), so NO shift axis and NO shift cell appear. Proves the axis is gated on
+// latency movement, not on diff activity — no false emergence.
+TEST(CubeDiffLatencyShift, NoLatencyMoveEmitsNoShiftAxisOrCell)
+{
+    meta::MetaLogEngine engine{latency_cfg()};
+    const std::chrono::system_clock::time_point t0{};
+    const auto t1{t0 + std::chrono::seconds{60}};
+    const auto t2{t0 + std::chrono::seconds{120}};
+
+    engine.open_window(t0);
+    ingest_latency(engine, "charge card <*>", LogLevel::Info, "payments", kLowLatencyMs, kComponentCount);
+    for (int i = 0; i < kComponentCount; ++i)
+        engine.ingest_event(ev("auth ok", LogLevel::Info, "auth"));
+    const auto prev{engine.close_window(t1)};
+
+    engine.open_window(t1);
+    ingest_latency(engine, "charge card <*>", LogLevel::Info, "payments", kLowLatencyMs, kComponentCount);
+    for (int i = 0; i < kComponentCount; ++i)
+        engine.ingest_event(ev("auth ok", LogLevel::Info, "auth"));
+    for (int i = 0; i < 5; ++i) // the ACTIVE structural change: a new component appears
+        engine.ingest_event(ev("cache warm", LogLevel::Info, "cache"));
+    const auto cur{engine.close_window(t2)};
+
+    const auto diff{meta::diff(prev, cur)};
+    ASSERT_TRUE(diff.has_cube_diff) << "the 'cache' emergence must produce an (active) cube_diff";
+    EXPECT_FALSE(has_latency_shift_axis(diff.cube_diff))
+        << "no component shifted ⇒ the latency_shift axis must NOT be declared\n"
+        << shift_dump(diff.cube_diff);
+    EXPECT_EQ(find_shift_cell(diff.cube_diff, "payments"), nullptr)
+        << "payments' latency did not move — it must carry no shift cell\n"
+        << shift_dump(diff.cube_diff);
+    EXPECT_FALSE(any_shift_cell(diff.cube_diff))
+        << "no cell may carry a latency_shift under an unmoved-latency diff\n"
+        << shift_dump(diff.cube_diff);
+}
+
+// Orientation + mute symmetry (the seam's metalog half) — swapping (previous, current) flips
+// the SIGN up_* ↔ down_*, and BOTH directions carry the SAME magnitude band. The sign is the
+// only thing that differs (it encodes previous→current); metalog judges neither — that IS the
+// enrichment/reading seam: symmetric here, split downstream in eidos.
+TEST(CubeDiffLatencyShift, SwapFlipsSignMuteSymmetry)
+{
+    const auto [low, high]{latency_shift_windows(kLowLatencyMs, kHighLatencyMs)};
+
+    const auto up_diff{meta::diff(low, high)};   // previous=low, current=high ⇒ UP
+    const auto down_diff{meta::diff(high, low)}; // swapped ⇒ DOWN
+
+    const meta::CubeBorderCell* up_cell{find_shift_cell(up_diff.cube_diff, "payments")};
+    const meta::CubeBorderCell* down_cell{find_shift_cell(down_diff.cube_diff, "payments")};
+    ASSERT_NE(up_cell, nullptr) << shift_dump(up_diff.cube_diff);
+    ASSERT_NE(down_cell, nullptr) << shift_dump(down_diff.cube_diff);
+    ASSERT_TRUE(up_cell->coord.latency_shift.has_value());
+    ASSERT_TRUE(down_cell->coord.latency_shift.has_value());
+
+    const std::string up_band{*up_cell->coord.latency_shift};
+    const std::string down_band{*down_cell->coord.latency_shift};
+    EXPECT_TRUE(up_band.starts_with("up_")) << up_band;
+    EXPECT_TRUE(down_band.starts_with("down_")) << down_band;
+    EXPECT_EQ(magnitude_suffix(up_band), magnitude_suffix(down_band))
+        << "polarity-MUTE: the two directions must carry the SAME magnitude band — only the "
+           "sign differs. up=" << up_band << " down=" << down_band;
 }
 
 // NOLINTEND
