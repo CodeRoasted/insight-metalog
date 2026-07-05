@@ -87,6 +87,53 @@ TEST(CubeBlock, AlwaysBuiltEvenOnDefaultConfig)
     EXPECT_TRUE(doc.has_cube) << "the cube is always built (1.7.2 always-on)";
 }
 
+// ── §C3 dimensional-collapse guardrail (the always-on cube's cardinality bound) ─────────────────
+
+// The oracle MUST exercise a collapse (F5-M8 oracle-coverage): a cardinality-explosion window
+// that actually FIRES the guardrail. 1500 distinct components, each at two bandable levels
+// (Trace/Debug) → the un-collapsed cube exceeds the 4096-cell budget; the LEVEL interval-banding
+// {Trace,Debug}→Debug fuses the pairs and brings it back under, WITHOUT dropping the WHERE axis.
+TEST(CubeCollapse, GuardrailBoundsAnExplodingWindowByLevelBanding)
+{
+    static std::vector<std::string> comps; // static storage → the component string_views stay valid
+    if (comps.empty())
+        for (int i = 0; i < 1500; ++i)
+            comps.push_back("svc_" + std::to_string(i));
+    const auto build{[&]
+                     {
+                         meta::MetaLogEngine engine{cube_cfg()};
+                         engine.open_window(std::chrono::system_clock::time_point{});
+                         for (const auto& comp : comps)
+                         {
+                             engine.ingest_event(ev("t", LogLevel::Trace, comp));
+                             engine.ingest_event(ev("t", LogLevel::Debug, comp));
+                         }
+                         return engine.close_window(std::chrono::system_clock::time_point{} +
+                                                    std::chrono::seconds{60});
+                     }};
+    const auto doc{build()};
+    ASSERT_TRUE(doc.has_cube);
+    // The guardrail's CONTRACT: every window's cube is bounded by the budget.
+    EXPECT_LE(doc.cube.cell_count, meta::CubeCardinalityStat::kCellsHard)
+        << "collapse guardrail must bound the cube to the budget; got " << doc.cube.cell_count;
+    // It must RECORD the applied collapse in the axes (so mismatched-collapse cubes are detectable).
+    std::optional<std::uint32_t> level_band;
+    std::optional<std::uint32_t> where_depth;
+    for (const auto& axis : doc.cube.axes)
+    {
+        if (axis.name == "level")
+            level_band = axis.band_floor;
+        if (axis.name == "where")
+            where_depth = axis.floor_depth;
+    }
+    ASSERT_TRUE(level_band.has_value())
+        << "LEVEL banding must fire on this explosion (the free {Trace,Debug} move)";
+    EXPECT_EQ(*level_band, 2U) << "{Trace,Debug} banded (floor 2); WHERE stays intact";
+    EXPECT_EQ(where_depth.value_or(1U), 1U) << "LEVEL banding sufficed → WHERE not dropped";
+    // Determinism: the collapse is a pure function of content — a rebuild is bit-identical.
+    EXPECT_EQ(doc.cube, build().cube) << "the collapse policy must be deterministic (F5-M8)";
+}
+
 // ── §13 cardinality monitor (the PURE compute; the eidos pipeline emits the WARN) ───────────────
 
 TEST(CubeCardinality, CountsDistinctPerAxisFromTheClosedCube)

@@ -202,7 +202,15 @@ struct CubeAxis
     std::string name;                              // "level" | "structural_role" | "where"
     std::string kind;                              // "categorical" | "chain"
     std::optional<std::vector<std::string>> chain; // chain only: ordered levels, coarsest first
-    std::optional<std::uint32_t> floor_depth;      // chain only: retained depth (≤ len(chain))
+    std::optional<std::uint32_t> floor_depth;      // chain only: retained depth (≤ len(chain));
+                                                   // a WHERE-tree axis coarsened by the collapse
+                                                   // guardrail (§C) carries its truncated depth here
+                                                   // (< full ⇒ prefix-truncated; 0 ⇒ axis dropped).
+    // Per-window collapse depth for an ORDINAL axis (level): the number of lowest-severity
+    // levels merged into one band from the bottom (§C3 interval-banding), NEVER across the
+    // ERROR/FATAL frontier. Absent / 0 ⇒ no banding. Two cubes compare only at equal collapse
+    // (same floor_depth AND band_floor) — the axes carry the collapse so a mismatch is detectable.
+    std::optional<std::uint32_t> band_floor;
     [[nodiscard]] bool operator==(const CubeAxis&) const noexcept = default;
 };
 

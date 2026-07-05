@@ -145,6 +145,7 @@ struct CubeAxis
     std::string kind;
     std::optional<std::vector<std::string>> chain;
     std::optional<std::uint32_t> floor_depth;
+    std::optional<std::uint32_t> band_floor; // ordinal collapse depth (level banding, §C3); omit when absent
 };
 
 struct CubeCell
@@ -474,6 +475,7 @@ dto::CubeAxis make_cube_axis(const CubeAxis& axis)
     out.kind = axis.kind;
     out.chain = axis.chain;
     out.floor_depth = axis.floor_depth;
+    out.band_floor = axis.band_floor;
     return out;
 }
 

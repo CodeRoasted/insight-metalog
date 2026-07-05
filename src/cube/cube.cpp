@@ -385,6 +385,146 @@ interned_base_of(const CubeBlock& block)
     return block;
 }
 
+// ── the per-window dimensional-collapse guardrail (cube_perf_and_collapse.md §C3) ────
+// An always-on cube can explode (O(B·2ⁿ), B ≤ ∏|dimᵢ|). The guardrail bounds EVERY window:
+// build the closed cube, and while it exceeds a static-constexpr budget, apply the best
+// admissible surjection (a monotone coarsening of the base ids) and RE-CLOSE, iterating until
+// under budget. Three separated objects: BUDGET (constexpr, whole-cube), TRIGGER (content read —
+// closed cells ≥ budget), POLICY (the surjection + the F5-M8 total-order tie-break, golden,
+// version-stamped). Closure-first, collapse-last: if closure alone fits, nothing degrades.
+
+// BUDGET — a static-constexpr bound on the whole cube (measure-first seeded 2026-07-04: P_closed
+// saturates ~4.5k at extreme cardinality, realistic windows sit far below → collapse is a rare guard).
+inline constexpr std::uint64_t kCubeCellBudget{4096};
+
+// LEVEL banding never crosses the ERROR/FATAL severity frontier (canon order Trace<Debug<Info<
+// Warn<Error<Fatal): floor f ⇒ levels [0..f-1] merge into their top representative (f-1); the max
+// floor stops at Error's index so {Error,Fatal} are never banded (the distinction failure_lexicon /
+// role=Terminator / border-attribution all preserve). {Trace,Debug} is the cheapest, near-lossless.
+inline constexpr std::uint32_t kMaxLevelBandFloor{static_cast<std::uint32_t>(LogLevel::Error)}; // 4
+// The WHERE tree is one depth-1 chain today ⇒ prefix-truncation degenerates to a drop (depth 1→0);
+// the framework generalizes to any 0 ≤ depth < full once the WHERE tree deepens (geo × code axes).
+inline constexpr std::uint32_t kFullWhereDepth{1};
+// WHERE-drop loses all location ⇒ structurally the last resort, far costlier than any LEVEL band.
+inline constexpr std::uint64_t kWhereDropCost{100};
+
+// The per-window collapse depth — the version-stamped POLICY's output; a monotone surjection.
+struct CollapseState
+{
+    std::uint32_t level_band_floor{0};          // 0 = none; f ⇒ levels [0..f-1] → level(f-1)
+    std::uint32_t where_depth{kFullWhereDepth}; // retained WHERE depth; < full ⇒ truncated (0 = dropped)
+};
+
+// Apply the collapse state to one base cell's value-ids — the monotone surjection. LEVEL bands the
+// bottom into its top representative; WHERE (depth-1) drops to kStar when truncated. Pure integer.
+[[nodiscard]] Cell collapse_cell(Cell cell, const CollapseState& state) noexcept
+{
+    if (cell.value[static_cast<std::size_t>(Dim::Level)] < state.level_band_floor)
+        cell.value[static_cast<std::size_t>(Dim::Level)] = state.level_band_floor - 1;
+    if (state.where_depth < kFullWhereDepth)
+        cell.value[static_cast<std::size_t>(Dim::Where)] = kStar;
+    return cell;
+}
+
+// Coarsen the whole base by the collapse state, then sort-reduce (the surjection fuses base cells).
+[[nodiscard]] BaseMultiset collapsed_base(const BaseMultiset& base, const CollapseState& state)
+{
+    std::vector<std::pair<Cell, std::uint64_t>> events;
+    events.reserve(base.size());
+    for (const auto& [cell, count] : base)
+        events.emplace_back(collapse_cell(cell, state), count);
+    return sort_reduce_base(std::move(events));
+}
+
+// The reachable next collapse steps from `state`, in a FIXED order that IS the declared total order
+// (LEVEL before WHERE). Admissibility is a BARRIER, enforced by construction: LEVEL never crosses
+// the frontier; WHERE only toward the root.
+[[nodiscard]] std::vector<CollapseState> next_collapse_steps(const CollapseState& state)
+{
+    std::vector<CollapseState> steps;
+    if (state.level_band_floor < kMaxLevelBandFloor)
+    {
+        CollapseState next{state};
+        next.level_band_floor = (state.level_band_floor == 0) ? 2 : state.level_band_floor + 1; // 0→2→3→4
+        steps.push_back(next);
+    }
+    if (state.where_depth > 0)
+    {
+        CollapseState next{state};
+        --next.where_depth; // depth-1 → 0 (drop); a deeper tree truncates one level toward the root
+        steps.push_back(next);
+    }
+    return steps;
+}
+
+// Structural cost of a step (frozen, window-independent — anti-endogamy): a LEVEL band costs its
+// reach toward the frontier ({Trace,Debug} cheapest); WHERE-drop is the last-resort constant.
+[[nodiscard]] std::uint64_t collapse_step_cost(const CollapseState& from, const CollapseState& to) noexcept
+{
+    if (to.level_band_floor != from.level_band_floor)
+        return to.level_band_floor; // 2 < 3 < 4
+    return kWhereDropCost;
+}
+
+// The version-stamped POLICY: pick the admissible step maximizing Δcardinality / cost. Δ is measured
+// by trial re-closure (collapse is rare; the candidate set is ≤2). Integer cross-multiply, so no
+// float; the STRICT `>` keeps the earlier candidate on a tie ⇒ the fixed next_collapse_steps order
+// (LEVEL before WHERE) IS the F5-M8 total-order tie-break. nullopt when no step reduces cardinality.
+[[nodiscard]] std::optional<CollapseState>
+pick_collapse_step(const BaseMultiset& base, std::uint64_t current_cells, const CollapseState& state,
+                   std::span<const std::string> labels)
+{
+    std::optional<CollapseState> best;
+    std::uint64_t best_delta{0};
+    std::uint64_t best_cost{1};
+    for (const CollapseState& candidate : next_collapse_steps(state))
+    {
+        const std::uint64_t cells{close_and_emit(collapsed_base(base, candidate), labels).cell_count};
+        if (cells >= current_cells)
+            continue; // a collapse must pay in cardinality, else it is never chosen
+        const std::uint64_t delta{current_cells - cells};
+        const std::uint64_t cost{collapse_step_cost(state, candidate)};
+        if (!best || delta * best_cost > best_delta * cost)
+        {
+            best = candidate;
+            best_delta = delta;
+            best_cost = cost;
+        }
+    }
+    return best;
+}
+
+// Stamp the axes with the applied collapse so two cubes compare only at equal collapse (§C3): the
+// ORDINAL level axis carries band_floor, the WHERE chain axis its truncated floor_depth.
+void stamp_collapse(std::vector<CubeAxis>& axes, const CollapseState& state)
+{
+    for (CubeAxis& axis : axes)
+    {
+        if (axis.name == "level" && state.level_band_floor > 0)
+            axis.band_floor = state.level_band_floor;
+        if (axis.name == "where")
+            axis.floor_depth = state.where_depth; // full (1) uncollapsed; 0 when dropped
+    }
+}
+
+// Build the closed cube, then BOUND it: closure-first, collapse-if-over-budget, re-close, iterate.
+[[nodiscard]] CubeBlock build_bounded_cube(const BaseMultiset& base, std::span<const std::string> labels)
+{
+    CollapseState state{};
+    CubeBlock cube{close_and_emit(base, labels)};
+    while (cube.cell_count > kCubeCellBudget)
+    {
+        const std::optional<CollapseState> next{
+            pick_collapse_step(base, cube.cell_count, state, labels)};
+        if (!next)
+            break; // fully collapsed and still over budget — role×3-level-bands is tiny → unreachable
+        state = *next;
+        cube = close_and_emit(collapsed_base(base, state), labels);
+    }
+    stamp_collapse(cube.axes, state);
+    return cube;
+}
+
 // ── the order-convex border (§13.6) ─────────────────────────────────────────────
 // One growth/disappearance region: emergent(c) = count(anti, c) ≤ θ_was ∧
 // count(mono, c) ≥ θ_now (the two ABSOLUTE thresholds, §16.5 MUST-2). The region is an
@@ -500,7 +640,7 @@ CubeBlock build_closed_cube(std::span<const BaseRow> base_rows)
         cell.value[static_cast<std::size_t>(Dim::Role)] = static_cast<std::uint32_t>(row.role);
         events.emplace_back(cell, row.count);
     }
-    return close_and_emit(sort_reduce_base(std::move(events)), labels);
+    return build_bounded_cube(sort_reduce_base(std::move(events)), labels);
 }
 
 CubeCoord cube_location(std::optional<LogLevel> level, std::string_view component)
