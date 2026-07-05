@@ -64,6 +64,38 @@ namespace
 
 // ── coord ↔ internal cell ───────────────────────────────────────────────────────
 
+// ── the diff-only signed latency_shift band (cube_differential_axes.md §4/§7.4) ──
+// The differential axis packs (magnitude × direction) into ONE Cell slot as a SIGNED, polarity-MUTE
+// value-id: NONE ≡ kStar (unpinned, the aggregated center); an UP band is its magnitude (Low=1,
+// Med=2, High=3), a DOWN band is magnitude + kMagnitudeBands (4, 5, 6). Up and down are DISTINCT
+// value-ids (⇒ distinct cells, both emerge against the all-NONE baseline) but neither is judged
+// good/bad here — the reading layer (eidos) maps up→regression, down→recovery. The border treats the
+// slot as a FLAT categorical dim (pin to a value-id, or kStar-aggregate), never using value ORDER, so
+// the order-convex (lower,upper) border stays monotone by the §A4 proof exactly as for level/role;
+// bidirectional only adds more categorical values, it does not change the structure.
+inline constexpr std::uint32_t kMagnitudeBands{3}; // OrdinalShift Low/Med/High, per direction
+
+[[nodiscard]] std::uint32_t signed_shift_id(OrdinalShift shift, OrdinalDriftDirection direction) noexcept
+{
+    const std::uint32_t magnitude{static_cast<std::uint32_t>(shift)}; // Low=1, Med=2, High=3
+    return direction == OrdinalDriftDirection::Down ? magnitude + kMagnitudeBands : magnitude;
+}
+
+// Decode a pinned band id → its mute wire label ("up_low".."up_high" | "down_low".."down_high"). The
+// sign is oriented previous→current (the MetaLogDiff previous/current stamp): up = current shifted
+// higher than previous. NONE is never pinned (it is the kStar baseline), so this is only ever called
+// on a real band.
+[[nodiscard]] std::string signed_shift_label(std::uint32_t band_id)
+{
+    const bool down{band_id > kMagnitudeBands};
+    const auto magnitude{static_cast<OrdinalShift>(down ? band_id - kMagnitudeBands : band_id)};
+    std::string label{down ? "down_" : "up_"};
+    label.append(to_string(magnitude));
+    return label;
+}
+
+// ── coord ↔ internal cell ───────────────────────────────────────────────────────
+
 // Internal Cell → wire coord, resolving the Where value-id back through the dictionary
 // as a depth-1 chain ([component]). An absent (starred) dim → an absent coord key (§16.4).
 [[nodiscard]] CubeCoord coord_of(const Cell& cell, std::span<const std::string> labels)
@@ -80,12 +112,12 @@ namespace
     if (cell.pinned(Dim::Role))
         coord.structural_role = std::string{
             to_string(static_cast<StructuralRole>(cell.value[static_cast<std::size_t>(Dim::Role)]))};
-    // Diff-only differential axis (§4): a pinned LatencyShift slot renders its ordinal band. Never
-    // pinned in a stored cube (SHIFT_NONE ≡ kStar is the aggregated baseline), so a stored coord
-    // omits the key. The slot only ever holds Low/Med/High (NONE is the star, never pinned).
+    // Diff-only differential axis (§4): a pinned LatencyShift slot renders its SIGNED band
+    // ("up_high" / "down_low" …). Never pinned in a stored cube (SHIFT_NONE ≡ kStar is the aggregated
+    // baseline), so a stored coord omits the key. The slot only ever holds a signed band, never NONE.
     if (cell.pinned(Dim::LatencyShift))
-        coord.latency_shift = std::string{
-            to_string(static_cast<OrdinalShift>(cell.value[static_cast<std::size_t>(Dim::LatencyShift)]))};
+        coord.latency_shift =
+            signed_shift_label(cell.value[static_cast<std::size_t>(Dim::LatencyShift)]);
     return coord;
 }
 
@@ -547,10 +579,12 @@ void stamp_collapse(std::vector<CubeAxis>& axes, const CollapseState& state)
     return axes;
 }
 
-// The diff-only latency_shift differential-axis descriptor (cube_differential_axes.md §4): an
-// ORDINAL chain SHIFT_NONE < LOW < MED < HIGH — a degenerate tree, so monotone-compatible with the
-// emerging border, and collapse-compatible via the UP_TO band semantic. Appended to a cube_diff's
-// axes ONLY when a component shifted upward; a stored cube never carries it (it stays 3-D).
+// The diff-only latency_shift differential-axis descriptor (cube_differential_axes.md §4): a SIGNED
+// ordinal band, NONE-centered (down_HIGH … NONE … up_HIGH) — polarity-MUTE (up/down is a fact, the
+// good/bad reading lives in eidos). A degenerate chain, so monotone-compatible with the emerging
+// border, and collapse-compatible via the UP_TO band semantic. EMERGENT-AT-DIFF: no stored-cube
+// domain (never in reference_axes → compare-at-min never compares it diff-vs-state). Appended to a
+// cube_diff's axes ONLY when a component shifted (either direction); a stored cube never carries it.
 [[nodiscard]] CubeAxis latency_shift_axis()
 {
     return CubeAxis{.name = "latency_shift",
@@ -711,7 +745,7 @@ CubeCoord cube_location(std::optional<LogLevel> level, std::string_view componen
 
 std::optional<CubeDiffBlock>
 cube_diff_of(const CubeBlock& previous, const CubeBlock& current,
-             const std::unordered_map<std::string, OrdinalShift>& current_shift_by_component)
+             const std::unordered_map<std::string, OrdinalDrift>& current_shift_by_component)
 {
     // §C3 compare-at-min: two cubes at DIFFERENT collapse depths (one banded {TRACE,DEBUG}→DEBUG, the
     // other kept TRACE) cannot be compared at their native coords — read BOTH at the minimal common
@@ -728,11 +762,12 @@ cube_diff_of(const CubeBlock& previous, const CubeBlock& current,
 
     // The latency_shift differential axis (§4), diff-time only. The BASELINE projection is uniformly
     // SHIFT_NONE ≡ kStar, so prev is used as-is (its LatencyShift slot is never pinned). The CURRENT
-    // projection pins LatencyShift for a component that shifted UPWARD (≥LOW) — mapped by WHERE label
-    // through the shared dictionary. NONE is never pinned (it IS the star baseline), so a shifted
-    // component's WHERE-aggregate cell stays balanced across the diff (no spurious vanishing) while
-    // its (…, latency_shift=HIGH) cell EMERGES against the implicit all-NONE baseline. When the map is
-    // empty (no comparable ordinal data, or nothing shifted) this is a no-op → the plain 3-D border.
+    // projection pins LatencyShift to a SIGNED band for a component that shifted in EITHER direction
+    // (≥LOW, up or down) — mapped by WHERE label through the shared dictionary. NONE is never pinned
+    // (it IS the star baseline), so a shifted component's WHERE-aggregate cell stays balanced across
+    // the diff (no spurious vanishing) while its (…, latency_shift=up_HIGH / down_HIGH) cell EMERGES
+    // against the implicit all-NONE baseline. When the map is empty (no comparable ordinal data, or
+    // nothing shifted) this is a no-op → the plain 3-D border.
     BaseMultiset prev_remapped{remap_base(collapsed_base(prev_base, common), prev_dict, labels)};
     BaseMultiset cur_remapped{remap_base(collapsed_base(cur_base, common), cur_dict, labels)};
     const bool has_shift{!current_shift_by_component.empty()};
@@ -743,9 +778,9 @@ cube_diff_of(const CubeBlock& previous, const CubeBlock& current,
             if (where_id == kStar)
                 continue; // no component → no shift attribution
             const auto found{current_shift_by_component.find(labels[where_id])};
-            if (found != current_shift_by_component.end() && found->second != OrdinalShift::None)
+            if (found != current_shift_by_component.end() && found->second.shift != OrdinalShift::None)
                 row.first.value[static_cast<std::size_t>(Dim::LatencyShift)] =
-                    static_cast<std::uint32_t>(found->second);
+                    signed_shift_id(found->second.shift, found->second.direction);
         }
     const PopulatedCube cube_prev{populate(prev_remapped)};
     const PopulatedCube cube_cur{populate(cur_remapped)};

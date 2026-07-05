@@ -211,16 +211,21 @@ struct BaseRow
 // optional copies of the vector-owning cube types. [[msvc-port-stdlib-isms]])
 //
 // `current_shift_by_component` is the diff-time latency_shift dimension (cube_differential_axes.md
-// §4): a per-component upward (≥LOW) latency shift map the CALLER computes from the two documents'
-// ordinal histograms (metalog::diff). When NON-empty, the emerging border gains the 4th diff-only
-// axis — the CURRENT projection pins Dim::LatencyShift for a shifted component, the BASELINE stays
-// uniformly SHIFT_NONE (kStar) — and `axes` carries the ordinal latency_shift descriptor. When empty
-// (the default — no comparable ordinal data, or nothing shifted), the diff is the plain 3-D border,
-// byte-identical to before. NONE is never pinned (it IS the star baseline), so a shifted component's
-// aggregate cell is unchanged (no spurious vanishing) while its (…, latency_shift=HIGH) cell emerges.
+// §4): a per-component latency drift map the CALLER computes from the two documents' ordinal
+// histograms (metalog::diff). BIDIRECTIONAL and polarity-MUTE — the drift carries a magnitude AND a
+// direction (up/down); the CURRENT projection pins Dim::LatencyShift to a SIGNED band (up_* / down_*,
+// distinct value-ids) for a component that shifted EITHER way, and the BASELINE stays uniformly
+// SHIFT_NONE (kStar). So a cell leaving NONE in either direction emerges; up-cells and down-cells are
+// distinct cells; metalog judges neither good nor bad (the reading layer, eidos, maps up→regression,
+// down→recovery). The signed axis is a flat categorical axis to the border (each band a distinct
+// pinned value, kStar the aggregated NONE center) → the order-convex (lower,upper) border stays
+// monotone by the §A4 proof exactly as for level/role. latency_shift is EMERGENT-AT-DIFF: it has no
+// stored-cube domain (never in reference_axes, so compare-at-min — which reads only level/where off
+// the stored inputs — never compares it diff-vs-state). When empty (the default — no comparable
+// ordinal data, or nothing shifted), the diff is the plain 3-D border, byte-identical to before.
 [[nodiscard]] std::optional<CubeDiffBlock>
 cube_diff_of(const CubeBlock& previous, const CubeBlock& current,
-             const std::unordered_map<std::string, OrdinalShift>& current_shift_by_component = {});
+             const std::unordered_map<std::string, OrdinalDrift>& current_shift_by_component = {});
 
 // Compose two cube blocks (§16.7 / §12.1): the distributive counts merge, but the
 // closure does NOT — the merged cube is RE-CLOSED from the recovered base. nullopt

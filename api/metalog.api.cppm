@@ -345,11 +345,14 @@ struct CubeCoord
     std::optional<std::string> level;              // categorical: severity
     std::optional<std::vector<std::string>> where; // chain: WHERE prefix-path
     std::optional<std::string> structural_role;    // categorical: KIND-FRAMING marker
-    // Ordinal differential axis, DIFF-TIME ONLY (cube_differential_axes.md §4): the scale-relative
-    // latency (DurationLog2Ns) shift bucket ("low"|"med"|"high") a component's distribution crossed
-    // into. Present ONLY on a cube_diff emerging-border cell whose component shifted upward; ALWAYS
-    // absent on a stored cube cell (SHIFT_NONE is the aggregated baseline, never pinned). The wire
-    // object stays open over axis names — a stored coord omits it, unchanged.
+    // Ordinal differential axis, DIFF-TIME ONLY (cube_differential_axes.md §4): the scale-relative,
+    // SIGNED, polarity-MUTE latency (DurationLog2Ns) shift band a component's distribution crossed
+    // into — "up_low"|"up_med"|"up_high" (higher/slower) or "down_low"|"down_med"|"down_high"
+    // (lower/faster). The sign is oriented previous→current (read the MetaLogDiff previous/current
+    // stamp): up = current shifted higher than previous. metalog does NOT judge good/bad — the reading
+    // layer (eidos) maps up→regression, down→recovery. Present ONLY on a cube_diff emerging-border cell
+    // whose component shifted (either direction); ALWAYS absent on a stored cube cell (SHIFT_NONE is
+    // the aggregated baseline, never pinned) — the wire object stays open over axis names.
     std::optional<std::string> latency_shift;
     [[nodiscard]] bool operator==(const CubeCoord&) const noexcept = default;
 };

@@ -374,20 +374,26 @@ aggregate_duration_by_component(const MetaLogDocument& doc)
     return by_component;
 }
 
-// The per-component upward latency shift map the cube's diff-only latency_shift axis reads. For each
+// The per-component latency drift map the cube's diff-only latency_shift axis reads. For each
 // component present in BOTH windows with a comparable duration distribution, the exact W1 shift
-// bucket; kept ONLY when the shift is ≥LOW AND upward (a regression — mass moved UP the ladder,
-// §7.4 upward-only MECH). Recoveries and within-noise never enter the map (they are the SHIFT_NONE
-// baseline). Used for point lookup only (never iterated into content) → the unordered_map is not a
-// determinism surface; the (component → bucket) SET is a deterministic function of the inputs.
-[[nodiscard]] std::unordered_map<std::string, OrdinalShift>
+// bucket AND direction — BIDIRECTIONAL and polarity-MUTE (cube_differential_axes.md §7.4): a
+// component that moved in EITHER direction (up = higher/slower, down = lower/faster) is a shift
+// cell. metalog does NOT judge good/bad — the reading layer (eidos classify) maps the sign to
+// regression/recovery. Only within-noise (shift None) and the rare exactly-balanced case (direction
+// None) are dropped (no directional shift); those are the SHIFT_NONE baseline. Used for point lookup
+// only (never iterated into content) → the unordered_map is not a determinism surface; the
+// (component → drift) SET is a deterministic function of the inputs. The sign is oriented
+// previous→current (the MetaLogDiff previous/current stamp): up = current shifted higher than
+// previous, so diff(A,B) and diff(B,A) carry opposite signs — a consumer reads the order off the
+// serialized previous/current, not a call parameter.
+[[nodiscard]] std::unordered_map<std::string, OrdinalDrift>
 component_latency_shifts(const MetaLogDocument& previous, const MetaLogDocument& current)
 {
     const std::unordered_map<std::string, ComponentOrdinal> prev_by_component{
         aggregate_duration_by_component(previous)};
     const std::unordered_map<std::string, ComponentOrdinal> cur_by_component{
         aggregate_duration_by_component(current)};
-    std::unordered_map<std::string, OrdinalShift> shifts;
+    std::unordered_map<std::string, OrdinalDrift> shifts;
     for (const auto& [component, cur_agg] : cur_by_component)
     {
         const auto prev_it{prev_by_component.find(component)};
@@ -395,8 +401,8 @@ component_latency_shifts(const MetaLogDocument& previous, const MetaLogDocument&
             continue; // absent in baseline → no comparable distribution (no A-side to diff against)
         const OrdinalDrift drift{ordinal_w1(prev_it->second.counts, cur_agg.counts,
                                             prev_it->second.total, cur_agg.total)};
-        if (drift.shift != OrdinalShift::None && drift.direction == OrdinalDriftDirection::Up)
-            shifts.emplace(component, drift.shift);
+        if (drift.shift != OrdinalShift::None && drift.direction != OrdinalDriftDirection::None)
+            shifts.emplace(component, drift);
     }
     return shifts;
 }
@@ -451,7 +457,7 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
         // The diff-only latency_shift differential axis (§4): a per-component upward latency shift the
         // emerging border reads. Computed from the two documents' ordinal histograms (metalog owns the
         // ladder + W1); empty when neither carries comparable duration data → the plain 3-D border.
-        const std::unordered_map<std::string, OrdinalShift> latency_shifts{
+        const std::unordered_map<std::string, OrdinalDrift> latency_shifts{
             component_latency_shifts(previous, current)};
         if (auto cube_diff{cube::cube_diff_of(previous.cube, current.cube, latency_shifts)})
         {
