@@ -507,11 +507,48 @@ void stamp_collapse(std::vector<CubeAxis>& axes, const CollapseState& state)
     }
 }
 
-// Build the closed cube, then BOUND it: closure-first, collapse-if-over-budget, re-close, iterate.
-[[nodiscard]] CubeBlock build_bounded_cube(const BaseMultiset& base, std::span<const std::string> labels)
+// Read the collapse state back off a cube's axes (the inverse of stamp_collapse). Absent
+// band_floor ⇒ no LEVEL banding; the WHERE floor_depth defaults to the full depth-1 chain.
+[[nodiscard]] CollapseState collapse_state_of(std::span<const CubeAxis> axes) noexcept
 {
     CollapseState state{};
-    CubeBlock cube{close_and_emit(base, labels)};
+    for (const CubeAxis& axis : axes)
+    {
+        if (axis.name == "level" && axis.band_floor)
+            state.level_band_floor = *axis.band_floor;
+        if (axis.name == "where" && axis.floor_depth)
+            state.where_depth = *axis.floor_depth;
+    }
+    return state;
+}
+
+// The MINIMAL COMMON collapse of a pair (§C3 compare-at-min): the COARSER on each axis — the most
+// banding (max level_band_floor) and the shallowest WHERE (min where_depth). Coarsening is monotone,
+// so this is the finest granularity BOTH cubes can be read at without one manufacturing a distinction
+// the other collapsed away (a cube that kept TRACE vs one that folded it into DEBUG → read both at
+// DEBUG). A no-op when the two already share a collapse (the common case).
+[[nodiscard]] CollapseState min_common_collapse(const CollapseState& lhs, const CollapseState& rhs) noexcept
+{
+    return {std::max(lhs.level_band_floor, rhs.level_band_floor),
+            std::min(lhs.where_depth, rhs.where_depth)};
+}
+
+// The reference axes stamped with a collapse depth (for a diff/compose result read at that depth).
+[[nodiscard]] std::vector<CubeAxis> collapsed_axes(const CollapseState& state)
+{
+    std::vector<CubeAxis> axes{reference_axes()};
+    stamp_collapse(axes, state);
+    return axes;
+}
+
+// Build the closed cube, then BOUND it: closure-first, collapse-if-over-budget, re-close, iterate.
+// `initial` seeds the collapse depth (default none for a raw window; compose seeds the min common
+// collapse so the merge is never finer than its coarsest member, §C3).
+[[nodiscard]] CubeBlock build_bounded_cube(const BaseMultiset& base, std::span<const std::string> labels,
+                                           CollapseState initial = {})
+{
+    CollapseState state{initial};
+    CubeBlock cube{close_and_emit(collapsed_base(base, state), labels)};
     while (cube.cell_count > kCubeCellBudget)
     {
         const std::optional<CollapseState> next{
@@ -655,20 +692,25 @@ CubeCoord cube_location(std::optional<LogLevel> level, std::string_view componen
 
 std::optional<CubeDiffBlock> cube_diff_of(const CubeBlock& previous, const CubeBlock& current)
 {
-    // §13.6 comparability gate: emit only when the axes match. The "both documents carried a
-    // cube" presence-check is the CALLER's (metalog::diff gates on has_cube) — this helper takes
-    // CubeBlock by ref and owns only the axes-equality gate.
-    if (previous.axes != current.axes)
-        return std::nullopt;
-
+    // §C3 compare-at-min: two cubes at DIFFERENT collapse depths (one banded {TRACE,DEBUG}→DEBUG, the
+    // other kept TRACE) cannot be compared at their native coords — read BOTH at the minimal common
+    // collapse depth of the pair (the coarser on each axis). Each stored cube keeps its native
+    // resolution for its other comparisons; this projects into FRESH coarse bases (no mutation, no
+    // re-closure of the stored cube). At equal collapse (the common case) `common` is a no-op and this
+    // is the direct diff. The "both documents carried a cube" presence-check is the CALLER's
+    // (metalog::diff gates on has_cube).
+    const CollapseState common{
+        min_common_collapse(collapse_state_of(previous.axes), collapse_state_of(current.axes))};
     const auto [prev_base, prev_dict]{interned_base_of(previous)};
     const auto [cur_base, cur_dict]{interned_base_of(current)};
     const std::vector<std::string> labels{merge_dicts(prev_dict, cur_dict)};
-    const PopulatedCube cube_prev{populate(remap_base(prev_base, prev_dict, labels))};
-    const PopulatedCube cube_cur{populate(remap_base(cur_base, cur_dict, labels))};
+    const PopulatedCube cube_prev{
+        populate(remap_base(collapsed_base(prev_base, common), prev_dict, labels))};
+    const PopulatedCube cube_cur{
+        populate(remap_base(collapsed_base(cur_base, common), cur_dict, labels))};
 
     CubeDiffBlock diff;
-    diff.axes = previous.axes;
+    diff.axes = collapsed_axes(common);
     // emerging: appeared (anti = prev, monotone = cur). vanishing: the dual via the role
     // swap (anti = cur, monotone = prev) — same predicate, count_cur ≤ θ_was ∧ count_prev ≥ θ_now.
     CubeBorder emerging{border_of(cube_prev, cube_cur, cube_prev, cube_cur, labels)};
@@ -688,11 +730,14 @@ std::optional<CubeDiffBlock> cube_diff_of(const CubeBlock& previous, const CubeB
 
 std::optional<CubeBlock> compose_cubes(const CubeBlock& lhs, const CubeBlock& rhs)
 {
-    // §12.1: re-closed, not merged cell-by-cell. Axes-mismatch → omit. The "both present, else
-    // omit (§16.7)" presence-check is the CALLER's (metalog::compose) — takes CubeBlock by ref.
-    if (lhs.axes != rhs.axes)
-        return std::nullopt;
-
+    // §12.1 + §C3 compose = MERGE: re-closed, not merged cell-by-cell, and rolled to the min common
+    // collapse (a composed cube is as precise as its COARSEST member — a member banded to DEBUG pulls
+    // the whole compose to DEBUG). Sum the two native bases; build_bounded_cube seeded at `common`
+    // coarsens the merge to that depth, re-closes, and bounds it further if the merge itself explodes.
+    // The surjection distributes over the base sum, so sum-then-coarsen ≡ coarsen-then-sum. The "both
+    // present, else omit (§16.7)" presence-check is the CALLER's (metalog::compose).
+    const CollapseState common{
+        min_common_collapse(collapse_state_of(lhs.axes), collapse_state_of(rhs.axes))};
     const auto [lhs_base, lhs_dict]{interned_base_of(lhs)};
     const auto [rhs_base, rhs_dict]{interned_base_of(rhs)};
     const std::vector<std::string> labels{merge_dicts(lhs_dict, rhs_dict)};
@@ -702,8 +747,7 @@ std::optional<CubeBlock> compose_cubes(const CubeBlock& lhs, const CubeBlock& rh
     events.reserve(lhs_remapped.size() + rhs_remapped.size());
     events.insert(events.end(), lhs_remapped.begin(), lhs_remapped.end());
     events.insert(events.end(), rhs_remapped.begin(), rhs_remapped.end());
-    // sort-reduce sums the two operands' counts on coincident cells (the old merged[cell] += count).
-    return close_and_emit(sort_reduce_base(std::move(events)), labels); // re-closes AND retains base
+    return build_bounded_cube(sort_reduce_base(std::move(events)), labels, common);
 }
 
 } // namespace insight::metalog::cube

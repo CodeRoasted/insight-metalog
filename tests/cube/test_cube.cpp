@@ -133,6 +133,54 @@ TEST(CubeCollapse, GuardrailBoundsAnExplodingWindowByLevelBanding)
     EXPECT_EQ(doc.cube, build().cube) << "the collapse policy must be deterministic (F5-M8)";
 }
 
+// Compare-at-min (§C3): two cubes at DIFFERENT collapse depths MUST still diff — a window that kept
+// TRACE cannot be compared to one that banded {Trace,Debug}→Debug at native coords, so both are read
+// at the minimal common depth (the coarser). Without it the diff would VANISH on axis mismatch —
+// losing attribution at exactly the collapse transition. This proves it produces a diff at band_floor=2.
+TEST(CubeCollapse, CompareAtMinDiffsAcrossDifferentCollapseDepths)
+{
+    const auto t0{std::chrono::system_clock::time_point{}};
+    const auto t1{t0 + std::chrono::seconds{60}};
+
+    // previous: a small window — NO collapse, keeps TRACE and DEBUG as distinct levels on "auth".
+    meta::MetaLogEngine prev_engine{cube_cfg()};
+    prev_engine.open_window(t0);
+    for (int i = 0; i < 3; ++i)
+    {
+        prev_engine.ingest_event(ev("t", LogLevel::Trace, "auth"));
+        prev_engine.ingest_event(ev("t", LogLevel::Debug, "auth"));
+    }
+    const auto prev{prev_engine.close_window(t1)};
+
+    // current: the 1500-component explosion → LEVEL-banded {Trace,Debug}→Debug (band_floor=2).
+    static std::vector<std::string> comps;
+    if (comps.empty())
+        for (int i = 0; i < 1500; ++i)
+            comps.push_back("svc_" + std::to_string(i));
+    meta::MetaLogEngine cur_engine{cube_cfg()};
+    cur_engine.open_window(t0);
+    for (const auto& comp : comps)
+    {
+        cur_engine.ingest_event(ev("t", LogLevel::Trace, comp));
+        cur_engine.ingest_event(ev("t", LogLevel::Debug, comp));
+    }
+    const auto cur{cur_engine.close_window(t1)};
+
+    // The native axes DIFFER (prev: no band_floor; cur: band_floor=2). Compare-at-min reads BOTH at
+    // the common band_floor=2 → the diff EXISTS (it would vanish under a bare axes-equality gate).
+    const auto delta{meta::diff(prev, cur)};
+    ASSERT_TRUE(delta.has_cube_diff)
+        << "compare-at-min must diff across different collapse depths, not vanish on axis mismatch";
+    std::optional<std::uint32_t> band;
+    for (const auto& axis : delta.cube_diff.axes)
+        if (axis.name == "level")
+            band = axis.band_floor;
+    EXPECT_EQ(band.value_or(0U), 2U) << "the diff is read at the minimal common depth (band_floor=2)";
+    // Determinism: the compare-at-min projection is a pure function of content.
+    EXPECT_EQ(meta::diff(prev, cur).cube_diff, delta.cube_diff)
+        << "compare-at-min must be deterministic";
+}
+
 // ── §13 cardinality monitor (the PURE compute; the eidos pipeline emits the WARN) ───────────────
 
 TEST(CubeCardinality, CountsDistinctPerAxisFromTheClosedCube)
