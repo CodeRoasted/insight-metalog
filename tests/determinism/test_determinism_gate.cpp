@@ -230,6 +230,14 @@ TEST(DeterminismGate, AlwaysOnDocumentByteIdentityGolden)
     EXPECT_EQ(doc1.acquisition->distinct_components, 4U) << "auth, db, alpha, zebra";
     EXPECT_EQ(doc2.acquisition->records_with_component, 11U) << "6 auth + 5 db (all located)";
     EXPECT_EQ(doc2.acquisition->distinct_components, 2U) << "auth, db";
+    // Dimension-metadata (Piece 2): the collapse guardrail's raw trigger inputs.
+    EXPECT_EQ(doc1.acquisition->where_cardinality_per_depth,
+              (std::vector<std::uint64_t>{doc1.acquisition->distinct_components}))
+        << "depth-1 WHERE tree → one per-depth entry == distinct_components";
+    EXPECT_EQ(doc1.acquisition->closed_cells, doc1.cube.cell_count)
+        << "P_closed == the closed cube's cell count";
+    EXPECT_GT(doc1.acquisition->dimension_product, 0U)
+        << "∏|dimᵢ| = level × component × role distinct (> 0 on a non-empty window)";
     std::set<std::string> labels;
     for (const auto& entry : doc1.stats.top_k)
         if (entry.dominant_component) labels.insert(*entry.dominant_component);

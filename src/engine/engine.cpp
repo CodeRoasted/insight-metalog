@@ -1064,6 +1064,23 @@ void MetaLogEngine::build_acquisition(MetaLogDocument& doc) const
             distinct.insert(component);
         }
     acquisition.distinct_components = distinct.size();
+
+    // WHERE-tree distinct-cardinality-per-depth (§6.1.1): the WHERE axis is a single depth-1
+    // chain today, so the per-depth vector is [distinct_components] (coarsest == finest). It
+    // grows once the WHERE tree deepens; the collapse reads it to pick a truncation depth.
+    acquisition.where_cardinality_per_depth.push_back(acquisition.distinct_components);
+
+    // Joint cube quantities, read off the closed cube (build_cube ran first): P_closed and
+    // ∏|dimᵢ| — the per-window collapse guardrail's trigger inputs (§C3). Pure integer, order-
+    // independent (a set-cardinality / a product), so bit-identical cross-stdlib (§16.9).
+    const CubeCardinalityStat card{cube_cardinality(doc.cube)};
+    acquisition.closed_cells = card.cells;
+    acquisition.dimension_product =
+        static_cast<std::uint64_t>(
+            card.per_axis[static_cast<std::size_t>(CardinalityAxis::Level)]) *
+        card.per_axis[static_cast<std::size_t>(CardinalityAxis::Component)] *
+        card.per_axis[static_cast<std::size_t>(CardinalityAxis::Role)];
+
     doc.acquisition = acquisition;
 }
 
