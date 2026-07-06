@@ -180,7 +180,7 @@ for ctag in "${builds[@]}"; do
   for f in $CORPUS; do echo "### $(basename "$f") ###" >>"$WORK/$ctag.out"; "${BIN[$ctag]}" "$f" >>"$WORK/$ctag.out" 2>/dev/null; done
   echo "### --reservoir-nearfull (F5-M8 synthetic M=128) ###" >>"$WORK/$ctag.out"
   "${BIN[$ctag]}" --reservoir-nearfull >>"$WORK/$ctag.out" 2>/dev/null
-  echo "### --cube-collapse (§C3 dimensional-collapse guardrail) ###" >>"$WORK/$ctag.out"
+  echo "### --cube-collapse (SecC3 dimensional-collapse guardrail) ###" >>"$WORK/$ctag.out"
   "${BIN[$ctag]}" --cube-collapse >>"$WORK/$ctag.out" 2>/dev/null
 done
 rc=0; ref="${builds[0]}"
