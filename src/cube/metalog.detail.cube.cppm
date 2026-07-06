@@ -43,9 +43,10 @@ enum class Dim : std::uint8_t
     Where = 1,
     Role = 2,
     // Diff-only differential dimension (§4). Uniformly kStar in a stored cube; pinned in cube_diff
-    // only for a component whose latency (DurationLog2Ns) distribution shifted upward (≥LOW). The
-    // A-side (baseline) projection is uniformly SHIFT_NONE ≡ kStar, so a NONE→≥LOW crossing is an
-    // ordinary Emerging-Border emergence with the shift as a 4th diff-only axis.
+    // for a component whose latency (DurationLog2Ns) distribution shifted in EITHER direction (≥LOW)
+    // — a SIGNED, polarity-mute band (up_* / down_*, §7.4). The A-side (baseline) projection is
+    // uniformly SHIFT_NONE ≡ kStar, so a NONE→≥LOW crossing is an ordinary Emerging-Border emergence
+    // with the shift as a 4th diff-only axis.
     LatencyShift = 3,
 };
 

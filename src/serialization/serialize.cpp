@@ -137,8 +137,8 @@ struct CubeCoord
     std::optional<std::vector<std::string>> where;
     std::optional<std::string> structural_role;
     // Diff-only ordinal differential axis (cube_differential_axes.md §4); present only on a
-    // cube_diff border cell whose component shifted upward, absent on a stored cell (skip_null_members
-    // omits it — the wire object stays open over axis names).
+    // cube_diff border cell whose component shifted in either direction (a signed up_*/down_* band),
+    // absent on a stored cell (skip_null_members omits it — the wire object stays open over axis names).
     std::optional<std::string> latency_shift;
 };
 

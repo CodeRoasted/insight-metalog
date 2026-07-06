@@ -105,7 +105,8 @@ enum class OrdinalShift : std::uint8_t
 // Which way mass moved along the ladder. Metalog reports the raw, semantics-free direction; the
 // eidos diff owns the operator-facing regression/recovery Polarity (Up = higher values = slower /
 // larger = worse; Down = faster / smaller = better), and the Attribution Cube's latency_shift axis
-// emerges on Up only (the upward-only MECH default, cube_differential_axes.md §7.4).
+// emerges on EITHER direction as a signed, polarity-mute band (up_* / down_*, distinct bands;
+// metalog reports the fact, the reading stays in eidos — cube_differential_axes.md §7.4).
 enum class OrdinalDriftDirection : std::uint8_t
 {
     None = 0, // neutral (no net movement)

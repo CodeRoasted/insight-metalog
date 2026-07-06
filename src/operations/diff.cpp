@@ -454,9 +454,10 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
     // MetaLogDocument::cube to bool+value does not apply to it.
     if (previous.has_cube && current.has_cube)
     {
-        // The diff-only latency_shift differential axis (§4): a per-component upward latency shift the
-        // emerging border reads. Computed from the two documents' ordinal histograms (metalog owns the
-        // ladder + W1); empty when neither carries comparable duration data → the plain 3-D border.
+        // The diff-only latency_shift differential axis (§4): a per-component SIGNED latency shift (up or
+        // down, polarity-mute) the emerging border reads. Computed from the two documents' ordinal
+        // histograms (metalog owns the ladder + W1); empty when neither carries comparable duration
+        // data → the plain 3-D border.
         const std::unordered_map<std::string, OrdinalDrift> latency_shifts{
             component_latency_shifts(previous, current)};
         if (auto cube_diff{cube::cube_diff_of(previous.cube, current.cube, latency_shifts)})
