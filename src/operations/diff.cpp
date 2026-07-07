@@ -348,6 +348,24 @@ struct ComponentOrdinal
 {
     std::vector<std::uint64_t> counts;
     std::uint64_t total{0};
+
+    // Thin-sample admissibility floor (§6.1.1). ordinal_w1's octave thresholds are scale-relative
+    // (W1 = numerator/(Na·Nb)), so they apply NO absolute-sample gate — a 1-event-vs-1-event
+    // pairing manufactures latency_shift=HIGH from a single differing bin. A shift verdict is
+    // trustworthy only when BOTH sides carry at least this many paired events. This is an ABSOLUTE
+    // count (not a ratio like kCoverFloor): the ratio-normalization is exactly what lets tiny
+    // samples read HIGH, so what is missing is a floor on N, not another ratio.
+    //
+    // CORPUS-PICKED (pre-registered, then FROZEN — studies/003): a resampling scan draws matched
+    // NULL pairs (both sides from the SAME representative log2-duration shape — no real shift) at a
+    // grid of sample sizes and measures the false-ACTIONABLE rate (MED ≥2 octaves / HIGH ≥5 — the
+    // bands a consumer acts on; the LOW ½-octave band is sampling-noise-dominated and accepted as
+    // noise-adjacent). The binding shape is a bimodal cache (hit/miss): its null false-actionable
+    // rate is 5.4% at N=16, 1.8% at N=24, 0.6% at N=32. 32 is chosen over the razor-thin 24 for a
+    // ~3× margin under the 2% target (a frozen guard at 1.8% would flake across seeds), and a real
+    // +3-octave (8×) latency_multiplier regression still emerges >97% of the time at N=32 (the
+    // positive control). Frozen here; the scan + both guards are test_shift_sample_floor.cpp.
+    static constexpr std::uint64_t kShiftSampleFloor{32};
 };
 
 [[nodiscard]] std::unordered_map<std::string, ComponentOrdinal>
@@ -399,6 +417,14 @@ component_latency_shifts(const MetaLogDocument& previous, const MetaLogDocument&
         const auto prev_it{prev_by_component.find(component)};
         if (prev_it == prev_by_component.end())
             continue; // absent in baseline → no comparable distribution (no A-side to diff against)
+        // Thin-sample floor (§6.1.1): a shift verdict needs enough paired events to be trustworthy.
+        // Below the floor the axis is INADMISSIBLE for this window — we skip the component, leaving
+        // it on the SHIFT_NONE ≡ kStar mute baseline. On this emergent-at-diff axis "cannot carry
+        // the axis" and "no cell emerges" coincide by construction (project-to-*), so the skip IS
+        // the projection — never a manufactured SHIFT_NONE cell. This is the ONLY shift
+        // border-emitter, so single-definition holds without a shared predicate.
+        if (std::min(prev_it->second.total, cur_agg.total) < ComponentOrdinal::kShiftSampleFloor)
+            continue;
         const OrdinalDrift drift{ordinal_w1(prev_it->second.counts, cur_agg.counts,
                                             prev_it->second.total, cur_agg.total)};
         if (drift.shift != OrdinalShift::None && drift.direction != OrdinalDriftDirection::None)

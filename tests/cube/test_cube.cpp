@@ -701,7 +701,9 @@ constexpr std::int64_t kMsToNs{1'000'000}; // DurationLog2Ns schedule is nanosec
 // 100 ms → 1e8 ns → bin 26; 100 s → 1e11 ns → bin 36. A 10-octave move ⇒ W1 HIGH bucket.
 constexpr std::int64_t kLowLatencyMs{100};
 constexpr std::int64_t kHighLatencyMs{100'000};
-constexpr int kComponentCount{6};
+// Must clear the diff's thin-sample floor (ComponentOrdinal::kShiftSampleFloor = 32) so a real
+// shift is ADMISSIBLE: below it the latency_shift axis is (correctly) projected to * as untrustworthy.
+constexpr int kComponentCount{40};
 
 // cube_cfg() + ordinal histograms enabled (the same-as-param batch gate) + a shared processing
 // contract so diff() never trips the §2.4 comparability gate.
@@ -947,6 +949,41 @@ TEST(CubeDiffLatencyShift, SwapFlipsSignMuteSymmetry)
     EXPECT_EQ(magnitude_suffix(up_band), magnitude_suffix(down_band))
         << "polarity-MUTE: the two directions must carry the SAME magnitude band — only the "
            "sign differs. up=" << up_band << " down=" << down_band;
+}
+
+// Thin-sample floor (§6.1.1) — the DUAL of DriftUpEmergesUpShiftCell: the SAME real 10-octave
+// move, but only 8 paired events (below ComponentOrdinal::kShiftSampleFloor = 32). ordinal_w1's
+// thresholds are scale-relative, so without the floor 8-vs-8 would manufacture up_high; WITH it the
+// axis is INADMISSIBLE and projected to * — no latency_shift axis, no shift cell. The declared error
+// model: a thin window cannot carry the axis, so it says "unknown", never a manufactured verdict.
+TEST(CubeDiffLatencyShift, ThinSampleProjectsShiftAxisToStar)
+{
+    constexpr int kThinCount{8}; // < kShiftSampleFloor (32)
+    meta::MetaLogEngine engine{latency_cfg()};
+    const std::chrono::system_clock::time_point t0{};
+    const auto t1{t0 + std::chrono::seconds{60}};
+    const auto t2{t0 + std::chrono::seconds{120}};
+
+    engine.open_window(t0);
+    ingest_latency(engine, "charge card <*>", LogLevel::Info, "payments", kLowLatencyMs, kThinCount);
+    for (int i = 0; i < kThinCount; ++i)
+        engine.ingest_event(ev("auth ok", LogLevel::Info, "auth"));
+    const auto prev{engine.close_window(t1)};
+
+    engine.open_window(t1);
+    ingest_latency(engine, "charge card <*>", LogLevel::Info, "payments", kHighLatencyMs, kThinCount);
+    for (int i = 0; i < kThinCount; ++i)
+        engine.ingest_event(ev("auth ok", LogLevel::Info, "auth"));
+    const auto cur{engine.close_window(t2)};
+
+    const auto diff{meta::diff(prev, cur)};
+    EXPECT_FALSE(has_latency_shift_axis(diff.cube_diff))
+        << "a thin (<32-event) pairing must not declare the latency_shift axis — even though the "
+           "underlying latency really moved 10 octaves, the sample is too thin to trust\n"
+        << shift_dump(diff.cube_diff);
+    EXPECT_EQ(find_shift_cell(diff.cube_diff, "payments"), nullptr)
+        << "no shift cell may be manufactured from a below-floor sample\n"
+        << shift_dump(diff.cube_diff);
 }
 
 // NOLINTEND
