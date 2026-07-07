@@ -407,6 +407,92 @@ component_latency_shifts(const MetaLogDocument& previous, const MetaLogDocument&
     return shifts;
 }
 
+// ── reservoir delta (§5.3) ─────────────────────────────────────
+// The ERROR/FATAL failure frontier. A template is "in failure" iff its dominant_level is
+// Error or Fatal — Unknown sorts above Fatal numerically but is NOT a failure, so this is
+// an explicit membership test, never a `>= Error` compare.
+[[nodiscard]] constexpr bool is_failure_level(std::optional<LogLevel> level) noexcept
+{
+    return level == LogLevel::Error || level == LogLevel::Fatal;
+}
+
+// A document's salience memory = the template_ids of top_k ∪ reservoir with the
+// dominant_level each carries. Disjoint by construction (a reservoir template did not make
+// top_k), so no key collision. POINT-LOOKUP map only (membership + frontier level compare);
+// never iterated into output, so the unordered_map is not a determinism surface (F5-M8),
+// exactly like component_latency_shifts above.
+[[nodiscard]] std::unordered_map<TemplateId, std::optional<LogLevel>>
+salience_memory_levels(const MetaLogDocument& doc)
+{
+    std::unordered_map<TemplateId, std::optional<LogLevel>> level_of;
+    level_of.reserve(doc.stats.top_k.size() + doc.stats.reservoir.size());
+    for (const auto& entry : doc.stats.top_k)
+        level_of.emplace(entry.template_id, entry.dominant_level);
+    for (const auto& entry : doc.stats.reservoir)
+        level_of.emplace(entry.template_id, entry.dominant_level);
+    return level_of;
+}
+
+[[nodiscard]] ReservoirDeltaEntry reservoir_snapshot(const ReservoirEntry& entry)
+{
+    return ReservoirDeltaEntry{.template_id = entry.template_id,
+                               .dominant_level = entry.dominant_level,
+                               .structural_role = entry.structural_role,
+                               .salience = entry.salience,
+                               .count = entry.count};
+}
+
+// The §5.3 reservoir delta: new/vanished rare-salient templates over the two documents'
+// salience memory + ERROR/FATAL failure-frontier crossings. Additive on the derived diff
+// (no version bump). Every list is emitted sorted by template_id — the ONLY output order,
+// so the unordered_map membership lookups never leak (F5-M8).
+void diff_reservoir_delta(MetaLogDiff& out, const MetaLogDocument& previous,
+                          const MetaLogDocument& current)
+{
+    const std::unordered_map<TemplateId, std::optional<LogLevel>> prev_levels{
+        salience_memory_levels(previous)};
+    const std::unordered_map<TemplateId, std::optional<LogLevel>> cur_levels{
+        salience_memory_levels(current)};
+    ReservoirDelta& delta{out.reservoir_delta};
+
+    // new_salient: current.reservoir entries absent from previous.(top_k ∪ reservoir).
+    for (const auto& entry : current.stats.reservoir)
+        if (!prev_levels.contains(entry.template_id))
+            delta.new_salient.push_back(reservoir_snapshot(entry));
+
+    // vanished_salient: previous.reservoir entries absent from current.(top_k ∪ reservoir).
+    for (const auto& entry : previous.stats.reservoir)
+        if (!cur_levels.contains(entry.template_id))
+            delta.vanished_salient.push_back(reservoir_snapshot(entry));
+
+    // frontier_crossings: templates in BOTH memories whose dominant_level crosses the
+    // failure frontier (a change in failure-membership). Direction is oriented
+    // previous→current: Up = crossed INTO failure, Down = crossed OUT.
+    for (const auto& [template_id, cur_level] : cur_levels)
+    {
+        const auto prev_it{prev_levels.find(template_id)};
+        if (prev_it == prev_levels.end())
+            continue; // not on both sides → not a crossing (it is a new/vanished member)
+        const std::optional<LogLevel> prev_level{prev_it->second};
+        if (is_failure_level(prev_level) == is_failure_level(cur_level))
+            continue; // failure-membership unchanged → no crossing
+        delta.frontier_crossings.push_back(
+            FrontierCrossing{.template_id = template_id,
+                             .direction = is_failure_level(cur_level) ? FrontierDirection::Up
+                                                                      : FrontierDirection::Down,
+                             .previous_level = prev_level,
+                             .current_level = cur_level});
+    }
+
+    const auto by_entry_id{[](const ReservoirDeltaEntry& lhs, const ReservoirDeltaEntry& rhs)
+                           { return lhs.template_id < rhs.template_id; }};
+    const auto by_crossing_id{[](const FrontierCrossing& lhs, const FrontierCrossing& rhs)
+                              { return lhs.template_id < rhs.template_id; }};
+    std::ranges::sort(delta.new_salient, by_entry_id);
+    std::ranges::sort(delta.vanished_salient, by_entry_id);
+    std::ranges::sort(delta.frontier_crossings, by_crossing_id);
+}
+
 } // namespace
 
 MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current)
@@ -445,6 +531,7 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
     diff_field_histogram_deltas(out, previous, current);
     diff_ordinal_histogram_deltas(out, previous, current); // W1 (§4A.4 D-W1-1/4)
     diff_tail_delta(out, previous, current);
+    diff_reservoir_delta(out, previous, current); // §5.3 chronic-vs-new streaming seam
     // SPEC §13.6 cube_diff — the emerging border. Emitted only when both documents
     // carried a cube and their axes match (the §2.4 gate above already ensures equal
     // canonicalization_version, under which the axes are frozen identical).

@@ -1077,6 +1077,68 @@ struct CubeDiffBlock
     [[nodiscard]] bool operator==(const CubeDiffBlock&) const noexcept = default;
 };
 
+// ── reservoir delta (§5.3) — the streaming chronic-vs-new consumption seam ──
+// Direction of an ERROR/FATAL failure-frontier crossing, oriented previous→current
+// (the MetaLogDiff previous/current stamp). SIGNED but POLARITY-MUTE: metalog records
+// which way a template's dominant_level moved across the failure frontier; the
+// escalation (up) / recovery (down) READING is the consumer's — the latency_shift
+// discipline (cube_differential_axes.md §7.4). Never a good/bad verdict here.
+enum class FrontierDirection : std::uint8_t
+{
+    Up,  // crossed INTO the failure band (…→ Error/Fatal)
+    Down // crossed OUT of the failure band (Error/Fatal →…)
+};
+
+// One rare-salient template on the reservoir-delta membership boundary. The snapshot
+// carried is the entry as it stands on the side that OWNS it: the current-window entry
+// for new_salient, the previous-window entry for vanished_salient. Both draw from a
+// document's RESERVOIR (which carries salience + structural_role), so all five fields
+// are populated.
+struct ReservoirDeltaEntry
+{
+    TemplateId template_id;
+    std::optional<LogLevel> dominant_level;
+    StructuralRole structural_role{StructuralRole::None};
+    std::uint32_t salience{0};
+    std::uint64_t count{0};
+    [[nodiscard]] bool operator==(const ReservoirDeltaEntry&) const noexcept = default;
+};
+
+// One failure-frontier crossing: a template present in BOTH sides' salience memory
+// whose dominant_level crosses the ERROR/FATAL frontier. Carries both levels so the
+// consumer can attribute the crossing without re-reading the documents.
+struct FrontierCrossing
+{
+    TemplateId template_id;
+    FrontierDirection direction;
+    std::optional<LogLevel> previous_level;
+    std::optional<LogLevel> current_level;
+    [[nodiscard]] bool operator==(const FrontierCrossing&) const noexcept = default;
+};
+
+// The §5.3 reservoir delta over the two documents' salience memory (top_k ∪ reservoir):
+//   * new_salient      — in current.reservoir, absent from previous.(top_k ∪ reservoir).
+//   * vanished_salient — in previous.reservoir, absent from current.(top_k ∪ reservoir).
+//   * frontier_crossings — on BOTH sides' memory, dominant_level crossing the failure frontier.
+// Every list is keyed and sorted by template_id (the canonical key; TemplateId's defaulted
+// byte-order). Set-difference + integer level compares over membership that is already
+// deterministic content (F5-M8) — no unordered iteration order may leak into any output.
+// The reading discipline (who reads which member) is the consumer's, not the producer's:
+// new_salient + frontier_crossings are the STREAMING members (read on the anchored
+// per-scale diffs); vanished_salient is the BATCH member — a streaming consumer MUST NOT
+// alert on it (rarity IS intermittency; §5.3).
+struct ReservoirDelta
+{
+    std::vector<ReservoirDeltaEntry> new_salient;
+    std::vector<ReservoirDeltaEntry> vanished_salient;
+    std::vector<FrontierCrossing> frontier_crossings;
+    [[nodiscard]] bool empty() const noexcept
+    {
+        return new_salient.empty() && vanished_salient.empty() && frontier_crossings.empty();
+    }
+    [[nodiscard]] bool operator==(const ReservoirDelta&) const noexcept = default;
+};
+
 struct MetaLogDiff
 {
     std::string diff_version{"0.6.0"};
@@ -1109,6 +1171,16 @@ struct MetaLogDiff
     // MetaLogDocument::cube.
     bool has_cube_diff{false};
     CubeDiffBlock cube_diff{};
+    // §5.3 reservoir delta. Additive on the DERIVED diff → NO diff_version /
+    // canonicalization_version bump (the latency_shift derived-not-compared precedent,
+    // [[additive-gated-metalog-block-keeps-wire-version]]). Inline value, NOT a
+    // presence-bool pair and NOT std::optional: emptiness IS absence here (all three
+    // lists empty ⇒ the block is omitted from JSON — reservoir_delta.empty()), so a
+    // separate has_ flag would be redundant state to keep in sync. Inline (not
+    // std::optional<ReservoirDelta>) also sidesteps the MSVC consumer-synthesis bug that
+    // drove cube_diff to bool+value — detection holds std::optional<MetaLogDiff>, but an
+    // inline vector-owning member copies soundly where a synthesized optional would not.
+    ReservoirDelta reservoir_delta{};
 };
 
 } // namespace insight::metalog

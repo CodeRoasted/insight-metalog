@@ -343,6 +343,39 @@ struct CubeDiff
     std::optional<CubeBorder> emerging;
     std::optional<CubeBorder> vanishing;
 };
+
+// Reservoir delta (§5.3). A new/vanished rare-salient template snapshot: why it was
+// kept (salience) + how loud (count) + its severity/role bands. Field names == JSON
+// keys (glaze reflection); skip_null_members omits an absent level/role.
+struct ReservoirDeltaEntry
+{
+    std::string template_id;
+    std::optional<std::string> level;           // omit when absent
+    std::optional<std::string> structural_role; // omit when None
+    std::uint32_t salience{0};
+    std::uint64_t count{0};
+};
+
+// One ERROR/FATAL failure-frontier crossing. direction is "up" (crossed into failure)
+// or "down" (crossed out) — SIGNED, polarity-mute (the escalation/recovery reading is
+// the consumer's).
+struct FrontierCrossing
+{
+    std::string template_id;
+    std::string direction;
+    std::optional<std::string> previous_level;
+    std::optional<std::string> current_level;
+};
+
+// Each list omitted when empty; the whole block is omitted upstream when all three are
+// (emptiness-as-absence, §5.3).
+struct ReservoirDelta
+{
+    std::optional<std::vector<ReservoirDeltaEntry>> new_salient;
+    std::optional<std::vector<ReservoirDeltaEntry>> vanished_salient;
+    std::optional<std::vector<FrontierCrossing>> frontier_crossings;
+};
+
 struct DocRef
 {
     ProvenanceWindow window;
@@ -410,7 +443,8 @@ struct Diff
     std::optional<std::vector<BranchingDelta>> branching_delta;
     std::optional<NGramDelta> ngram_delta;
     std::optional<TailDelta> tail_delta;
-    std::optional<CubeDiff> cube_diff; // §13.6 emerging-border cube diff; omit when absent
+    std::optional<CubeDiff> cube_diff;             // §13.6 emerging-border cube diff; omit when absent
+    std::optional<ReservoirDelta> reservoir_delta; // §5.3 reservoir delta; omit when empty
 };
 
 } // namespace dto
@@ -781,6 +815,59 @@ dto::DocRef make_doc_ref(const DocumentRef& ref)
             .document_id = ref.document_id};
 }
 
+// One reservoir-delta membership row: the rare-salient template + why it was kept.
+dto::ReservoirDeltaEntry make_reservoir_delta_entry(const ReservoirDeltaEntry& entry)
+{
+    dto::ReservoirDeltaEntry row;
+    row.template_id = insight::render(entry.template_id);
+    if (entry.dominant_level)
+        row.level = level_to_spec_string(*entry.dominant_level);
+    if (entry.structural_role != StructuralRole::None)
+        row.structural_role = std::string{to_string(entry.structural_role)};
+    row.salience = entry.salience;
+    row.count = entry.count;
+    return row;
+}
+
+dto::ReservoirDelta make_reservoir_delta(const ReservoirDelta& delta)
+{
+    dto::ReservoirDelta out;
+    if (!delta.new_salient.empty())
+    {
+        std::vector<dto::ReservoirDeltaEntry> rows;
+        rows.reserve(delta.new_salient.size());
+        for (const auto& entry : delta.new_salient)
+            rows.push_back(make_reservoir_delta_entry(entry));
+        out.new_salient = std::move(rows);
+    }
+    if (!delta.vanished_salient.empty())
+    {
+        std::vector<dto::ReservoirDeltaEntry> rows;
+        rows.reserve(delta.vanished_salient.size());
+        for (const auto& entry : delta.vanished_salient)
+            rows.push_back(make_reservoir_delta_entry(entry));
+        out.vanished_salient = std::move(rows);
+    }
+    if (!delta.frontier_crossings.empty())
+    {
+        std::vector<dto::FrontierCrossing> rows;
+        rows.reserve(delta.frontier_crossings.size());
+        for (const auto& crossing : delta.frontier_crossings)
+        {
+            dto::FrontierCrossing row;
+            row.template_id = insight::render(crossing.template_id);
+            row.direction = crossing.direction == FrontierDirection::Up ? "up" : "down";
+            if (crossing.previous_level)
+                row.previous_level = level_to_spec_string(*crossing.previous_level);
+            if (crossing.current_level)
+                row.current_level = level_to_spec_string(*crossing.current_level);
+            rows.push_back(std::move(row));
+        }
+        out.frontier_crossings = std::move(rows);
+    }
+    return out;
+}
+
 dto::Diff make_diff(const MetaLogDiff& diff)
 {
     dto::Diff out;
@@ -856,6 +943,8 @@ dto::Diff make_diff(const MetaLogDiff& diff)
     }
     if (diff.has_cube_diff)
         out.cube_diff = make_cube_diff(diff.cube_diff);
+    if (!diff.reservoir_delta.empty())
+        out.reservoir_delta = make_reservoir_delta(diff.reservoir_delta);
     return out;
 }
 
