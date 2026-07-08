@@ -305,6 +305,31 @@ struct AcquisitionBlock
     [[nodiscard]] bool operator==(const AcquisitionBlock&) const noexcept = default;
 };
 
+// ── Composed-ruleset identity (II-7, ADR 0024 §4.2) ──────────────────────────────────────────────
+// The identity of the semantic ruleset that SEGMENTED this document — the comparability key. Rides
+// every MetaLogDocument as an ADDITIVE, flag-gated block (the reservoir_delta/AcquisitionBlock
+// discipline, [[additive-gated-metalog-block-keeps-wire-version]]): no wire-version bump, and
+// ABSENCE = a legacy producer (composed before the ruleset was wired). Two documents are comparable
+// (aligned/intent AND template-grain) iff their semantic_identity matches; on mismatch the consumer
+// re-segments where raw inputs exist, refuses otherwise — never a silent compare (II-7 verbatim).
+struct RulesetPackageRef
+{
+    std::string name;    // "github"
+    std::string version; // "1.0.0"
+    [[nodiscard]] bool operator==(const RulesetPackageRef&) const noexcept = default;
+};
+
+struct RulesetIdentity
+{
+    // The composed content hash rendered hex (insight::semantic::ComposedSemantics::identity_hex) —
+    // the KEY. A content hash over the actual composed rows, not a hand-bumped label (§4.1).
+    std::string semantic_identity;
+    // The composed package set, for LEGIBILITY (an operator reads what vocabulary the report
+    // understood). The hash is the key; this list is the label. Canonical (package-sorted) order.
+    std::vector<RulesetPackageRef> packages;
+    [[nodiscard]] bool operator==(const RulesetIdentity&) const noexcept = default;
+};
+
 // ── Cube (SPEC §16) ────────────────────────────────────────────
 //
 // Intra-window joint categorical condensation: a CLOSED cube over a small, fixed
@@ -737,6 +762,12 @@ struct MetaLogDocument
     // bool+inline workaround the cube needs is for vector-owning optionals copied in
     // consumer module TUs; AcquisitionBlock is trivially copyable).
     std::optional<AcquisitionBlock> acquisition;
+    // Composed-ruleset identity (II-7, ADR 0024 §4.2): the semantic_identity + package list of the
+    // ruleset that segmented this document. ABSENT = legacy producer (pre-ruleset). Stamped by the
+    // producer from the ComposedSemantics that tokenized the input. RulesetIdentity owns a vector, so
+    // it follows the CubeBlock precedent risk — but it is stamped once at close and only read
+    // (never a synthesized-optional copy on the MSVC /O2 hot path), so std::optional is sound.
+    std::optional<RulesetIdentity> ruleset;
 };
 
 // ── Producer configuration ─────────────────────────────────────
@@ -857,6 +888,13 @@ struct MetaLogConfig
     std::optional<std::string> canonicalization_version{
         std::string{insight::kCanonicalizationVersion}};
     std::optional<std::string> retention_profile;
+    // II-7 composed-ruleset identity (ADR 0024 §4.2): the semantic_identity + package list of the
+    // composition that tokenized the input, injected by the producing binary (the engine pipeline
+    // sets it from insight::engine::composed_semantics()). DEFAULT unset — a producer that does not
+    // inject it emits no ruleset block (a legacy producer; absence-tolerant on the consumer). Unlike
+    // canonicalization_version there is no canon-owned default: canon ships no default composition
+    // (ADR 0024 §3), so the binary that declares its package set is the only one that knows the hash.
+    std::optional<RulesetIdentity> ruleset;
 
     // Max number of wildcard positions to histogram per top_k entry.
     // 0 = disabled (default — zero overhead on the ingest_event hot path;

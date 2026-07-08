@@ -380,6 +380,10 @@ void MetaLogEngine::stamp_envelope(MetaLogDocument& doc, Timestamp start, Timest
     // produced under. Stamped from config; gate compose()/diff comparability.
     doc.canonicalization_version = config_.canonicalization_version;
     doc.retention_profile = config_.retention_profile;
+    // II-7 composed-ruleset identity (ADR 0024 §4.2): the semantic_identity + package list of the
+    // ruleset that segmented the input, injected via config by the producing binary. Absent for a
+    // legacy producer (config.ruleset unset) → the block is omitted from the wire.
+    doc.ruleset = config_.ruleset;
 
     // §15 re-derivation coordinate: when a source_ref is configured, stamp the
     // window's EVENT-TIME bounds as integer ticks (no float; bit-identical across

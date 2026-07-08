@@ -211,6 +211,21 @@ struct Acquisition
     std::uint64_t closed_cells{0};                          // P_closed — condensed cell count
 };
 
+// Composed-ruleset identity wire shape (II-7, ADR 0024 §4.2). Reflected (member name == JSON key);
+// the whole block is a std::optional on Document with skip_null_members → omitted for a legacy
+// producer (absence = legacy). `packages` renders in canonical (package-sorted) order.
+struct RulesetPackageRef
+{
+    std::string name;
+    std::string version;
+};
+
+struct RulesetIdentity
+{
+    std::string semantic_identity;            // the composed content hash (hex) — the comparability key
+    std::vector<RulesetPackageRef> packages;  // the composed set, for legibility
+};
+
 struct Stats
 {
     std::uint64_t unique_templates{0};
@@ -317,6 +332,7 @@ struct Document
     std::optional<Coordinate> coordinate;     // §15 re-derivation coordinate
     std::optional<CubeBlock> cube;            // §16 intra-window cube; omit when not emitted
     std::optional<Acquisition> acquisition;   // D-WHERE-4 self-assessment; omit when not emitted
+    std::optional<RulesetIdentity> ruleset;   // II-7 composed-ruleset identity; omit for a legacy producer
 };
 
 // ── Diff DTO (SPEC §13) ──
@@ -806,6 +822,14 @@ dto::Document make_document(const MetaLogDocument& doc, const TemplateRegistry& 
             .role_cardinality = doc.acquisition->role_cardinality,
             .where_cardinality_per_depth = doc.acquisition->where_cardinality_per_depth,
             .closed_cells = doc.acquisition->closed_cells};
+    if (doc.ruleset)
+    {
+        dto::RulesetIdentity ruleset{.semantic_identity = doc.ruleset->semantic_identity, .packages = {}};
+        ruleset.packages.reserve(doc.ruleset->packages.size());
+        for (const RulesetPackageRef& pkg : doc.ruleset->packages)
+            ruleset.packages.push_back({.name = pkg.name, .version = pkg.version});
+        out.ruleset = std::move(ruleset);
+    }
     return out;
 }
 
