@@ -530,6 +530,18 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
                                      "diff");
     check_processing_identifier_gate(previous.retention_profile, current.retention_profile,
                                      "retention_profile", "diff");
+    // II-7 (ADR 0024 §4.3): two documents are comparable iff their composed-ruleset identity matches.
+    // Both stamped + different ⇒ the docs fingerprint DIFFERENT vocabularies ⇒ REFUSE (this is the
+    // "no raw inputs to re-segment" branch — a stored MetaLog cannot be re-tokenized; the Sift raw
+    // path re-tokenizes both sides under the live composition, so their identities match here). One
+    // side absent (a legacy producer) ⇒ proceed, absence-tolerant — never a silent equal across a
+    // KNOWN mismatch.
+    check_processing_identifier_gate(
+        previous.ruleset ? std::optional<std::string>{previous.ruleset->semantic_identity}
+                         : std::nullopt,
+        current.ruleset ? std::optional<std::string>{current.ruleset->semantic_identity}
+                        : std::nullopt,
+        "semantic_identity", "diff");
 
     MetaLogDiff out;
     out.previous.window_start_iso = previous.window.start_iso;
