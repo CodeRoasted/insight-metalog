@@ -301,31 +301,10 @@ TEST(CubeCardinality, CountsDistinctPerAxisFromTheClosedCube)
     EXPECT_EQ(card.per_axis[static_cast<std::size_t>(meta::CardinalityAxis::Role)], 1U)
         << "single role None";
     EXPECT_EQ(card.cells, doc.cube.cell_count);
-    EXPECT_FALSE(card.warns()) << "3 components ≪ warn threshold "
-                               << meta::CubeCardinalityStat::kComponentWarn;
-    EXPECT_EQ(card.offending_axis(), "none");
-}
-
-TEST(CubeCardinality, ThresholdVerdictsNameTheOffendingAxis)
-{
-    using Stat = meta::CubeCardinalityStat;
-    const Stat ok{.cells = 10, .per_axis = {2, 5, 1}};
-    EXPECT_FALSE(ok.warns());
-    EXPECT_FALSE(ok.hard());
-    EXPECT_EQ(ok.offending_axis(), "none");
-
-    const Stat warn{.cells = 10, .per_axis = {2, Stat::kComponentWarn, 1}};
-    EXPECT_TRUE(warn.warns());
-    EXPECT_FALSE(warn.hard());
-    EXPECT_EQ(warn.offending_axis(), "component") << "component is the unbounded WHERE axis";
-    EXPECT_EQ(warn.offending_count(), Stat::kComponentWarn);
-
-    const Stat hard_component{.cells = 10, .per_axis = {2, Stat::kComponentHard, 1}};
-    EXPECT_TRUE(hard_component.hard());
-
-    const Stat cells_breach{.cells = Stat::kCellsWarn, .per_axis = {2, 5, 1}};
-    EXPECT_TRUE(cells_breach.warns());
-    EXPECT_EQ(cells_breach.offending_axis(), "cells") << "cell count breaches with bounded axes";
+    // The pre-collapse WARN predicates were RETIRED (studies/005 disposition-D); the meaningful
+    // trigger is collapse_note(), which is empty on a small uncollapsed cube (nothing coarsened).
+    EXPECT_FALSE(meta::collapse_note(doc.cube).has_value()) << "a 3-component cube is uncollapsed";
+    EXPECT_LE(card.cells, meta::CubeCardinalityStat::kCellsHard) << "the cube stays under budget";
 }
 
 TEST(CubeBlock, ReferenceAxesAndAggregateTotal)

@@ -427,50 +427,20 @@ enum class CardinalityAxis : std::uint8_t
 };
 
 // §13 cardinality monitor (cube_perf_and_collapse.md C2) — the cube's distinct-value counts. A
-// PURE function of the closed cube (`cube_cardinality()`), it is **observability only**: a
-// deterministic function of the counts that NEVER feeds the deterministic content stream (the
-// consumer — the eidos pipeline — emits a gated WARN naming the offending axis). The early-warning
-// before the cube's cost flips canon as the e2e hotspot #1, and the trace that explains a future
-// cardinality regression. component is the unbounded WHERE axis (level/role are bounded), so the
-// thresholds gate component + the closed-cell count; level/role are reported for the breakdown.
+// PURE function of the closed cube (`cube_cardinality()`), **observability only**: never feeds the
+// deterministic content stream. The pre-collapse WARN thresholds (kComponentWarn/kCellsWarn) were
+// RETIRED (ADR 0023 / studies/005 disposition-D): they predate dimensional collapse and fired on a
+// standalone threshold decoupled from the actual collapse trigger (cell_count > kCubeCellBudget).
+// The WARN now fires WHEN a collapse is APPLIED (`collapse_note()`, emitted by the eidos pipeline).
+// These are the raw counts (the breakdown that annotates that WARN + the acquisition cardinalities);
+// kCellsHard remains the documented cube bound (= the cube.cpp collapse budget, asserted by tests).
 struct CubeCardinalityStat
 {
     static constexpr std::size_t kAxisCount{3};
-    // static constexpr thresholds (no magic numbers), seeded from the measured cliff: component
-    // ~64 warn / ~256 hard, with the per-window closed-cell count at those points (~1k / ~4k).
-    static constexpr std::uint32_t kComponentWarn{64};
-    static constexpr std::uint32_t kComponentHard{256};
-    static constexpr std::uint64_t kCellsWarn{1024};
-    static constexpr std::uint64_t kCellsHard{4096};
+    static constexpr std::uint64_t kCellsHard{4096}; // the collapse budget; the cube never exceeds it
 
     std::uint64_t cells{0};                           // closed cell count
     std::array<std::uint32_t, kAxisCount> per_axis{}; // distinct [level, component, role]
-
-    [[nodiscard]] std::uint32_t component_card() const noexcept
-    {
-        return per_axis[static_cast<std::size_t>(CardinalityAxis::Component)];
-    }
-    [[nodiscard]] bool warns() const noexcept
-    {
-        return component_card() >= kComponentWarn || cells >= kCellsWarn;
-    }
-    [[nodiscard]] bool hard() const noexcept
-    {
-        return component_card() >= kComponentHard || cells >= kCellsHard;
-    }
-    // The dominant breach naming the "why" — component first (the unbounded axis), then cells.
-    [[nodiscard]] std::string_view offending_axis() const noexcept
-    {
-        if (component_card() >= kComponentWarn)
-            return "component";
-        if (cells >= kCellsWarn)
-            return "cells";
-        return "none";
-    }
-    [[nodiscard]] std::uint64_t offending_count() const noexcept
-    {
-        return component_card() >= kComponentWarn ? component_card() : cells;
-    }
 };
 
 // Salience Reservoir entry (Tier 2). A template

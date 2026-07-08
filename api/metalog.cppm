@@ -331,4 +331,12 @@ class MetaLogEngine
 // the compute lives here and the log fires where logging does (Founder ruling 2026-06-20).
 [[nodiscard]] CubeCardinalityStat cube_cardinality(const CubeBlock& cube);
 
+// Was a dimensional collapse APPLIED to this closed cube, and if so which axis + to what depth/band?
+// Returns a human note ("level banded to floor N; where truncated to depth M") when the collapse
+// guardrail actually fired (an axis carries a band_floor > 0 or a floor_depth below its full chain),
+// std::nullopt otherwise. This is the meaningful WARN trigger (studies/005 disposition-D) — the cube
+// coarsened, so cross-cube comparability now binds at that collapse. Observability only; the eidos
+// pipeline emits the gated WARN (metalog excludes spdlog). Pure function of the cube's axes.
+[[nodiscard]] std::optional<std::string> collapse_note(const CubeBlock& cube);
+
 } // namespace insight::metalog

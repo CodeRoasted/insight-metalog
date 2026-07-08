@@ -33,4 +33,30 @@ CubeCardinalityStat cube_cardinality(const CubeBlock& cube)
     return stat;
 }
 
+std::optional<std::string> collapse_note(const CubeBlock& cube)
+{
+    // A collapse was applied iff an axis carries a band_floor > 0 (level interval-banding, §C3) or a
+    // floor_depth below its full chain length (WHERE-tree prefix-truncation). stamp_collapse writes
+    // the applied state onto the axes; an uncollapsed axis carries band_floor 0/absent and
+    // floor_depth == full chain length, so neither branch fires.
+    std::string note;
+    const auto add{[&note](const std::string& part)
+                   {
+                       if (!note.empty())
+                           note += "; ";
+                       note += part;
+                   }};
+    for (const CubeAxis& axis : cube.axes)
+    {
+        if (axis.band_floor && *axis.band_floor > 0)
+            add(axis.name + " banded to floor " + std::to_string(*axis.band_floor));
+        if (axis.floor_depth && axis.chain && *axis.floor_depth < axis.chain->size())
+            add(axis.name + " truncated to depth " + std::to_string(*axis.floor_depth) + "/" +
+                std::to_string(axis.chain->size()));
+    }
+    if (note.empty())
+        return std::nullopt;
+    return note;
+}
+
 } // namespace insight::metalog
