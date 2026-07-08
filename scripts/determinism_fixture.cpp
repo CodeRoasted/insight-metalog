@@ -105,7 +105,12 @@ int main(int argc, char** argv)
     namespace ml = insight::metalog;
     constexpr std::size_t kArenaBytes{std::size_t{1} << 22};
     tk::ArenaAllocator arena{kArenaBytes};
-    tk::Tokenizer tok{arena};
+    // The degenerate composition (ADR 0024 §3): this harness verifies metalog reservoir/cube
+    // determinism over SYNTHETIC scenarios (not GHA dialect logs), so it needs no dialect vocabulary —
+    // and as a metalog script it does not link the semantic packages. compose({}) is a defined,
+    // runnable core-only state.
+    const insight::semantic::ComposedSemantics composed{insight::semantic::compose({})};
+    tk::Tokenizer tok{arena, tk::MaskConfig{}, composed};
     std::vector<tk::CanonicalEvent> events;
     events.reserve(lines.size());
     for (const auto& raw : lines)
