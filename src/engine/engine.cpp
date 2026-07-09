@@ -255,6 +255,12 @@ void MetaLogEngine::record_span(const tokenization::CanonicalEvent& event,
         pending_span_edges_.push_back({.child_template = internal_id,
                                        .parent_span_id = event.trace.parent_span_id,
                                        .child_component = std::string{event.component}});
+
+    // O4b Span Links (D-OTEL-9): queue each declared cross-trace edge source_component → linked span.
+    // The linked span (and its component) resolves at close, by span_id, across traces.
+    for (const SpanId linked : event.linked_span_ids)
+        pending_link_edges_.push_back(
+            {.source_component = std::string{event.component}, .linked_span_id = linked});
 }
 
 void MetaLogEngine::resolve_span_edges()
@@ -282,6 +288,24 @@ void MetaLogEngine::resolve_span_edges()
         // in canonical (caller, callee) order (std::map) → deterministic, no float.
         const std::string& caller{parent_it->second.component};
         const std::string& callee{edge.child_component};
+        if (!caller.empty() && !callee.empty() && caller != callee)
+            ++service_edges_[{caller, callee}];
+    }
+
+    // O4b Span Links (D-OTEL-9): resolve each declared cross-trace edge into the SAME service topology
+    // — source_component → component(linked span). Resolution is by span_id (across traces); an
+    // unresolved link (target outside the window / evicted) yields no edge, counted as an orphan (the
+    // declared-not-guessed discipline). Self-edges + unknown endpoints excluded, like intra-trace edges.
+    for (const auto& link : pending_link_edges_)
+    {
+        const auto target_it{span_templates_.find(link.linked_span_id)};
+        if (target_it == span_templates_.end())
+        {
+            ++orphan_parent_edges_; // target span not in window — counted, never guessed
+            continue;
+        }
+        const std::string& caller{link.source_component};
+        const std::string& callee{target_it->second.component};
         if (!caller.empty() && !callee.empty() && caller != callee)
             ++service_edges_[{caller, callee}];
     }
@@ -1265,7 +1289,8 @@ void MetaLogEngine::reset_window_state()
     pending_span_edges_.clear();
     span_records_ = 0;
     orphan_parent_edges_ = 0;
-    service_edges_.clear(); // O4b (D-OTEL-21): per-window service topology resets with the span state
+    pending_link_edges_.clear(); // O4b Span Links (D-OTEL-9): per-window link state resets too
+    service_edges_.clear();      // O4b (D-OTEL-21): per-window service topology resets with the span state
     ngram_counts_.clear();
     ngram_total_ = 0;
     cube_base_.clear();

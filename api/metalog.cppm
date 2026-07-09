@@ -299,6 +299,16 @@ class MetaLogEngine
         std::string child_component; // the CHILD span's service.name → the service edge's callee
     };
     std::vector<PendingSpanEdge> pending_span_edges_;
+    // O4b Span Links (D-OTEL-9): a span's declared cross-trace edge to another span, resolved at close
+    // (by span_id, across traces) into the SAME distilled service topology as intra-trace parentage —
+    // source_component → component(linked). The source component is known now; the linked span (and its
+    // component) is resolved at close, since it may serialize later or in another trace.
+    struct PendingLinkEdge
+    {
+        std::string source_component;
+        SpanId linked_span_id{};
+    };
+    std::vector<PendingLinkEdge> pending_link_edges_;
     std::uint64_t span_records_{0};        // span events observed this window (D-OTEL-13 licence)
     std::uint64_t orphan_parent_edges_{0}; // declared parents that did not resolve (D-OTEL-11)
     // O4b distilled service topology (D-OTEL-21): (caller_component, callee_component) → observed
