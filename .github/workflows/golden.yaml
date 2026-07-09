@@ -114,7 +114,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ env.CONAN_HOME }}
-          key: conan-golden-${{ matrix.arch }}-${{ matrix.leg }}-${{ runner.os }}-${{ hashFiles('conanfile.py', '_canon/conanfile.py') }}
+          key: conan-golden-${{ matrix.arch }}-${{ matrix.leg }}-${{ runner.os }}-${{ hashFiles('conanfile.py', '_canon/core/conanfile.py') }}
           restore-keys: |
             conan-golden-${{ matrix.arch }}-${{ matrix.leg }}-${{ runner.os }}-
 
@@ -130,7 +130,7 @@ jobs:
           cp "malf/profiles/${{ matrix.gcc_profile }}"   "$CONAN_HOME/profiles/${{ matrix.gcc_profile }}"
           cp "malf/profiles/${{ matrix.clang_profile }}" "$CONAN_HOME/profiles/${{ matrix.clang_profile }}"
           [ -f "$CONAN_HOME/global.conf" ] || cp malf/global.conf "$CONAN_HOME/global.conf"
-          conan editable add _canon
+          conan editable add _canon/core
           conan editable add .
 
       - name: Determinism proof — ${{ matrix.label }} (sweep-invariance + emit the leg's digest)
@@ -202,7 +202,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ env.CONAN_HOME }}
-          key: conan-golden-msvc1452-${{ runner.os }}-${{ hashFiles('**/conanfile.py', '_canon/conanfile.py', 'malf/profiles/windows-msvc-release') }}
+          key: conan-golden-msvc1452-${{ runner.os }}-${{ hashFiles('**/conanfile.py', '_canon/core/conanfile.py', 'malf/profiles/windows-msvc-release') }}
           restore-keys: |
             conan-golden-msvc1452-${{ runner.os }}-
 
@@ -219,7 +219,7 @@ jobs:
         # canon from source under the cell flags (add_subdirectory), the export only satisfies the graph.
         shell: pwsh
         run: |
-          conan export _canon
+          conan export _canon/core
           conan list "insight_canon/*#*"
 
       - name: Build the det_harness @ O2-fast (canon+metalog tower FROM SOURCE)
