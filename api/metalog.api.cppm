@@ -314,6 +314,35 @@ struct AcquisitionBlock
     [[nodiscard]] bool operator==(const AcquisitionBlock&) const noexcept = default;
 };
 
+// ── O4b service edge (insight_otel_epic.md §13.7.1, D-OTEL-21) ────────────────────────────────────
+// The one legitimately-cubeable OTEL dimension, DISTILLED: the observed span tree projected to
+// (caller_service → callee_service) at COMPONENT granularity (bounded by topology², service.name is
+// the low-card WHERE tier), derived at close time in resolve_span_edges. NOT a cube Dim (an edge is a
+// per-PAIR fact with no per-event value — a cube coordinate would fake a joint); NOT folded into
+// top_ngrams (component-pair vs template-bigram are different key spaces). It is its own additive,
+// flag-gated block with its own diff (D-OTEL-21). Deterministic: integer weights, sorted canonical
+// (caller, callee) byte order, no float.
+struct ServiceEdge
+{
+    std::string caller;    // caller_component = the PARENT span's service.name
+    std::string callee;    // callee_component = the CHILD span's service.name
+    std::uint64_t weight{0}; // observed parent→child edges at this component pair this window
+    [[nodiscard]] bool operator==(const ServiceEdge&) const noexcept = default;
+};
+
+// The window's distilled service topology (D-OTEL-21). Present iff the window had trace substrate
+// (span_records > 0) — a non-span window OMITS the block (absence = *unknown*, not "no edges": the
+// edge-block diff requires the block on BOTH sides, D-OTEL-20). Self-edges are excluded at
+// derivation (same-component parentage is intra-service, not topology). `edges` is sorted by
+// (caller, callee) and bounded to the top `max_service_edges` by weight (canonical-key tie-break);
+// `dropped_edges` counts those beyond the cap — the honest truncation fact.
+struct ServiceEdgeBlock
+{
+    std::vector<ServiceEdge> edges;
+    std::uint64_t dropped_edges{0};
+    [[nodiscard]] bool operator==(const ServiceEdgeBlock&) const noexcept = default;
+};
+
 // ── Composed-ruleset identity (II-7, ADR 0024 §4.2) ──────────────────────────────────────────────
 // The identity of the semantic ruleset that SEGMENTED this document — the comparability key. Rides
 // every MetaLogDocument as an ADDITIVE, flag-gated block (the reservoir_delta/AcquisitionBlock
@@ -771,6 +800,12 @@ struct MetaLogDocument
     // bool+inline workaround the cube needs is for vector-owning optionals copied in
     // consumer module TUs; AcquisitionBlock is trivially copyable).
     std::optional<AcquisitionBlock> acquisition;
+    // O4b distilled service topology (insight_otel_epic.md §13.7.1, D-OTEL-21). Present iff the window
+    // had trace substrate (span_records > 0); ABSENT for a non-span window (absence = unknown, the
+    // additive-block discipline — the edge diff needs the block on both sides). Owns a vector but is
+    // stamped once at close and only read (never a synthesized-optional copy on the MSVC /O2 hot path),
+    // so std::optional is sound — the RulesetIdentity precedent, [[msvc-port-stdlib-isms]].
+    std::optional<ServiceEdgeBlock> service_edges;
     // Composed-ruleset identity (II-7, ADR 0024 §4.2): the semantic_identity + package list of the
     // ruleset that segmented this document. ABSENT = legacy producer (pre-ruleset). Stamped by the
     // producer from the ComposedSemantics that tokenized the input. RulesetIdentity owns a vector, so
@@ -790,6 +825,7 @@ struct MetaLogConfig
     static constexpr std::size_t kDefaultDominantPathMaxSteps = 8;
     static constexpr std::size_t kDefaultMaxActiveTraces = 4096;
     static constexpr std::size_t kDefaultMaxActiveSpans = 16384; // O3 span_id→template bound (D-OTEL-11)
+    static constexpr std::size_t kDefaultMaxServiceEdges = 4096;  // O4b service_edges emit cap (D-OTEL-21)
 
     // Max entries kept in stats.top_k; the rest are summarised into
     // tail_count / tail_unique. Default 64 (~10 KB envelope per spec
@@ -855,6 +891,11 @@ struct MetaLogConfig
     // Deterministic FIFO eviction of the oldest-inserted span. Bounds per-window span state at
     // O(active spans). Consulted ONLY for span inputs (records with is_span); 0 disables the bound.
     std::size_t max_active_spans{kDefaultMaxActiveSpans};
+
+    // O4b service-topology emit cap (D-OTEL-21): max service_edges emitted in the block; edges beyond
+    // this (top-weight-K, canonical-key tie-break) fold into `dropped_edges`. The accumulator is bounded
+    // by topology² (service.name is low-card); this is the safety cap on the emitted wire block.
+    std::size_t max_service_edges{kDefaultMaxServiceEdges};
 
     // When true (default), the engine remembers the previous closed
     // window's template frequencies and emits a stability block on
@@ -966,6 +1007,29 @@ struct NGramDelta
     std::vector<std::vector<TemplateId>> new_ngrams;
     std::vector<std::vector<TemplateId>> vanished_ngrams;
     std::vector<NGramRateChange> rate_changed;
+};
+
+// A service edge present on BOTH sides whose observed weight moved (D-OTEL-21).
+struct ServiceEdgeWeightChange
+{
+    std::string caller;
+    std::string callee;
+    std::uint64_t previous_weight{0};
+    std::uint64_t current_weight{0};
+    std::int64_t delta{0}; // current - previous
+};
+
+// The service-topology delta (D-OTEL-21): its OWN diff pass over the two windows' service_edges
+// blocks. `emerged`/`vanished` are the appeared-from-nothing / disappeared edge sets at the cube's
+// absolute emergence discipline (θ_was=0, θ_now=1). Semantics-free integer/set arithmetic — metalog
+// stays polarity-blind (the degraded reading + the fold are eidos, D-OTEL-22). Present (in MetaLogDiff)
+// ONLY when BOTH documents carried a service_edges block; absent ⇒ edge verdicts are *unknown* (never
+// "all emerged"). Edges carry the changed-side (emerged) / baseline-side (vanished) weight.
+struct ServiceEdgeDelta
+{
+    std::vector<ServiceEdge> emerged;
+    std::vector<ServiceEdge> vanished;
+    std::vector<ServiceEdgeWeightChange> weight_changed;
 };
 
 // Per-(template_id, param_index) JS divergence between the value_counts
@@ -1178,6 +1242,10 @@ struct MetaLogDiff
     std::vector<TemplateId> vanished_templates;
     std::vector<BranchingDelta> branching_delta;
     std::optional<NGramDelta> ngram_delta;
+    // O4b service-topology delta (D-OTEL-21). Present ONLY when both documents carried a service_edges
+    // block (absent ⇒ *unknown*). Additive on the DERIVED diff → no diff_version bump (the ngram_delta
+    // / latency_shift derived-not-compared precedent). See ServiceEdgeDelta.
+    std::optional<ServiceEdgeDelta> service_edge_delta;
     // Per-param distribution shift. Empty unless both documents were produced
     // with max_param_histograms > 0 and share at least one template_id.
     // Sorted by js_divergence descending (highest shift first).

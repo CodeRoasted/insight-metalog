@@ -243,14 +243,18 @@ void MetaLogEngine::record_span(const tokenization::CanonicalEvent& event,
             span_templates_.erase(span_fifo_.front());
             span_fifo_.pop_front();
         }
-        span_templates_.emplace(span_id, internal_id);
+        // Remember the template id (observed template edge) + the component (O4b service edge, D-OTEL-21).
+        span_templates_.emplace(span_id,
+                                SpanNode{.template_id = internal_id,
+                                         .component = std::string{event.component}});
         span_fifo_.push_back(span_id);
     }
-    // Queue the declared parent edge (child template known now; parent resolved at close, since a
-    // child routinely serializes before its parent). In ingest order → deterministic.
+    // Queue the declared parent edge (child template + component known now; parent resolved at close,
+    // since a child routinely serializes before its parent). In ingest order → deterministic.
     if (event.trace.has_parent)
-        pending_span_edges_.push_back(
-            {.child_template = internal_id, .parent_span_id = event.trace.parent_span_id});
+        pending_span_edges_.push_back({.child_template = internal_id,
+                                       .parent_span_id = event.trace.parent_span_id,
+                                       .child_component = std::string{event.component}});
 }
 
 void MetaLogEngine::resolve_span_edges()
@@ -268,9 +272,18 @@ void MetaLogEngine::resolve_span_edges()
         // transitions[parent][child] exactly like an inferred bigram, so dominant_path /
         // structural_surprise consume it transparently. Counts are commutative → order-independent.
         NGramKey key{.size = 2};
-        key.ids[0] = parent_it->second;
+        key.ids[0] = parent_it->second.template_id;
         key.ids[1] = edge.child_template;
         account_ngram(key);
+
+        // O4b (D-OTEL-21): DISTIL the same declared edge to component granularity → the service
+        // topology. Excluded: an unknown endpoint (empty service.name — cannot be a topology node) and
+        // a self-edge (same-component parentage is intra-service, not topology). Integer weight, keyed
+        // in canonical (caller, callee) order (std::map) → deterministic, no float.
+        const std::string& caller{parent_it->second.component};
+        const std::string& callee{edge.child_component};
+        if (!caller.empty() && !callee.empty() && caller != callee)
+            ++service_edges_[{caller, callee}];
     }
 }
 
@@ -405,8 +418,9 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end,
 
     build_behavior(doc, analysis);
     build_stability(doc, analysis);
-    build_cube(doc);        // SPEC §16 — always (unconditional; collapse-bounded, §C)
-    build_acquisition(doc); // D-WHERE-4/5 — always (the window's dimension self-assessment)
+    build_cube(doc);          // SPEC §16 — always (unconditional; collapse-bounded, §C)
+    build_acquisition(doc);   // D-WHERE-4/5 — always (the window's dimension self-assessment)
+    build_service_edges(doc); // O4b (D-OTEL-21) — iff the window had trace substrate (span_records > 0)
 
     // Carry this window's frequencies for the next window's stability, emit the
     // §3.4 dedup map, then drop the per-window state.
@@ -1157,6 +1171,52 @@ void MetaLogEngine::build_acquisition(MetaLogDocument& doc) const
     doc.acquisition = acquisition;
 }
 
+// O4b distilled service topology (D-OTEL-21). Emitted iff the window had trace substrate
+// (span_records_ > 0) — a non-span window omits the block (absence = unknown; the edge diff needs it
+// on both sides). service_edges_ is already in canonical (caller, callee) order (std::map); emit the
+// top `max_service_edges` by weight (canonical-key tie-break), sorted back into canonical order for a
+// deterministic wire, with dropped_edges = the honest truncation count. A present-but-empty block
+// (traces existed, no cross-service edges) is meaningful — it says "no topology", not "unknown".
+void MetaLogEngine::build_service_edges(MetaLogDocument& doc) const
+{
+    if (span_records_ == 0)
+        return; // no trace substrate → omit the block (D-OTEL-20)
+
+    ServiceEdgeBlock block;
+    if (service_edges_.size() <= config_.max_service_edges)
+    {
+        block.edges.reserve(service_edges_.size());
+        for (const auto& [pair, weight] : service_edges_) // std::map → already canonical order
+            block.edges.push_back(
+                ServiceEdge{.caller = pair.first, .callee = pair.second, .weight = weight});
+    }
+    else
+    {
+        // Over the cap: keep the top `max_service_edges` by weight, canonical-key tie-break. Select on
+        // a view (weight desc, then canonical key asc), take the cut, then re-sort into canonical order.
+        std::vector<std::pair<std::pair<std::string, std::string>, std::uint64_t>> view(
+            service_edges_.begin(), service_edges_.end());
+        std::ranges::sort(view,
+                          [](const auto& lhs, const auto& rhs)
+                          {
+                              if (lhs.second != rhs.second)
+                                  return lhs.second > rhs.second; // heavier first
+                              return lhs.first < rhs.first;       // canonical key tie-break
+                          });
+        block.dropped_edges = service_edges_.size() - config_.max_service_edges;
+        view.resize(config_.max_service_edges);
+        block.edges.reserve(view.size());
+        for (const auto& [pair, weight] : view)
+            block.edges.push_back(
+                ServiceEdge{.caller = pair.first, .callee = pair.second, .weight = weight});
+        std::ranges::sort(block.edges,
+                          [](const ServiceEdge& lhs, const ServiceEdge& rhs)
+                          { return std::tie(lhs.caller, lhs.callee) <
+                                   std::tie(rhs.caller, rhs.callee); });
+    }
+    doc.service_edges = std::move(block);
+}
+
 void MetaLogEngine::stash_prev_window(const MetaLogDocument& doc)
 {
     // Stash this window's frequency map for the NEXT close_window's
@@ -1205,6 +1265,7 @@ void MetaLogEngine::reset_window_state()
     pending_span_edges_.clear();
     span_records_ = 0;
     orphan_parent_edges_ = 0;
+    service_edges_.clear(); // O4b (D-OTEL-21): per-window service topology resets with the span state
     ngram_counts_.clear();
     ngram_total_ = 0;
     cube_base_.clear();

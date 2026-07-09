@@ -181,6 +181,49 @@ void diff_ngram_delta(MetaLogDiff& out, const MetaLogDocument& previous,
         out.ngram_delta = std::move(ngram_delta);
 }
 
+// service_edge_delta (O4b, D-OTEL-21): the service-topology delta — its OWN pass. Defined ONLY when
+// BOTH documents carried a service_edges block (both had trace substrate); absent on either ⇒ leave it
+// unset (edge verdicts are *unknown*, never "all emerged" — D-OTEL-20). Semantics-free set/integer
+// arithmetic (metalog stays polarity-blind; the degraded reading + fold are eidos). Both blocks are
+// canonical-sorted, and std::map iteration is ordered → emerged/vanished/weight_changed are canonical
+// without a re-sort. Emitted only when non-empty (the ngram_delta discipline — an empty delta and an
+// absent block both mean "no edge change" to the consumer).
+void diff_service_edge_delta(MetaLogDiff& out, const MetaLogDocument& previous,
+                             const MetaLogDocument& current)
+{
+    if (!previous.service_edges || !current.service_edges)
+        return;
+    std::map<std::pair<std::string, std::string>, std::uint64_t> prev_w;
+    for (const ServiceEdge& edge : previous.service_edges->edges)
+        prev_w[{edge.caller, edge.callee}] = edge.weight;
+    std::map<std::pair<std::string, std::string>, std::uint64_t> cur_w;
+    for (const ServiceEdge& edge : current.service_edges->edges)
+        cur_w[{edge.caller, edge.callee}] = edge.weight;
+
+    ServiceEdgeDelta delta;
+    for (const auto& [key, weight] : cur_w) // emerged: in current, absent in previous (θ_was=0, θ_now=1)
+        if (!prev_w.contains(key))
+            delta.emerged.push_back({.caller = key.first, .callee = key.second, .weight = weight});
+    for (const auto& [key, weight] : prev_w) // vanished: in previous, absent in current
+        if (!cur_w.contains(key))
+            delta.vanished.push_back({.caller = key.first, .callee = key.second, .weight = weight});
+    for (const auto& [key, cur_weight] : cur_w) // weight-changed: present both sides, weight moved
+    {
+        const auto prev_it{prev_w.find(key)};
+        if (prev_it == prev_w.end() || prev_it->second == cur_weight)
+            continue;
+        delta.weight_changed.push_back(
+            {.caller = key.first,
+             .callee = key.second,
+             .previous_weight = prev_it->second,
+             .current_weight = cur_weight,
+             .delta = static_cast<std::int64_t>(cur_weight) -
+                      static_cast<std::int64_t>(prev_it->second)});
+    }
+    if (!delta.emerged.empty() || !delta.vanished.empty() || !delta.weight_changed.empty())
+        out.service_edge_delta = std::move(delta);
+}
+
 // The histogram for a given wildcard slot within a top_k entry, or nullptr.
 [[nodiscard]] const FieldHistogram* find_param_histogram(const TopKEntry& entry,
                                                          std::uint32_t param_index)
@@ -569,7 +612,8 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
     diff_field_histogram_deltas(out, previous, current);
     diff_ordinal_histogram_deltas(out, previous, current); // W1 (§4A.4 D-W1-1/4)
     diff_tail_delta(out, previous, current);
-    diff_reservoir_delta(out, previous, current); // §5.3 chronic-vs-new streaming seam
+    diff_reservoir_delta(out, previous, current);     // §5.3 chronic-vs-new streaming seam
+    diff_service_edge_delta(out, previous, current);  // O4b (D-OTEL-21): distilled service topology
     // SPEC §13.6 cube_diff — the emerging border. Emitted only when both documents
     // carried a cube and their axes match (the §2.4 gate above already ensures equal
     // canonicalization_version, under which the axes are frozen identical).

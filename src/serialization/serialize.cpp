@@ -213,6 +213,22 @@ struct Acquisition
     std::uint64_t orphan_parent_edges{0}; // O3 (D-OTEL-11): declared parents that did not resolve
 };
 
+// O4b distilled service topology (D-OTEL-21). Reflected (member name == JSON key). A present-but-empty
+// `edges` (traces existed, no cross-service edges) serialises as `[]` — meaningful (no topology), NOT
+// absence; block absence (a non-span window) is the std::optional on Document.
+struct ServiceEdge
+{
+    std::string caller;
+    std::string callee;
+    std::uint64_t weight{0};
+};
+
+struct ServiceEdgeBlock
+{
+    std::vector<ServiceEdge> edges;
+    std::uint64_t dropped_edges{0};
+};
+
 // Composed-ruleset identity wire shape (II-7, ADR 0024 §4.2). Reflected (member name == JSON key);
 // the whole block is a std::optional on Document with skip_null_members → omitted for a legacy
 // producer (absence = legacy). `packages` renders in canonical (package-sorted) order.
@@ -334,6 +350,7 @@ struct Document
     std::optional<Coordinate> coordinate;     // §15 re-derivation coordinate
     std::optional<CubeBlock> cube;            // §16 intra-window cube; omit when not emitted
     std::optional<Acquisition> acquisition;   // D-WHERE-4 self-assessment; omit when not emitted
+    std::optional<ServiceEdgeBlock> service_edges; // O4b (D-OTEL-21); omit for a non-span window
     std::optional<RulesetIdentity> ruleset;   // II-7 composed-ruleset identity; omit for a legacy producer
 };
 
@@ -434,6 +451,24 @@ struct NGramDelta
     std::optional<std::vector<NGramRateChange>> rate_changed;             // omit when empty
 };
 
+// O4b service-topology delta (D-OTEL-21). Each list omitted when empty; the whole block present in the
+// Diff DTO iff both documents carried a service_edges block (absent ⇒ *unknown*).
+struct ServiceEdgeWeightChange
+{
+    std::string caller;
+    std::string callee;
+    std::uint64_t previous_weight{0};
+    std::uint64_t current_weight{0};
+    std::int64_t delta{0};
+};
+
+struct ServiceEdgeDelta
+{
+    std::optional<std::vector<ServiceEdge>> emerged;                     // omit when empty
+    std::optional<std::vector<ServiceEdge>> vanished;                    // omit when empty
+    std::optional<std::vector<ServiceEdgeWeightChange>> weight_changed;  // omit when empty
+};
+
 struct TailDelta
 {
     std::uint64_t previous_tail_template_count{0};
@@ -463,6 +498,7 @@ struct Diff
     std::optional<TailDelta> tail_delta;
     std::optional<CubeDiff> cube_diff;             // §13.6 emerging-border cube diff; omit when absent
     std::optional<ReservoirDelta> reservoir_delta; // §5.3 reservoir delta; omit when empty
+    std::optional<ServiceEdgeDelta> service_edge_delta; // O4b (D-OTEL-21); omit unless both sides had edges
 };
 
 } // namespace dto
@@ -826,6 +862,15 @@ dto::Document make_document(const MetaLogDocument& doc, const TemplateRegistry& 
             .closed_cells = doc.acquisition->closed_cells,
             .span_records = doc.acquisition->span_records,
             .orphan_parent_edges = doc.acquisition->orphan_parent_edges};
+    if (doc.service_edges) // O4b (D-OTEL-21): present iff the window had trace substrate
+    {
+        dto::ServiceEdgeBlock block{.edges = {}, .dropped_edges = doc.service_edges->dropped_edges};
+        block.edges.reserve(doc.service_edges->edges.size());
+        for (const ServiceEdge& edge : doc.service_edges->edges)
+            block.edges.push_back(
+                {.caller = edge.caller, .callee = edge.callee, .weight = edge.weight});
+        out.service_edges = std::move(block);
+    }
     if (doc.ruleset)
     {
         dto::RulesetIdentity ruleset{.semantic_identity = doc.ruleset->semantic_identity, .packages = {}};
@@ -973,6 +1018,37 @@ dto::Diff make_diff(const MetaLogDiff& diff)
         out.cube_diff = make_cube_diff(diff.cube_diff);
     if (!diff.reservoir_delta.empty())
         out.reservoir_delta = make_reservoir_delta(diff.reservoir_delta);
+    if (diff.service_edge_delta) // O4b (D-OTEL-21): present iff both sides carried a service_edges block
+    {
+        dto::ServiceEdgeDelta delta;
+        const auto edge_rows{[](const std::vector<ServiceEdge>& edges)
+                             {
+                                 std::vector<dto::ServiceEdge> rows;
+                                 rows.reserve(edges.size());
+                                 for (const ServiceEdge& edge : edges)
+                                     rows.push_back({.caller = edge.caller,
+                                                     .callee = edge.callee,
+                                                     .weight = edge.weight});
+                                 return rows;
+                             }};
+        if (!diff.service_edge_delta->emerged.empty())
+            delta.emerged = edge_rows(diff.service_edge_delta->emerged);
+        if (!diff.service_edge_delta->vanished.empty())
+            delta.vanished = edge_rows(diff.service_edge_delta->vanished);
+        if (!diff.service_edge_delta->weight_changed.empty())
+        {
+            std::vector<dto::ServiceEdgeWeightChange> rows;
+            rows.reserve(diff.service_edge_delta->weight_changed.size());
+            for (const auto& change : diff.service_edge_delta->weight_changed)
+                rows.push_back({.caller = change.caller,
+                                .callee = change.callee,
+                                .previous_weight = change.previous_weight,
+                                .current_weight = change.current_weight,
+                                .delta = change.delta});
+            delta.weight_changed = std::move(rows);
+        }
+        out.service_edge_delta = std::move(delta);
+    }
     return out;
 }
 

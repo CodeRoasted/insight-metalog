@@ -235,6 +235,10 @@ class MetaLogEngine
     // structural facts (component-axis coverage + the dimension self-assessment),
     // aggregated from the buckets' component marginals. Always built.
     void build_acquisition(MetaLogDocument& doc) const;
+    // O4b distilled service topology (D-OTEL-21): emit the service_edges block iff the window had trace
+    // substrate (span_records_ > 0), from service_edges_ — sorted canonical order, top `max_service_edges`
+    // by weight (canonical-key tie-break) + dropped_edges. Absent for a non-span window.
+    void build_service_edges(MetaLogDocument& doc) const;
     void stash_prev_window(const MetaLogDocument& doc);
     void build_templates_map(MetaLogDocument& doc) const;
     void reset_window_state();
@@ -278,16 +282,30 @@ class MetaLogEngine
     // iterated → order not a determinism surface); span_fifo_ gives deterministic FIFO eviction under
     // config_.max_active_spans; pending_span_edges_ holds (child template, parent span_id) in ingest
     // order — resolved at close. All empty / untouched for non-span streams (zero added cost).
-    std::unordered_map<SpanId, InternalTemplateID> span_templates_;
+    // A remembered span: its template id (for the observed template→template edge) + its component
+    // (service.name — for the O4b distilled service edge, D-OTEL-21). component is owned (the canon
+    // string_view is arena-stable only within the record).
+    struct SpanNode
+    {
+        InternalTemplateID template_id{};
+        std::string component;
+    };
+    std::unordered_map<SpanId, SpanNode> span_templates_;
     std::deque<SpanId> span_fifo_;
     struct PendingSpanEdge
     {
         InternalTemplateID child_template{};
         SpanId parent_span_id{};
+        std::string child_component; // the CHILD span's service.name → the service edge's callee
     };
     std::vector<PendingSpanEdge> pending_span_edges_;
     std::uint64_t span_records_{0};        // span events observed this window (D-OTEL-13 licence)
     std::uint64_t orphan_parent_edges_{0}; // declared parents that did not resolve (D-OTEL-11)
+    // O4b distilled service topology (D-OTEL-21): (caller_component, callee_component) → observed
+    // weight, accumulated in resolve_span_edges from each resolved parent→child pair whose components
+    // differ (self-edges excluded). std::map keeps the canonical (caller, callee) byte order the wire
+    // block emits; bounded by topology² (service.name is the low-card WHERE tier). Cleared per window.
+    std::map<std::pair<std::string, std::string>, std::uint64_t> service_edges_;
 
     // n-gram table: compact per-window internal template IDs -> count. We translate to
     // content-derived spec IDs only when building the document.
