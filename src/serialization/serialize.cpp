@@ -211,6 +211,7 @@ struct Acquisition
     std::uint64_t closed_cells{0};                          // P_closed — condensed cell count
     std::uint64_t span_records{0};        // O3 (D-OTEL-13): span events observed (the licence fact)
     std::uint64_t orphan_parent_edges{0}; // O3 (D-OTEL-11): declared parents that did not resolve
+    std::uint64_t orphan_link_edges{0};   // O4b (D-OTEL-9): declared link targets that did not resolve
 };
 
 // O4b distilled service topology (D-OTEL-21). Reflected (member name == JSON key). A present-but-empty
@@ -861,7 +862,8 @@ dto::Document make_document(const MetaLogDocument& doc, const TemplateRegistry& 
             .where_cardinality_per_depth = doc.acquisition->where_cardinality_per_depth,
             .closed_cells = doc.acquisition->closed_cells,
             .span_records = doc.acquisition->span_records,
-            .orphan_parent_edges = doc.acquisition->orphan_parent_edges};
+            .orphan_parent_edges = doc.acquisition->orphan_parent_edges,
+            .orphan_link_edges = doc.acquisition->orphan_link_edges};
     if (doc.service_edges) // O4b (D-OTEL-21): present iff the window had trace substrate
     {
         dto::ServiceEdgeBlock block{.edges = {}, .dropped_edges = doc.service_edges->dropped_edges};

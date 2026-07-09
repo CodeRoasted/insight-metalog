@@ -311,6 +311,8 @@ class MetaLogEngine
     std::vector<PendingLinkEdge> pending_link_edges_;
     std::uint64_t span_records_{0};        // span events observed this window (D-OTEL-13 licence)
     std::uint64_t orphan_parent_edges_{0}; // declared parents that did not resolve (D-OTEL-11)
+    std::uint64_t orphan_link_edges_{0};   // declared LINK targets that did not resolve (D-OTEL-9); the
+                                           // cross-route link loss the pooling grain hid, counted not guessed
     // O4b distilled service topology (D-OTEL-21): (caller_component, callee_component) → observed
     // weight, accumulated in resolve_span_edges from each resolved parent→child pair whose components
     // differ (self-edges excluded). std::map keeps the canonical (caller, callee) byte order the wire

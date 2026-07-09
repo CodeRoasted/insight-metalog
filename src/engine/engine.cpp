@@ -301,7 +301,8 @@ void MetaLogEngine::resolve_span_edges()
         const auto target_it{span_templates_.find(link.linked_span_id)};
         if (target_it == span_templates_.end())
         {
-            ++orphan_parent_edges_; // target span not in window — counted, never guessed
+            ++orphan_link_edges_; // target span not in this window (cross-route / external) — counted,
+                                  // never guessed; SIBLING to orphan_parent_edges (D-OTEL-9, Founder ruling)
             continue;
         }
         const std::string& caller{link.source_component};
@@ -1191,6 +1192,7 @@ void MetaLogEngine::build_acquisition(MetaLogDocument& doc) const
     // O3 span-native facts (D-OTEL-13 licence + D-OTEL-11): raw integer counts, threshold-free.
     acquisition.span_records = span_records_;
     acquisition.orphan_parent_edges = orphan_parent_edges_;
+    acquisition.orphan_link_edges = orphan_link_edges_; // O4b (D-OTEL-9): cross-route link loss, declared
 
     doc.acquisition = acquisition;
 }
@@ -1289,6 +1291,7 @@ void MetaLogEngine::reset_window_state()
     pending_span_edges_.clear();
     span_records_ = 0;
     orphan_parent_edges_ = 0;
+    orphan_link_edges_ = 0;
     pending_link_edges_.clear(); // O4b Span Links (D-OTEL-9): per-window link state resets too
     service_edges_.clear();      // O4b (D-OTEL-21): per-window service topology resets with the span state
     ngram_counts_.clear();

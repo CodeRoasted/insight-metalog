@@ -310,6 +310,13 @@ struct AcquisitionBlock
     // guessed (D-OTEL-11). Both 0 for a non-span window (additive; a non-OTEL doc is unchanged).
     std::uint64_t span_records{0};
     std::uint64_t orphan_parent_edges{0};
+    // O4b Span Links (D-OTEL-9): declared cross-trace LINK targets that did not resolve to a span in
+    // this window (a cross-ROUTE link the aligned-path pooling grain hid, or an external target) —
+    // counted, never guessed, SIBLING to orphan_parent_edges (same D-OTEL-11 discipline). The
+    // declared-error-model fact: the artifact says how much link topology it could not see, so a
+    // consumer (or the streaming stitch, §5.2) tells "no cross-route links" apart from "existed but the
+    // segmentation grain hid them". 0 for a window with no unresolved links.
+    std::uint64_t orphan_link_edges{0};
 
     [[nodiscard]] bool operator==(const AcquisitionBlock&) const noexcept = default;
 };
