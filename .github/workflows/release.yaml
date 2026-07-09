@@ -53,7 +53,8 @@ jobs:
   # / publish_hub_evidence.py) keeps finding it.
   attach-golden:
     needs: [release, golden]
-    runs-on: ${{ vars.CI_RUNS_ON || 'ubuntu-latest' }}
+    # PUBLIC repo: pinned to hosted — a self-hosted runner reachable from a fork PR is an RCE. Never vars.CI_RUNS_ON here.
+    runs-on: ubuntu-latest
     steps:
       - name: Download the validated golden
         uses: actions/download-artifact@v7
