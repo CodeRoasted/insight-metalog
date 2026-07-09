@@ -30,10 +30,12 @@
 import insight.canon;
 import insight.metalog;
 
-// AFTER the imports (plain TU): the shared synthetic scenarios — the F5-M8 near-full reservoir and
-// the §C3 cube collapse — shared with the in-suite tests so both oracles run the identical windows.
+// AFTER the imports (plain TU): the shared synthetic scenarios — the F5-M8 near-full reservoir, the
+// §C3 cube collapse, and the O4b service-edges over-cap topology — shared with the in-suite tests so
+// both oracles run the identical windows.
 #include "cube_collapse_scenario.hpp"
 #include "reservoir_nearfull_scenario.hpp"
+#include "service_edges_overcap_scenario.hpp"
 
 int main(int argc, char** argv)
 {
@@ -80,6 +82,27 @@ int main(int argc, char** argv)
         using Clock = std::chrono::system_clock;
         engine.open_window(Clock::time_point{std::chrono::seconds{1700000000}});
         ml::nearfull::emit_window(engine);
+        const auto doc{engine.close_window(Clock::time_point{std::chrono::seconds{1700000060}})};
+        std::cout << ml::to_json(doc, engine.registry()) << "\n";
+        return 0;
+    }
+
+    // O4b service-topology over-cap oracle (D-OTEL-21): a SYNTHETIC span window that builds five
+    // (caller→callee) edges under a 3-edge cap, so the emitted block is decided by the over-cap top-K
+    // select — and the cap cuts THROUGH a 3-way weight tie, so the surviving edge rides the
+    // canonical-key tie-break alone. The emitted service_edges block MUST be byte-identical across
+    // every leg/arch/OS, or the "deterministic by construction" claim on the top-K select is false
+    // (a stdlib-order-dependent select would flip the surviving edge). Same window as the in-suite
+    // ServiceEdgesOverCap guard.
+    if (std::string{argv[1]} == "--service-edges")
+    {
+        namespace ml = insight::metalog;
+        ml::MetaLogConfig cfg;
+        ml::service_edges_overcap::configure(cfg);
+        ml::MetaLogEngine engine{cfg};
+        using Clock = std::chrono::system_clock;
+        engine.open_window(Clock::time_point{std::chrono::seconds{1700000000}});
+        ml::service_edges_overcap::emit_window(engine);
         const auto doc{engine.close_window(Clock::time_point{std::chrono::seconds{1700000060}})};
         std::cout << ml::to_json(doc, engine.registry()) << "\n";
         return 0;

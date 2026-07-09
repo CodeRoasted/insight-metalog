@@ -7,8 +7,9 @@ name: Determinism Golden Proof
 #
 #   5 legs — gcc-x86 · clang-x86 · gcc-arm64 · clang-arm64 · msvc — each builds the canon+metalog MODULE
 #   TOWER FROM SOURCE (Approach-B det_harness: add_subdirectory(canon)+add_subdirectory(metalog) + the
-#   determinism_fixture) and EMITS its digest over the committed corpus + the F5-M8 --reservoir-nearfull
-#   scenario. The compare job asserts all five are byte-identical: that IS the proof (no committed golden
+#   determinism_fixture) and EMITS its digest over the committed corpus + the F5-M8 --reservoir-nearfull,
+#   §C3 --cube-collapse, and O4b --service-edges scenarios. The compare job asserts all five are
+#   byte-identical: that IS the proof (no committed golden
 #   to go stale). Any divergence FAILS, gating the release. The agreed digest is uploaded as
 #   `determinism-golden` — the Release attaches it (per-release artifact, never committed).
 #
@@ -247,7 +248,7 @@ jobs:
           if (-not $fixture) { Write-Error "det_fixture.exe not produced — the MSVC det harness build failed"; exit 1 }
           "$fixture" | Out-File -FilePath "$env:GITHUB_WORKSPACE/det_fixture_path.txt" -Encoding ascii -NoNewline
 
-      - name: Emit the MSVC digest (corpus + reservoir — the EXACT bytes the Linux legs emit)
+      - name: Emit the MSVC digest (corpus + reservoir + cube-collapse + service-edges — the EXACT bytes the Linux legs emit)
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -282,6 +283,16 @@ jobs:
             $tmp = "$work/cube_collapse.out"
             $p = Start-Process -FilePath $fixture -ArgumentList "--cube-collapse" -NoNewWindow -Wait -PassThru -RedirectStandardOutput $tmp
             if ($p.ExitCode -ne 0) { throw "det_fixture --cube-collapse failed (exit $($p.ExitCode))" }
+            $b = [System.IO.File]::ReadAllBytes($tmp)
+            $fs.Write($b, 0, $b.Length)
+            # The O4b --service-edges section (same header + order as the Linux legs — must match). The
+            # emitted service_edges block rides the over-cap top-K select's canonical-key tie-break; this
+            # is what proves that select bit-identical MSVC≡libstdc++≡libc++.
+            $shdr = [System.Text.Encoding]::ASCII.GetBytes("### --service-edges (O4b service-topology over-cap top-K tie-break) ###`n")
+            $fs.Write($shdr, 0, $shdr.Length)
+            $tmp = "$work/service_edges.out"
+            $p = Start-Process -FilePath $fixture -ArgumentList "--service-edges" -NoNewWindow -Wait -PassThru -RedirectStandardOutput $tmp
+            if ($p.ExitCode -ne 0) { throw "det_fixture --service-edges failed (exit $($p.ExitCode))" }
             $b = [System.IO.File]::ReadAllBytes($tmp)
             $fs.Write($b, 0, $b.Length)
           } finally { $fs.Close() }

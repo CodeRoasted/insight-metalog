@@ -18,6 +18,9 @@ import insight.metalog.test;
 // The shared F5-M8 near-full reservoir scenario, shared with scripts/determinism_fixture.cpp so
 // this behavioral coverage and the cross-leg gate exercise the identical M=128 admit/evict boundary.
 #include "reservoir_nearfull_scenario.hpp"
+// The shared O4b service-topology over-cap scenario, shared with the fixture so this guard and the
+// cross-leg gate exercise the identical over-cap top-K select (the canonical-key tie-break).
+#include "service_edges_overcap_scenario.hpp"
 
 namespace
 {
@@ -56,6 +59,47 @@ TEST(MetaLogDocument, ReservoirNearFullExercisesTheF5M8Regime)
     EXPECT_GT(surprise_driven, 0U)
         << "the reservoir boundary must be structural_surprise-driven so the F5-M8 hazard "
            "(a non-deterministic surprise score) flips bag membership; none were.";
+}
+
+// O4b service-topology (D-OTEL-21): the over-cap top-K select MUST stay non-hollow — the emitted
+// block must be OVER the cap (dropped_edges > 0) AND the cut must fall on a weight tie, so the
+// surviving last edge is decided by the canonical-key tie-break alone (the branch the cross-leg gate
+// proves bit-identical). If the scenario silently stopped over-subscribing, or the tie collapsed,
+// that proof would go hollow. Also pins the derived edge VALUES (order, weights, dropped count).
+TEST(MetaLogDocument, ServiceEdgesOverCapExercisesTheTieBreak)
+{
+    meta::MetaLogConfig cfg;
+    meta::service_edges_overcap::configure(cfg);
+    meta::MetaLogEngine engine{cfg};
+
+    using Clock = std::chrono::system_clock;
+    const Clock::time_point t0{std::chrono::seconds{1700000000}};
+    const Clock::time_point t1{std::chrono::seconds{1700000060}};
+    engine.open_window(t0);
+    meta::service_edges_overcap::emit_window(engine);
+    const auto doc{engine.close_window(t1)};
+
+    ASSERT_TRUE(doc.service_edges.has_value())
+        << "a span window with cross-service edges must emit the service_edges block";
+    const auto& block{*doc.service_edges};
+    // Non-hollowness: the block is truncated (over-cap select taken) and the cut fell on a tie.
+    ASSERT_EQ(block.edges.size(), cfg.max_service_edges)
+        << "the block must be capped at max_service_edges=" << cfg.max_service_edges
+        << " (got " << block.edges.size() << ") — else the over-cap select path is not exercised";
+    EXPECT_EQ(block.dropped_edges, 2U)
+        << "5 distinct edges built, 3 kept → 2 dropped; a 0 here means the scenario went hollow";
+    // The surviving wire, in canonical (caller, callee) order. The 3rd edge — {gateway,auth} — is the
+    // load-bearing one: it beat {gateway,billing} and {worker,queue} (all weight 2) on the
+    // canonical-key tie-break alone. A stdlib-order-dependent select would surface a DIFFERENT 3rd
+    // edge here, and this expectation would fail on that leg.
+    const auto row = [&](std::size_t i) {
+        return std::tuple{block.edges.at(i).caller, block.edges.at(i).callee, block.edges.at(i).weight};
+    };
+    EXPECT_EQ(row(0), (std::tuple<std::string, std::string, std::uint64_t>{"api", "cache", 4U}));
+    EXPECT_EQ(row(1), (std::tuple<std::string, std::string, std::uint64_t>{"api", "db", 5U}));
+    EXPECT_EQ(row(2), (std::tuple<std::string, std::string, std::uint64_t>{"gateway", "auth", 2U}))
+        << "the tie-break must keep the canonical-smallest weight-2 key {gateway,auth}; a different "
+           "3rd edge means the top-K select is stdlib-order-dependent (non-deterministic).";
 }
 
 // The always-on document (1.7.2): cube + WHERE + acquisition are unconditional. Pins the

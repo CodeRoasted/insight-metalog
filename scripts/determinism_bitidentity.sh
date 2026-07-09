@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Determinism golden driver — the metalog leg of the Determinism-Golden-Proof (golden.yaml). Builds the
 # canon+metalog MODULE-LIB TOWER from source for ONE toolchain leg across the -O{0,3}×-ffp-contract
-# {off,fast} corners, asserts the serialized MetaLog document (corpus + the F5-M8 --reservoir-nearfull
-# scenario) is byte-identical across that leg's corners, and EMITS the leg's digest (DETERMINISM_OUT).
+# {off,fast} corners, asserts the serialized MetaLog document (corpus + the F5-M8 --reservoir-nearfull,
+# §C3 --cube-collapse, and O4b --service-edges scenarios) is byte-identical across that leg's corners,
+# and EMITS the leg's digest (DETERMINISM_OUT).
 #
 # There is NO committed golden (retired — no more committed-golden apparatus). Cross-toolchain / cross-
 # stdlib / cross-ISA / cross-OS bit-identity is asserted by golden.yaml's `compare` job, which byte-
@@ -173,8 +174,10 @@ fi
 
 # Each cell emits the committed corpus (5 files) THEN --reservoir-nearfull (the F5-M8 synthetic M=128
 # scenario) THEN --cube-collapse (the §C3 cube dimensional-collapse guardrail — a window that FIRES a
-# collapse, so its content-driven axis-selection tie-break is proven cross-leg). Compare every built
-# cell to the reference — byte-identity across the leg's -O/-ffp sweep.
+# collapse, so its content-driven axis-selection tie-break is proven cross-leg) THEN --service-edges
+# (the O4b service-topology over-cap window — the emitted block rides the top-K select's canonical-key
+# tie-break, proven cross-leg). Compare every built cell to the reference — byte-identity across the
+# leg's -O/-ffp sweep.
 for ctag in "${builds[@]}"; do
   : >"$WORK/$ctag.out"
   for f in $CORPUS; do echo "### $(basename "$f") ###" >>"$WORK/$ctag.out"; "${BIN[$ctag]}" "$f" >>"$WORK/$ctag.out" 2>/dev/null; done
@@ -182,6 +185,8 @@ for ctag in "${builds[@]}"; do
   "${BIN[$ctag]}" --reservoir-nearfull >>"$WORK/$ctag.out" 2>/dev/null
   echo "### --cube-collapse (SecC3 dimensional-collapse guardrail) ###" >>"$WORK/$ctag.out"
   "${BIN[$ctag]}" --cube-collapse >>"$WORK/$ctag.out" 2>/dev/null
+  echo "### --service-edges (O4b service-topology over-cap top-K tie-break) ###" >>"$WORK/$ctag.out"
+  "${BIN[$ctag]}" --service-edges >>"$WORK/$ctag.out" 2>/dev/null
 done
 rc=0; ref="${builds[0]}"
 echo "reference: $ref  sha=$(sha256sum "$WORK/$ref.out" | cut -c1-16)"
@@ -192,8 +197,8 @@ for ctag in "${builds[@]}"; do
 done
 
 if [ $rc -eq 0 ]; then
-  echo "PASS: byte-identical across ${#builds[@]} built cell(s) — corpus + --reservoir-nearfull, over the"
-  echo "  '${LINUX_LEGS[*]}' leg's -O{0,3}×-ffp{off,fast} sweep."
+  echo "PASS: byte-identical across ${#builds[@]} built cell(s) — corpus + --reservoir-nearfull +"
+  echo "  --cube-collapse + --service-edges, over the '${LINUX_LEGS[*]}' leg's -O{0,3}×-ffp{off,fast} sweep."
   # Cross-leg-agreement mode (the ONLY mode now — no committed golden): emit this leg's full digest
   # (corpus + reservoir, byte-identical across its own -O×-ffp cells above) for the golden.yaml compare
   # job to byte-compare against every other leg (gcc/clang × x86/arm64 + msvc). One leg per job → the
