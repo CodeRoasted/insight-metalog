@@ -109,6 +109,11 @@ void MetaLogEngine::open_window(Timestamp start)
     global_ring_ = {};
     trace_rings_.clear();
     trace_ring_fifo_.clear();
+    span_templates_.clear(); // O3 (D-OTEL-11): per-window span state resets with the trace state
+    span_fifo_.clear();
+    pending_span_edges_.clear();
+    span_records_ = 0;
+    orphan_parent_edges_ = 0;
     ngram_counts_.clear();
     ngram_total_ = 0;
     cube_base_.clear();
@@ -222,6 +227,53 @@ MetaLogEngine::NgramRing& MetaLogEngine::trace_ring_for(TraceId trace_id)
     return trace_rings_[trace_id]; // value-initialised NgramRing (filled = 0)
 }
 
+void MetaLogEngine::record_span(const tokenization::CanonicalEvent& event,
+                                InternalTemplateID internal_id)
+{
+    ++span_records_; // the D-OTEL-13 licence fact (span vocabulary is spoken iff span_records_ > 0)
+    const SpanId span_id{event.trace.span_id};
+    // Remember span_id → template for close-time parent resolution. Bounded FIFO under
+    // max_active_spans with deterministic eviction of the oldest-inserted span (the O2 discipline).
+    // A span id is unique per (trace, span); on a rare hash collision keep the first (insert-if-new).
+    if (!span_templates_.contains(span_id))
+    {
+        if (config_.max_active_spans > 0 && span_templates_.size() >= config_.max_active_spans &&
+            !span_fifo_.empty())
+        {
+            span_templates_.erase(span_fifo_.front());
+            span_fifo_.pop_front();
+        }
+        span_templates_.emplace(span_id, internal_id);
+        span_fifo_.push_back(span_id);
+    }
+    // Queue the declared parent edge (child template known now; parent resolved at close, since a
+    // child routinely serializes before its parent). In ingest order → deterministic.
+    if (event.trace.has_parent)
+        pending_span_edges_.push_back(
+            {.child_template = internal_id, .parent_span_id = event.trace.parent_span_id});
+}
+
+void MetaLogEngine::resolve_span_edges()
+{
+    for (const auto& edge : pending_span_edges_)
+    {
+        const auto parent_it{span_templates_.find(edge.parent_span_id)};
+        if (parent_it == span_templates_.end())
+        {
+            ++orphan_parent_edges_; // parent evicted / straddled the window — counted, never guessed
+            continue;
+        }
+        // The OBSERVED causal edge template(parent) → template(child) as a bigram in the SAME
+        // bounded graph the inferred path feeds (one fingerprint, no fork — O2). It maps to
+        // transitions[parent][child] exactly like an inferred bigram, so dominant_path /
+        // structural_surprise consume it transparently. Counts are commutative → order-independent.
+        NGramKey key{.size = 2};
+        key.ids[0] = parent_it->second;
+        key.ids[1] = edge.child_template;
+        account_ngram(key);
+    }
+}
+
 void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
 {
     if (!window_start_)
@@ -316,6 +368,14 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
     // pre-OTEL path, byte-identical). Both rings feed the SAME bounded ngram_counts_ graph
     // (one fingerprint, no fork — O2): the per-trace n-grams aggregate into the global graph,
     // never a per-trace sub-fingerprint (OR3).
+    // O3 (D-OTEL-11): a SPAN record's causality is DECLARED — record its span_id → template and
+    // queue its parent edge for close-time resolution; it NEVER enters an adjacency ring. Log
+    // records (with or without trace context) keep the O2 ring path above/below.
+    if (event.trace.is_span)
+    {
+        record_span(event, lookup.internal_id);
+        return;
+    }
     NgramRing& ring{(config_.trace_scoping_enabled && event.trace.present)
                         ? trace_ring_for(event.trace.trace_id)
                         : global_ring_};
@@ -330,6 +390,11 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end,
 
     MetaLogDocument doc;
     stamp_envelope(doc, *window_start_, end, reported_bounds);
+
+    // O3 (D-OTEL-11): resolve the window's queued span parent edges into ngram_counts_ BEFORE the
+    // graph is analyzed, so the observed DAG feeds dominant_path / structural_surprise like any
+    // other edge. No-op for a non-span window (pending_span_edges_ empty).
+    resolve_span_edges();
 
     const WindowAnalysis analysis{analyze_window()};
     build_top_k(doc, analysis);
@@ -1085,6 +1150,10 @@ void MetaLogEngine::build_acquisition(MetaLogDocument& doc) const
     acquisition.role_cardinality =
         card.per_axis[static_cast<std::size_t>(CardinalityAxis::Role)];
 
+    // O3 span-native facts (D-OTEL-13 licence + D-OTEL-11): raw integer counts, threshold-free.
+    acquisition.span_records = span_records_;
+    acquisition.orphan_parent_edges = orphan_parent_edges_;
+
     doc.acquisition = acquisition;
 }
 
@@ -1131,6 +1200,11 @@ void MetaLogEngine::reset_window_state()
     global_ring_ = {};
     trace_rings_.clear();
     trace_ring_fifo_.clear();
+    span_templates_.clear(); // O3 (D-OTEL-11): per-window span state resets with the trace state
+    span_fifo_.clear();
+    pending_span_edges_.clear();
+    span_records_ = 0;
+    orphan_parent_edges_ = 0;
     ngram_counts_.clear();
     ngram_total_ = 0;
     cube_base_.clear();

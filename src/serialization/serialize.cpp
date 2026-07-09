@@ -209,6 +209,8 @@ struct Acquisition
     std::uint64_t role_cardinality{0};                      // per-dimension cardinality: role
     std::vector<std::uint64_t> where_cardinality_per_depth; // coarsest → finest (§6.1.1)
     std::uint64_t closed_cells{0};                          // P_closed — condensed cell count
+    std::uint64_t span_records{0};        // O3 (D-OTEL-13): span events observed (the licence fact)
+    std::uint64_t orphan_parent_edges{0}; // O3 (D-OTEL-11): declared parents that did not resolve
 };
 
 // Composed-ruleset identity wire shape (II-7, ADR 0024 §4.2). Reflected (member name == JSON key);
@@ -821,7 +823,9 @@ dto::Document make_document(const MetaLogDocument& doc, const TemplateRegistry& 
             .level_cardinality = doc.acquisition->level_cardinality,
             .role_cardinality = doc.acquisition->role_cardinality,
             .where_cardinality_per_depth = doc.acquisition->where_cardinality_per_depth,
-            .closed_cells = doc.acquisition->closed_cells};
+            .closed_cells = doc.acquisition->closed_cells,
+            .span_records = doc.acquisition->span_records,
+            .orphan_parent_edges = doc.acquisition->orphan_parent_edges};
     if (doc.ruleset)
     {
         dto::RulesetIdentity ruleset{.semantic_identity = doc.ruleset->semantic_identity, .packages = {}};

@@ -162,6 +162,16 @@ class MetaLogEngine
     // max_active_traces cap with deterministic FIFO eviction of the oldest-inserted trace.
     [[nodiscard]] NgramRing& trace_ring_for(TraceId trace_id);
 
+    // O3 (D-OTEL-11): remember a span's span_id → template id (bounded FIFO under max_active_spans)
+    // and queue its declared parent edge (if any) for close-time resolution. A span NEVER enters an
+    // adjacency ring — its causality is declared, not positional.
+    void record_span(const tokenization::CanonicalEvent& event, InternalTemplateID internal_id);
+    // O3 (D-OTEL-11): at window close, resolve each queued parent edge against span_templates_ and
+    // account the observed edge template(parent)→template(child) into ngram_counts_; an unresolved
+    // parent (evicted / straddled) increments orphan_parent_edges_. Order-independent (counts are
+    // commutative), integer-only, no wall-clock → deterministic.
+    void resolve_span_edges();
+
     // Cold-path scratch computed once per close_window and consumed by the
     // build_* steps below: the count-sorted bucket view, the template transition
     // graph, and the per-template structural-surprise band. RAII — owned by a
@@ -260,6 +270,24 @@ class MetaLogEngine
     // unordered_map order is not a determinism surface. Empty for non-OTEL streams.
     std::unordered_map<TraceId, NgramRing> trace_rings_;
     std::deque<TraceId> trace_ring_fifo_;
+
+    // O3 observed-DAG (D-OTEL-11): a span record's causality is DECLARED, so it never enters an
+    // adjacency ring. Instead its span_id → template id is remembered here, and at close_window each
+    // span with a declared parent resolves template(parent)→template(child) into the SAME bounded
+    // ngram_counts_ graph (one fingerprint, no fork). span_templates_ is point-lookup only (not
+    // iterated → order not a determinism surface); span_fifo_ gives deterministic FIFO eviction under
+    // config_.max_active_spans; pending_span_edges_ holds (child template, parent span_id) in ingest
+    // order — resolved at close. All empty / untouched for non-span streams (zero added cost).
+    std::unordered_map<SpanId, InternalTemplateID> span_templates_;
+    std::deque<SpanId> span_fifo_;
+    struct PendingSpanEdge
+    {
+        InternalTemplateID child_template{};
+        SpanId parent_span_id{};
+    };
+    std::vector<PendingSpanEdge> pending_span_edges_;
+    std::uint64_t span_records_{0};        // span events observed this window (D-OTEL-13 licence)
+    std::uint64_t orphan_parent_edges_{0}; // declared parents that did not resolve (D-OTEL-11)
 
     // n-gram table: compact per-window internal template IDs -> count. We translate to
     // content-derived spec IDs only when building the document.

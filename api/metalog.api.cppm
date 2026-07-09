@@ -302,6 +302,15 @@ struct AcquisitionBlock
     // is not stored — the per-dimension factors above are the richer, non-redundant signal.
     std::uint64_t closed_cells{0};
 
+    // ── O3 span-native acquisition facts (insight_otel_epic.md §13, D-OTEL-13) — the LICENCE ──
+    // Raw, threshold-free integer facts the eidos trace-vocabulary classifiers read to decide
+    // whether to speak trace vocabulary (span_records > 0). span_records = span events observed
+    // this window; orphan_parent_edges = spans whose declared parent did not resolve to a template
+    // in the window (evicted past max_active_spans / straddled the boundary) — counted, never
+    // guessed (D-OTEL-11). Both 0 for a non-span window (additive; a non-OTEL doc is unchanged).
+    std::uint64_t span_records{0};
+    std::uint64_t orphan_parent_edges{0};
+
     [[nodiscard]] bool operator==(const AcquisitionBlock&) const noexcept = default;
 };
 
@@ -780,6 +789,7 @@ struct MetaLogConfig
     static constexpr std::size_t kDefaultTopBranchingSize = 64;
     static constexpr std::size_t kDefaultDominantPathMaxSteps = 8;
     static constexpr std::size_t kDefaultMaxActiveTraces = 4096;
+    static constexpr std::size_t kDefaultMaxActiveSpans = 16384; // O3 span_id→template bound (D-OTEL-11)
 
     // Max entries kept in stats.top_k; the rest are summarised into
     // tail_count / tail_unique. Default 64 (~10 KB envelope per spec
@@ -837,6 +847,14 @@ struct MetaLogConfig
     // per-window state at O(active traces), not O(traces). Consulted ONLY for OTEL inputs
     // (events carrying a trace_id); non-OTEL ingest uses the single global ring at zero cost.
     std::size_t max_active_traces{kDefaultMaxActiveTraces};
+
+    // O3 observed-DAG (insight_otel_epic.md §13, D-OTEL-11): max span_id → template entries held
+    // in a window for close-time parent-edge resolution. A span's declared parent is resolved to an
+    // observed edge template(parent)→template(child) at close; a parent evicted past this bound (or
+    // outside the window) yields no edge + one `orphan_parent_edges` fact (counted, never guessed).
+    // Deterministic FIFO eviction of the oldest-inserted span. Bounds per-window span state at
+    // O(active spans). Consulted ONLY for span inputs (records with is_span); 0 disables the bound.
+    std::size_t max_active_spans{kDefaultMaxActiveSpans};
 
     // When true (default), the engine remembers the previous closed
     // window's template frequencies and emits a stability block on
