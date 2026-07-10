@@ -819,6 +819,14 @@ struct MetaLogDocument
     // it follows the CubeBlock precedent risk — but it is stamped once at close and only read
     // (never a synthesized-optional copy on the MSVC /O2 hot path), so std::optional is sound.
     std::optional<RulesetIdentity> ruleset;
+    // The run's terminal verdict (ADR 0025 §5): one four-class scalar per run, resolved by the
+    // D-OUT-RUN-1 precedence (authoritative side-input → console tail → Unknown) and stamped by the
+    // producing orchestration on a WHOLE-RUN document. Additive, NO wire-version bump: Unknown is
+    // the default AND the wire absence (the serializer omits it) — a legacy/verdict-free document
+    // reads back identical ([[additive-gated-metalog-block-keeps-wire-version]]). NOT a cube
+    // dimension (OUTCOME is the run LABEL — [[cube-dimension-model]]); a per-quantum slice document
+    // (the aligned diff's per-pair windows) correctly keeps Unknown — a quantum is not a run.
+    insight::RunOutcome run_outcome{insight::RunOutcome::Unknown};
 };
 
 // ── Producer configuration ─────────────────────────────────────

@@ -353,6 +353,7 @@ struct Document
     std::optional<Acquisition> acquisition;   // D-WHERE-4 self-assessment; omit when not emitted
     std::optional<ServiceEdgeBlock> service_edges; // O4b (D-OTEL-21); omit for a non-span window
     std::optional<RulesetIdentity> ruleset;   // II-7 composed-ruleset identity; omit for a legacy producer
+    std::optional<std::string> run_outcome;   // ADR 0025 §5 — the run's terminal verdict; omit when Unknown
 };
 
 // ── Diff DTO (SPEC §13) ──
@@ -881,6 +882,10 @@ dto::Document make_document(const MetaLogDocument& doc, const TemplateRegistry& 
             ruleset.packages.push_back({.name = pkg.name, .version = pkg.version});
         out.ruleset = std::move(ruleset);
     }
+    // The run verdict (ADR 0025 §5): additive, omit-when-Unknown — a verdict-free document's wire
+    // is byte-identical to a pre-outcome producer's (absence = Unknown/legacy, no version bump).
+    if (doc.run_outcome != insight::RunOutcome::Unknown)
+        out.run_outcome = std::string{insight::to_string(doc.run_outcome)};
     return out;
 }
 
