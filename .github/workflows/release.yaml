@@ -44,7 +44,7 @@ jobs:
       packages: 'insight_metalog:.'
       # metalog vendors insight_canon from its PUBLIC release for the conan create.
       vendor: |
-        insight_canon 1.8.1 CodeRoasted/insight-canon public
+        insight_canon 1.8.2 CodeRoasted/insight-canon public
       benchmark: 'insight_metalog_bench=insight-metalog'
     secrets: inherit
 
