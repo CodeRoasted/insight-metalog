@@ -56,6 +56,12 @@ class InsightMetalogConan(ConanFile):
         self.requires("glaze/7.4.0", visible=False)
 
     def build_requirements(self):
+        # Test-only dialect package. The cube's ROLE dimension is fed by package-supplied
+        # StructuralRole rows (ADR 0024 §3: canon ships no default composition), so the
+        # emerging-border oracle cannot exercise `role: Terminator` without composing a
+        # package that supplies one — measured, not assumed: under an EMPTY composition that
+        # class recovers 1 of 2 antichain members. metalog itself stays dialect-free.
+        self.test_requires("insight_semantic_github/1.8.2")
         self.test_requires("gtest/1.17.0")
         self.test_requires("benchmark/1.9.5")
         # picosha2 — TEST-ONLY now: the lib's template_id SHA-256 moved to canon (D-TIR-1),

@@ -1,0 +1,79 @@
+{"component":"db","level":"info","message":"connection pool healthy seq 1"}
+{"component":"db","level":"info","message":"connection pool healthy seq 2"}
+{"component":"db","level":"info","message":"connection pool healthy seq 3"}
+{"component":"db","level":"info","message":"connection pool healthy seq 4"}
+{"component":"db","level":"info","message":"connection pool healthy seq 5"}
+{"component":"db","level":"info","message":"connection pool healthy seq 6"}
+{"component":"api","level":"info","message":"request served ok seq 1"}
+{"component":"api","level":"info","message":"request served ok seq 2"}
+{"component":"api","level":"info","message":"request served ok seq 3"}
+{"component":"api","level":"info","message":"request served ok seq 4"}
+{"component":"api","level":"info","message":"request served ok seq 5"}
+{"component":"lb","level":"info","message":"upstream pool refreshed seq 1"}
+{"component":"lb","level":"info","message":"upstream pool refreshed seq 2"}
+{"component":"lb","level":"info","message":"upstream pool refreshed seq 3"}
+{"component":"lb","level":"info","message":"upstream pool refreshed seq 4"}
+{"component":"worker","level":"warn","message":"job retry scheduled seq 1"}
+{"component":"worker","level":"warn","message":"job retry scheduled seq 2"}
+{"component":"worker","level":"warn","message":"job retry scheduled seq 3"}
+{"component":"worker","level":"warn","message":"job retry scheduled seq 4"}
+{"component":"db","level":"error","message":"statement rolled back seq 1"}
+{"component":"db","level":"error","message":"statement rolled back seq 2"}
+{"component":"db","level":"error","message":"statement rolled back seq 3"}
+{"component":"api","level":"warn","message":"deprecated route used seq 1"}
+{"component":"api","level":"warn","message":"deprecated route used seq 2"}
+{"component":"svc01","level":"info","message":"svc01 processed request 1"}
+{"component":"svc01","level":"info","message":"svc01 processed request 2"}
+{"component":"svc01","level":"info","message":"svc01 processed request 3"}
+{"component":"svc01","level":"info","message":"svc01 processed request 4"}
+{"component":"svc01","level":"info","message":"svc01 processed request 5"}
+{"component":"svc01","level":"info","message":"svc01 processed request 6"}
+{"component":"svc02","level":"info","message":"svc02 processed request 1"}
+{"component":"svc02","level":"info","message":"svc02 processed request 2"}
+{"component":"svc02","level":"info","message":"svc02 processed request 3"}
+{"component":"svc02","level":"info","message":"svc02 processed request 4"}
+{"component":"svc02","level":"info","message":"svc02 processed request 5"}
+{"component":"svc03","level":"info","message":"svc03 processed request 1"}
+{"component":"svc03","level":"info","message":"svc03 processed request 2"}
+{"component":"svc03","level":"info","message":"svc03 processed request 3"}
+{"component":"svc03","level":"info","message":"svc03 processed request 4"}
+{"component":"svc04","level":"info","message":"svc04 processed request 1"}
+{"component":"svc04","level":"info","message":"svc04 processed request 2"}
+{"component":"svc04","level":"info","message":"svc04 processed request 3"}
+{"component":"svc04","level":"info","message":"svc04 processed request 4"}
+{"component":"svc05","level":"info","message":"svc05 processed request 1"}
+{"component":"svc05","level":"info","message":"svc05 processed request 2"}
+{"component":"svc05","level":"info","message":"svc05 processed request 3"}
+{"component":"svc06","level":"info","message":"svc06 processed request 1"}
+{"component":"svc06","level":"info","message":"svc06 processed request 2"}
+{"component":"svc06","level":"info","message":"svc06 processed request 3"}
+{"component":"svc07","level":"info","message":"svc07 processed request 1"}
+{"component":"svc07","level":"info","message":"svc07 processed request 2"}
+{"component":"svc07","level":"info","message":"svc07 processed request 3"}
+{"component":"svc08","level":"info","message":"svc08 processed request 1"}
+{"component":"svc08","level":"info","message":"svc08 processed request 2"}
+{"component":"svc08","level":"info","message":"svc08 processed request 3"}
+{"component":"svc09","level":"info","message":"svc09 processed request 1"}
+{"component":"svc09","level":"info","message":"svc09 processed request 2"}
+{"component":"svc09","level":"info","message":"svc09 processed request 3"}
+{"component":"svc10","level":"info","message":"svc10 processed request 1"}
+{"component":"svc10","level":"info","message":"svc10 processed request 2"}
+{"component":"svc10","level":"info","message":"svc10 processed request 3"}
+{"component":"svc11","level":"info","message":"svc11 processed request 1"}
+{"component":"svc11","level":"info","message":"svc11 processed request 2"}
+{"component":"svc11","level":"info","message":"svc11 processed request 3"}
+{"component":"svc12","level":"info","message":"svc12 processed request 1"}
+{"component":"svc12","level":"info","message":"svc12 processed request 2"}
+{"component":"svc12","level":"info","message":"svc12 processed request 3"}
+{"component":"svc13","level":"info","message":"svc13 processed request 1"}
+{"component":"svc13","level":"info","message":"svc13 processed request 2"}
+{"component":"svc13","level":"info","message":"svc13 processed request 3"}
+{"component":"svc14","level":"info","message":"svc14 processed request 1"}
+{"component":"svc14","level":"info","message":"svc14 processed request 2"}
+{"component":"svc14","level":"info","message":"svc14 processed request 3"}
+{"component":"svc15","level":"info","message":"svc15 processed request 1"}
+{"component":"svc15","level":"info","message":"svc15 processed request 2"}
+{"component":"svc15","level":"info","message":"svc15 processed request 3"}
+{"component":"svc16","level":"info","message":"svc16 processed request 1"}
+{"component":"svc16","level":"info","message":"svc16 processed request 2"}
+{"component":"svc16","level":"info","message":"svc16 processed request 3"}

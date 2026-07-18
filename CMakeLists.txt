@@ -132,6 +132,8 @@ if(INSIGHT_METALOG_BUILD_TESTS)
         include(CTest)
         find_package(GTest REQUIRED CONFIG)
         find_package(picosha2 REQUIRED CONFIG) # test-only: golden doc-digest hashing (D-TIR-1)
+        # test-only: supplies the StructuralRole rows the cube's role dimension needs
+        find_package(insight_semantic_github REQUIRED CONFIG)
         enable_testing()
 
         # §11.9.7 white-box tests are MODULE MEMBERS: the test target RECOMPILES the module
@@ -146,7 +148,13 @@ if(INSIGHT_METALOG_BUILD_TESTS)
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests
                 FILES    ${METALOG_PUBLIC_MODULE_UNITS} ${METALOG_DETAIL_MODULE_UNITS}
                          tests/metalog.test.cppm)
+        # Corpus fixtures (tests/fixtures/**): static log files a test reads by path. Distinct from
+        # the LogCraft scenario corpus — these are plain given-logs inputs owned by this suite, so
+        # the metalog tests stay free of any generator dependency.
+        target_compile_definitions(insight_metalog_tests PRIVATE
+            INSIGHT_METALOG_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
         target_link_libraries(insight_metalog_tests PRIVATE
+            insight::semantic_github
             insight::canon glaze::glaze picosha2::picosha2
             GTest::gtest GTest::gtest_main)
         target_include_directories(insight_metalog_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
