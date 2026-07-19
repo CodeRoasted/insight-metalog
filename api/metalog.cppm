@@ -48,10 +48,6 @@ class MetaLogEngine
     [[nodiscard]] MetaLogDocument
     close_window(Timestamp end, std::optional<ReportedWindowBounds> reported_bounds = std::nullopt);
 
-    // Compute the spec-conformant template_id for a canonical template
-    // string: "h:" + lower_hex(SHA-256(utf8)[0:16]).
-    [[nodiscard]] static std::string compute_template_id(std::string_view canonical_template);
-
     // The TemplateId -> template_str registry (D-TIR-5): the single home of the display-only
     // template_str, accumulated across windows. Injected at the serialize/explain seams to resolve
     // the strings the per-window documents no longer carry.
@@ -184,7 +180,8 @@ class MetaLogEngine
                            std::unordered_map<InternalTemplateID, std::uint64_t>>
             transitions;
         std::vector<std::uint32_t> incoming_surprise; // indexed by internal id; 0 = on-path/root
-        std::size_t k{0};
+        // Cut index into `ordered`: entries [0, top_k_cut) are the top-K, the rest are the tail.
+        std::size_t top_k_cut{0};
     };
 
     // A below-top_k template that scored a non-zero salience; `index` points into

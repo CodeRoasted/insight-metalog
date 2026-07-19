@@ -30,16 +30,6 @@ constexpr std::size_t kHashRightShift{2U};
 }
 } // namespace
 
-// ── compute_template_id ────────────────────────────────────────
-
-std::string MetaLogEngine::compute_template_id(std::string_view canonical_template)
-{
-    // Identity + the SHA-256 body now live in canon (insight_perf_template_id.md D-TIR-1).
-    // This still renders the "h:"+hex string here; D-TIR-2 carries the POD TemplateId
-    // through the domain and renders only at the serialize seam.
-    return insight::render(insight::template_id_of(canonical_template));
-}
-
 // ── Engine ─────────────────────────────────────────────────────
 
 // HyperLogLog pimpl implementation.
@@ -524,7 +514,7 @@ MetaLogEngine::WindowAnalysis MetaLogEngine::analyze_window() const
                               return lhs.second->count > rhs.second->count;
                           return lhs.first < rhs.first;
                       });
-    analysis.k = std::min(config_.top_k_size, ordered.size());
+    analysis.top_k_cut = std::min(config_.top_k_size, ordered.size());
     build_transition_graph(analysis);
     return analysis;
 }
@@ -616,7 +606,7 @@ TemplateId MetaLogEngine::template_id_for(const std::string& content_id) const
 void MetaLogEngine::build_top_k(MetaLogDocument& doc, const WindowAnalysis& analysis) const
 {
     const auto& ordered = analysis.ordered;
-    const auto top_k_cut = analysis.k;
+    const auto top_k_cut = analysis.top_k_cut;
     const auto total{static_cast<double>(lines_observed_)};
 
     StatsBlock& stats = doc.stats;
@@ -703,7 +693,7 @@ void MetaLogEngine::build_reservoir(MetaLogDocument& doc, const WindowAnalysis& 
     // instead of collapsing into the tail. Disjoint from top_k by construction
     // (candidates are ordered[k..]); admitted templates are excluded from the tail
     // residual so they are not double-counted.
-    if (config_.reservoir_size == 0 || analysis.ordered.size() <= analysis.k)
+    if (config_.reservoir_size == 0 || analysis.ordered.size() <= analysis.top_k_cut)
         return;
     auto candidates = collect_reservoir_candidates(analysis);
     admit_reservoir(doc.stats, analysis, candidates, reserved);
@@ -715,7 +705,7 @@ std::vector<MetaLogEngine::ReservoirCandidate>
 MetaLogEngine::collect_reservoir_candidates(const WindowAnalysis& analysis) const
 {
     const auto& ordered = analysis.ordered;
-    const auto top_k_cut = analysis.k;
+    const auto top_k_cut = analysis.top_k_cut;
     std::vector<ReservoirCandidate> candidates;
     for (std::size_t i = top_k_cut; i < ordered.size(); ++i)
     {
@@ -865,7 +855,7 @@ void MetaLogEngine::build_tail_and_entropy(MetaLogDocument& doc, const WindowAna
                                            const std::unordered_set<std::string>& reserved) const
 {
     const auto& ordered = analysis.ordered;
-    const auto top_k_cut = analysis.k;
+    const auto top_k_cut = analysis.top_k_cut;
     StatsBlock& stats = doc.stats;
     std::uint64_t tail_count = 0;
     std::uint64_t tail_max = 0;

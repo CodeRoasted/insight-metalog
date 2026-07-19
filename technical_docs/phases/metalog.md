@@ -40,7 +40,6 @@ The package also exports:
 | `to_json(MetaLogDiff)` | Serialize a diff document. |
 | `compose(lhs, rhs)` | Merge two documents into one coarser baseline. |
 | `diff(previous, current)` | Compute structured change between two documents. |
-| `compute_template_id(template)` | Produce the spec content hash (`h:` plus 32 hex chars). |
 
 ## What It Does
 
