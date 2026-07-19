@@ -716,8 +716,12 @@ void ingest_latency(meta::MetaLogEngine& engine, std::string_view tmpl, LogLevel
 // `prev_ms` → `cur_ms`; auth is a STABLE second component carrying no latency — it keeps
 // payments' WHERE cell from collapsing as redundant (§16 single-component closure), so the
 // shifted (…, where=payments, latency_shift) cell is a real pinned coord, not the aggregate.
+// `event_count` lets the thin-floor test drop below kShiftSampleFloor; `emerge_in_current`
+// gives the no-move control its ACTIVE structural change (a component that exists only in
+// the current window), so its diff is non-empty without any latency move.
 [[nodiscard]] std::pair<meta::MetaLogDocument, meta::MetaLogDocument>
-latency_shift_windows(std::int64_t prev_ms, std::int64_t cur_ms)
+latency_shift_windows(std::int64_t prev_ms, std::int64_t cur_ms,
+                      int event_count = kComponentCount, bool emerge_in_current = false)
 {
     meta::MetaLogEngine engine{latency_cfg()};
     const std::chrono::system_clock::time_point t0{};
@@ -725,15 +729,18 @@ latency_shift_windows(std::int64_t prev_ms, std::int64_t cur_ms)
     const auto t2{t0 + std::chrono::seconds{120}};
 
     engine.open_window(t0);
-    ingest_latency(engine, "charge card <*>", LogLevel::Info, "payments", prev_ms, kComponentCount);
-    for (int i = 0; i < kComponentCount; ++i)
+    ingest_latency(engine, "charge card <*>", LogLevel::Info, "payments", prev_ms, event_count);
+    for (int i = 0; i < event_count; ++i)
         engine.ingest_event(ev("auth ok", LogLevel::Info, "auth"));
     const auto prev{engine.close_window(t1)};
 
     engine.open_window(t1);
-    ingest_latency(engine, "charge card <*>", LogLevel::Info, "payments", cur_ms, kComponentCount);
-    for (int i = 0; i < kComponentCount; ++i)
+    ingest_latency(engine, "charge card <*>", LogLevel::Info, "payments", cur_ms, event_count);
+    for (int i = 0; i < event_count; ++i)
         engine.ingest_event(ev("auth ok", LogLevel::Info, "auth"));
+    if (emerge_in_current)
+        for (int i = 0; i < 5; ++i)
+            engine.ingest_event(ev("cache warm", LogLevel::Info, "cache"));
     const auto cur{engine.close_window(t2)};
     return {prev, cur};
 }
@@ -871,24 +878,9 @@ TEST(CubeDiffLatencyShift, RecoveryDownEmergesDownShiftCell)
 // latency movement, not on diff activity — no false emergence.
 TEST(CubeDiffLatencyShift, NoLatencyMoveEmitsNoShiftAxisOrCell)
 {
-    meta::MetaLogEngine engine{latency_cfg()};
-    const std::chrono::system_clock::time_point t0{};
-    const auto t1{t0 + std::chrono::seconds{60}};
-    const auto t2{t0 + std::chrono::seconds{120}};
-
-    engine.open_window(t0);
-    ingest_latency(engine, "charge card <*>", LogLevel::Info, "payments", kLowLatencyMs, kComponentCount);
-    for (int i = 0; i < kComponentCount; ++i)
-        engine.ingest_event(ev("auth ok", LogLevel::Info, "auth"));
-    const auto prev{engine.close_window(t1)};
-
-    engine.open_window(t1);
-    ingest_latency(engine, "charge card <*>", LogLevel::Info, "payments", kLowLatencyMs, kComponentCount);
-    for (int i = 0; i < kComponentCount; ++i)
-        engine.ingest_event(ev("auth ok", LogLevel::Info, "auth"));
-    for (int i = 0; i < 5; ++i) // the ACTIVE structural change: a new component appears
-        engine.ingest_event(ev("cache warm", LogLevel::Info, "cache"));
-    const auto cur{engine.close_window(t2)};
+    // Same latency both sides; the emerging `cache` component is the ACTIVE structural change.
+    const auto [prev, cur]{latency_shift_windows(kLowLatencyMs, kLowLatencyMs, kComponentCount,
+                                                 /*emerge_in_current=*/true)};
 
     const auto diff{meta::diff(prev, cur)};
     ASSERT_TRUE(diff.has_cube_diff) << "the 'cache' emergence must produce an (active) cube_diff";
@@ -938,22 +930,7 @@ TEST(CubeDiffLatencyShift, SwapFlipsSignMuteSymmetry)
 TEST(CubeDiffLatencyShift, ThinSampleProjectsShiftAxisToStar)
 {
     constexpr int kThinCount{8}; // < kShiftSampleFloor (32)
-    meta::MetaLogEngine engine{latency_cfg()};
-    const std::chrono::system_clock::time_point t0{};
-    const auto t1{t0 + std::chrono::seconds{60}};
-    const auto t2{t0 + std::chrono::seconds{120}};
-
-    engine.open_window(t0);
-    ingest_latency(engine, "charge card <*>", LogLevel::Info, "payments", kLowLatencyMs, kThinCount);
-    for (int i = 0; i < kThinCount; ++i)
-        engine.ingest_event(ev("auth ok", LogLevel::Info, "auth"));
-    const auto prev{engine.close_window(t1)};
-
-    engine.open_window(t1);
-    ingest_latency(engine, "charge card <*>", LogLevel::Info, "payments", kHighLatencyMs, kThinCount);
-    for (int i = 0; i < kThinCount; ++i)
-        engine.ingest_event(ev("auth ok", LogLevel::Info, "auth"));
-    const auto cur{engine.close_window(t2)};
+    const auto [prev, cur]{latency_shift_windows(kLowLatencyMs, kHighLatencyMs, kThinCount)};
 
     const auto diff{meta::diff(prev, cur)};
     EXPECT_FALSE(has_latency_shift_axis(diff.cube_diff))
