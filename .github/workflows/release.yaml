@@ -46,8 +46,8 @@ jobs:
       # is a separate package from the SAME canon release (ADR 0024) and needs its own row — the conan
       # create builds test_package, which reaches metalog's test_requires. Keep in sync with ci.yml.
       vendor: |
-        insight_canon 1.8.2 CodeRoasted/insight-canon public
-        insight_semantic_github 1.8.2 CodeRoasted/insight-canon public
+        insight_canon 1.8.3 CodeRoasted/insight-canon public
+        insight_semantic_github 1.8.3 CodeRoasted/insight-canon public
       benchmark: 'insight_metalog_bench=insight-metalog'
     secrets: inherit
 

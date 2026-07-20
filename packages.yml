@@ -1,7 +1,7 @@
 packages:
   insight_metalog:
     path: .
-    version: 1.8.2
+    version: 1.8.3
     public: true
     release: true
     # insight_semantic_github is test_required (gtest suite + test_package); it must be in `depends` so
