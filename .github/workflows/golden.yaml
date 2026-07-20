@@ -126,12 +126,17 @@ jobs:
         # (the harness guards find_package(insight_canon) with `if(NOT TARGET insight::canon)` → the
         # in-tree _canon source is used; the editable only satisfies the conan graph + fetches third-party
         # deps). global.conf carries cmakedeps:new (CMakeConfigDeps — module config discovery).
+        # `conan install .` resolves metalog's FULL graph, test_requires included — so every first-party
+        # dep must be satisfiable here. insight_semantic_github is test_required and, post-ADR-0024, is a
+        # SEPARATE package inside the same canon source tree: checking out _canon/ is not enough, it needs
+        # its own `editable add` exactly like the core. Keep this list 1:1 with metalog's first-party deps.
         run: |
           mkdir -p "$CONAN_HOME/profiles"
           cp "malf/profiles/${{ matrix.gcc_profile }}"   "$CONAN_HOME/profiles/${{ matrix.gcc_profile }}"
           cp "malf/profiles/${{ matrix.clang_profile }}" "$CONAN_HOME/profiles/${{ matrix.clang_profile }}"
           [ -f "$CONAN_HOME/global.conf" ] || cp malf/global.conf "$CONAN_HOME/global.conf"
           conan editable add _canon/core
+          conan editable add _canon/semantic/github
           conan editable add .
 
       - name: Determinism proof — ${{ matrix.label }} (sweep-invariance + emit the leg's digest)
