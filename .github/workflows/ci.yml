@@ -15,8 +15,13 @@ jobs:
     with:
       # metalog vendors insight_canon from its PUBLIC release, then builds the single root package
       # (test=true runs the full gtest suite; create=true verifies packaging + test_package).
+      # insight_semantic_github is a SEPARATE package (ADR 0024 made canon multi-package) shipped in
+      # the SAME canon release; the vendor loop restores one package per row, so it needs its own row
+      # even though it comes from the same repo+tag. metalog test_requires it (conanfile.py) — without
+      # the row the gtest suite cannot resolve it. Keep both rows pinned together on a canon bump.
       vendor: |
         insight_canon 1.8.2 CodeRoasted/insight-canon public
+        insight_semantic_github 1.8.2 CodeRoasted/insight-canon public
       modules: '.'
       # PUBLIC repo: sift-mode: public renders the Sift comment fork-safe (read-only token); the
       # sift-post job below posts it.

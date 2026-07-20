@@ -42,9 +42,12 @@ jobs:
     with:
       tag: ${{ github.event.inputs.tag || github.ref_name }}
       packages: 'insight_metalog:.'
-      # metalog vendors insight_canon from its PUBLIC release for the conan create.
+      # metalog vendors insight_canon from its PUBLIC release for the conan create. insight_semantic_github
+      # is a separate package from the SAME canon release (ADR 0024) and needs its own row — the conan
+      # create builds test_package, which reaches metalog's test_requires. Keep in sync with ci.yml.
       vendor: |
         insight_canon 1.8.2 CodeRoasted/insight-canon public
+        insight_semantic_github 1.8.2 CodeRoasted/insight-canon public
       benchmark: 'insight_metalog_bench=insight-metalog'
     secrets: inherit
 
