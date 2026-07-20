@@ -60,7 +60,6 @@ It intentionally does not decide whether a window is anomalous. Cross-window bas
 | `top_ngrams_size` | `32` | Number of behavior n-grams emitted. Set to 0 to disable behavior output. |
 | `max_ngram_keys` | `4096` | Memory cap for distinct n-gram keys. |
 | `emit_stability` | `true` | Emits stability after the first closed window. |
-| `template_emission` | `Inline` | Inline, deduplicated, or id-only template strings. |
 | `top_branching_size` | `64` | Branching entries retained in behavior output. |
 | `dominant_path_max_steps` | `8` | Dominant path length cap. |
 | `max_param_histograms` | `0` | Number of wildcard positions histogrammed per top-K template. |
@@ -69,7 +68,7 @@ It intentionally does not decide whether a window is anomalous. Cross-window bas
 ## Contracts
 
 - MetaLog is lossy by design; lossiness is acceptable only while LogCraft-injected incidents remain detectable downstream.
-- The document is bounded by top-K, tail summaries, n-gram caps, histogram caps, and template emission mode.
+- The document is bounded by top-K, tail summaries, n-gram caps, and histogram caps.
 - `attribution` is reserved by the spec and is not emitted by the current producer.
 - `compose()` drops fields that cannot be represented exactly after aggregation, such as some raw branching/histogram detail.
 - `diff(previous, current)` treats `current - previous` as the polarity for counts, rates, and structural deltas.

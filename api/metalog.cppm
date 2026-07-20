@@ -349,8 +349,8 @@ class MetaLogEngine
 // sequence). Consumers MUST treat an absent field as equivalent to its
 // empty/zero/false value (SPEC §0: producers omit, consumers read lenient).
 // D-TIR-5 field-drop: the display-only `template_str` no longer lives on the document — it is resolved
-// by id from the engine-owned TemplateRegistry at this seam, per `doc.emission` (Inline → per-entry
-// `template`; Dedup → the top-level `templates` map over `doc.dedup_template_ids`; IdOnly → neither).
+// by id from the engine-owned TemplateRegistry at this seam, emitted as SPEC §3.4's inline mode —
+// the per-entry `template`. The three modes are a producer MAY; the others were never wired (adr/0035).
 // The registry MUST contain every id the document references (the engine interns every template at
 // ingest); pass `engine.registry()`. A hand-built document needs a registry seeded with its strings.
 [[nodiscard]] std::string to_json(const MetaLogDocument& doc, const TemplateRegistry& registry);

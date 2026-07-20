@@ -341,7 +341,6 @@ struct Document
     Producer producer;
     Window window;
     Source source;
-    std::optional<std::map<std::string, std::string>> templates; // omitted when empty
     Stats stats;
     std::optional<Behavior> behavior;
     std::optional<Stability> stability;
@@ -658,18 +657,15 @@ render_sequences(const std::vector<std::vector<TemplateId>>& sequences)
 }
 
 // One top_k row, incl. the optional §3.5 per-param histograms (value_counts is
-// copied into a std::map so the wire is key-sorted, §15.6). `emit_inline` = the doc's emission is
-// Inline (SPEC §3.4: the per-entry `template` is emitted only then; Dedup uses the top-level map).
-dto::TopKEntry make_top_k_entry(const TopKEntry& entry, const TemplateRegistry& registry,
-                                bool emit_inline)
+// copied into a std::map so the wire is key-sorted, §15.6).
+dto::TopKEntry make_top_k_entry(const TopKEntry& entry, const TemplateRegistry& registry)
 {
     dto::TopKEntry row;
     row.template_id = insight::render(entry.template_id);
     row.count = entry.count;
     row.frequency = entry.frequency;
-    // SPEC §3.4: inline `template` is optional — emitted in Inline mode, resolved by id.
-    if (emit_inline)
-        if (std::string str{resolve_template_str(registry, entry.template_id)}; !str.empty())
+    // SPEC §3.4: the per-entry `template` is optional on the wire; this producer emits it.
+    if (std::string str{resolve_template_str(registry, entry.template_id)}; !str.empty())
             row.tmpl = std::move(str);
     if (entry.dominant_level)
         row.level = level_to_spec_string(*entry.dominant_level);
@@ -707,15 +703,13 @@ dto::TopKEntry make_top_k_entry(const TopKEntry& entry, const TemplateRegistry& 
 }
 
 // One salience-reservoir row: the rare-salient template plus why it was kept.
-dto::ReservoirEntry make_reservoir_entry(const ReservoirEntry& entry, const TemplateRegistry& registry,
-                                         bool emit_inline)
+dto::ReservoirEntry make_reservoir_entry(const ReservoirEntry& entry, const TemplateRegistry& registry)
 {
     dto::ReservoirEntry row;
     row.template_id = insight::render(entry.template_id);
     row.count = entry.count;
     row.frequency = entry.frequency;
-    if (emit_inline)
-        if (std::string str{resolve_template_str(registry, entry.template_id)}; !str.empty())
+    if (std::string str{resolve_template_str(registry, entry.template_id)}; !str.empty())
             row.tmpl = std::move(str);
     if (entry.dominant_level)
         row.level = level_to_spec_string(*entry.dominant_level);
@@ -732,7 +726,7 @@ dto::ReservoirEntry make_reservoir_entry(const ReservoirEntry& entry, const Temp
     return row;
 }
 
-dto::Stats make_stats(const StatsBlock& stats, const TemplateRegistry& registry, bool emit_inline)
+dto::Stats make_stats(const StatsBlock& stats, const TemplateRegistry& registry)
 {
     dto::Stats out;
     out.unique_templates = stats.unique_templates;
@@ -742,7 +736,7 @@ dto::Stats make_stats(const StatsBlock& stats, const TemplateRegistry& registry,
     out.entropy_bits = stats.entropy_bits;
     out.top_k.reserve(stats.top_k.size());
     for (const auto& entry : stats.top_k)
-        out.top_k.push_back(make_top_k_entry(entry, registry, emit_inline));
+        out.top_k.push_back(make_top_k_entry(entry, registry));
     if (stats.tail_summary)
         out.tail_summary =
             dto::TailSummary{.tail_template_count = stats.tail_summary->tail_template_count,
@@ -756,7 +750,7 @@ dto::Stats make_stats(const StatsBlock& stats, const TemplateRegistry& registry,
         std::vector<dto::ReservoirEntry> rows;
         rows.reserve(stats.reservoir.size());
         for (const auto& entry : stats.reservoir)
-            rows.push_back(make_reservoir_entry(entry, registry, emit_inline));
+            rows.push_back(make_reservoir_entry(entry, registry));
         out.reservoir = std::move(rows);
     }
     return out;
@@ -820,20 +814,9 @@ dto::Document make_document(const MetaLogDocument& doc, const TemplateRegistry& 
                   .duration_seconds = doc.window.duration_seconds,
                   .lines_observed = doc.window.lines_observed};
     out.source = make_source(doc.source);
-    // SPEC §3.4 emission (D-TIR-5): Inline → per-entry `template`; Dedup → the top-level `templates`
-    // map over the per-window membership (dedup_template_ids), strings resolved by id from the registry;
-    // IdOnly → neither. The mode now travels on the document (was implicit in field population).
-    const bool emit_inline{doc.emission == TemplateEmissionMode::Inline};
-    if (doc.emission == TemplateEmissionMode::Dedup && !doc.dedup_template_ids.empty())
-    {
-        // Render each TemplateId key to "h:"+hex for the wire object (D-TIR-2 seam); a std::map keys
-        // the wire by the rendered string (stable order).
-        std::map<std::string, std::string> rendered;
-        for (const TemplateId template_id : doc.dedup_template_ids)
-            rendered.emplace(insight::render(template_id), resolve_template_str(registry, template_id));
-        out.templates = std::move(rendered);
-    }
-    out.stats = make_stats(doc.stats, registry, emit_inline);
+    // SPEC §3.4: this producer emits the INLINE mode — the per-entry `template`, resolved by
+    // id from the engine-owned registry. The three modes are a producer MAY (adr/0035).
+    out.stats = make_stats(doc.stats, registry);
     if (doc.behavior)
         out.behavior = make_behavior(*doc.behavior);
     if (doc.stability)

@@ -749,15 +749,6 @@ struct ProvenanceEntry
 };
 
 // Template-string emission mode (SPEC §3.4). Defined before MetaLogDocument so the document can carry
-// the mode it was built under: the serialiser reads it to decide how to render template strings
-// (resolved by id from the engine-owned registry) once the per-entry/per-doc string fields are gone —
-// the wire signal that used to travel implicitly via which string fields were populated.
-enum class TemplateEmissionMode : std::uint8_t
-{
-    Inline = 0, // emit `template` inside each top_k entry (back-compat default)
-    Dedup = 1,  // emit `templates` top-level map only; no inline strings
-    IdOnly = 2, // omit template strings entirely (consumer resolves out-of-band)
-};
 
 struct MetaLogDocument
 {
@@ -768,13 +759,9 @@ struct MetaLogDocument
     StatsBlock stats{};
     std::optional<BehaviorBlock> behavior;
     std::optional<StabilityBlock> stability;
-    // D-TIR-5 field-drop: the display strings live in the engine-owned TemplateRegistry, resolved by
-    // id at the serialize/explain seams. `emission` is the policy this doc was built under (the wire
-    // signal that used to travel implicitly via which string fields were populated). In Dedup mode
-    // `dedup_template_ids` is the full per-window template SET (incl. tail) whose ids the wire
-    // `templates` map renders — membership only; strings come from the registry.
-    TemplateEmissionMode emission{TemplateEmissionMode::Inline}; // policy this doc was built under
-    std::vector<TemplateId> dedup_template_ids; // Dedup mode only: the SPEC §3.4 dedup-map membership
+    // D-TIR-5 field-drop: the display strings live in the engine-owned TemplateRegistry, resolved
+    // by id at the serialize/explain seams. This producer emits SPEC §3.4's INLINE mode only — the
+    // three modes are a producer MAY, and the dedup/id-only arms were never wired (adr/0035).
     std::optional<std::vector<ProvenanceEntry>> provenance; // absent unless composed (SPEC §12.4)
     // Processing-identifier strings (SPEC §2.4). Opaque names of the contract
     // under which the document was produced; gate `compose()` / diff
@@ -916,11 +903,6 @@ struct MetaLogConfig
     // window's template frequencies and emits a stability block on
     // every subsequent window.
     bool emit_stability{true};
-
-    // Template-string emission mode (SPEC §3.4). Default Inline keeps
-    // existing 0.1.x consumers happy; switch to Dedup or IdOnly to
-    // shrink the envelope.
-    TemplateEmissionMode template_emission{TemplateEmissionMode::Inline};
 
     // Cap on `behavior.branching` entries; 0 disables.
     std::size_t top_branching_size{kDefaultTopBranchingSize};

@@ -599,8 +599,7 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
     build_composed_tail(out, state, lhs, rhs);
 
     // Display template strings are no longer carried on a composed document (D-TIR-5): they resolve by
-    // id from the engine registry at serialise. A composed doc keeps the default Inline emission; its
-    // Dedup membership (dedup_template_ids) is unused since composed docs are diff-only.
+    // id from the engine registry at serialise.
 
     // Stability dropped per SPEC §12.1.
     out.provenance = merge_provenance(lhs, rhs);
