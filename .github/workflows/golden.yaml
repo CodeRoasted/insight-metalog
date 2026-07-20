@@ -223,10 +223,16 @@ jobs:
         # `conan export` registers canon's recipe+exports_sources WITHOUT building; the install below
         # resolves the graph (canon + glaze/picosha2/simdjson/…) for os=Windows. The harness rebuilds
         # canon from source under the cell flags (add_subdirectory), the export only satisfies the graph.
+        # insight_semantic_github is test_required by metalog and, post-ADR-0024, is a SEPARATE package
+        # inside the same _canon/ tree — `conan install .` below resolves the FULL graph, test_requires
+        # included, so it needs its own export. This job seeds via `export` where the Linux legs use
+        # `editable add`: the mechanism differs, the completeness requirement does not (INV-13).
         shell: pwsh
         run: |
           conan export _canon/core
+          conan export _canon/semantic/github
           conan list "insight_canon/*#*"
+          conan list "insight_semantic_github/*#*"
 
       - name: Build the det_harness @ O2-fast (canon+metalog tower FROM SOURCE)
         shell: pwsh
