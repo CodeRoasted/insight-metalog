@@ -17,7 +17,7 @@ Raw logs
   insight-eidos   ->  detection reports + explain packets
 ```
 
-> **insight-canon** (`insight_canon`): Tokenization — format strategies, parser, Drain clustering,
+> **insight-canon** (`insight_canon`): Tokenization — format strategies, parser, stateless masking,
 > tokenizer facade, producing the canonical event representation — then Sequence — event ordering,
 > n-gram model, transition graph.
 

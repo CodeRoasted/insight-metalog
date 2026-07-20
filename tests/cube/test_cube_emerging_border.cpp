@@ -3,7 +3,7 @@
 //
 // test_cube_emerging_border.cpp — the cube-A EMERGING BORDER oracle (SPEC §13.6 cube_diff), the
 // pre-registered KILL-SWITCH: per difficulty class, build a baseline and a changed MetaLog document
-// with `emit_cube = true`, diff them through the PUBLIC `meta::diff()`, and assert the emerging
+// (the cube is always-on since 1.7.2), diff them through the PUBLIC `meta::diff()`, and assert the emerging
 // UPPER border recovers a DECLARED antichain at recall >= floor with mis-pointing <= ceiling.
 //
 // ── WHY IT LIVES HERE (re-homed from the InSight playground, 2026-07-18, Kleio) ──────────────
