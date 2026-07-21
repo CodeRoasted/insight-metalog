@@ -23,9 +23,9 @@ using insight::StructuralRole;
 
 // A CanonicalEvent carrying a template, level, component (the WHERE), and role. The
 // component/template are string literals (static storage) → the string_views stay valid.
-[[nodiscard]] tok::CanonicalEvent
-ev(std::string_view tmpl, LogLevel level, std::string_view component,
-   StructuralRole role = StructuralRole::None)
+[[nodiscard]] tok::CanonicalEvent ev(std::string_view tmpl, LogLevel level,
+                                     std::string_view component,
+                                     StructuralRole role = StructuralRole::None)
 {
     tok::CanonicalEvent e;
     e.template_str = tmpl;
@@ -61,10 +61,9 @@ ev(std::string_view tmpl, LogLevel level, std::string_view component,
     return nullptr;
 }
 
-[[nodiscard]] const meta::CubeBorderCell* find_border(const std::vector<meta::CubeBorderCell>& cells,
-                                                      std::optional<std::string> level,
-                                                      std::optional<std::string> where_leaf,
-                                                      std::optional<std::string> role)
+[[nodiscard]] const meta::CubeBorderCell*
+find_border(const std::vector<meta::CubeBorderCell>& cells, std::optional<std::string> level,
+            std::optional<std::string> where_leaf, std::optional<std::string> role)
 {
     for (const auto& cell : cells)
     {
@@ -86,7 +85,8 @@ TEST(CubeBlock, AlwaysBuiltEvenOnDefaultConfig)
     meta::MetaLogEngine engine; // 1.7.2: the cube is unconditional (no opt-in flag)
     engine.open_window(std::chrono::system_clock::time_point{});
     engine.ingest_event(ev("login ok", LogLevel::Info, "auth"));
-    const auto doc{engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
+    const auto doc{
+        engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
     EXPECT_TRUE(doc.has_cube) << "the cube is always built (1.7.2 always-on)";
 }
 
@@ -119,7 +119,8 @@ TEST(CubeCollapse, GuardrailBoundsAnExplodingWindowByLevelBanding)
     // The guardrail's CONTRACT: every window's cube is bounded by the budget.
     EXPECT_LE(doc.cube.cell_count, meta::CubeCardinalityStat::kCellsHard)
         << "collapse guardrail must bound the cube to the budget; got " << doc.cube.cell_count;
-    // It must RECORD the applied collapse in the axes (so mismatched-collapse cubes are detectable).
+    // It must RECORD the applied collapse in the axes (so mismatched-collapse cubes are
+    // detectable).
     std::optional<std::uint32_t> level_band;
     std::optional<std::uint32_t> where_depth;
     for (const auto& axis : doc.cube.axes)
@@ -138,9 +139,10 @@ TEST(CubeCollapse, GuardrailBoundsAnExplodingWindowByLevelBanding)
 }
 
 // Compare-at-min (§C3): two cubes at DIFFERENT collapse depths MUST still diff — a window that kept
-// TRACE cannot be compared to one that banded {Trace,Debug}→Debug at native coords, so both are read
-// at the minimal common depth (the coarser). Without it the diff would VANISH on axis mismatch —
-// losing attribution at exactly the collapse transition. This proves it produces a diff at band_floor=2.
+// TRACE cannot be compared to one that banded {Trace,Debug}→Debug at native coords, so both are
+// read at the minimal common depth (the coarser). Without it the diff would VANISH on axis mismatch
+// — losing attribution at exactly the collapse transition. This proves it produces a diff at
+// band_floor=2.
 TEST(CubeCollapse, CompareAtMinDiffsAcrossDifferentCollapseDepths)
 {
     const auto t0{std::chrono::system_clock::time_point{}};
@@ -179,7 +181,8 @@ TEST(CubeCollapse, CompareAtMinDiffsAcrossDifferentCollapseDepths)
     for (const auto& axis : delta.cube_diff.axes)
         if (axis.name == "level")
             band = axis.band_floor;
-    EXPECT_EQ(band.value_or(0U), 2U) << "the diff is read at the minimal common depth (band_floor=2)";
+    EXPECT_EQ(band.value_or(0U), 2U)
+        << "the diff is read at the minimal common depth (band_floor=2)";
     // Determinism: the compare-at-min projection is a pure function of content.
     EXPECT_EQ(meta::diff(prev, cur).cube_diff, delta.cube_diff)
         << "compare-at-min must be deterministic";
@@ -189,7 +192,8 @@ TEST(CubeCollapse, CompareAtMinDiffsAcrossDifferentCollapseDepths)
 // BOTTOM and NEVER crosses the ERROR/FATAL frontier. Here 2000 components each emit all six levels;
 // even the maximal band (floor 4 = {Trace,Debug,Info,Warn}→Warn — the ceiling, kMaxLevelBandFloor=
 // Error) leaves 3 distinct levels × 2000 comps ≫ 4096, so the guardrail MUST drop WHERE (depth 1→0)
-// rather than band ERROR or FATAL. The frontier is sacred: {ERROR,FATAL} stay distinct at any pressure.
+// rather than band ERROR or FATAL. The frontier is sacred: {ERROR,FATAL} stay distinct at any
+// pressure.
 TEST(CubeCollapse, SeverityFrontierNeverCrossedWhereCollapsesInstead)
 {
     static std::vector<std::string> comps; // static storage → the component string_views stay valid
@@ -229,9 +233,9 @@ TEST(CubeCollapse, SeverityFrontierNeverCrossedWhereCollapsesInstead)
     // LEVEL banding climbed to the frontier ceiling and stopped — it merged everything UP TO Warn
     // (floor 4) but never Error(4)/Fatal(5).
     ASSERT_TRUE(level_band.has_value()) << "LEVEL banding must have fired under this pressure";
-    EXPECT_EQ(*level_band, 4U)
-        << "band_floor must top out at the frontier boundary (Warn); it must NEVER reach FATAL — got "
-        << *level_band;
+    EXPECT_EQ(*level_band, 4U) << "band_floor must top out at the frontier boundary (Warn); it "
+                                  "must NEVER reach FATAL — got "
+                               << *level_band;
     // The frontier survives: ERROR and FATAL are DISTINCT cells, never fused, full mass each.
     const meta::CubeCell* err{find_cell(doc.cube, "ERROR", std::nullopt, "None")};
     const meta::CubeCell* fat{find_cell(doc.cube, "FATAL", std::nullopt, "None")};
@@ -240,19 +244,20 @@ TEST(CubeCollapse, SeverityFrontierNeverCrossedWhereCollapsesInstead)
     EXPECT_EQ(err->count, 2000U) << "every ERROR event retained";
     EXPECT_EQ(fat->count, 2000U) << "every FATAL event retained";
     // Because LEVEL alone could not fit without crossing the frontier, a DIFFERENT axis collapsed:
-    // WHERE dropped to the root (depth 0). This is the "collapse WHERE instead" clause, proven live.
-    EXPECT_EQ(where_depth.value_or(1U), 0U)
-        << "WHERE must collapse when LEVEL banding maxes out below the frontier and still overflows";
+    // WHERE dropped to the root (depth 0). This is the "collapse WHERE instead" clause, proven
+    // live.
+    EXPECT_EQ(where_depth.value_or(1U), 0U) << "WHERE must collapse when LEVEL banding maxes out "
+                                               "below the frontier and still overflows";
     EXPECT_EQ(doc.cube, build().cube) << "the collapse policy must be deterministic (F5-M8)";
 }
 
 // Closure-first / low-card stays full-depth (§C3): a window that fits after CLOSURE alone must NOT
-// collapse — no LEVEL banding, full WHERE depth. Closure is lossless and applied always; collapse is
-// lossy and applied only when over budget. A low-cardinality window degrades nothing.
+// collapse — no LEVEL banding, full WHERE depth. Closure is lossless and applied always; collapse
+// is lossy and applied only when over budget. A low-cardinality window degrades nothing.
 TEST(CubeCollapse, ClosureFirstNoCollapseWhenUnderBudget)
 {
-    constexpr std::array<std::string_view, 10> kComps{"auth",  "db",      "cache", "web",     "api",
-                                                      "ledger", "quota",  "index", "replica", "manifest"};
+    constexpr std::array<std::string_view, 10> kComps{
+        "auth", "db", "cache", "web", "api", "ledger", "quota", "index", "replica", "manifest"};
     meta::MetaLogEngine engine{cube_cfg()};
     engine.open_window(std::chrono::system_clock::time_point{});
     for (const auto comp : kComps) // 10 comps × {Info, Error} = 20 base cells ≪ 4096 budget
@@ -260,7 +265,8 @@ TEST(CubeCollapse, ClosureFirstNoCollapseWhenUnderBudget)
         engine.ingest_event(ev("t", LogLevel::Info, comp));
         engine.ingest_event(ev("t", LogLevel::Error, comp));
     }
-    const auto doc{engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{60})};
+    const auto doc{
+        engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{60})};
     ASSERT_TRUE(doc.has_cube);
     EXPECT_LT(doc.cube.cell_count, meta::CubeCardinalityStat::kCellsHard)
         << "the low-card cube must fit after closure alone; got " << doc.cube.cell_count;
@@ -290,7 +296,8 @@ TEST(CubeCardinality, CountsDistinctPerAxisFromTheClosedCube)
     engine.ingest_event(ev("a", LogLevel::Info, "auth"));
     engine.ingest_event(ev("b", LogLevel::Error, "db"));
     engine.ingest_event(ev("c", LogLevel::Info, "cache"));
-    const auto doc{engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
+    const auto doc{
+        engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
     ASSERT_TRUE(doc.has_cube);
 
     const meta::CubeCardinalityStat card{meta::cube_cardinality(doc.cube)};
@@ -315,7 +322,8 @@ TEST(CubeBlock, ReferenceAxesAndAggregateTotal)
         engine.ingest_event(ev("login ok", LogLevel::Info, "auth"));
     for (int i = 0; i < 3; ++i)
         engine.ingest_event(ev("timeout", LogLevel::Error, "db"));
-    const auto doc{engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
+    const auto doc{
+        engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
 
     ASSERT_TRUE(doc.has_cube);
     const meta::CubeBlock& c{doc.cube};
@@ -360,7 +368,8 @@ TEST(CubeBlock, ClosureCollapsesSingleComponent)
     engine.open_window(std::chrono::system_clock::time_point{});
     for (int i = 0; i < 4; ++i)
         engine.ingest_event(ev("a", LogLevel::Info, "auth"));
-    const auto doc{engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
+    const auto doc{
+        engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
     ASSERT_TRUE(doc.has_cube);
     EXPECT_LT(doc.cube.cell_count, doc.cube.raw_cell_count)
         << "a single-component window must collapse (redundant where-pinned cells dropped)";
@@ -376,13 +385,15 @@ TEST(CubeBlock, EmptyComponentAggregatesNoWhere)
     engine.open_window(std::chrono::system_clock::time_point{});
     engine.ingest_event(ev("x", LogLevel::Info, "")); // no component
     engine.ingest_event(ev("y", LogLevel::Info, "auth"));
-    const auto doc{engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
+    const auto doc{
+        engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
     ASSERT_TRUE(doc.has_cube);
     // Both events are INFO/None; the total-bearing closed cell is {level:INFO, role:None}
     // (where starred, since the empty-component event and the auth event differ on where).
     const meta::CubeCell* apex{find_cell(doc.cube, "INFO", std::nullopt, "None")};
     ASSERT_NE(apex, nullptr);
-    EXPECT_EQ(apex->count, 2U) << "both events counted in the aggregate, incl. the empty-component one";
+    EXPECT_EQ(apex->count, 2U)
+        << "both events counted in the aggregate, incl. the empty-component one";
     // No where=auth cell may claim the empty-component event.
     const meta::CubeCell* info_auth{find_cell(doc.cube, "INFO", "auth", "None")};
     ASSERT_NE(info_auth, nullptr);
@@ -419,7 +430,8 @@ two_windows(meta::TemplateRegistry* out_registry = nullptr)
         engine.ingest_event(ev("pool timeout", LogLevel::Error, "db")); // the burst
     const auto cur{engine.close_window(t2)};
     if (out_registry != nullptr)
-        *out_registry = engine.registry(); // D-TIR-5: registry resolves template strings at serialise
+        *out_registry =
+            engine.registry(); // D-TIR-5: registry resolves template strings at serialise
     return {prev, cur};
 }
 } // namespace
@@ -464,7 +476,8 @@ TEST(CubeDiff, VanishingIsTheDual)
 
     ASSERT_TRUE(diff.has_cube_diff);
     ASSERT_TRUE(diff.cube_diff.has_vanishing);
-    const meta::CubeBorderCell* lower{find_border(diff.cube_diff.vanishing.lower, "ERROR", "db", "None")};
+    const meta::CubeBorderCell* lower{
+        find_border(diff.cube_diff.vanishing.lower, "ERROR", "db", "None")};
     ASSERT_NE(lower, nullptr);
     EXPECT_EQ(lower->previous_count, 5U);
     EXPECT_EQ(lower->current_count, 0U);
@@ -478,14 +491,16 @@ TEST(CubeDiff, OmittedWhenOneSideHasNoCube)
     meta::MetaLogEngine with_cube{cfg};
     with_cube.open_window(std::chrono::system_clock::time_point{});
     with_cube.ingest_event(ev("a", LogLevel::Info, "auth"));
-    const auto doc_cube{with_cube.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
+    const auto doc_cube{
+        with_cube.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
 
     // The cube is always built for a raw window; the only way a doc carries no cube is a
     // COMPOSED axis-mismatch clearing has_cube (§16.7). Simulate that side here.
     meta::MetaLogEngine other{cfg};
     other.open_window(std::chrono::system_clock::time_point{});
     other.ingest_event(ev("a", LogLevel::Info, "auth"));
-    auto doc_plain{other.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
+    auto doc_plain{
+        other.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
     doc_plain.has_cube = false;
 
     EXPECT_FALSE(meta::diff(doc_cube, doc_plain).has_cube_diff)
@@ -529,7 +544,8 @@ TEST(CubeCompose, OmittedWhenOneSideHasNoCube)
     meta::MetaLogEngine a{cfg};
     a.open_window(std::chrono::system_clock::time_point{});
     a.ingest_event(ev("t", LogLevel::Info, "auth"));
-    const auto with{a.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
+    const auto with{
+        a.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
 
     // A no-cube side now arises only from a prior composed axis-mismatch (has_cube
     // cleared); simulate it to exercise the §16.7 "omit when either side lacks a cube" guard.
@@ -557,7 +573,8 @@ TEST(CubeReservoirCross, SalientEntryCarriesLocation)
         engine.ingest_event(ev("steady c", LogLevel::Info, "web"));
     }
     engine.ingest_event(ev("disk failed", LogLevel::Fatal, "storage")); // rare-salient
-    const auto doc{engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{60})};
+    const auto doc{
+        engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{60})};
 
     ASSERT_TRUE(doc.has_cube);
     const meta::ReservoirEntry* fatal{nullptr};
@@ -565,7 +582,8 @@ TEST(CubeReservoirCross, SalientEntryCarriesLocation)
         if (entry.template_id == insight::template_id_of("disk failed"))
             fatal = &entry;
     ASSERT_NE(fatal, nullptr) << "the rare fatal must be in the reservoir";
-    ASSERT_TRUE(fatal->cube_coord.has_value()) << "§16.6: a salient entry carries its cube LOCATION";
+    ASSERT_TRUE(fatal->cube_coord.has_value())
+        << "§16.6: a salient entry carries its cube LOCATION";
     EXPECT_EQ(fatal->cube_coord->level, "FATAL");
     ASSERT_TRUE(fatal->cube_coord->where.has_value());
     ASSERT_EQ(fatal->cube_coord->where->size(), 1U);
@@ -579,13 +597,11 @@ TEST(CubeReservoirCross, SalientEntryCarriesLocation)
 TEST(CubeMustOne, TreeAcceptedDagRejected)
 {
     // A proper tree: a/b and a/c share parent a — single-parent everywhere.
-    const std::vector<std::vector<std::string>> tree{
-        {"a", "b"}, {"a", "c"}, {"a"}};
+    const std::vector<std::vector<std::string>> tree{{"a", "b"}, {"a", "c"}, {"a"}};
     EXPECT_TRUE(cube::where_chain_is_tree(tree));
 
     // A DAG: node {x} appears under two different parents (a and b) → rejected.
-    const std::vector<std::vector<std::string>> dag{
-        {"a", "x"}, {"b", "x"}};
+    const std::vector<std::vector<std::string>> dag{{"a", "x"}, {"b", "x"}};
     EXPECT_FALSE(cube::where_chain_is_tree(dag));
 
     // Depth-1 chains (the v0.6.0 regime) are vacuously trees.
@@ -681,7 +697,8 @@ constexpr std::int64_t kMsToNs{1'000'000}; // DurationLog2Ns schedule is nanosec
 constexpr std::int64_t kLowLatencyMs{100};
 constexpr std::int64_t kHighLatencyMs{100'000};
 // Must clear the diff's thin-sample floor (ComponentOrdinal::kShiftSampleFloor = 32) so a real
-// shift is ADMISSIBLE: below it the latency_shift axis is (correctly) projected to * as untrustworthy.
+// shift is ADMISSIBLE: below it the latency_shift axis is (correctly) projected to * as
+// untrustworthy.
 constexpr int kComponentCount{40};
 
 // cube_cfg() + ordinal histograms enabled (the same-as-param batch gate) + a shared processing
@@ -720,8 +737,8 @@ void ingest_latency(meta::MetaLogEngine& engine, std::string_view tmpl, LogLevel
 // gives the no-move control its ACTIVE structural change (a component that exists only in
 // the current window), so its diff is non-empty without any latency move.
 [[nodiscard]] std::pair<meta::MetaLogDocument, meta::MetaLogDocument>
-latency_shift_windows(std::int64_t prev_ms, std::int64_t cur_ms,
-                      int event_count = kComponentCount, bool emerge_in_current = false)
+latency_shift_windows(std::int64_t prev_ms, std::int64_t cur_ms, int event_count = kComponentCount,
+                      bool emerge_in_current = false)
 {
     meta::MetaLogEngine engine{latency_cfg()};
     const std::chrono::system_clock::time_point t0{};
@@ -770,7 +787,8 @@ latency_shift_windows(std::int64_t prev_ms, std::int64_t cur_ms,
                     {
                         for (const auto* region : {&border.lower, &border.upper})
                             for (const auto& cell : *region)
-                                if (cell.coord.latency_shift && border_where_leaf(cell) == component)
+                                if (cell.coord.latency_shift &&
+                                    border_where_leaf(cell) == component)
                                     return &cell;
                         return nullptr;
                     }};
@@ -919,14 +937,16 @@ TEST(CubeDiffLatencyShift, SwapFlipsSignMuteSymmetry)
     EXPECT_TRUE(down_band.starts_with("down_")) << down_band;
     EXPECT_EQ(magnitude_suffix(up_band), magnitude_suffix(down_band))
         << "polarity-MUTE: the two directions must carry the SAME magnitude band — only the "
-           "sign differs. up=" << up_band << " down=" << down_band;
+           "sign differs. up="
+        << up_band << " down=" << down_band;
 }
 
 // Thin-sample floor (§6.1.1) — the DUAL of DriftUpEmergesUpShiftCell: the SAME real 10-octave
 // move, but only 8 paired events (below ComponentOrdinal::kShiftSampleFloor = 32). ordinal_w1's
 // thresholds are scale-relative, so without the floor 8-vs-8 would manufacture up_high; WITH it the
-// axis is INADMISSIBLE and projected to * — no latency_shift axis, no shift cell. The declared error
-// model: a thin window cannot carry the axis, so it says "unknown", never a manufactured verdict.
+// axis is INADMISSIBLE and projected to * — no latency_shift axis, no shift cell. The declared
+// error model: a thin window cannot carry the axis, so it says "unknown", never a manufactured
+// verdict.
 TEST(CubeDiffLatencyShift, ThinSampleProjectsShiftAxisToStar)
 {
     constexpr int kThinCount{8}; // < kShiftSampleFloor (32)

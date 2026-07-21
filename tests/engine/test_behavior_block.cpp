@@ -191,8 +191,10 @@ TEST_F(BehaviorBlockTest, OtelTraceScopingDepollutesConcurrentInterleave)
 
     const auto build = [&](bool with_trace, bool trace_scoping_enabled)
     {
-        meta::MetaLogEngine engine{meta::MetaLogConfig{
-            .top_k_size = 16, .top_ngrams_size = 32, .trace_scoping_enabled = trace_scoping_enabled}};
+        meta::MetaLogEngine engine{
+            meta::MetaLogConfig{.top_k_size = 16,
+                                .top_ngrams_size = 32,
+                                .trace_scoping_enabled = trace_scoping_enabled}};
         engine.open_window(start_);
         for (int instance = 0; instance < kInstances; ++instance)
         {
@@ -272,7 +274,8 @@ TEST_F(BehaviorBlockTest, OtelTraceScopingDepollutesConcurrentInterleave)
     // The control arm (trace_scoping_enabled=false on OTEL input) reproduces the global-order
     // graph EXACTLY — proof the flag is a true A/B on the same input (the scenario control arm).
     EXPECT_EQ(control_real, global_real) << "scoping-disabled control must match the global graph";
-    EXPECT_EQ(control_noise, global_noise) << "scoping-disabled control must match the global graph";
+    EXPECT_EQ(control_noise, global_noise)
+        << "scoping-disabled control must match the global graph";
 }
 
 } // namespace

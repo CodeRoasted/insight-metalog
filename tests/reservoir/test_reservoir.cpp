@@ -22,49 +22,51 @@ using insight::metalog::test::make_event;
 
 namespace
 {
-// Feed N frequent benign Info templates plus one rare event, with a small top_k
-// so the rare event is below it. Returns the closed document.
-meta::MetaLogDocument run_with_rare_event(const tok::CanonicalEvent& rare, std::size_t top_k,
-                                          std::size_t reservoir_size,
-                                          meta::TemplateRegistry* out_registry = nullptr)
-{
-    meta::MetaLogEngine engine{meta::MetaLogConfig{
-        .top_k_size = top_k, .reservoir_size = reservoir_size, .emit_stability = false}};
-    engine.open_window(std::chrono::system_clock::time_point{});
-    for (int rep = 0; rep < 100; ++rep)
+    // Feed N frequent benign Info templates plus one rare event, with a small top_k
+    // so the rare event is below it. Returns the closed document.
+    meta::MetaLogDocument run_with_rare_event(const tok::CanonicalEvent& rare, std::size_t top_k,
+                                              std::size_t reservoir_size,
+                                              meta::TemplateRegistry* out_registry = nullptr)
     {
-        engine.ingest_event(make_event("alpha steady event"));
-        engine.ingest_event(make_event("beta steady event"));
-        engine.ingest_event(make_event("gamma steady event"));
-        engine.ingest_event(make_event("delta steady event"));
+        meta::MetaLogEngine engine{meta::MetaLogConfig{
+            .top_k_size = top_k, .reservoir_size = reservoir_size, .emit_stability = false}};
+        engine.open_window(std::chrono::system_clock::time_point{});
+        for (int rep = 0; rep < 100; ++rep)
+        {
+            engine.ingest_event(make_event("alpha steady event"));
+            engine.ingest_event(make_event("beta steady event"));
+            engine.ingest_event(make_event("gamma steady event"));
+            engine.ingest_event(make_event("delta steady event"));
+        }
+        engine.ingest_event(rare); // one occurrence — rank last by frequency
+        auto doc{engine.close_window(std::chrono::system_clock::time_point{} +
+                                     std::chrono::seconds{60})};
+        if (out_registry != nullptr)
+            *out_registry = engine.registry(); // D-TIR-5: caller serialises via the engine registry
+        return doc;
     }
-    engine.ingest_event(rare); // one occurrence — rank last by frequency
-    auto doc{engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{60})};
-    if (out_registry != nullptr)
-        *out_registry = engine.registry(); // D-TIR-5: caller serialises via the engine registry
-    return doc;
-}
 
-// D-TIR-5 field-drop: entries carry only the content-derived TemplateId now (template_str moved to the
-// registry). A membership check computes the expected id from the string (the stateless masker is a
-// pure fn — same string → same id the engine assigned) and compares ids; no registry needed.
-[[nodiscard]] bool reservoir_has(const meta::MetaLogDocument& doc, std::string_view tmpl)
-{
-    const auto id{insight::template_id_of(tmpl)};
-    return std::ranges::any_of(doc.stats.reservoir,
-                               [&](const auto& entry) { return entry.template_id == id; });
-}
-[[nodiscard]] bool top_k_has(const meta::MetaLogDocument& doc, std::string_view tmpl)
-{
-    const auto id{insight::template_id_of(tmpl)};
-    return std::ranges::any_of(doc.stats.top_k,
-                               [&](const auto& entry) { return entry.template_id == id; });
-}
-// A single entry's identity check (TopK or Reservoir), by content-derived id.
-[[nodiscard]] bool entry_is(const auto& entry, std::string_view tmpl)
-{
-    return entry.template_id == insight::template_id_of(tmpl);
-}
+    // D-TIR-5 field-drop: entries carry only the content-derived TemplateId now (template_str moved
+    // to the registry). A membership check computes the expected id from the string (the stateless
+    // masker is a pure fn — same string → same id the engine assigned) and compares ids; no
+    // registry needed.
+    [[nodiscard]] bool reservoir_has(const meta::MetaLogDocument& doc, std::string_view tmpl)
+    {
+        const auto id{insight::template_id_of(tmpl)};
+        return std::ranges::any_of(doc.stats.reservoir,
+                                   [&](const auto& entry) { return entry.template_id == id; });
+    }
+    [[nodiscard]] bool top_k_has(const meta::MetaLogDocument& doc, std::string_view tmpl)
+    {
+        const auto id{insight::template_id_of(tmpl)};
+        return std::ranges::any_of(doc.stats.top_k,
+                                   [&](const auto& entry) { return entry.template_id == id; });
+    }
+    // A single entry's identity check (TopK or Reservoir), by content-derived id.
+    [[nodiscard]] bool entry_is(const auto& entry, std::string_view tmpl)
+    {
+        return entry.template_id == insight::template_id_of(tmpl);
+    }
 } // namespace
 
 TEST(ReservoirTest, RareErrorAdmittedBelowTopK)
@@ -84,10 +86,11 @@ TEST(ReservoirTest, RareErrorAdmittedBelowTopK)
         }
 }
 
-// The negative control of RareErrorAdmittedBelowTopK — re-homes 10's FatalNotRetainedWithoutReservoir
-// (the F1 recall=0 baseline). With the reservoir OFF, a rare severe event below top_k by frequency is
-// retained by NEITHER path: it collapses into the tail. The salience reservoir is exactly what flips
-// this 0→1 (RareErrorAdmittedBelowTopK is the same input with the reservoir on).
+// The negative control of RareErrorAdmittedBelowTopK — re-homes 10's
+// FatalNotRetainedWithoutReservoir (the F1 recall=0 baseline). With the reservoir OFF, a rare
+// severe event below top_k by frequency is retained by NEITHER path: it collapses into the tail.
+// The salience reservoir is exactly what flips this 0→1 (RareErrorAdmittedBelowTopK is the same
+// input with the reservoir on).
 TEST(ReservoirTest, RareErrorNotRetainedWithoutReservoir)
 {
     auto rare{make_event("connection refused to db", insight::LogLevel::Error)};
@@ -417,43 +420,45 @@ TEST(ReservoirTest, DiversityCapCoversDistinctKinds)
 // [[sift-failure-lexicon-must-be-outcome-aware]] [[sift-forcing-corpus-fatigue-vs-catch]]
 namespace
 {
-constexpr std::array<std::string_view, 3> kSurpriseBranches{
-    "took alternate cache path", "took fallback dns route", "took degraded retry queue"};
+    constexpr std::array<std::string_view, 3> kSurpriseBranches{
+        "took alternate cache path", "took fallback dns route", "took degraded retry queue"};
 
-// Build a high-cardinality window: dominant path A→B→C ×200 (fills top_k), then K=3
-// recurring off-path branches A→B→Xi→C ×3 each (p = 3/209 < 2% → StrongOffPath surprise 90),
-// then one rare Error failure (below top_k, salience 80×rarity < the branches' 90×rarity).
-[[nodiscard]] meta::MetaLogDocument build_high_card_window(std::size_t error_reserve)
-{
-    meta::MetaLogEngine engine{meta::MetaLogConfig{.top_k_size = 3,
-                                                   .reservoir_size = 3,
-                                                   .reservoir_per_kind_cap = 0, // isolate the reserve
-                                                   .reservoir_error_reserve = error_reserve,
-                                                   .emit_stability = false}};
-    engine.open_window(std::chrono::system_clock::time_point{});
-    for (int rep = 0; rep < 200; ++rep)
+    // Build a high-cardinality window: dominant path A→B→C ×200 (fills top_k), then K=3
+    // recurring off-path branches A→B→Xi→C ×3 each (p = 3/209 < 2% → StrongOffPath surprise 90),
+    // then one rare Error failure (below top_k, salience 80×rarity < the branches' 90×rarity).
+    [[nodiscard]] meta::MetaLogDocument build_high_card_window(std::size_t error_reserve)
     {
-        engine.ingest_event(make_event("alpha request received"));
-        engine.ingest_event(make_event("beta verify token"));
-        engine.ingest_event(make_event("gamma response sent"));
-    }
-    for (const std::string_view branch : kSurpriseBranches)
-        for (int rep = 0; rep < 3; ++rep)
+        meta::MetaLogEngine engine{
+            meta::MetaLogConfig{.top_k_size = 3,
+                                .reservoir_size = 3,
+                                .reservoir_per_kind_cap = 0, // isolate the reserve
+                                .reservoir_error_reserve = error_reserve,
+                                .emit_stability = false}};
+        engine.open_window(std::chrono::system_clock::time_point{});
+        for (int rep = 0; rep < 200; ++rep)
         {
             engine.ingest_event(make_event("alpha request received"));
             engine.ingest_event(make_event("beta verify token"));
-            engine.ingest_event(make_event(std::string{branch}, insight::LogLevel::Info));
             engine.ingest_event(make_event("gamma response sent"));
         }
-    engine.ingest_event(make_event("connection refused to db", insight::LogLevel::Error));
-    return engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{60});
-}
+        for (const std::string_view branch : kSurpriseBranches)
+            for (int rep = 0; rep < 3; ++rep)
+            {
+                engine.ingest_event(make_event("alpha request received"));
+                engine.ingest_event(make_event("beta verify token"));
+                engine.ingest_event(make_event(std::string{branch}, insight::LogLevel::Info));
+                engine.ingest_event(make_event("gamma response sent"));
+            }
+        engine.ingest_event(make_event("connection refused to db", insight::LogLevel::Error));
+        return engine.close_window(std::chrono::system_clock::time_point{} +
+                                   std::chrono::seconds{60});
+    }
 
-[[nodiscard]] std::size_t branches_retained(const meta::MetaLogDocument& doc)
-{
-    return static_cast<std::size_t>(std::ranges::count_if(
-        kSurpriseBranches, [&](std::string_view b) { return reservoir_has(doc, b); }));
-}
+    [[nodiscard]] std::size_t branches_retained(const meta::MetaLogDocument& doc)
+    {
+        return static_cast<std::size_t>(std::ranges::count_if(
+            kSurpriseBranches, [&](std::string_view b) { return reservoir_has(doc, b); }));
+    }
 } // namespace
 
 TEST(ReservoirTest, ErrorClassReserveRetainsFailureAgainstNonFailureStorm)
@@ -465,7 +470,8 @@ TEST(ReservoirTest, ErrorClassReserveRetainsFailureAgainstNonFailureStorm)
     EXPECT_FALSE(top_k_has(with_reserve, "connection refused to db"))
         << "the failure is below top_k by frequency — retention is the reserve's doing, not top_k";
     EXPECT_EQ(branches_retained(with_reserve), 2U)
-        << "exactly one higher-salience non-failure branch yielded its slot to the reserved failure";
+        << "exactly one higher-salience non-failure branch yielded its slot to the reserved "
+           "failure";
 
     // The reserve overrode salience ORDER: the retained failure scores LESS than the branches
     // that kept their slots — proving it was admitted by the reserve, not by out-scoring them.
@@ -500,36 +506,39 @@ TEST(ReservoirTest, ErrorClassReserveRetainsFailureAgainstNonFailureStorm)
 // even when the cap would keep only one in the general pool.
 TEST(ReservoirTest, ErrorClassReserveIsExemptFromPerKindCap)
 {
-    const auto build{[](std::size_t error_reserve)
-                     {
-                         meta::MetaLogEngine engine{meta::MetaLogConfig{
-                             .top_k_size = 3,
-                             .reservoir_size = 4,
-                             .reservoir_per_kind_cap = 1, // general pool: ≤1 per (role×level) kind
-                             .reservoir_error_reserve = error_reserve,
-                             .emit_stability = false}};
-                         engine.open_window(std::chrono::system_clock::time_point{});
-                         for (int rep = 0; rep < 100; ++rep)
-                         {
-                             engine.ingest_event(make_event("alpha steady event"));
-                             engine.ingest_event(make_event("beta steady event"));
-                             engine.ingest_event(make_event("gamma steady event"));
-                         }
-                         // Four DISTINCT rare Error failures — all the SAME kind (None × Error),
-                         // so the per-kind cap=1 admits only ONE via the general pool.
-                         engine.ingest_event(make_event("disk write failed on shard 1", insight::LogLevel::Error));
-                         engine.ingest_event(make_event("auth token rejected by peer", insight::LogLevel::Error));
-                         engine.ingest_event(make_event("query deadline exceeded", insight::LogLevel::Error));
-                         engine.ingest_event(make_event("replica fell out of quorum", insight::LogLevel::Error));
-                         return engine.close_window(std::chrono::system_clock::time_point{} +
-                                                    std::chrono::seconds{60});
-                     }};
-    const auto error_count{[](const meta::MetaLogDocument& doc)
-                           {
-                               return std::ranges::count_if(doc.stats.reservoir, [](const auto& e)
-                                                            { return e.dominant_level ==
-                                                                     insight::LogLevel::Error; });
-                           }};
+    const auto build{
+        [](std::size_t error_reserve)
+        {
+            meta::MetaLogEngine engine{meta::MetaLogConfig{
+                .top_k_size = 3,
+                .reservoir_size = 4,
+                .reservoir_per_kind_cap = 1, // general pool: ≤1 per (role×level) kind
+                .reservoir_error_reserve = error_reserve,
+                .emit_stability = false}};
+            engine.open_window(std::chrono::system_clock::time_point{});
+            for (int rep = 0; rep < 100; ++rep)
+            {
+                engine.ingest_event(make_event("alpha steady event"));
+                engine.ingest_event(make_event("beta steady event"));
+                engine.ingest_event(make_event("gamma steady event"));
+            }
+            // Four DISTINCT rare Error failures — all the SAME kind (None × Error),
+            // so the per-kind cap=1 admits only ONE via the general pool.
+            engine.ingest_event(
+                make_event("disk write failed on shard 1", insight::LogLevel::Error));
+            engine.ingest_event(
+                make_event("auth token rejected by peer", insight::LogLevel::Error));
+            engine.ingest_event(make_event("query deadline exceeded", insight::LogLevel::Error));
+            engine.ingest_event(make_event("replica fell out of quorum", insight::LogLevel::Error));
+            return engine.close_window(std::chrono::system_clock::time_point{} +
+                                       std::chrono::seconds{60});
+        }};
+    const auto error_count{
+        [](const meta::MetaLogDocument& doc)
+        {
+            return std::ranges::count_if(doc.stats.reservoir, [](const auto& e)
+                                         { return e.dominant_level == insight::LogLevel::Error; });
+        }};
 
     const auto capped_only{build(/*error_reserve=*/0)};
     EXPECT_EQ(error_count(capped_only), 1)
@@ -591,9 +600,9 @@ TEST(ReservoirTest, AllEchoedFailureTemplateNotAdmittedButRuntimeOccurrenceRescu
         meta::MetaLogEngine engine{
             meta::MetaLogConfig{.top_k_size = 3, .reservoir_size = 8, .emit_stability = false}};
         engine.open_window(std::chrono::system_clock::time_point{});
-        engine.ingest_event(echoed_event("Download failed after 3 attempts"));        // echoed
-        engine.ingest_event(echoed_event("Download failed after 3 attempts"));        // echoed
-        engine.ingest_event(make_event("Download failed after 3 attempts"));          // runtime!
+        engine.ingest_event(echoed_event("Download failed after 3 attempts")); // echoed
+        engine.ingest_event(echoed_event("Download failed after 3 attempts")); // echoed
+        engine.ingest_event(make_event("Download failed after 3 attempts"));   // runtime!
         for (int rep = 0; rep < 100; ++rep)
         {
             engine.ingest_event(make_event("alpha steady event"));
@@ -778,7 +787,8 @@ TEST(ReDerivationCoordinate, ComposedSerialisesAsChildrenOnlyXOR)
     const auto composed{
         meta::compose(build("seed=1", t0), build("seed=2", t0 + std::chrono::seconds(30)))};
     // This test asserts the coordinate XOR encoding, not template strings — an empty registry is
-    // sufficient (composed docs are id-only; their display strings resolve from the engine registry).
+    // sufficient (composed docs are id-only; their display strings resolve from the engine
+    // registry).
     const std::string json{meta::to_json(composed, meta::TemplateRegistry{})};
 
     const auto parsed{glz::read_json<glz::generic>(json)};

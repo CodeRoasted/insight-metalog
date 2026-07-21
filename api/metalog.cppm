@@ -51,7 +51,10 @@ class MetaLogEngine
     // The TemplateId -> template_str registry (D-TIR-5): the single home of the display-only
     // template_str, accumulated across windows. Injected at the serialize/explain seams to resolve
     // the strings the per-window documents no longer carry.
-    [[nodiscard]] const TemplateRegistry& registry() const noexcept { return registry_; }
+    [[nodiscard]] const TemplateRegistry& registry() const noexcept
+    {
+        return registry_;
+    }
 
   private:
     static constexpr std::size_t kMaxTrackedNgramSize = 3;
@@ -232,9 +235,10 @@ class MetaLogEngine
     // structural facts (component-axis coverage + the dimension self-assessment),
     // aggregated from the buckets' component marginals. Always built.
     void build_acquisition(MetaLogDocument& doc) const;
-    // O4b distilled service topology (D-OTEL-21): emit the service_edges block iff the window had trace
-    // substrate (span_records_ > 0), from service_edges_ — sorted canonical order, top `max_service_edges`
-    // by weight (canonical-key tie-break) + dropped_edges. Absent for a non-span window.
+    // O4b distilled service topology (D-OTEL-21): emit the service_edges block iff the window had
+    // trace substrate (span_records_ > 0), from service_edges_ — sorted canonical order, top
+    // `max_service_edges` by weight (canonical-key tie-break) + dropped_edges. Absent for a
+    // non-span window.
     void build_service_edges(MetaLogDocument& doc) const;
     void stash_prev_window(const MetaLogDocument& doc);
     void build_templates_map(MetaLogDocument& doc) const;
@@ -256,9 +260,9 @@ class MetaLogEngine
     // build_branching / build_dominant_path index this to stamp the domain id without
     // re-hashing; the "h:"+hex string is rendered only at the serialize seam.
     std::vector<TemplateId> content_templates_by_internal_id_;
-    // D-TIR-5: the single TemplateId -> template_str home (display-only), accumulated across windows
-    // and injected at the serialize/explain seams. template_str is dropped from the per-window
-    // document entries that flow through the pyramid.
+    // D-TIR-5: the single TemplateId -> template_str home (display-only), accumulated across
+    // windows and injected at the serialize/explain seams. template_str is dropped from the
+    // per-window document entries that flow through the pyramid.
     TemplateRegistry registry_;
 
     // The global recent-template-id ring — the non-OTEL n-gram path (pre-OTEL behaviour,
@@ -273,15 +277,15 @@ class MetaLogEngine
     std::deque<TraceId> trace_ring_fifo_;
 
     // O3 observed-DAG (D-OTEL-11): a span record's causality is DECLARED, so it never enters an
-    // adjacency ring. Instead its span_id → template id is remembered here, and at close_window each
-    // span with a declared parent resolves template(parent)→template(child) into the SAME bounded
-    // ngram_counts_ graph (one fingerprint, no fork). span_templates_ is point-lookup only (not
-    // iterated → order not a determinism surface); span_fifo_ gives deterministic FIFO eviction under
-    // config_.max_active_spans; pending_span_edges_ holds (child template, parent span_id) in ingest
-    // order — resolved at close. All empty / untouched for non-span streams (zero added cost).
-    // A remembered span: its template id (for the observed template→template edge) + its component
-    // (service.name — for the O4b distilled service edge, D-OTEL-21). component is owned (the canon
-    // string_view is arena-stable only within the record).
+    // adjacency ring. Instead its span_id → template id is remembered here, and at close_window
+    // each span with a declared parent resolves template(parent)→template(child) into the SAME
+    // bounded ngram_counts_ graph (one fingerprint, no fork). span_templates_ is point-lookup only
+    // (not iterated → order not a determinism surface); span_fifo_ gives deterministic FIFO
+    // eviction under config_.max_active_spans; pending_span_edges_ holds (child template, parent
+    // span_id) in ingest order — resolved at close. All empty / untouched for non-span streams
+    // (zero added cost). A remembered span: its template id (for the observed template→template
+    // edge) + its component (service.name — for the O4b distilled service edge, D-OTEL-21).
+    // component is owned (the canon string_view is arena-stable only within the record).
     struct SpanNode
     {
         InternalTemplateID template_id{};
@@ -296,10 +300,11 @@ class MetaLogEngine
         std::string child_component; // the CHILD span's service.name → the service edge's callee
     };
     std::vector<PendingSpanEdge> pending_span_edges_;
-    // O4b Span Links (D-OTEL-9): a span's declared cross-trace edge to another span, resolved at close
-    // (by span_id, across traces) into the SAME distilled service topology as intra-trace parentage —
-    // source_component → component(linked). The source component is known now; the linked span (and its
-    // component) is resolved at close, since it may serialize later or in another trace.
+    // O4b Span Links (D-OTEL-9): a span's declared cross-trace edge to another span, resolved at
+    // close (by span_id, across traces) into the SAME distilled service topology as intra-trace
+    // parentage — source_component → component(linked). The source component is known now; the
+    // linked span (and its component) is resolved at close, since it may serialize later or in
+    // another trace.
     struct PendingLinkEdge
     {
         std::string source_component;
@@ -308,12 +313,14 @@ class MetaLogEngine
     std::vector<PendingLinkEdge> pending_link_edges_;
     std::uint64_t span_records_{0};        // span events observed this window (D-OTEL-13 licence)
     std::uint64_t orphan_parent_edges_{0}; // declared parents that did not resolve (D-OTEL-11)
-    std::uint64_t orphan_link_edges_{0};   // declared LINK targets that did not resolve (D-OTEL-9); the
-                                           // cross-route link loss the pooling grain hid, counted not guessed
+    std::uint64_t orphan_link_edges_{
+        0}; // declared LINK targets that did not resolve (D-OTEL-9); the
+            // cross-route link loss the pooling grain hid, counted not guessed
     // O4b distilled service topology (D-OTEL-21): (caller_component, callee_component) → observed
-    // weight, accumulated in resolve_span_edges from each resolved parent→child pair whose components
-    // differ (self-edges excluded). std::map keeps the canonical (caller, callee) byte order the wire
-    // block emits; bounded by topology² (service.name is the low-card WHERE tier). Cleared per window.
+    // weight, accumulated in resolve_span_edges from each resolved parent→child pair whose
+    // components differ (self-edges excluded). std::map keeps the canonical (caller, callee) byte
+    // order the wire block emits; bounded by topology² (service.name is the low-card WHERE tier).
+    // Cleared per window.
     std::map<std::pair<std::string, std::string>, std::uint64_t> service_edges_;
 
     // n-gram table: compact per-window internal template IDs -> count. We translate to
@@ -348,11 +355,12 @@ class MetaLogEngine
 // OMITTED, never emitted as empty/zero/false (one document -> one byte
 // sequence). Consumers MUST treat an absent field as equivalent to its
 // empty/zero/false value (SPEC §0: producers omit, consumers read lenient).
-// D-TIR-5 field-drop: the display-only `template_str` no longer lives on the document — it is resolved
-// by id from the engine-owned TemplateRegistry at this seam, emitted as SPEC §3.4's inline mode —
-// the per-entry `template`. The three modes are a producer MAY; the others were never wired (adr/0035).
-// The registry MUST contain every id the document references (the engine interns every template at
-// ingest); pass `engine.registry()`. A hand-built document needs a registry seeded with its strings.
+// D-TIR-5 field-drop: the display-only `template_str` no longer lives on the document — it is
+// resolved by id from the engine-owned TemplateRegistry at this seam, emitted as SPEC §3.4's inline
+// mode — the per-entry `template`. The three modes are a producer MAY; the others were never wired
+// (adr/0035). The registry MUST contain every id the document references (the engine interns every
+// template at ingest); pass `engine.registry()`. A hand-built document needs a registry seeded with
+// its strings.
 [[nodiscard]] std::string to_json(const MetaLogDocument& doc, const TemplateRegistry& registry);
 
 // Free serialiser for the diff document (SPEC §13). Same restrictive,
@@ -386,12 +394,13 @@ class MetaLogEngine
 // the compute lives here and the log fires where logging does (Founder ruling 2026-06-20).
 [[nodiscard]] CubeCardinalityStat cube_cardinality(const CubeBlock& cube);
 
-// Was a dimensional collapse APPLIED to this closed cube, and if so which axis + to what depth/band?
-// Returns a human note ("level banded to floor N; where truncated to depth M") when the collapse
-// guardrail actually fired (an axis carries a band_floor > 0 or a floor_depth below its full chain),
-// std::nullopt otherwise. This is the meaningful WARN trigger (studies/005 disposition-D) — the cube
-// coarsened, so cross-cube comparability now binds at that collapse. Observability only; the eidos
-// pipeline emits the gated WARN (metalog excludes spdlog). Pure function of the cube's axes.
+// Was a dimensional collapse APPLIED to this closed cube, and if so which axis + to what
+// depth/band? Returns a human note ("level banded to floor N; where truncated to depth M") when the
+// collapse guardrail actually fired (an axis carries a band_floor > 0 or a floor_depth below its
+// full chain), std::nullopt otherwise. This is the meaningful WARN trigger (studies/005
+// disposition-D) — the cube coarsened, so cross-cube comparability now binds at that collapse.
+// Observability only; the eidos pipeline emits the gated WARN (metalog excludes spdlog). Pure
+// function of the cube's axes.
 [[nodiscard]] std::optional<std::string> collapse_note(const CubeBlock& cube);
 
 } // namespace insight::metalog

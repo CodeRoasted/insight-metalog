@@ -127,12 +127,13 @@ struct OrdinalDrift
 // det::FixedReducer (order-independent, exact, cross-stdlib + MSVC bit-identical); direction =
 // sign(Σ_i (CumB_i·N_a − CumA_i·N_b)). The bucket is an EXACT integer cross-multiply against frozen
 // octave thresholds θ_k (no float, no division, no float→int — [[det-math-f5-determinism]]), so the
-// verdict is replay-stable and golden-frozen. The θ_k are pre-registered (anti-endogamy): ≥5 octaves
-// → HIGH, ≥2 → MED, ≥0.5 → LOW, below → NONE. A zero total (or empty histogram) is a degenerate
-// pairing → {NONE, None}; the caller still gates the schedule-id comparability (D-W1-4).
+// verdict is replay-stable and golden-frozen. The θ_k are pre-registered (anti-endogamy): ≥5
+// octaves → HIGH, ≥2 → MED, ≥0.5 → LOW, below → NONE. A zero total (or empty histogram) is a
+// degenerate pairing → {NONE, None}; the caller still gates the schedule-id comparability (D-W1-4).
 [[nodiscard]] inline OrdinalDrift ordinal_w1(const std::vector<std::uint64_t>& previous,
                                              const std::vector<std::uint64_t>& current,
-                                             std::uint64_t previous_total, std::uint64_t current_total)
+                                             std::uint64_t previous_total,
+                                             std::uint64_t current_total)
 {
     using insight::det::i128;
     using insight::det::u128;
@@ -167,8 +168,9 @@ struct OrdinalDrift
 
     const i128 numerator{numerator_reducer.raw()};
     const i128 denom{total_a * total_b};
-    const auto reaches{[&](std::int64_t threshold_num, std::int64_t threshold_den)
-                       { return (numerator * i128{threshold_den}) >= (i128{threshold_num} * denom); }};
+    const auto reaches{
+        [&](std::int64_t threshold_num, std::int64_t threshold_den)
+        { return (numerator * i128{threshold_den}) >= (i128{threshold_num} * denom); }};
     OrdinalDrift drift;
     if (reaches(kHighNum, kHighDen))
         drift.shift = OrdinalShift::High;
@@ -189,20 +191,22 @@ struct OrdinalDrift
 }
 
 // TemplateRegistry (D-TIR-5): the single TemplateId -> template_str association, owned OUTSIDE the
-// per-window document (the engine owns one; Sift/diff callers own a local one), injected at the display
-// seams (serialize / explain). template_str is a pure DISPLAY attribute — never read on the decision
-// path — so it does not belong in the entries that flow through the pyramid; this is its one home.
-// Append-only, intern-once-per-id (same id => same canon-masked content, so first writer wins). Backed
-// by node-stable std::unordered_map, so returned string_views stay valid for the registry's lifetime.
-// Every member is defined OUT OF LINE (below), non-inline, ON PURPOSE — never fold these back into
-// the class body. `table_` is a std::unordered_map keyed on TemplateId, which is exported from
-// insight.canon (a module-attached type). gcc-15 emits the map's out-of-line std::_Hashtable members
+// per-window document (the engine owns one; Sift/diff callers own a local one), injected at the
+// display seams (serialize / explain). template_str is a pure DISPLAY attribute — never read on the
+// decision path — so it does not belong in the entries that flow through the pyramid; this is its
+// one home. Append-only, intern-once-per-id (same id => same canon-masked content, so first writer
+// wins). Backed by node-stable std::unordered_map, so returned string_views stay valid for the
+// registry's lifetime. Every member is defined OUT OF LINE (below), non-inline, ON PURPOSE — never
+// fold these back into the class body. `table_` is a std::unordered_map keyed on TemplateId, which
+// is exported from insight.canon (a module-attached type). gcc-15 emits the map's out-of-line
+// std::_Hashtable members
 // (_M_reset, _M_update_bbegin, …) with *internal* linkage for a module-attached key, so an inlined
 // copy/move/merge/intern in a *consumer* TU leaves them unresolved at link (surfaces only once the
 // consumer lives in a separate link unit — e.g. the insight-playground unit/contract target split).
 // Keeping the ops non-inline emits them once into libinsight_metalog; consumers just call the
-// external symbol. TemplateRegistry is a pure DISPLAY structure (never on the decision path), so the
-// forgone inlining is perf-immaterial. clang is unaffected — this is correctness-preserving there.
+// external symbol. TemplateRegistry is a pure DISPLAY structure (never on the decision path), so
+// the forgone inlining is perf-immaterial. clang is unaffected — this is correctness-preserving
+// there.
 class TemplateRegistry
 {
   public:
@@ -220,9 +224,10 @@ class TemplateRegistry
     [[nodiscard]] bool contains(TemplateId template_id) const noexcept;
     [[nodiscard]] std::size_t size() const noexcept;
     void clear() noexcept;
-    // Union another registry in (first writer wins, so an existing id keeps its string — the masker is
-    // a pure fn, so a shared id always maps to the same bytes). Used to merge per-shard / per-window
-    // registries into one display vocabulary (e.g. sharded pipeline union, baseline∪changed in diff).
+    // Union another registry in (first writer wins, so an existing id keeps its string — the masker
+    // is a pure fn, so a shared id always maps to the same bytes). Used to merge per-shard /
+    // per-window registries into one display vocabulary (e.g. sharded pipeline union,
+    // baseline∪changed in diff).
     void merge(const TemplateRegistry& other);
 
   private:
@@ -237,9 +242,10 @@ class TemplateRegistry
 
 struct TopKEntry
 {
-    TemplateId template_id; // content hash POD (rendered to "h:"+hex at the serialize seam, spec §3.2).
-                            // The display template_str lives in the engine-owned TemplateRegistry
-                            // (D-TIR-5 field-drop), resolved by id at the serialize/explain seams.
+    TemplateId
+        template_id; // content hash POD (rendered to "h:"+hex at the serialize seam, spec §3.2).
+                     // The display template_str lives in the engine-owned TemplateRegistry
+                     // (D-TIR-5 field-drop), resolved by id at the serialize/explain seams.
     std::uint64_t count{0};
     double frequency{0.0};
     std::optional<LogLevel> dominant_level;
@@ -283,9 +289,9 @@ struct AcquisitionBlock
     // Raw facts (no verdict). The MANDATORY cardinality signal: the observed distinct-value COUNT
     // per cube dimension {level, where(=distinct_components), role}. This is CARDINALITY, never the
     // count-per-value distribution (that stays the histogram's, F11). Publishing each dimension
-    // (not just the ∏ product) is what tells a consumer WHICH dimension is exploding — the input the
-    // collapse's LEVEL-vs-WHERE choice and the operator both need. WHERE is the open axis that can
-    // explode; level/role are bounded enums (their cardinality is small but still reported).
+    // (not just the ∏ product) is what tells a consumer WHICH dimension is exploding — the input
+    // the collapse's LEVEL-vs-WHERE choice and the operator both need. WHERE is the open axis that
+    // can explode; level/role are bounded enums (their cardinality is small but still reported).
     std::uint64_t level_cardinality{0}; // distinct log levels observed (the cube's level axis)
     std::uint64_t role_cardinality{0};  // distinct structural_roles observed (the cube's role axis)
 
@@ -298,8 +304,8 @@ struct AcquisitionBlock
 
     // P_closed — the cube's condensed cell count (the collapse guardrail's budget trigger). Read
     // off the closed cube (built before this block); a pure integer function of the window (§16.9).
-    // The combinatorial upper bound ∏|dimᵢ| is DERIVABLE (level × distinct_components × role), so it
-    // is not stored — the per-dimension factors above are the richer, non-redundant signal.
+    // The combinatorial upper bound ∏|dimᵢ| is DERIVABLE (level × distinct_components × role), so
+    // it is not stored — the per-dimension factors above are the richer, non-redundant signal.
     std::uint64_t closed_cells{0};
 
     // ── O3 span-native acquisition facts (insight_otel_epic.md §13, D-OTEL-13) — the LICENCE ──
@@ -310,29 +316,29 @@ struct AcquisitionBlock
     // guessed (D-OTEL-11). Both 0 for a non-span window (additive; a non-OTEL doc is unchanged).
     std::uint64_t span_records{0};
     std::uint64_t orphan_parent_edges{0};
-    // O4b Span Links (D-OTEL-9): declared cross-trace LINK targets that did not resolve to a span in
-    // this window (a cross-ROUTE link the aligned-path pooling grain hid, or an external target) —
-    // counted, never guessed, SIBLING to orphan_parent_edges (same D-OTEL-11 discipline). The
+    // O4b Span Links (D-OTEL-9): declared cross-trace LINK targets that did not resolve to a span
+    // in this window (a cross-ROUTE link the aligned-path pooling grain hid, or an external target)
+    // — counted, never guessed, SIBLING to orphan_parent_edges (same D-OTEL-11 discipline). The
     // declared-error-model fact: the artifact says how much link topology it could not see, so a
-    // consumer (or the streaming stitch, §5.2) tells "no cross-route links" apart from "existed but the
-    // segmentation grain hid them". 0 for a window with no unresolved links.
+    // consumer (or the streaming stitch, §5.2) tells "no cross-route links" apart from "existed but
+    // the segmentation grain hid them". 0 for a window with no unresolved links.
     std::uint64_t orphan_link_edges{0};
 
     [[nodiscard]] bool operator==(const AcquisitionBlock&) const noexcept = default;
 };
 
-// ── O4b service edge (insight_otel_epic.md §13.7.1, D-OTEL-21) ────────────────────────────────────
-// The one legitimately-cubeable OTEL dimension, DISTILLED: the observed span tree projected to
-// (caller_service → callee_service) at COMPONENT granularity (bounded by topology², service.name is
-// the low-card WHERE tier), derived at close time in resolve_span_edges. NOT a cube Dim (an edge is a
-// per-PAIR fact with no per-event value — a cube coordinate would fake a joint); NOT folded into
-// top_ngrams (component-pair vs template-bigram are different key spaces). It is its own additive,
-// flag-gated block with its own diff (D-OTEL-21). Deterministic: integer weights, sorted canonical
-// (caller, callee) byte order, no float.
+// ── O4b service edge (insight_otel_epic.md §13.7.1, D-OTEL-21)
+// ──────────────────────────────────── The one legitimately-cubeable OTEL dimension, DISTILLED: the
+// observed span tree projected to (caller_service → callee_service) at COMPONENT granularity
+// (bounded by topology², service.name is the low-card WHERE tier), derived at close time in
+// resolve_span_edges. NOT a cube Dim (an edge is a per-PAIR fact with no per-event value — a cube
+// coordinate would fake a joint); NOT folded into top_ngrams (component-pair vs template-bigram are
+// different key spaces). It is its own additive, flag-gated block with its own diff (D-OTEL-21).
+// Deterministic: integer weights, sorted canonical (caller, callee) byte order, no float.
 struct ServiceEdge
 {
-    std::string caller;    // caller_component = the PARENT span's service.name
-    std::string callee;    // callee_component = the CHILD span's service.name
+    std::string caller;      // caller_component = the PARENT span's service.name
+    std::string callee;      // callee_component = the CHILD span's service.name
     std::uint64_t weight{0}; // observed parent→child edges at this component pair this window
     [[nodiscard]] bool operator==(const ServiceEdge&) const noexcept = default;
 };
@@ -396,8 +402,8 @@ struct CubeAxis
     std::optional<std::vector<std::string>> chain; // chain only: ordered levels, coarsest first
     std::optional<std::uint32_t> floor_depth;      // chain only: retained depth (≤ len(chain));
                                                    // a WHERE-tree axis coarsened by the collapse
-                                                   // guardrail (§C) carries its truncated depth here
-                                                   // (< full ⇒ prefix-truncated; 0 ⇒ axis dropped).
+    // guardrail (§C) carries its truncated depth here
+    // (< full ⇒ prefix-truncated; 0 ⇒ axis dropped).
     // Per-window collapse depth for an ORDINAL axis (level): the number of lowest-severity
     // levels merged into one band from the bottom (§C3 interval-banding), NEVER across the
     // ERROR/FATAL frontier. Absent / 0 ⇒ no banding. Two cubes compare only at equal collapse
@@ -420,10 +426,11 @@ struct CubeCoord
     // SIGNED, polarity-MUTE latency (DurationLog2Ns) shift band a component's distribution crossed
     // into — "up_low"|"up_med"|"up_high" (higher/slower) or "down_low"|"down_med"|"down_high"
     // (lower/faster). The sign is oriented previous→current (read the MetaLogDiff previous/current
-    // stamp): up = current shifted higher than previous. metalog does NOT judge good/bad — the reading
-    // layer (eidos) maps up→regression, down→recovery. Present ONLY on a cube_diff emerging-border cell
-    // whose component shifted (either direction); ALWAYS absent on a stored cube cell (SHIFT_NONE is
-    // the aggregated baseline, never pinned) — the wire object stays open over axis names.
+    // stamp): up = current shifted higher than previous. metalog does NOT judge good/bad — the
+    // reading layer (eidos) maps up→regression, down→recovery. Present ONLY on a cube_diff
+    // emerging-border cell whose component shifted (either direction); ALWAYS absent on a stored
+    // cube cell (SHIFT_NONE is the aggregated baseline, never pinned) — the wire object stays open
+    // over axis names.
     std::optional<std::string> latency_shift;
     [[nodiscard]] bool operator==(const CubeCoord&) const noexcept = default;
 };
@@ -502,12 +509,14 @@ enum class CardinalityAxis : std::uint8_t
 // RETIRED (ADR 0023 / studies/005 disposition-D): they predate dimensional collapse and fired on a
 // standalone threshold decoupled from the actual collapse trigger (cell_count > kCubeCellBudget).
 // The WARN now fires WHEN a collapse is APPLIED (`collapse_note()`, emitted by the eidos pipeline).
-// These are the raw counts (the breakdown that annotates that WARN + the acquisition cardinalities);
-// kCellsHard remains the documented cube bound (= the cube.cpp collapse budget, asserted by tests).
+// These are the raw counts (the breakdown that annotates that WARN + the acquisition
+// cardinalities); kCellsHard remains the documented cube bound (= the cube.cpp collapse budget,
+// asserted by tests).
 struct CubeCardinalityStat
 {
     static constexpr std::size_t kAxisCount{3};
-    static constexpr std::uint64_t kCellsHard{4096}; // the collapse budget; the cube never exceeds it
+    static constexpr std::uint64_t kCellsHard{
+        4096}; // the collapse budget; the cube never exceeds it
 
     std::uint64_t cells{0};                           // closed cell count
     std::array<std::uint32_t, kAxisCount> per_axis{}; // distinct [level, component, role]
@@ -637,7 +646,7 @@ struct BehaviorBlock
     std::size_t top_ngrams_size{0};
     std::optional<std::uint64_t> graph_edge_count;
     std::optional<std::vector<TemplateId>> dominant_path; // absent when not computed
-    std::optional<std::vector<BranchingEntry>> branching;  // absent when not computed
+    std::optional<std::vector<BranchingEntry>> branching; // absent when not computed
 };
 
 struct StabilityBlock
@@ -748,7 +757,8 @@ struct ProvenanceEntry
     std::optional<ReDerivationCoordinate> coordinate;
 };
 
-// Template-string emission mode (SPEC §3.4). Defined before MetaLogDocument so the document can carry
+// Template-string emission mode (SPEC §3.4). Defined before MetaLogDocument so the document can
+// carry
 
 struct MetaLogDocument
 {
@@ -794,16 +804,17 @@ struct MetaLogDocument
     // bool+inline workaround the cube needs is for vector-owning optionals copied in
     // consumer module TUs; AcquisitionBlock is trivially copyable).
     std::optional<AcquisitionBlock> acquisition;
-    // O4b distilled service topology (insight_otel_epic.md §13.7.1, D-OTEL-21). Present iff the window
-    // had trace substrate (span_records > 0); ABSENT for a non-span window (absence = unknown, the
-    // additive-block discipline — the edge diff needs the block on both sides). Owns a vector but is
-    // stamped once at close and only read (never a synthesized-optional copy on the MSVC /O2 hot path),
-    // so std::optional is sound — the RulesetIdentity precedent, [[msvc-port-stdlib-isms]].
+    // O4b distilled service topology (insight_otel_epic.md §13.7.1, D-OTEL-21). Present iff the
+    // window had trace substrate (span_records > 0); ABSENT for a non-span window (absence =
+    // unknown, the additive-block discipline — the edge diff needs the block on both sides). Owns a
+    // vector but is stamped once at close and only read (never a synthesized-optional copy on the
+    // MSVC /O2 hot path), so std::optional is sound — the RulesetIdentity precedent,
+    // [[msvc-port-stdlib-isms]].
     std::optional<ServiceEdgeBlock> service_edges;
     // Composed-ruleset identity (II-7, ADR 0024 §4.2): the semantic_identity + package list of the
     // ruleset that segmented this document. ABSENT = legacy producer (pre-ruleset). Stamped by the
-    // producer from the ComposedSemantics that tokenized the input. RulesetIdentity owns a vector, so
-    // it follows the CubeBlock precedent risk — but it is stamped once at close and only read
+    // producer from the ComposedSemantics that tokenized the input. RulesetIdentity owns a vector,
+    // so it follows the CubeBlock precedent risk — but it is stamped once at close and only read
     // (never a synthesized-optional copy on the MSVC /O2 hot path), so std::optional is sound.
     std::optional<RulesetIdentity> ruleset;
     // The run's terminal verdict (ADR 0025 §5): one four-class scalar per run, resolved by the
@@ -826,8 +837,10 @@ struct MetaLogConfig
     static constexpr std::size_t kDefaultTopBranchingSize = 64;
     static constexpr std::size_t kDefaultDominantPathMaxSteps = 8;
     static constexpr std::size_t kDefaultMaxActiveTraces = 4096;
-    static constexpr std::size_t kDefaultMaxActiveSpans = 16384; // O3 span_id→template bound (D-OTEL-11)
-    static constexpr std::size_t kDefaultMaxServiceEdges = 4096;  // O4b service_edges emit cap (D-OTEL-21)
+    static constexpr std::size_t kDefaultMaxActiveSpans =
+        16384; // O3 span_id→template bound (D-OTEL-11)
+    static constexpr std::size_t kDefaultMaxServiceEdges =
+        4096; // O4b service_edges emit cap (D-OTEL-21)
 
     // Max entries kept in stats.top_k; the rest are summarised into
     // tail_count / tail_unique. Default 64 (~10 KB envelope per spec
@@ -894,9 +907,10 @@ struct MetaLogConfig
     // O(active spans). Consulted ONLY for span inputs (records with is_span); 0 disables the bound.
     std::size_t max_active_spans{kDefaultMaxActiveSpans};
 
-    // O4b service-topology emit cap (D-OTEL-21): max service_edges emitted in the block; edges beyond
-    // this (top-weight-K, canonical-key tie-break) fold into `dropped_edges`. The accumulator is bounded
-    // by topology² (service.name is low-card); this is the safety cap on the emitted wire block.
+    // O4b service-topology emit cap (D-OTEL-21): max service_edges emitted in the block; edges
+    // beyond this (top-weight-K, canonical-key tie-break) fold into `dropped_edges`. The
+    // accumulator is bounded by topology² (service.name is low-card); this is the safety cap on the
+    // emitted wire block.
     std::size_t max_service_edges{kDefaultMaxServiceEdges};
 
     // When true (default), the engine remembers the previous closed
@@ -947,9 +961,10 @@ struct MetaLogConfig
     // II-7 composed-ruleset identity (ADR 0024 §4.2): the semantic_identity + package list of the
     // composition that tokenized the input, injected by the producing binary (the engine pipeline
     // sets it from insight::engine::composed_semantics()). DEFAULT unset — a producer that does not
-    // inject it emits no ruleset block (a legacy producer; absence-tolerant on the consumer). Unlike
-    // canonicalization_version there is no canon-owned default: canon ships no default composition
-    // (ADR 0024 §3), so the binary that declares its package set is the only one that knows the hash.
+    // inject it emits no ruleset block (a legacy producer; absence-tolerant on the consumer).
+    // Unlike canonicalization_version there is no canon-owned default: canon ships no default
+    // composition (ADR 0024 §3), so the binary that declares its package set is the only one that
+    // knows the hash.
     std::optional<RulesetIdentity> ruleset;
 
     // Max number of wildcard positions to histogram per top_k entry.
@@ -1019,9 +1034,10 @@ struct ServiceEdgeWeightChange
 // The service-topology delta (D-OTEL-21): its OWN diff pass over the two windows' service_edges
 // blocks. `emerged`/`vanished` are the appeared-from-nothing / disappeared edge sets at the cube's
 // absolute emergence discipline (θ_was=0, θ_now=1). Semantics-free integer/set arithmetic — metalog
-// stays polarity-blind (the degraded reading + the fold are eidos, D-OTEL-22). Present (in MetaLogDiff)
-// ONLY when BOTH documents carried a service_edges block; absent ⇒ edge verdicts are *unknown* (never
-// "all emerged"). Edges carry the changed-side (emerged) / baseline-side (vanished) weight.
+// stays polarity-blind (the degraded reading + the fold are eidos, D-OTEL-22). Present (in
+// MetaLogDiff) ONLY when BOTH documents carried a service_edges block; absent ⇒ edge verdicts are
+// *unknown* (never "all emerged"). Edges carry the changed-side (emerged) / baseline-side
+// (vanished) weight.
 struct ServiceEdgeDelta
 {
     std::vector<ServiceEdge> emerged;
@@ -1239,9 +1255,9 @@ struct MetaLogDiff
     std::vector<TemplateId> vanished_templates;
     std::vector<BranchingDelta> branching_delta;
     std::optional<NGramDelta> ngram_delta;
-    // O4b service-topology delta (D-OTEL-21). Present ONLY when both documents carried a service_edges
-    // block (absent ⇒ *unknown*). Additive on the DERIVED diff → no diff_version bump (the ngram_delta
-    // / latency_shift derived-not-compared precedent). See ServiceEdgeDelta.
+    // O4b service-topology delta (D-OTEL-21). Present ONLY when both documents carried a
+    // service_edges block (absent ⇒ *unknown*). Additive on the DERIVED diff → no diff_version bump
+    // (the ngram_delta / latency_shift derived-not-compared precedent). See ServiceEdgeDelta.
     std::optional<ServiceEdgeDelta> service_edge_delta;
     // Per-param distribution shift. Empty unless both documents were produced
     // with max_param_histograms > 0 and share at least one template_id.

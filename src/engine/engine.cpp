@@ -18,16 +18,16 @@ namespace insight::metalog
 
 namespace
 {
-constexpr std::size_t kHashLeftShift{6U};
-constexpr std::size_t kHashRightShift{2U};
+    constexpr std::size_t kHashLeftShift{6U};
+    constexpr std::size_t kHashRightShift{2U};
 
-[[nodiscard]] std::size_t mix(std::size_t seed, std::uint64_t value) noexcept
-{
-    constexpr std::size_t kGoldenRatio = 0x9e3779b97f4a7c15ULL;
-    seed ^= static_cast<std::size_t>(value) + kGoldenRatio + (seed << kHashLeftShift) +
-            (seed >> kHashRightShift);
-    return seed;
-}
+    [[nodiscard]] std::size_t mix(std::size_t seed, std::uint64_t value) noexcept
+    {
+        constexpr std::size_t kGoldenRatio = 0x9e3779b97f4a7c15ULL;
+        seed ^= static_cast<std::size_t>(value) + kGoldenRatio + (seed << kHashLeftShift) +
+                (seed >> kHashRightShift);
+        return seed;
+    }
 } // namespace
 
 // ── Engine ─────────────────────────────────────────────────────
@@ -224,7 +224,8 @@ void MetaLogEngine::record_span(const tokenization::CanonicalEvent& event,
     const SpanId span_id{event.trace.span_id};
     // Remember span_id → template for close-time parent resolution. Bounded FIFO under
     // max_active_spans with deterministic eviction of the oldest-inserted span (the O2 discipline).
-    // A span id is unique per (trace, span); on a rare hash collision keep the first (insert-if-new).
+    // A span id is unique per (trace, span); on a rare hash collision keep the first
+    // (insert-if-new).
     if (!span_templates_.contains(span_id))
     {
         if (config_.max_active_spans > 0 && span_templates_.size() >= config_.max_active_spans &&
@@ -233,21 +234,22 @@ void MetaLogEngine::record_span(const tokenization::CanonicalEvent& event,
             span_templates_.erase(span_fifo_.front());
             span_fifo_.pop_front();
         }
-        // Remember the template id (observed template edge) + the component (O4b service edge, D-OTEL-21).
-        span_templates_.emplace(span_id,
-                                SpanNode{.template_id = internal_id,
-                                         .component = std::string{event.component}});
+        // Remember the template id (observed template edge) + the component (O4b service edge,
+        // D-OTEL-21).
+        span_templates_.emplace(span_id, SpanNode{.template_id = internal_id,
+                                                  .component = std::string{event.component}});
         span_fifo_.push_back(span_id);
     }
-    // Queue the declared parent edge (child template + component known now; parent resolved at close,
-    // since a child routinely serializes before its parent). In ingest order → deterministic.
+    // Queue the declared parent edge (child template + component known now; parent resolved at
+    // close, since a child routinely serializes before its parent). In ingest order →
+    // deterministic.
     if (event.trace.has_parent)
         pending_span_edges_.push_back({.child_template = internal_id,
                                        .parent_span_id = event.trace.parent_span_id,
                                        .child_component = std::string{event.component}});
 
-    // O4b Span Links (D-OTEL-9): queue each declared cross-trace edge source_component → linked span.
-    // The linked span (and its component) resolves at close, by span_id, across traces.
+    // O4b Span Links (D-OTEL-9): queue each declared cross-trace edge source_component → linked
+    // span. The linked span (and its component) resolves at close, by span_id, across traces.
     for (const SpanId linked : event.linked_span_ids)
         pending_link_edges_.push_back(
             {.source_component = std::string{event.component}, .linked_span_id = linked});
@@ -260,7 +262,8 @@ void MetaLogEngine::resolve_span_edges()
         const auto parent_it{span_templates_.find(edge.parent_span_id)};
         if (parent_it == span_templates_.end())
         {
-            ++orphan_parent_edges_; // parent evicted / straddled the window — counted, never guessed
+            ++orphan_parent_edges_; // parent evicted / straddled the window — counted, never
+                                    // guessed
             continue;
         }
         // The OBSERVED causal edge template(parent) → template(child) as a bigram in the SAME
@@ -273,26 +276,28 @@ void MetaLogEngine::resolve_span_edges()
         account_ngram(key);
 
         // O4b (D-OTEL-21): DISTIL the same declared edge to component granularity → the service
-        // topology. Excluded: an unknown endpoint (empty service.name — cannot be a topology node) and
-        // a self-edge (same-component parentage is intra-service, not topology). Integer weight, keyed
-        // in canonical (caller, callee) order (std::map) → deterministic, no float.
+        // topology. Excluded: an unknown endpoint (empty service.name — cannot be a topology node)
+        // and a self-edge (same-component parentage is intra-service, not topology). Integer
+        // weight, keyed in canonical (caller, callee) order (std::map) → deterministic, no float.
         const std::string& caller{parent_it->second.component};
         const std::string& callee{edge.child_component};
         if (!caller.empty() && !callee.empty() && caller != callee)
             ++service_edges_[{caller, callee}];
     }
 
-    // O4b Span Links (D-OTEL-9): resolve each declared cross-trace edge into the SAME service topology
-    // — source_component → component(linked span). Resolution is by span_id (across traces); an
-    // unresolved link (target outside the window / evicted) yields no edge, counted as an orphan (the
-    // declared-not-guessed discipline). Self-edges + unknown endpoints excluded, like intra-trace edges.
+    // O4b Span Links (D-OTEL-9): resolve each declared cross-trace edge into the SAME service
+    // topology — source_component → component(linked span). Resolution is by span_id (across
+    // traces); an unresolved link (target outside the window / evicted) yields no edge, counted as
+    // an orphan (the declared-not-guessed discipline). Self-edges + unknown endpoints excluded,
+    // like intra-trace edges.
     for (const auto& link : pending_link_edges_)
     {
         const auto target_it{span_templates_.find(link.linked_span_id)};
         if (target_it == span_templates_.end())
         {
-            ++orphan_link_edges_; // target span not in this window (cross-route / external) — counted,
-                                  // never guessed; SIBLING to orphan_parent_edges (D-OTEL-9, Founder ruling)
+            ++orphan_link_edges_; // target span not in this window (cross-route / external) —
+                                  // counted, never guessed; SIBLING to orphan_parent_edges
+                                  // (D-OTEL-9, Founder ruling)
             continue;
         }
         const std::string& caller{link.source_component};
@@ -328,8 +333,7 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
     // (the cube is unconditional; the collapse guardrail bounds its cardinality, §C). The
     // component string_view is arena-stable only within the window, so it is COPIED into
     // the keys.
-    ++cube_base_[std::make_tuple(event.level, std::string{event.component},
-                                 event.structural_role)];
+    ++cube_base_[std::make_tuple(event.level, std::string{event.component}, event.structural_role)];
 
     // Per-template component marginal — the WHERE carrier (D-WHERE-2/3) and the §16.6
     // reservoir cross, feeding both the cube and the leaf `dominant_component`. Always
@@ -433,9 +437,10 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end,
 
     build_behavior(doc, analysis);
     build_stability(doc, analysis);
-    build_cube(doc);          // SPEC §16 — always (unconditional; collapse-bounded, §C)
-    build_acquisition(doc);   // D-WHERE-4/5 — always (the window's dimension self-assessment)
-    build_service_edges(doc); // O4b (D-OTEL-21) — iff the window had trace substrate (span_records > 0)
+    build_cube(doc);        // SPEC §16 — always (unconditional; collapse-bounded, §C)
+    build_acquisition(doc); // D-WHERE-4/5 — always (the window's dimension self-assessment)
+    build_service_edges(
+        doc); // O4b (D-OTEL-21) — iff the window had trace substrate (span_records > 0)
 
     // Carry this window's frequencies for the next window's stability, emit the
     // §3.4 dedup map, then drop the per-window state.
@@ -455,7 +460,8 @@ void MetaLogEngine::stamp_envelope(MetaLogDocument& doc, Timestamp start, Timest
     doc.producer.version = config_.producer_version;
     doc.source = source_;
     // D-TIR-5 field-drop: the doc carries the emission policy it was built under so the serialiser
-    // knows how to render template strings (by id, from the registry) now the string fields are gone.
+    // knows how to render template strings (by id, from the registry) now the string fields are
+    // gone.
 
     // Reported bounds: the deterministic parseable-ts envelope when supplied (MUST 3),
     // else the open/close machinery times. Duration tracks the reported span.
@@ -617,8 +623,9 @@ void MetaLogEngine::build_top_k(MetaLogDocument& doc, const WindowAnalysis& anal
     {
         TopKEntry entry;
         entry.template_id = template_id_for(ordered[i].first);
-        // D-TIR-5 field-drop: the display template_str is no longer copied onto the entry — it lives
-        // in the engine registry (interned at ingest), resolved by id at the serialize/explain seams.
+        // D-TIR-5 field-drop: the display template_str is no longer copied onto the entry — it
+        // lives in the engine registry (interned at ingest), resolved by id at the
+        // serialize/explain seams.
         entry.count = ordered[i].second->count;
         entry.frequency = total > 0.0 ? static_cast<double>(entry.count) / total : 0.0;
         entry.dominant_level = dominant_level_of(ordered[i].second->level_counts);
@@ -764,8 +771,7 @@ void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& ana
     // (excluded from the tail residual, SPEC §3.7.3). level/role are passed in so the two
     // admission phases compute the dominant maps once.
     const auto admit_one{
-        [&](const ReservoirCandidate& candidate, std::optional<LogLevel> level,
-            StructuralRole role)
+        [&](const ReservoirCandidate& candidate, std::optional<LogLevel> level, StructuralRole role)
         {
             const Bucket& bucket{*ordered[candidate.index].second};
             ReservoirEntry entry;
@@ -1167,30 +1173,31 @@ void MetaLogEngine::build_acquisition(MetaLogDocument& doc) const
     acquisition.where_cardinality_per_depth.push_back(acquisition.distinct_components);
 
     // Per-dimension cardinality (level, role) + P_closed, read off the closed cube (build_cube ran
-    // first). The per-window collapse guardrail's trigger inputs + the mandatory cardinality signal.
-    // Pure integer, order-independent (set-cardinalities), so bit-identical cross-stdlib (§16.9).
-    // (WHERE cardinality == distinct_components above == card.per_axis[Component], so not re-stored.)
+    // first). The per-window collapse guardrail's trigger inputs + the mandatory cardinality
+    // signal. Pure integer, order-independent (set-cardinalities), so bit-identical cross-stdlib
+    // (§16.9). (WHERE cardinality == distinct_components above == card.per_axis[Component], so not
+    // re-stored.)
     const CubeCardinalityStat card{cube_cardinality(doc.cube)};
     acquisition.closed_cells = card.cells;
-    acquisition.level_cardinality =
-        card.per_axis[static_cast<std::size_t>(CardinalityAxis::Level)];
-    acquisition.role_cardinality =
-        card.per_axis[static_cast<std::size_t>(CardinalityAxis::Role)];
+    acquisition.level_cardinality = card.per_axis[static_cast<std::size_t>(CardinalityAxis::Level)];
+    acquisition.role_cardinality = card.per_axis[static_cast<std::size_t>(CardinalityAxis::Role)];
 
     // O3 span-native facts (D-OTEL-13 licence + D-OTEL-11): raw integer counts, threshold-free.
     acquisition.span_records = span_records_;
     acquisition.orphan_parent_edges = orphan_parent_edges_;
-    acquisition.orphan_link_edges = orphan_link_edges_; // O4b (D-OTEL-9): cross-route link loss, declared
+    acquisition.orphan_link_edges =
+        orphan_link_edges_; // O4b (D-OTEL-9): cross-route link loss, declared
 
     doc.acquisition = acquisition;
 }
 
 // O4b distilled service topology (D-OTEL-21). Emitted iff the window had trace substrate
-// (span_records_ > 0) — a non-span window omits the block (absence = unknown; the edge diff needs it
-// on both sides). service_edges_ is already in canonical (caller, callee) order (std::map); emit the
-// top `max_service_edges` by weight (canonical-key tie-break), sorted back into canonical order for a
-// deterministic wire, with dropped_edges = the honest truncation count. A present-but-empty block
-// (traces existed, no cross-service edges) is meaningful — it says "no topology", not "unknown".
+// (span_records_ > 0) — a non-span window omits the block (absence = unknown; the edge diff needs
+// it on both sides). service_edges_ is already in canonical (caller, callee) order (std::map); emit
+// the top `max_service_edges` by weight (canonical-key tie-break), sorted back into canonical order
+// for a deterministic wire, with dropped_edges = the honest truncation count. A present-but-empty
+// block (traces existed, no cross-service edges) is meaningful — it says "no topology", not
+// "unknown".
 void MetaLogEngine::build_service_edges(MetaLogDocument& doc) const
 {
     if (span_records_ == 0)
@@ -1206,8 +1213,9 @@ void MetaLogEngine::build_service_edges(MetaLogDocument& doc) const
     }
     else
     {
-        // Over the cap: keep the top `max_service_edges` by weight, canonical-key tie-break. Select on
-        // a view (weight desc, then canonical key asc), take the cut, then re-sort into canonical order.
+        // Over the cap: keep the top `max_service_edges` by weight, canonical-key tie-break. Select
+        // on a view (weight desc, then canonical key asc), take the cut, then re-sort into
+        // canonical order.
         std::vector<std::pair<std::pair<std::string, std::string>, std::uint64_t>> view(
             service_edges_.begin(), service_edges_.end());
         std::ranges::sort(view,
@@ -1223,10 +1231,9 @@ void MetaLogEngine::build_service_edges(MetaLogDocument& doc) const
         for (const auto& [pair, weight] : view)
             block.edges.push_back(
                 ServiceEdge{.caller = pair.first, .callee = pair.second, .weight = weight});
-        std::ranges::sort(block.edges,
-                          [](const ServiceEdge& lhs, const ServiceEdge& rhs)
-                          { return std::tie(lhs.caller, lhs.callee) <
-                                   std::tie(rhs.caller, rhs.callee); });
+        std::ranges::sort(
+            block.edges, [](const ServiceEdge& lhs, const ServiceEdge& rhs)
+            { return std::tie(lhs.caller, lhs.callee) < std::tie(rhs.caller, rhs.callee); });
     }
     doc.service_edges = std::move(block);
 }
@@ -1269,7 +1276,8 @@ void MetaLogEngine::reset_window_state()
     orphan_parent_edges_ = 0;
     orphan_link_edges_ = 0;
     pending_link_edges_.clear(); // O4b Span Links (D-OTEL-9): per-window link state resets too
-    service_edges_.clear();      // O4b (D-OTEL-21): per-window service topology resets with the span state
+    service_edges_
+        .clear(); // O4b (D-OTEL-21): per-window service topology resets with the span state
     ngram_counts_.clear();
     ngram_total_ = 0;
     cube_base_.clear();

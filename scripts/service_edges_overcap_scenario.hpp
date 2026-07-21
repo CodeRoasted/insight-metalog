@@ -37,8 +37,8 @@ inline void configure(insight::metalog::MetaLogConfig& cfg)
     cfg.max_param_histograms = 0;
 }
 
-// Emit one window of spans that build exactly five (caller → callee) service edges. Each edge() call
-// emits one parent span (its component = caller) followed by `weight` child spans (component =
+// Emit one window of spans that build exactly five (caller → callee) service edges. Each edge()
+// call emits one parent span (its component = caller) followed by `weight` child spans (component =
 // callee) that declare the parent → +weight to service_edges_[{caller, callee}]. Templates are
 // per-role strings; ONLY the component drives the service topology. Caller does open_window /
 // close_window around this. Deterministic given configure() above.
@@ -80,7 +80,8 @@ inline void emit_window(insight::metalog::MetaLogEngine& engine)
     edge("api", "cache", 4);       // {api,cache}       w=4  — clear 2nd
     edge("gateway", "auth", 2);    // {gateway,auth}    w=2  ┐
     edge("gateway", "billing", 2); // {gateway,billing} w=2  ├ 3-way tie for the 3rd (last) slot
-    edge("worker", "queue", 2);    // {worker,queue}    w=2  ┘  → canonical key-asc keeps {gateway,auth}
+    edge("worker", "queue",
+         2); // {worker,queue}    w=2  ┘  → canonical key-asc keeps {gateway,auth}
 }
 
 } // namespace insight::metalog::service_edges_overcap

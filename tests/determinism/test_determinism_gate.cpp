@@ -16,7 +16,8 @@
 import insight.metalog.test;
 
 // The shared F5-M8 near-full reservoir scenario, shared with scripts/determinism_fixture.cpp so
-// this behavioral coverage and the cross-leg gate exercise the identical M=128 admit/evict boundary.
+// this behavioral coverage and the cross-leg gate exercise the identical M=128 admit/evict
+// boundary.
 #include "reservoir_nearfull_scenario.hpp"
 // The shared O4b service-topology over-cap scenario, shared with the fixture so this guard and the
 // cross-leg gate exercise the identical over-cap top-K select (the canonical-key tie-break).
@@ -63,9 +64,10 @@ TEST(MetaLogDocument, ReservoirNearFullExercisesTheF5M8Regime)
 
 // O4b service-topology (D-OTEL-21): the over-cap top-K select MUST stay non-hollow — the emitted
 // block must be OVER the cap (dropped_edges > 0) AND the cut must fall on a weight tie, so the
-// surviving last edge is decided by the canonical-key tie-break alone (the branch the cross-leg gate
-// proves bit-identical). If the scenario silently stopped over-subscribing, or the tie collapsed,
-// that proof would go hollow. Also pins the derived edge VALUES (order, weights, dropped count).
+// surviving last edge is decided by the canonical-key tie-break alone (the branch the cross-leg
+// gate proves bit-identical). If the scenario silently stopped over-subscribing, or the tie
+// collapsed, that proof would go hollow. Also pins the derived edge VALUES (order, weights, dropped
+// count).
 TEST(MetaLogDocument, ServiceEdgesOverCapExercisesTheTieBreak)
 {
     meta::MetaLogConfig cfg;
@@ -84,21 +86,24 @@ TEST(MetaLogDocument, ServiceEdgesOverCapExercisesTheTieBreak)
     const auto& block{*doc.service_edges};
     // Non-hollowness: the block is truncated (over-cap select taken) and the cut fell on a tie.
     ASSERT_EQ(block.edges.size(), cfg.max_service_edges)
-        << "the block must be capped at max_service_edges=" << cfg.max_service_edges
-        << " (got " << block.edges.size() << ") — else the over-cap select path is not exercised";
+        << "the block must be capped at max_service_edges=" << cfg.max_service_edges << " (got "
+        << block.edges.size() << ") — else the over-cap select path is not exercised";
     EXPECT_EQ(block.dropped_edges, 2U)
         << "5 distinct edges built, 3 kept → 2 dropped; a 0 here means the scenario went hollow";
-    // The surviving wire, in canonical (caller, callee) order. The 3rd edge — {gateway,auth} — is the
-    // load-bearing one: it beat {gateway,billing} and {worker,queue} (all weight 2) on the
+    // The surviving wire, in canonical (caller, callee) order. The 3rd edge — {gateway,auth} — is
+    // the load-bearing one: it beat {gateway,billing} and {worker,queue} (all weight 2) on the
     // canonical-key tie-break alone. A stdlib-order-dependent select would surface a DIFFERENT 3rd
     // edge here, and this expectation would fail on that leg.
-    const auto row = [&](std::size_t i) {
-        return std::tuple{block.edges.at(i).caller, block.edges.at(i).callee, block.edges.at(i).weight};
+    const auto row = [&](std::size_t i)
+    {
+        return std::tuple{block.edges.at(i).caller, block.edges.at(i).callee,
+                          block.edges.at(i).weight};
     };
     EXPECT_EQ(row(0), (std::tuple<std::string, std::string, std::uint64_t>{"api", "cache", 4U}));
     EXPECT_EQ(row(1), (std::tuple<std::string, std::string, std::uint64_t>{"api", "db", 5U}));
     EXPECT_EQ(row(2), (std::tuple<std::string, std::string, std::uint64_t>{"gateway", "auth", 2U}))
-        << "the tie-break must keep the canonical-smallest weight-2 key {gateway,auth}; a different "
+        << "the tie-break must keep the canonical-smallest weight-2 key {gateway,auth}; a "
+           "different "
            "3rd edge means the top-K select is stdlib-order-dependent (non-deterministic).";
 }
 
@@ -130,22 +135,30 @@ TEST(MetaLogDocument, AlwaysOnCubeWhereAndAcquisitionFields)
     // Window 1: PARTIAL coverage (a free-text template carries no component) over four distinct
     // components — one a per-template TIE (ping: zebra×2, alpha×2) → ascending picks "alpha".
     engine.open_window(t0);
-    for (int i = 0; i < 6; ++i) engine.ingest_event(ev("login ok", insight::LogLevel::Info, "auth"));
-    for (int i = 0; i < 4; ++i) engine.ingest_event(ev("query slow", insight::LogLevel::Warn, "db"));
-    for (int i = 0; i < 2; ++i) engine.ingest_event(ev("ping", insight::LogLevel::Info, "zebra"));
-    for (int i = 0; i < 2; ++i) engine.ingest_event(ev("ping", insight::LogLevel::Info, "alpha"));
-    for (int i = 0; i < 3; ++i) engine.ingest_event(ev("starting up", insight::LogLevel::Info, ""));
+    for (int i = 0; i < 6; ++i)
+        engine.ingest_event(ev("login ok", insight::LogLevel::Info, "auth"));
+    for (int i = 0; i < 4; ++i)
+        engine.ingest_event(ev("query slow", insight::LogLevel::Warn, "db"));
+    for (int i = 0; i < 2; ++i)
+        engine.ingest_event(ev("ping", insight::LogLevel::Info, "zebra"));
+    for (int i = 0; i < 2; ++i)
+        engine.ingest_event(ev("ping", insight::LogLevel::Info, "alpha"));
+    for (int i = 0; i < 3; ++i)
+        engine.ingest_event(ev("starting up", insight::LogLevel::Info, ""));
     const auto doc1{engine.close_window(t1)};
 
     // Window 2: a db ERROR burst over steady auth traffic; FULL coverage.
     engine.open_window(t1);
-    for (int i = 0; i < 6; ++i) engine.ingest_event(ev("login ok", insight::LogLevel::Info, "auth"));
-    for (int i = 0; i < 5; ++i) engine.ingest_event(ev("pool timeout", insight::LogLevel::Error, "db"));
+    for (int i = 0; i < 6; ++i)
+        engine.ingest_event(ev("login ok", insight::LogLevel::Info, "auth"));
+    for (int i = 0; i < 5; ++i)
+        engine.ingest_event(ev("pool timeout", insight::LogLevel::Error, "db"));
     const auto doc2{engine.close_window(t2)};
 
     ASSERT_TRUE(doc1.has_cube) << "the cube is always built (always-on)";
     ASSERT_TRUE(doc2.has_cube);
-    ASSERT_TRUE(doc1.acquisition.has_value()) << "the per-window acquisition block is always emitted";
+    ASSERT_TRUE(doc1.acquisition.has_value())
+        << "the per-window acquisition block is always emitted";
     ASSERT_TRUE(doc2.acquisition.has_value());
     EXPECT_EQ(doc1.acquisition->records_with_component, 14U)
         << "located events = 6 auth + 4 db + 2 zebra + 2 alpha; the 3 free-text lines carry none";
@@ -163,7 +176,8 @@ TEST(MetaLogDocument, AlwaysOnCubeWhereAndAcquisitionFields)
     EXPECT_EQ(doc1.acquisition->role_cardinality, 1U) << "distinct roles observed: None only";
     std::set<std::string> labels;
     for (const auto& entry : doc1.stats.top_k)
-        if (entry.dominant_component) labels.insert(*entry.dominant_component);
+        if (entry.dominant_component)
+            labels.insert(*entry.dominant_component);
     EXPECT_EQ(labels, (std::set<std::string>{"alpha", "auth", "db"}))
         << "ping ties zebra/alpha → ascending picks 'alpha' (never zebra); the free-text template "
            "carries no label (disengaged, never \"\")";

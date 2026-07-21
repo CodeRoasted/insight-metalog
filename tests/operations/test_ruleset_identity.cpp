@@ -1,14 +1,17 @@
 // NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns
 // test_ruleset_identity.cpp — the II-7 composed-ruleset identity (ADR 0024 §4.2/§4.3): the
-// RulesetIdentity block on MetaLogDocument + its comparability enforcement, which is CENTRALIZED in the
-// §2.4 processing-identifier gate shared by compose()/diff() (metalog.detail.operations). semantic_identity
-// is just another processing identifier through that one gate, so the enforcement tests mirror
-// test_processing_identifiers. Three faces:
-//   1. ROUND-TRIP — the additive block serialises and reads back via glz::generic (there is no typed
+// RulesetIdentity block on MetaLogDocument + its comparability enforcement, which is CENTRALIZED in
+// the §2.4 processing-identifier gate shared by compose()/diff() (metalog.detail.operations).
+// semantic_identity is just another processing identifier through that one gate, so the enforcement
+// tests mirror test_processing_identifiers. Three faces:
+//   1. ROUND-TRIP — the additive block serialises and reads back via glz::generic (there is no
+//   typed
 //      parser; the wire is read generically), member-name == JSON key.
-//   2. ABSENCE — a legacy producer (config.ruleset unset) emits NO block; the consumer is absence-tolerant.
-//   3. MISMATCH — two documents with DIFFERENT semantic_identity are NOT comparable: compose()/diff()
+//   2. ABSENCE — a legacy producer (config.ruleset unset) emits NO block; the consumer is
+//   absence-tolerant.
+//   3. MISMATCH — two documents with DIFFERENT semantic_identity are NOT comparable:
+//   compose()/diff()
 //      fail closed (the §2.4 "MUST fail" branch), never a silent compare (II-7 verbatim).
 // A diff here is a comparability-contract break — fix the code, never the assertion.
 
@@ -24,15 +27,19 @@ using insight::metalog::test::make_event;
 
 const meta::RulesetIdentity kRulesetA{
     .semantic_identity = "a1b2c3d4e5f60718",
-    .packages = {{.name = "github", .version = "1.0.0"}, {.name = "test_frameworks", .version = "1.0.0"}}};
-const meta::RulesetIdentity kRulesetB{ // a DIFFERENT composition — a bumped github package
+    .packages = {{.name = "github", .version = "1.0.0"},
+                 {.name = "test_frameworks", .version = "1.0.0"}}};
+const meta::RulesetIdentity kRulesetB{
+    // a DIFFERENT composition — a bumped github package
     .semantic_identity = "ffffffffffffffff",
-    .packages = {{.name = "github", .version = "2.0.0"}, {.name = "test_frameworks", .version = "1.0.0"}}};
+    .packages = {{.name = "github", .version = "2.0.0"},
+                 {.name = "test_frameworks", .version = "1.0.0"}}};
 
 // Build a closed MetaLogDocument stamped with `ruleset` (nullopt = a legacy producer). Every other
 // processing identifier stays at its default so `ruleset` is the isolated variable across the gate.
-[[nodiscard]] meta::MetaLogDocument build_doc_with_ruleset(std::optional<meta::RulesetIdentity> ruleset,
-                                                          meta::TemplateRegistry* out_registry = nullptr)
+[[nodiscard]] meta::MetaLogDocument
+build_doc_with_ruleset(std::optional<meta::RulesetIdentity> ruleset,
+                       meta::TemplateRegistry* out_registry = nullptr)
 {
     meta::MetaLogConfig cfg{.top_k_size = 8};
     cfg.ruleset = std::move(ruleset);
@@ -58,7 +65,8 @@ TEST(RulesetIdentity, StampedFromConfigOnDocument)
     EXPECT_EQ(doc.ruleset->packages[1].name, "test_frameworks");
 }
 
-// ── 1. ROUND-TRIP via glz::generic (no typed parser) — the additive block, member-name == JSON key ──
+// ── 1. ROUND-TRIP via glz::generic (no typed parser) — the additive block, member-name == JSON key
+// ──
 TEST(RulesetIdentity, RoundTripsThroughGenericJson)
 {
     meta::TemplateRegistry registry;
@@ -67,7 +75,8 @@ TEST(RulesetIdentity, RoundTripsThroughGenericJson)
 
     const auto parsed{glz::read_json<glz::generic>(json)};
     ASSERT_TRUE(parsed.has_value()) << json;
-    ASSERT_TRUE((*parsed).contains("ruleset")) << "the stamped ruleset block must serialise: " << json;
+    ASSERT_TRUE((*parsed).contains("ruleset"))
+        << "the stamped ruleset block must serialise: " << json;
 
     auto& ruleset{(*parsed)["ruleset"]};
     ASSERT_TRUE(ruleset.contains("semantic_identity")) << json;
@@ -102,7 +111,8 @@ TEST(RulesetIdentity, ComposeMismatchedSemanticIdentityThrows)
     const auto lhs{build_doc_with_ruleset(kRulesetA)};
     const auto rhs{build_doc_with_ruleset(kRulesetB)};
     EXPECT_THROW(meta::compose(lhs, rhs), std::invalid_argument)
-        << "II-7: composing across mismatched composed-ruleset identities MUST fail, never silently merge";
+        << "II-7: composing across mismatched composed-ruleset identities MUST fail, never "
+           "silently merge";
 }
 
 TEST(RulesetIdentity, DiffMismatchedSemanticIdentityThrows)
@@ -110,7 +120,8 @@ TEST(RulesetIdentity, DiffMismatchedSemanticIdentityThrows)
     const auto previous{build_doc_with_ruleset(kRulesetA)};
     const auto current{build_doc_with_ruleset(kRulesetB)};
     EXPECT_THROW(meta::diff(previous, current), std::invalid_argument)
-        << "II-7: diffing across mismatched composed-ruleset identities MUST fail (re-segment or refuse upstream)";
+        << "II-7: diffing across mismatched composed-ruleset identities MUST fail (re-segment or "
+           "refuse upstream)";
 }
 
 // ── Matching identity is comparable, and carried into the compose() output ──
@@ -131,14 +142,15 @@ TEST(RulesetIdentity, DiffMatchingSemanticIdentitySucceeds)
 }
 
 // ── Asymmetric (one legacy side): the operation MAY proceed, but the output OMITS the identifier
-// rather than over-claim a contract the merged document only half-covers (§2.4 / II-7 absence-tolerant) ──
+// rather than over-claim a contract the merged document only half-covers (§2.4 / II-7
+// absence-tolerant) ──
 TEST(RulesetIdentity, ComposeAsymmetricProceedsButOmitsIdentity)
 {
     const auto stamped{build_doc_with_ruleset(kRulesetA)};
     const auto legacy{build_doc_with_ruleset(std::nullopt)};
     const auto out{meta::compose(stamped, legacy)};
-    EXPECT_FALSE(out.ruleset.has_value())
-        << "an asymmetric composed-ruleset identity must NOT be carried — over-claiming comparability is unsafe";
+    EXPECT_FALSE(out.ruleset.has_value()) << "an asymmetric composed-ruleset identity must NOT be "
+                                             "carried — over-claiming comparability is unsafe";
 }
 
 TEST(RulesetIdentity, DiffAgainstLegacyProceeds)
@@ -146,6 +158,7 @@ TEST(RulesetIdentity, DiffAgainstLegacyProceeds)
     const auto previous{build_doc_with_ruleset(kRulesetA)};
     const auto current{build_doc_with_ruleset(std::nullopt)};
     EXPECT_NO_THROW((void)meta::diff(previous, current))
-        << "diff against a legacy (unstamped) document proceeds — the consumer treats it with caution";
+        << "diff against a legacy (unstamped) document proceeds — the consumer treats it with "
+           "caution";
 }
 // NOLINTEND

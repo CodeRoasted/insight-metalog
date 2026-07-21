@@ -32,9 +32,9 @@ inline constexpr std::size_t kNumDims{3};
 // The physical Cell width: kNumDims stored dims + ONE diff-only differential dimension
 // (Dim::LatencyShift, cube_differential_axes.md §4). The shift axis exists ONLY inside
 // cube_diff_of; in a STORED cube its slot is UNIFORMLY kStar (unpinned), so every stored cube is
-// byte-identical to the 3-dim cube (a uniformly-star slot never pins, never generalizes, and — being
-// the max value-id — never distinguishes the §16.4 canonical order). The lattice primitives iterate
-// kCellDims so the diff can pin the shift; the stored build simply never sets it.
+// byte-identical to the 3-dim cube (a uniformly-star slot never pins, never generalizes, and —
+// being the max value-id — never distinguishes the §16.4 canonical order). The lattice primitives
+// iterate kCellDims so the diff can pin the shift; the stored build simply never sets it.
 inline constexpr std::size_t kCellDims{4};
 
 enum class Dim : std::uint8_t
@@ -43,10 +43,10 @@ enum class Dim : std::uint8_t
     Where = 1,
     Role = 2,
     // Diff-only differential dimension (§4). Uniformly kStar in a stored cube; pinned in cube_diff
-    // for a component whose latency (DurationLog2Ns) distribution shifted in EITHER direction (≥LOW)
-    // — a SIGNED, polarity-mute band (up_* / down_*, §7.4). The A-side (baseline) projection is
-    // uniformly SHIFT_NONE ≡ kStar, so a NONE→≥LOW crossing is an ordinary Emerging-Border emergence
-    // with the shift as a 4th diff-only axis.
+    // for a component whose latency (DurationLog2Ns) distribution shifted in EITHER direction
+    // (≥LOW) — a SIGNED, polarity-mute band (up_* / down_*, §7.4). The A-side (baseline) projection
+    // is uniformly SHIFT_NONE ≡ kStar, so a NONE→≥LOW crossing is an ordinary Emerging-Border
+    // emergence with the shift as a 4th diff-only axis.
     LatencyShift = 3,
 };
 
@@ -153,7 +153,8 @@ struct CellAggregate
 // by cell_precedes — built by populate()'s collect→sort-once→linear-reduce, not an RB-tree of
 // B·2ⁿ pointer-chasing inserts. The sort IS the §16.4 canonical order, so close/border iterate it
 // directly and count_in binary-searches it. Reduce is order-independent (COUNT sums, `meet` is
-// commutative+associative) ⇒ an unstable sort stays bit-identical. [[cube-reclosure-rework-inmem-wire-split]]
+// commutative+associative) ⇒ an unstable sort stays bit-identical.
+// [[cube-reclosure-rework-inmem-wire-split]]
 struct PopulatedCell
 {
     Cell cell;
@@ -214,16 +215,17 @@ struct BaseRow
 // `current_shift_by_component` is the diff-time latency_shift dimension (cube_differential_axes.md
 // §4): a per-component latency drift map the CALLER computes from the two documents' ordinal
 // histograms (metalog::diff). BIDIRECTIONAL and polarity-MUTE — the drift carries a magnitude AND a
-// direction (up/down); the CURRENT projection pins Dim::LatencyShift to a SIGNED band (up_* / down_*,
-// distinct value-ids) for a component that shifted EITHER way, and the BASELINE stays uniformly
-// SHIFT_NONE (kStar). So a cell leaving NONE in either direction emerges; up-cells and down-cells are
-// distinct cells; metalog judges neither good nor bad (the reading layer, eidos, maps up→regression,
-// down→recovery). The signed axis is a flat categorical axis to the border (each band a distinct
-// pinned value, kStar the aggregated NONE center) → the order-convex (lower,upper) border stays
-// monotone by the §A4 proof exactly as for level/role. latency_shift is EMERGENT-AT-DIFF: it has no
-// stored-cube domain (never in reference_axes, so compare-at-min — which reads only level/where off
-// the stored inputs — never compares it diff-vs-state). When empty (the default — no comparable
-// ordinal data, or nothing shifted), the diff is the plain 3-D border, byte-identical to before.
+// direction (up/down); the CURRENT projection pins Dim::LatencyShift to a SIGNED band (up_* /
+// down_*, distinct value-ids) for a component that shifted EITHER way, and the BASELINE stays
+// uniformly SHIFT_NONE (kStar). So a cell leaving NONE in either direction emerges; up-cells and
+// down-cells are distinct cells; metalog judges neither good nor bad (the reading layer, eidos,
+// maps up→regression, down→recovery). The signed axis is a flat categorical axis to the border
+// (each band a distinct pinned value, kStar the aggregated NONE center) → the order-convex
+// (lower,upper) border stays monotone by the §A4 proof exactly as for level/role. latency_shift is
+// EMERGENT-AT-DIFF: it has no stored-cube domain (never in reference_axes, so compare-at-min —
+// which reads only level/where off the stored inputs — never compares it diff-vs-state). When empty
+// (the default — no comparable ordinal data, or nothing shifted), the diff is the plain 3-D border,
+// byte-identical to before.
 [[nodiscard]] std::optional<CubeDiffBlock>
 cube_diff_of(const CubeBlock& previous, const CubeBlock& current,
              const std::unordered_map<std::string, OrdinalDrift>& current_shift_by_component = {});

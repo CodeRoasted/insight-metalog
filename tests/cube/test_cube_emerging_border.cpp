@@ -3,8 +3,9 @@
 //
 // test_cube_emerging_border.cpp — the cube-A EMERGING BORDER oracle (SPEC §13.6 cube_diff), the
 // pre-registered KILL-SWITCH: per difficulty class, build a baseline and a changed MetaLog document
-// (the cube is always-on since 1.7.2), diff them through the PUBLIC `meta::diff()`, and assert the emerging
-// UPPER border recovers a DECLARED antichain at recall >= floor with mis-pointing <= ceiling.
+// (the cube is always-on since 1.7.2), diff them through the PUBLIC `meta::diff()`, and assert the
+// emerging UPPER border recovers a DECLARED antichain at recall >= floor with mis-pointing <=
+// ceiling.
 //
 // ── WHY IT LIVES HERE (re-homed from the InSight playground, 2026-07-18, Kleio) ──────────────
 // It was an `axis: build` fixture in the e2e contract corpus, and that was a HOMING ERROR — visible
@@ -22,12 +23,13 @@
 // EIDOS world's manifest list — and the first re-homing attempt here declared the EMPTY set, on the
 // reasoning that metalog ships no dialect and these fixtures are plain JSONL that base canon reads
 // unaided. **That was wrong, and the test caught it**: under the empty composition the
-// multi-generator class recovers 1 of its 2 declared antichain members (recall 0.5) — `level: FATAL`
-// emerges, `role: Terminator` never can, because StructuralRole rows are supplied BY PACKAGES and an
-// empty set supplies none. The `##[error]` prefix that carries Terminator is the github package's.
+// multi-generator class recovers 1 of its 2 declared antichain members (recall 0.5) — `level:
+// FATAL` emerges, `role: Terminator` never can, because StructuralRole rows are supplied BY
+// PACKAGES and an empty set supplies none. The `##[error]` prefix that carries Terminator is the
+// github package's.
 //
-// So this binary declares exactly the package its fixtures require, which is what ADR 0024 asks of a
-// binary — a test-only dependency; metalog itself stays dialect-free. The declaration is MINIMAL
+// So this binary declares exactly the package its fixtures require, which is what ADR 0024 asks of
+// a binary — a test-only dependency; metalog itself stays dialect-free. The declaration is MINIMAL
 // rather than a copy of the eidos manifest list: the smaller set is the more isolating instrument,
 // and naming it here makes the coupling legible instead of inherited.
 
@@ -56,9 +58,9 @@ constexpr double kMispointCeiling{0.05};
 // contract spelled them: an unset dimension is a wildcard.
 struct DeclaredCell
 {
-    std::string level;               // "" = unset
-    std::vector<std::string> where;  // empty = unset
-    std::string role;                // "" = unset
+    std::string level;              // "" = unset
+    std::vector<std::string> where; // empty = unset
+    std::string role;               // "" = unset
 };
 
 [[nodiscard]] meta::CubeCoord coord_of(const DeclaredCell& cell)
@@ -139,10 +141,11 @@ struct Score
                                  const std::vector<meta::CubeCoord>& produced)
 {
     const auto contains{[&produced](const meta::CubeCoord& wanted)
-    {
-        return std::ranges::any_of(produced, [&wanted](const meta::CubeCoord& got)
-                                   { return got == wanted; });
-    }};
+                        {
+                            return std::ranges::any_of(produced,
+                                                       [&wanted](const meta::CubeCoord& got)
+                                                       { return got == wanted; });
+                        }};
     std::size_t recovered{0};
     for (const auto& cell : declared)
         if (contains(coord_of(cell)))
@@ -151,8 +154,8 @@ struct Score
     std::size_t stray{0};
     for (const auto& got : produced)
     {
-        const bool declared_here{std::ranges::any_of(
-            declared, [&got](const DeclaredCell& cell) { return coord_of(cell) == got; })};
+        const bool declared_here{std::ranges::any_of(declared, [&got](const DeclaredCell& cell)
+                                                     { return coord_of(cell) == got; })};
         if (!declared_here)
             ++stray;
     }
@@ -160,12 +163,11 @@ struct Score
     Score score;
     score.declared_count = declared.size();
     score.produced_count = produced.size();
-    score.recall = declared.empty() ? 1.0
-                                    : static_cast<double>(recovered) /
-                                          static_cast<double>(declared.size());
-    score.mispoint = produced.empty() ? 0.0
-                                      : static_cast<double>(stray) /
-                                            static_cast<double>(produced.size());
+    score.recall = declared.empty()
+                       ? 1.0
+                       : static_cast<double>(recovered) / static_cast<double>(declared.size());
+    score.mispoint =
+        produced.empty() ? 0.0 : static_cast<double>(stray) / static_cast<double>(produced.size());
     return score;
 }
 
@@ -208,17 +210,17 @@ struct Class
         Class{.difficulty = "single-generator",
               .directory = "single_generator",
               .declared_upper = {DeclaredCell{.where = {"cache"}}}},
-        Class{.difficulty = "multi-generator-antichain",
-              .directory = "multi_generator",
-              .declared_upper = {DeclaredCell{.level = "FATAL"},
-                                 DeclaredCell{.role = "Terminator"}}},
+        Class{
+            .difficulty = "multi-generator-antichain",
+            .directory = "multi_generator",
+            .declared_upper = {DeclaredCell{.level = "FATAL"}, DeclaredCell{.role = "Terminator"}}},
         Class{.difficulty = "diffuse-near-cap",
               .directory = "diffuse_near_cap",
               .declared_upper = diffuse},
-        Class{.difficulty = "ambiguous-equal",
-              .directory = "ambiguous_equal",
-              .declared_upper = {DeclaredCell{.where = {"blue"}},
-                                 DeclaredCell{.where = {"green"}}}},
+        Class{
+            .difficulty = "ambiguous-equal",
+            .directory = "ambiguous_equal",
+            .declared_upper = {DeclaredCell{.where = {"blue"}}, DeclaredCell{.where = {"green"}}}},
     };
 }
 

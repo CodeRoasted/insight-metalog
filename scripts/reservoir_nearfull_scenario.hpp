@@ -40,8 +40,8 @@ inline void configure(insight::metalog::MetaLogConfig& cfg)
 // close_window around this. Deterministic given a fixed engine config (configure() above).
 inline void emit_window(insight::metalog::MetaLogEngine& engine)
 {
-    const auto emit = [&engine](const std::string& tmpl,
-                                insight::LogLevel lvl = insight::LogLevel::Info)
+    const auto emit =
+        [&engine](const std::string& tmpl, insight::LogLevel lvl = insight::LogLevel::Info)
     {
         insight::tokenization::CanonicalEvent ev;
         ev.template_str = tmpl; // view into `tmpl`, valid for the duration of this ingest call
@@ -70,16 +70,17 @@ inline void emit_window(insight::metalog::MetaLogEngine& engine)
                 emit("dispatched task " + std::to_string(spoke_base + s));
             }
     };
-    hub_spokes("dispatch loop alpha", 110, 0);    // outgoing 220, ratio 2/220<2% → band 90 (solid)
-    hub_spokes("dispatch loop beta", 40, 10'000); // outgoing 80,  ratio 2/80=2.5% → band 75 (boundary)
+    hub_spokes("dispatch loop alpha", 110, 0); // outgoing 220, ratio 2/220<2% → band 90 (solid)
+    hub_spokes("dispatch loop beta", 40,
+               10'000); // outgoing 80,  ratio 2/80=2.5% → band 75 (boundary)
 
     // (3) Ambiguous boundary spokes: each reached by TWO equal-ratio incoming edges — X->Sa once
     //     (count 1, below the >=2 floor → surprise 0 if it wins) and Y->Sa twice (count 2 → a real
     //     surprise band if it wins). Equal ratio (1/Xout == 2/Yout, with Yout=2*Xout) makes the
     //     most-likely-edge pick a TIE: F5-M8 resolves it by unordered_map order → clang picks one,
-    //     gcc the other → the spoke's structural_surprise (hence whether it clears the M=128 cutoff)
-    //     diverges. Oversubscribed so the reservoir stays full (size==M) on both stdlibs while the
-    //     BAG membership differs → the digest differs → the leak surfaces.
+    //     gcc the other → the spoke's structural_surprise (hence whether it clears the M=128
+    //     cutoff) diverges. Oversubscribed so the reservoir stays full (size==M) on both stdlibs
+    //     while the BAG membership differs → the digest differs → the leak surfaces.
     constexpr int kAmbiguous{24};
     // Hub X: outgoing 60 (X->Sa once each = 24, plus 36 padding to a sink).
     // Hub Y: outgoing 120 = 2*Xout (Y->Sa twice each = 48, plus 72 padding) → 1/60 == 2/120 tie.

@@ -16,29 +16,31 @@ namespace meta = insight::metalog;
 
 namespace
 {
-[[nodiscard]] meta::MetaLogDocument
-make_doc_with_histogram(std::string_view template_id, std::uint32_t param_index,
-                        std::unordered_map<std::string, std::uint64_t> values, std::uint64_t total,
-                        std::uint64_t approximate_cardinality, std::uint64_t lines_observed)
-{
-    meta::MetaLogDocument doc;
-    doc.window.lines_observed = lines_observed;
-    doc.stats.unique_templates = 1;
-    doc.stats.top_k_size = 8;
-    meta::TopKEntry entry;
-    entry.template_id = insight::parse_template_id(template_id);
-    entry.count = total;
-    entry.frequency =
-        lines_observed > 0 ? static_cast<double>(total) / static_cast<double>(lines_observed) : 0.0;
-    meta::FieldHistogram fh;
-    fh.param_index = param_index;
-    fh.value_counts = std::move(values);
-    fh.total = total;
-    fh.approximate_cardinality = approximate_cardinality;
-    entry.field_histograms.push_back(std::move(fh));
-    doc.stats.top_k.push_back(std::move(entry));
-    return doc;
-}
+    [[nodiscard]] meta::MetaLogDocument
+    make_doc_with_histogram(std::string_view template_id, std::uint32_t param_index,
+                            std::unordered_map<std::string, std::uint64_t> values,
+                            std::uint64_t total, std::uint64_t approximate_cardinality,
+                            std::uint64_t lines_observed)
+    {
+        meta::MetaLogDocument doc;
+        doc.window.lines_observed = lines_observed;
+        doc.stats.unique_templates = 1;
+        doc.stats.top_k_size = 8;
+        meta::TopKEntry entry;
+        entry.template_id = insight::parse_template_id(template_id);
+        entry.count = total;
+        entry.frequency = lines_observed > 0
+                              ? static_cast<double>(total) / static_cast<double>(lines_observed)
+                              : 0.0;
+        meta::FieldHistogram fh;
+        fh.param_index = param_index;
+        fh.value_counts = std::move(values);
+        fh.total = total;
+        fh.approximate_cardinality = approximate_cardinality;
+        entry.field_histograms.push_back(std::move(fh));
+        doc.stats.top_k.push_back(std::move(entry));
+        return doc;
+    }
 } // namespace
 
 TEST(ParamHistogramsCompose, MergesValueCountsAndTotalForSharedSlot)

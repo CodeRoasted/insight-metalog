@@ -24,8 +24,8 @@ namespace meta = insight::metalog;
 constexpr std::uint64_t kFloor{32};
 // Pre-registered acceptance targets (fixed BEFORE reading the scan — anti-endogamy).
 constexpr double kNullFalseActionableTarget{0.02}; // ≤2% of null pairings may manufacture MED+/HIGH
-constexpr double kRealShiftDetectTarget{0.95};     // ≥95% of a real +3-octave regression must emerge
-constexpr std::size_t kRealRegressionOctaves{3};   // 8× latency — a clear, actionable regression
+constexpr double kRealShiftDetectTarget{0.95};   // ≥95% of a real +3-octave regression must emerge
+constexpr std::size_t kRealRegressionOctaves{3}; // 8× latency — a clear, actionable regression
 constexpr std::size_t kTrials{4000};
 constexpr std::size_t kBins{48}; // DurationLog2Ns ladder width
 
@@ -54,7 +54,8 @@ struct Shape
     return pmf;
 }
 
-// A genuinely bimodal component (cache hit ~1ms / miss ~64ms) — each mode narrow, not one broad hump.
+// A genuinely bimodal component (cache hit ~1ms / miss ~64ms) — each mode narrow, not one broad
+// hump.
 [[nodiscard]] std::array<double, kBins> bimodal(double fast_center, double slow_center,
                                                 double slow_weight)
 {
@@ -120,7 +121,8 @@ struct Shape
 
 // Fraction of REAL +`octaves`-octave shifts that still emerge as an actionable band.
 [[nodiscard]] double real_shift_detect_rate(const std::array<double, kBins>& pmf,
-                                            std::size_t octaves, std::size_t n, std::mt19937_64& rng)
+                                            std::size_t octaves, std::size_t n,
+                                            std::mt19937_64& rng)
 {
     const auto shifted{shift_up(pmf, octaves)};
     std::size_t detected{0};
@@ -135,9 +137,9 @@ struct Shape
 }
 
 const std::array<Shape, 3> kShapes{{
-    {"web-tight", peak_at(23.0, 1.0, 0.05)},        // ~8ms, tight (sigma 1 octave), light tail
-    {"service-typical", peak_at(25.0, 1.5, 0.12)},  // ~32ms, sigma 1.5 octaves, moderate slow tail
-    {"bimodal-cache", bimodal(20.0, 26.0, 0.30)},   // ~1ms hit / ~64ms miss, 30% miss
+    {"web-tight", peak_at(23.0, 1.0, 0.05)},       // ~8ms, tight (sigma 1 octave), light tail
+    {"service-typical", peak_at(25.0, 1.5, 0.12)}, // ~32ms, sigma 1.5 octaves, moderate slow tail
+    {"bimodal-cache", bimodal(20.0, 26.0, 0.30)},  // ~1ms hit / ~64ms miss, 30% miss
 }};
 } // namespace
 
@@ -179,7 +181,8 @@ TEST(ShiftSampleFloorGuard, NullFalseActionableBelowTargetAtFloor)
 }
 
 // FROZEN GUARD (positive control): the floor must NOT blind a real regression — a sustained
-// +3-octave (8×) latency_multiplier shift still emerges as MED+/HIGH well above chance at the floor.
+// +3-octave (8×) latency_multiplier shift still emerges as MED+/HIGH well above chance at the
+// floor.
 TEST(ShiftSampleFloorGuard, RealRegressionStillEmergesAtFloor)
 {
     std::mt19937_64 rng{0xA11CE999ULL};
@@ -188,8 +191,9 @@ TEST(ShiftSampleFloorGuard, RealRegressionStillEmergesAtFloor)
         const double rate{real_shift_detect_rate(shape.pmf, kRealRegressionOctaves, kFloor, rng)};
         EXPECT_GT(rate, kRealShiftDetectTarget)
             << "shape '" << shape.name << "' detects a real +" << kRealRegressionOctaves
-            << "-octave regression only " << (rate * 100.0) << "% of the time at the floor N="
-            << kFloor << " — the floor is too high (blinds real shifts)";
+            << "-octave regression only " << (rate * 100.0)
+            << "% of the time at the floor N=" << kFloor
+            << " — the floor is too high (blinds real shifts)";
     }
 }
 

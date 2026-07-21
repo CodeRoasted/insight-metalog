@@ -24,9 +24,11 @@ CubeCardinalityStat cube_cardinality(const CubeBlock& cube)
         if (cell.coord.level)
             distinct[static_cast<std::size_t>(CardinalityAxis::Level)].insert(*cell.coord.level);
         if (cell.coord.where && !cell.coord.where->empty())
-            distinct[static_cast<std::size_t>(CardinalityAxis::Component)].insert(cell.coord.where->back());
+            distinct[static_cast<std::size_t>(CardinalityAxis::Component)].insert(
+                cell.coord.where->back());
         if (cell.coord.structural_role)
-            distinct[static_cast<std::size_t>(CardinalityAxis::Role)].insert(*cell.coord.structural_role);
+            distinct[static_cast<std::size_t>(CardinalityAxis::Role)].insert(
+                *cell.coord.structural_role);
     }
     for (std::size_t axis{0}; axis < CubeCardinalityStat::kAxisCount; ++axis)
         stat.per_axis[axis] = static_cast<std::uint32_t>(distinct[axis].size());
@@ -35,9 +37,9 @@ CubeCardinalityStat cube_cardinality(const CubeBlock& cube)
 
 std::optional<std::string> collapse_note(const CubeBlock& cube)
 {
-    // A collapse was applied iff an axis carries a band_floor > 0 (level interval-banding, §C3) or a
-    // floor_depth below its full chain length (WHERE-tree prefix-truncation). stamp_collapse writes
-    // the applied state onto the axes; an uncollapsed axis carries band_floor 0/absent and
+    // A collapse was applied iff an axis carries a band_floor > 0 (level interval-banding, §C3) or
+    // a floor_depth below its full chain length (WHERE-tree prefix-truncation). stamp_collapse
+    // writes the applied state onto the axes; an uncollapsed axis carries band_floor 0/absent and
     // floor_depth == full chain length, so neither branch fires.
     std::string note;
     const auto add{[&note](const std::string& part)

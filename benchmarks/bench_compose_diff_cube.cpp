@@ -101,8 +101,8 @@ struct DocCorpus
                           : lvl < 220 ? LogLevel::Warn
                           : lvl < 280 ? LogLevel::Debug
                                       : LogLevel::Info;
-            event.component = corpus.components[(rng.skewed(kComponentCount) + comp_offset) %
-                                                kComponentCount];
+            event.component =
+                corpus.components[(rng.skewed(kComponentCount) + comp_offset) % kComponentCount];
             event.template_str = corpus.templates[rng.skewed(kTemplateCount)];
             const std::uint64_t role{rng.next() % 64U};
             event.structural_role = role == 0   ? StructuralRole::Terminator
@@ -131,8 +131,9 @@ constexpr std::size_t kStageWindowSize{4'000};
     return counts;
 }
 
-// divergences() is keyed by the content-derived TemplateId POD (template distribution) since the perf
-// review; histogram_js() is keyed by the field VALUE string (value distribution) — hence two helpers.
+// divergences() is keyed by the content-derived TemplateId POD (template distribution) since the
+// perf review; histogram_js() is keyed by the field VALUE string (value distribution) — hence two
+// helpers.
 [[nodiscard]] std::unordered_map<insight::TemplateId, std::uint64_t>
 make_id_count_map(std::size_t n, std::uint64_t seed, std::size_t key_shift)
 {
@@ -238,8 +239,8 @@ BENCHMARK(BM_Diff)->Unit(benchmark::kMicrosecond);
     for (const auto& [key, count] : joint)
     {
         const auto& [level, comp, role]{key};
-        rows.push_back(
-            cube::BaseRow{.level = level, .component = components[comp], .role = role, .count = count});
+        rows.push_back(cube::BaseRow{
+            .level = level, .component = components[comp], .role = role, .count = count});
     }
     return rows;
 }
@@ -367,8 +368,8 @@ BENCHMARK(BM_CubeDiffOf)->Unit(benchmark::kMicrosecond);
 struct CubeFixture
 {
     meta::CubeBlock block;
-    std::vector<std::string> labels;   // the sorted WHERE-leaf dictionary
-    std::vector<cube::Cell> cells;      // the block's coords parsed back to interned Cells
+    std::vector<std::string> labels; // the sorted WHERE-leaf dictionary
+    std::vector<cube::Cell> cells;   // the block's coords parsed back to interned Cells
 };
 
 [[nodiscard]] CubeFixture make_cube_fixture()

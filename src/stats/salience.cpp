@@ -10,58 +10,58 @@ namespace insight::metalog
 
 namespace
 {
-// The "looks-like-failure" lexicon — a secondary severity signal for lines
-// whose level/role did not already mark them (e.g. a raw `FAILED`/`Traceback`).
-// Token-aware (insight::utils::contains_failure_cue): a failure word must be a
-// standalone token or a CamelCase `…Error`/`…Exception` type — NOT a substring
-// buried in a path/identifier (`Writing tsc-error-report.json`), which used to
-// inflate severity and crowd the salience reservoir with benign lines.
-[[nodiscard]] bool looks_like_failure(std::string_view tmpl) noexcept
-{
-    return insight::utils::contains_failure_cue(tmpl);
-}
+    // The "looks-like-failure" lexicon — a secondary severity signal for lines
+    // whose level/role did not already mark them (e.g. a raw `FAILED`/`Traceback`).
+    // Token-aware (insight::utils::contains_failure_cue): a failure word must be a
+    // standalone token or a CamelCase `…Error`/`…Exception` type — NOT a substring
+    // buried in a path/identifier (`Writing tsc-error-report.json`), which used to
+    // inflate severity and crowd the salience reservoir with benign lines.
+    [[nodiscard]] bool looks_like_failure(std::string_view tmpl) noexcept
+    {
+        return insight::utils::contains_failure_cue(tmpl);
+    }
 
-// A structural branch must recur to be trusted: a transition observed ONCE is
-// indistinguishable from a one-off / window-boundary artifact (e.g. a novel
-// template appended as the last event of a window), and -log2(p) from a single
-// sample is unreliable. Requiring ≥2 observations means "this off-path branch
-// recurred — it is a real alternate path, not noise."
-constexpr std::uint64_t kMinSurpriseEdgeObservations{2};
+    // A structural branch must recur to be trusted: a transition observed ONCE is
+    // indistinguishable from a one-off / window-boundary artifact (e.g. a novel
+    // template appended as the last event of a window), and -log2(p) from a single
+    // sample is unreliable. Requiring ≥2 observations means "this off-path branch
+    // recurred — it is a real alternate path, not noise."
+    constexpr std::uint64_t kMinSurpriseEdgeObservations{2};
 
-// ── Salience band ladder (0..100) ──────────────────────────────────────────
-// One ladder shared by the severity (level/role/failure-cue), structural-surprise
-// and self-novelty axes, so they are peer signals: Warn 30 … Error 80 … Fatal 100.
-constexpr std::uint32_t kBandFatal{100U};
-constexpr std::uint32_t kBandStrongOffPath{90U}; // surprise: p < 2%
-constexpr std::uint32_t kBandTerminator{90U};    // declared terminator role
-constexpr std::uint32_t kBandError{80U};
-constexpr std::uint32_t kBandOffPath{75U};     // surprise: p < 5%
-constexpr std::uint32_t kBandFailureCue{70U};  // token-lexicon failure word
-constexpr std::uint32_t kBandNoveltyLate{60U}; // first seen in the last 10%
-constexpr std::uint32_t kBandUncommon{50U};    // surprise: p < 10%
-constexpr std::uint32_t kBandNoveltyMid{40U};  // last 25%
-constexpr std::uint32_t kBandWarn{30U};
-constexpr std::uint32_t kBandSomewhatRare{25U}; // surprise: p < 20%
-constexpr std::uint32_t kBandNoveltyEarly{20U}; // last 50%
+    // ── Salience band ladder (0..100) ──────────────────────────────────────────
+    // One ladder shared by the severity (level/role/failure-cue), structural-surprise
+    // and self-novelty axes, so they are peer signals: Warn 30 … Error 80 … Fatal 100.
+    constexpr std::uint32_t kBandFatal{100U};
+    constexpr std::uint32_t kBandStrongOffPath{90U}; // surprise: p < 2%
+    constexpr std::uint32_t kBandTerminator{90U};    // declared terminator role
+    constexpr std::uint32_t kBandError{80U};
+    constexpr std::uint32_t kBandOffPath{75U};     // surprise: p < 5%
+    constexpr std::uint32_t kBandFailureCue{70U};  // token-lexicon failure word
+    constexpr std::uint32_t kBandNoveltyLate{60U}; // first seen in the last 10%
+    constexpr std::uint32_t kBandUncommon{50U};    // surprise: p < 10%
+    constexpr std::uint32_t kBandNoveltyMid{40U};  // last 25%
+    constexpr std::uint32_t kBandWarn{30U};
+    constexpr std::uint32_t kBandSomewhatRare{25U}; // surprise: p < 20%
+    constexpr std::uint32_t kBandNoveltyEarly{20U}; // last 50%
 
-// surprise_band inverse-probability thresholds: edge_count·K < outgoing ⇔ p < 1/K.
-constexpr std::uint64_t kInvProb2Pct{50U};
-constexpr std::uint64_t kInvProb5Pct{20U};
-constexpr std::uint64_t kInvProb10Pct{10U};
-constexpr std::uint64_t kInvProb20Pct{5U};
+    // surprise_band inverse-probability thresholds: edge_count·K < outgoing ⇔ p < 1/K.
+    constexpr std::uint64_t kInvProb2Pct{50U};
+    constexpr std::uint64_t kInvProb5Pct{20U};
+    constexpr std::uint64_t kInvProb10Pct{10U};
+    constexpr std::uint64_t kInvProb20Pct{5U};
 
-// novelty_band position thresholds: first_seen·Num > lines·Den ⇔ position > Den/Num.
-constexpr std::uint64_t kNoveltyLast10Num{10U};
-constexpr std::uint64_t kNoveltyLast10Den{9U};
+    // novelty_band position thresholds: first_seen·Num > lines·Den ⇔ position > Den/Num.
+    constexpr std::uint64_t kNoveltyLast10Num{10U};
+    constexpr std::uint64_t kNoveltyLast10Den{9U};
 
-// rarity modulation values and count·N < lines thresholds (smaller share = rarer).
-constexpr std::uint32_t kRarityRare{100U};    // < 0.1%
-constexpr std::uint32_t kRarityUncommon{90U}; // < 1%
-constexpr std::uint32_t kRarityCommon{60U};   // < 10%
-constexpr std::uint32_t kRarityFrequent{30U}; // >= 10% — likely known/baseline
-constexpr std::uint64_t kRarityTenthPct{1000U};
-constexpr std::uint64_t kRarityOnePct{100U};
-constexpr std::uint64_t kRarityTenPct{10U};
+    // rarity modulation values and count·N < lines thresholds (smaller share = rarer).
+    constexpr std::uint32_t kRarityRare{100U};    // < 0.1%
+    constexpr std::uint32_t kRarityUncommon{90U}; // < 1%
+    constexpr std::uint32_t kRarityCommon{60U};   // < 10%
+    constexpr std::uint32_t kRarityFrequent{30U}; // >= 10% — likely known/baseline
+    constexpr std::uint64_t kRarityTenthPct{1000U};
+    constexpr std::uint64_t kRarityOnePct{100U};
+    constexpr std::uint64_t kRarityTenPct{10U};
 } // namespace
 
 std::optional<LogLevel> dominant_level_of(const std::unordered_map<LogLevel, std::uint64_t>& levels)
@@ -102,8 +102,7 @@ std::string dominant_component_of(const std::unordered_map<std::string, std::uin
         // Max count; ties broken by component string asc — a pure function of the
         // contents (not unordered_map iteration order) so the dominant component (and
         // thus the reservoir entry's cube_coord WHERE) is stdlib-identical.
-        if (best == nullptr || count > best_count ||
-            (count == best_count && component < *best))
+        if (best == nullptr || count > best_count || (count == best_count && component < *best))
         {
             best = &component;
             best_count = count;

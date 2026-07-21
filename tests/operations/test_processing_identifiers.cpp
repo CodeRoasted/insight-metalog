@@ -18,23 +18,23 @@ using insight::metalog::test::make_event;
 
 namespace
 {
-[[nodiscard]] meta::MetaLogDocument
-build_doc_with_identifiers(const std::optional<std::string>& canon,
-                           const std::optional<std::string>& retention,
-                           meta::TemplateRegistry* out_registry = nullptr)
-{
-    meta::MetaLogConfig cfg{.top_k_size = 8};
-    cfg.canonicalization_version = canon;
-    cfg.retention_profile = retention;
-    meta::MetaLogEngine engine{cfg};
-    const auto start{std::chrono::system_clock::now()};
-    engine.open_window(start);
-    engine.ingest_event(make_event("alpha"));
-    auto doc{engine.close_window(start + std::chrono::seconds(60))};
-    if (out_registry != nullptr)
-        *out_registry = engine.registry();
-    return doc;
-}
+    [[nodiscard]] meta::MetaLogDocument
+    build_doc_with_identifiers(const std::optional<std::string>& canon,
+                               const std::optional<std::string>& retention,
+                               meta::TemplateRegistry* out_registry = nullptr)
+    {
+        meta::MetaLogConfig cfg{.top_k_size = 8};
+        cfg.canonicalization_version = canon;
+        cfg.retention_profile = retention;
+        meta::MetaLogEngine engine{cfg};
+        const auto start{std::chrono::system_clock::now()};
+        engine.open_window(start);
+        engine.ingest_event(make_event("alpha"));
+        auto doc{engine.close_window(start + std::chrono::seconds(60))};
+        if (out_registry != nullptr)
+            *out_registry = engine.registry();
+        return doc;
+    }
 } // namespace
 
 TEST(ProcessingIdentifiers, StampedFromConfigOnDocument)

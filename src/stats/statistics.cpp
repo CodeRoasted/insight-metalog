@@ -10,19 +10,19 @@ namespace insight::metalog
 
 namespace
 {
-// Jensen-Shannon is the average of the two directional KL terms: js = ½(D_p + D_q).
-constexpr double kJsSymmetryFactor{0.5};
+    // Jensen-Shannon is the average of the two directional KL terms: js = ½(D_p + D_q).
+    constexpr double kJsSymmetryFactor{0.5};
 
-// 128-bit accumulators come from canon's det shim: native `__int128` on gcc/clang, a portable
-// constexpr struct on MSVC (which has no __int128). Same two's-complement semantics, so the digest
-// is bit-identical cross-OS. as_i128 widens a u64 count VALUE-PRESERVING (every u64 is a
-// non-negative i128) — matching native widening of a u64, NOT via int64 (which sign-flips
-// ≥2^63). [[msvc-port-stdlib-isms]]
-using i128 = insight::det::i128;
-[[nodiscard]] constexpr i128 as_i128(std::uint64_t value) noexcept
-{
-    return static_cast<i128>(insight::det::u128{value});
-}
+    // 128-bit accumulators come from canon's det shim: native `__int128` on gcc/clang, a portable
+    // constexpr struct on MSVC (which has no __int128). Same two's-complement semantics, so the
+    // digest is bit-identical cross-OS. as_i128 widens a u64 count VALUE-PRESERVING (every u64 is a
+    // non-negative i128) — matching native widening of a u64, NOT via int64 (which sign-flips
+    // ≥2^63). [[msvc-port-stdlib-isms]]
+    using i128 = insight::det::i128;
+    [[nodiscard]] constexpr i128 as_i128(std::uint64_t value) noexcept
+    {
+        return static_cast<i128>(insight::det::u128{value});
+    }
 } // namespace
 
 double shannon_entropy_bits(const std::vector<std::uint64_t>& counts, std::uint64_t total)
@@ -38,8 +38,7 @@ double shannon_entropy_bits(const std::vector<std::uint64_t>& counts, std::uint6
     {
         if (count == 0)
             continue;
-        reducer.add_fixed(as_i128(count) *
-                          (log2_total - insight::det::det_log2_fixed(count)));
+        reducer.add_fixed(as_i128(count) * (log2_total - insight::det::det_log2_fixed(count)));
     }
     return reducer.normalized_bits(static_cast<std::int64_t>(total));
 }
@@ -95,10 +94,8 @@ DivergenceResult divergences(const std::unordered_map<TemplateId, std::uint64_t>
         const std::int64_t log2_d{insight::det::det_log2_fixed(divergence_d)};
         kl_acc += as_i128(pnum) *
                   (insight::det::det_log2_fixed(p_arg) - insight::det::det_log2_fixed(q_arg));
-        js_p_acc +=
-            as_i128(pnum) * (insight::det::det_log2_fixed(2U * p_arg) - log2_d);
-        js_q_acc +=
-            as_i128(qnum) * (insight::det::det_log2_fixed(2U * q_arg) - log2_d);
+        js_p_acc += as_i128(pnum) * (insight::det::det_log2_fixed(2U * p_arg) - log2_d);
+        js_q_acc += as_i128(qnum) * (insight::det::det_log2_fixed(2U * q_arg) - log2_d);
     }
     double kl_value{insight::det::fixed_to_double(
         insight::det::round_div(kl_acc, static_cast<std::int64_t>(cur_denom)))};
@@ -170,10 +167,8 @@ double histogram_js(const std::unordered_map<std::string, std::uint64_t>& prev,
         const std::uint64_t p_arg{pnum * c_denom};
         const std::uint64_t c_arg{cnum * p_denom};
         const std::int64_t log2_d{insight::det::det_log2_fixed(p_arg + c_arg)};
-        prev_acc +=
-            as_i128(pnum) * (insight::det::det_log2_fixed(2U * p_arg) - log2_d);
-        curr_acc +=
-            as_i128(cnum) * (insight::det::det_log2_fixed(2U * c_arg) - log2_d);
+        prev_acc += as_i128(pnum) * (insight::det::det_log2_fixed(2U * p_arg) - log2_d);
+        curr_acc += as_i128(cnum) * (insight::det::det_log2_fixed(2U * c_arg) - log2_d);
     }
     const std::int64_t prev_q{
         insight::det::round_div(prev_acc, static_cast<std::int64_t>(p_denom))};

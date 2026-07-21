@@ -20,26 +20,26 @@ using insight::metalog::test::ParamEvent;
 
 namespace
 {
-// Make a single-template doc with Bernoulli(p500) status distribution.
-// Template: "GET <*> -> <*>", 2 params tracked (method and status_code).
-meta::MetaLogDocument make_status_doc(insight::Timestamp start, insight::Timestamp end,
-                                      std::size_t count_200, std::size_t count_500)
-{
-    meta::MetaLogConfig cfg;
-    cfg.max_param_histograms = 2;
-    meta::MetaLogEngine eng{cfg};
-    eng.open_window(start);
-    // params[0] = path (constant), params[1] = status_code (varies).
-    // max_param_histograms=2 tracks both; the status_code distribution
-    // is what we expect to diverge between windows.
-    auto ev_200 = ParamEvent::make("GET <*> -> <*>", {"/api/users", "200"});
-    auto ev_500 = ParamEvent::make("GET <*> -> <*>", {"/api/users", "500"});
-    for (std::size_t i = 0; i < count_200; ++i)
-        eng.ingest_event(ev_200.event);
-    for (std::size_t i = 0; i < count_500; ++i)
-        eng.ingest_event(ev_500.event);
-    return eng.close_window(end);
-}
+    // Make a single-template doc with Bernoulli(p500) status distribution.
+    // Template: "GET <*> -> <*>", 2 params tracked (method and status_code).
+    meta::MetaLogDocument make_status_doc(insight::Timestamp start, insight::Timestamp end,
+                                          std::size_t count_200, std::size_t count_500)
+    {
+        meta::MetaLogConfig cfg;
+        cfg.max_param_histograms = 2;
+        meta::MetaLogEngine eng{cfg};
+        eng.open_window(start);
+        // params[0] = path (constant), params[1] = status_code (varies).
+        // max_param_histograms=2 tracks both; the status_code distribution
+        // is what we expect to diverge between windows.
+        auto ev_200 = ParamEvent::make("GET <*> -> <*>", {"/api/users", "200"});
+        auto ev_500 = ParamEvent::make("GET <*> -> <*>", {"/api/users", "500"});
+        for (std::size_t i = 0; i < count_200; ++i)
+            eng.ingest_event(ev_200.event);
+        for (std::size_t i = 0; i < count_500; ++i)
+            eng.ingest_event(ev_500.event);
+        return eng.close_window(end);
+    }
 } // namespace
 
 // Regression guard: default config produces no field_histogram_deltas.

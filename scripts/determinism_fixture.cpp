@@ -31,8 +31,8 @@ import insight.canon;
 import insight.metalog;
 
 // AFTER the imports (plain TU): the shared synthetic scenarios — the F5-M8 near-full reservoir, the
-// §C3 cube collapse, and the O4b service-edges over-cap topology — shared with the in-suite tests so
-// both oracles run the identical windows.
+// §C3 cube collapse, and the O4b service-edges over-cap topology — shared with the in-suite tests
+// so both oracles run the identical windows.
 #include "cube_collapse_scenario.hpp"
 #include "reservoir_nearfull_scenario.hpp"
 #include "service_edges_overcap_scenario.hpp"
@@ -44,16 +44,17 @@ int main(int argc, char** argv)
 #endif
     if (argc < 2)
     {
-        std::cerr << "usage: determinism_fixture <corpus | --reservoir-nearfull | --cube-collapse>\n";
+        std::cerr
+            << "usage: determinism_fixture <corpus | --reservoir-nearfull | --cube-collapse>\n";
         return 2;
     }
 
-    // §C3 cube dimensional-collapse oracle: a SYNTHETIC cardinality-explosion window (not a tokenized
-    // corpus) that FIRES the guardrail — the closed cube exceeds the budget and the LEVEL banding
-    // {Trace,Debug}→Debug collapses it. Its axis-selection tie-break is an F5-M8-class content
-    // decision (a declared total order), so the emitted collapsed document MUST be byte-identical
-    // across every leg/arch/OS, or the collapse policy is non-deterministic. Same window as the
-    // in-suite CubeCollapse behavioral tests.
+    // §C3 cube dimensional-collapse oracle: a SYNTHETIC cardinality-explosion window (not a
+    // tokenized corpus) that FIRES the guardrail — the closed cube exceeds the budget and the LEVEL
+    // banding {Trace,Debug}→Debug collapses it. Its axis-selection tie-break is an F5-M8-class
+    // content decision (a declared total order), so the emitted collapsed document MUST be
+    // byte-identical across every leg/arch/OS, or the collapse policy is non-deterministic. Same
+    // window as the in-suite CubeCollapse behavioral tests.
     if (std::string{argv[1]} == "--cube-collapse")
     {
         namespace ml = insight::metalog;
@@ -88,8 +89,8 @@ int main(int argc, char** argv)
     }
 
     // O4b service-topology over-cap oracle (D-OTEL-21): a SYNTHETIC span window that builds five
-    // (caller→callee) edges under a 3-edge cap, so the emitted block is decided by the over-cap top-K
-    // select — and the cap cuts THROUGH a 3-way weight tie, so the surviving edge rides the
+    // (caller→callee) edges under a 3-edge cap, so the emitted block is decided by the over-cap
+    // top-K select — and the cap cuts THROUGH a 3-way weight tie, so the surviving edge rides the
     // canonical-key tie-break alone. The emitted service_edges block MUST be byte-identical across
     // every leg/arch/OS, or the "deterministic by construction" claim on the top-K select is false
     // (a stdlib-order-dependent select would flip the surviving edge). Same window as the in-suite
@@ -129,9 +130,9 @@ int main(int argc, char** argv)
     constexpr std::size_t kArenaBytes{std::size_t{1} << 22};
     tk::ArenaAllocator arena{kArenaBytes};
     // The degenerate composition (ADR 0024 §3): this harness verifies metalog reservoir/cube
-    // determinism over SYNTHETIC scenarios (not GHA dialect logs), so it needs no dialect vocabulary —
-    // and as a metalog script it does not link the semantic packages. compose({}) is a defined,
-    // runnable core-only state.
+    // determinism over SYNTHETIC scenarios (not GHA dialect logs), so it needs no dialect
+    // vocabulary — and as a metalog script it does not link the semantic packages. compose({}) is a
+    // defined, runnable core-only state.
     const insight::semantic::ComposedSemantics composed{insight::semantic::compose({})};
     tk::Tokenizer tok{arena, tk::MaskConfig{}, composed};
     std::vector<tk::CanonicalEvent> events;

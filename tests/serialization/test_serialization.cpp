@@ -57,7 +57,8 @@ TEST(FieldHistogramSerializationTest, ValueCountsEmittedKeySorted)
         << "param_histograms must serialise integer-only & key-sorted (no entropy_bits).\n"
         << json;
 
-    EXPECT_EQ(meta::to_json(doc, engine.registry()), json) << "serialisation must be byte-identical on repeat.";
+    EXPECT_EQ(meta::to_json(doc, engine.registry()), json)
+        << "serialisation must be byte-identical on repeat.";
 }
 
 TEST(FieldHistogramSerializationTest, OmittedWhenDisabled)

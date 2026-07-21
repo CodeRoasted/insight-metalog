@@ -21,8 +21,9 @@ constexpr std::int64_t kMs{1'000'000}; // ns per ms
 // Ingest one latency_ms observation (value in ms) on a fixed template.
 void ingest_latency_ms(meta::MetaLogEngine& engine, std::int64_t value_ms)
 {
-    const std::array<OrdinalObservation, 1> obs{
-        {{.field_name = "latency_ms", .schedule = OrdinalSchedule::DurationLog2Ns, .value = value_ms * kMs}}};
+    const std::array<OrdinalObservation, 1> obs{{{.field_name = "latency_ms",
+                                                  .schedule = OrdinalSchedule::DurationLog2Ns,
+                                                  .value = value_ms * kMs}}};
     tok::CanonicalEvent ev;
     ev.template_str = "db query completed";
     ev.ordinals = obs; // span valid through the ingest call
@@ -43,7 +44,7 @@ TEST(OrdinalHistogramTest, BinIndexIsLog2OctaveClampedToB)
     EXPECT_EQ(meta::ordinal_bin_index(OrdinalSchedule::DurationLog2Ns, 0), 0u);
     EXPECT_EQ(meta::ordinal_bin_index(OrdinalSchedule::DurationLog2Ns, 1), 0u);
     EXPECT_EQ(meta::ordinal_bin_index(OrdinalSchedule::DurationLog2Ns, 2), 1u);
-    EXPECT_EQ(meta::ordinal_bin_index(OrdinalSchedule::DurationLog2Ns, 3), 1u);   // floor(log2 3)=1
+    EXPECT_EQ(meta::ordinal_bin_index(OrdinalSchedule::DurationLog2Ns, 3), 1u); // floor(log2 3)=1
     EXPECT_EQ(meta::ordinal_bin_index(OrdinalSchedule::DurationLog2Ns, 1024), 10u);
     // A huge value clamps to B-1 = 47, never out of range.
     EXPECT_EQ(meta::ordinal_bin_index(OrdinalSchedule::DurationLog2Ns,
@@ -62,7 +63,8 @@ TEST(OrdinalHistogramTest, DisabledByDefaultNoOrdinalHistograms)
     auto doc{engine.close_window(t0 + std::chrono::seconds(1))};
     ASSERT_FALSE(doc.stats.top_k.empty());
     EXPECT_TRUE(doc.stats.top_k[0].ordinal_histograms.empty())
-        << "Default config must emit no ordinal histograms (the batch-gate / zero-overhead guarantee).";
+        << "Default config must emit no ordinal histograms (the batch-gate / zero-overhead "
+           "guarantee).";
 }
 
 TEST(OrdinalHistogramTest, AccumulatesBinnedCountsOnTheRightTemplate)
@@ -99,10 +101,14 @@ TEST(OrdinalHistogramTest, MultipleFieldsEmittedInSortedOrder)
     meta::MetaLogEngine engine{batch_config()};
     auto t0{std::chrono::system_clock::now()};
     engine.open_window(t0);
-    // One event carrying two declared ordinals; field-name emit order must be deterministic (sorted).
-    const std::array<OrdinalObservation, 2> obs{
-        {{.field_name = "response_bytes", .schedule = OrdinalSchedule::SizeLog2Bytes, .value = 4096},
-         {.field_name = "latency_ms", .schedule = OrdinalSchedule::DurationLog2Ns, .value = 50 * kMs}}};
+    // One event carrying two declared ordinals; field-name emit order must be deterministic
+    // (sorted).
+    const std::array<OrdinalObservation, 2> obs{{{.field_name = "response_bytes",
+                                                  .schedule = OrdinalSchedule::SizeLog2Bytes,
+                                                  .value = 4096},
+                                                 {.field_name = "latency_ms",
+                                                  .schedule = OrdinalSchedule::DurationLog2Ns,
+                                                  .value = 50 * kMs}}};
     tok::CanonicalEvent ev;
     ev.template_str = "served";
     ev.ordinals = obs;
@@ -112,7 +118,7 @@ TEST(OrdinalHistogramTest, MultipleFieldsEmittedInSortedOrder)
     ASSERT_FALSE(doc.stats.top_k.empty());
     const auto& hists{doc.stats.top_k[0].ordinal_histograms};
     ASSERT_EQ(hists.size(), 2u);
-    EXPECT_EQ(hists[0].field_name, "latency_ms");    // 'l' < 'r' — sorted
+    EXPECT_EQ(hists[0].field_name, "latency_ms"); // 'l' < 'r' — sorted
     EXPECT_EQ(hists[1].field_name, "response_bytes");
     EXPECT_EQ(hists[1].schedule_id, "size-log2-bytes-v1");
 }
@@ -130,8 +136,8 @@ TEST(OrdinalHistogramTest, DiffPairsOrdinalHistogramsBothSides)
             ingest_latency_ms(engine, value_ms);
         return engine.close_window(t0 + std::chrono::seconds(1));
     };
-    const auto baseline{build(100)};      // fast
-    const auto changed{build(100'000)};   // slow (≈10 octaves up)
+    const auto baseline{build(100)};    // fast
+    const auto changed{build(100'000)}; // slow (≈10 octaves up)
 
     const auto diff{meta::diff(baseline, changed)};
     ASSERT_EQ(diff.ordinal_histogram_deltas.size(), 1u);

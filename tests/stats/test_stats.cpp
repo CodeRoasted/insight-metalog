@@ -339,9 +339,9 @@ TEST(SalienceScore, ZeroSeverityReturnsZero)
 
 TEST(SalienceScore, FatalLevelScoresHigh)
 {
-    const std::uint32_t score = meta::salience_score(
-        LogLevel::Fatal, StructuralRole::None, "process died", /*echoed_source=*/false, 1, 1000, 0,
-        0);
+    const std::uint32_t score =
+        meta::salience_score(LogLevel::Fatal, StructuralRole::None, "process died",
+                             /*echoed_source=*/false, 1, 1000, 0, 0);
     EXPECT_GT(score, 0u);
     // fatal band (100) × uncommon (90, count·100 < lines) = 9000.
     EXPECT_EQ(score, 9000u);
@@ -377,9 +377,9 @@ TEST(SalienceScore, StructuralSurpriseAloneCanMakeNonZero)
 
 TEST(SalienceScore, NoveltyAloneCanMakeNonZero)
 {
-    const std::uint32_t score = meta::salience_score(
-        LogLevel::Info, StructuralRole::None, "session start", /*echoed_source=*/false, 2, 100, 0,
-        60);
+    const std::uint32_t score =
+        meta::salience_score(LogLevel::Info, StructuralRole::None, "session start",
+                             /*echoed_source=*/false, 2, 100, 0, 60);
     EXPECT_GT(score, 0u);
 }
 
@@ -389,13 +389,13 @@ TEST(SalienceScore, EchoedSourceSkipsFailureCueTier)
     // must NOT be re-promoted by the LEVEL-BLIND failure-cue tier. With echoed_source=true and no
     // other axis, the template scores 0 (not salient); a non-echoed peer keeps the failure-cue
     // band. (The Unknown level contributes no severity itself — only the cue tier could fire.)
-    const std::uint32_t echoed = meta::salience_score(std::nullopt, StructuralRole::None,
-                                                      "Download failed after 3 attempts",
-                                                      /*echoed_source=*/true, 1, 1000, 0, 0);
+    const std::uint32_t echoed =
+        meta::salience_score(std::nullopt, StructuralRole::None, "Download failed after 3 attempts",
+                             /*echoed_source=*/true, 1, 1000, 0, 0);
     EXPECT_EQ(echoed, 0u) << "echoed-source failure template must not enter the reservoir";
-    const std::uint32_t runtime = meta::salience_score(std::nullopt, StructuralRole::None,
-                                                       "Download failed after 3 attempts",
-                                                       /*echoed_source=*/false, 1, 1000, 0, 0);
+    const std::uint32_t runtime =
+        meta::salience_score(std::nullopt, StructuralRole::None, "Download failed after 3 attempts",
+                             /*echoed_source=*/false, 1, 1000, 0, 0);
     EXPECT_GT(runtime, 0u) << "a real runtime failure template keeps the failure-cue tier";
 }
 

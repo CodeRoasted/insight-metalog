@@ -30,7 +30,8 @@ using insight::template_id_of;
 
 // A top_k entry for `tmpl` at `level` — a salience-memory member that does NOT draw from the
 // reservoir (so it suppresses "new" without ever appearing as a new/vanished snapshot).
-[[nodiscard]] meta::TopKEntry top_k_entry(std::string_view tmpl, LogLevel level, std::uint64_t count)
+[[nodiscard]] meta::TopKEntry top_k_entry(std::string_view tmpl, LogLevel level,
+                                          std::uint64_t count)
 {
     meta::TopKEntry entry;
     entry.template_id = template_id_of(tmpl);
@@ -58,11 +59,10 @@ using insight::template_id_of;
 }
 
 // Membership snapshots must be sorted ascending by template_id — the sole output order (§5.3).
-template <class Entry>
-[[nodiscard]] bool sorted_by_id(const std::vector<Entry>& list)
+template <class Entry> [[nodiscard]] bool sorted_by_id(const std::vector<Entry>& list)
 {
-    return std::ranges::is_sorted(
-        list, [](const Entry& lhs, const Entry& rhs) { return lhs.template_id < rhs.template_id; });
+    return std::ranges::is_sorted(list, [](const Entry& lhs, const Entry& rhs)
+                                  { return lhs.template_id < rhs.template_id; });
 }
 
 } // namespace
@@ -71,16 +71,17 @@ template <class Entry>
 // salience memory is `new_salient`; a chronic one already in that memory is NOT.
 TEST(ReservoirDeltaTest, NewSalientIsAbsentFromPreviousMemory)
 {
-    const auto prev{doc_with({}, {reservoir_entry("chronic db timeout", LogLevel::Error, 8000, 1)})};
-    const auto curr{doc_with({}, {reservoir_entry("chronic db timeout", LogLevel::Error, 8000, 1),
-                                  reservoir_entry("brand new oom kill", LogLevel::Fatal, 9500, 1)})};
+    const auto prev{
+        doc_with({}, {reservoir_entry("chronic db timeout", LogLevel::Error, 8000, 1)})};
+    const auto curr{
+        doc_with({}, {reservoir_entry("chronic db timeout", LogLevel::Error, 8000, 1),
+                      reservoir_entry("brand new oom kill", LogLevel::Fatal, 9500, 1)})};
 
     const auto d{meta::diff(prev, curr)};
     const auto& delta{d.reservoir_delta};
 
-    ASSERT_EQ(delta.new_salient.size(), 1u)
-        << "expected exactly the genuinely-new template; got "
-        << delta.new_salient.size() << " new_salient entries";
+    ASSERT_EQ(delta.new_salient.size(), 1u) << "expected exactly the genuinely-new template; got "
+                                            << delta.new_salient.size() << " new_salient entries";
     EXPECT_TRUE(contains_id(delta.new_salient, "brand new oom kill"))
         << "the current-only rare-fatal must be flagged new";
     EXPECT_FALSE(contains_id(delta.new_salient, "chronic db timeout"))
@@ -93,7 +94,8 @@ TEST(ReservoirDeltaTest, NewSalientIsAbsentFromPreviousMemory)
     EXPECT_EQ(snap.count, 1u);
 }
 
-// A previous.reservoir template gone from the current window's salience memory is `vanished_salient`.
+// A previous.reservoir template gone from the current window's salience memory is
+// `vanished_salient`.
 TEST(ReservoirDeltaTest, VanishedSalientIsAbsentFromCurrentMemory)
 {
     const auto prev{doc_with({}, {reservoir_entry("held error", LogLevel::Error, 8000, 1),
@@ -146,7 +148,8 @@ TEST(ReservoirDeltaTest, FrontierCrossingsAreSignedAndPolarityMute)
 
     const auto up_id{template_id_of("escalating call")};
     const auto down_id{template_id_of("recovering call")};
-    const auto up{std::ranges::find_if(crossings, [&](const auto& c) { return c.template_id == up_id; })};
+    const auto up{
+        std::ranges::find_if(crossings, [&](const auto& c) { return c.template_id == up_id; })};
     const auto down{
         std::ranges::find_if(crossings, [&](const auto& c) { return c.template_id == down_id; })};
     ASSERT_NE(up, crossings.end());
@@ -159,7 +162,8 @@ TEST(ReservoirDeltaTest, FrontierCrossingsAreSignedAndPolarityMute)
         << "Fatal→Info crosses OUT of the failure band";
 }
 
-// A level change that does NOT change failure-membership (Error→Fatal, both in-band) is not a crossing.
+// A level change that does NOT change failure-membership (Error→Fatal, both in-band) is not a
+// crossing.
 TEST(ReservoirDeltaTest, WithinBandLevelChangeIsNotACrossing)
 {
     const auto prev{doc_with({}, {reservoir_entry("severe", LogLevel::Error, 8000, 1)})};
@@ -198,7 +202,8 @@ TEST(ReservoirDeltaTest, OmittedFromJsonWhenBothMemoriesEmpty)
 
     const std::string json{meta::to_json(d)};
     EXPECT_EQ(json.find("reservoir_delta"), std::string::npos)
-        << "empty reservoir_delta must be omitted from the wire; json was:\n" << json;
+        << "empty reservoir_delta must be omitted from the wire; json was:\n"
+        << json;
 }
 
 // NOLINTEND

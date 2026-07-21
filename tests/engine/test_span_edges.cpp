@@ -105,7 +105,8 @@ TEST(SpanEdges, ObservedDagHasNoInterleaveNoiseThatInferredDoes)
         engine.open_window(kT0);
         const auto emit = [&](std::string_view templ, std::uint64_t span, std::uint64_t parent)
         {
-            tok::CanonicalEvent event{observed ? make_span(templ, span, parent) : make_event(templ)};
+            tok::CanonicalEvent event{observed ? make_span(templ, span, parent)
+                                               : make_event(templ)};
             engine.ingest_event(event);
         };
         for (int i = 0; i < 50; ++i)
@@ -131,11 +132,13 @@ TEST(SpanEdges, ObservedDagHasNoInterleaveNoiseThatInferredDoes)
         {
             if (ngram.sequence.size() != 2)
                 continue;
-            const bool is_declared{std::ranges::any_of(declared, [&](const auto& edge)
-            {
-                return ngram.sequence[0] == insight::template_id_of(edge.first) &&
-                       ngram.sequence[1] == insight::template_id_of(edge.second);
-            })};
+            const bool is_declared{std::ranges::any_of(
+                declared,
+                [&](const auto& edge)
+                {
+                    return ngram.sequence[0] == insight::template_id_of(edge.first) &&
+                           ngram.sequence[1] == insight::template_id_of(edge.second);
+                })};
             if (!is_declared)
                 ++noise;
         }
@@ -145,11 +148,12 @@ TEST(SpanEdges, ObservedDagHasNoInterleaveNoiseThatInferredDoes)
     // Observed: only the two declared edges, ZERO interleave noise.
     EXPECT_TRUE(has_edge(observed_doc, "a1", "a2"));
     EXPECT_TRUE(has_edge(observed_doc, "b1", "b2"));
-    EXPECT_EQ(noise_edges(observed_doc), 0) << "observed DAG must not manufacture cross-trace edges";
+    EXPECT_EQ(noise_edges(observed_doc), 0)
+        << "observed DAG must not manufacture cross-trace edges";
     // Inferred adjacency on the same interleave DOES manufacture cross-trace noise — the delta the
     // observed graph eliminates (the G-O3-2 number: inferred noise → 0 observed).
-    EXPECT_GT(noise_edges(inferred_doc), 0)
-        << "the inferred global-adjacency control must show interleave noise for the delta to be real";
+    EXPECT_GT(noise_edges(inferred_doc), 0) << "the inferred global-adjacency control must show "
+                                               "interleave noise for the delta to be real";
 }
 
 // (4) Determinism (SACRED): the observed graph replays bit-identically.
