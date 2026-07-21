@@ -241,7 +241,6 @@ class MetaLogEngine
     // non-span window.
     void build_service_edges(MetaLogDocument& doc) const;
     void stash_prev_window(const MetaLogDocument& doc);
-    void build_templates_map(MetaLogDocument& doc) const;
     void reset_window_state();
 
     MetaLogConfig config_{};

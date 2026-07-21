@@ -442,10 +442,9 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end,
     build_service_edges(
         doc); // O4b (D-OTEL-21) — iff the window had trace substrate (span_records > 0)
 
-    // Carry this window's frequencies for the next window's stability, emit the
-    // §3.4 dedup map, then drop the per-window state.
+    // Carry this window's frequencies for the next window's stability, then drop the
+    // per-window state.
     stash_prev_window(doc);
-    build_templates_map(doc);
     reset_window_state();
 
     return doc;
@@ -459,9 +458,8 @@ void MetaLogEngine::stamp_envelope(MetaLogDocument& doc, Timestamp start, Timest
     doc.metalog_version = "0.6.0";
     doc.producer.version = config_.producer_version;
     doc.source = source_;
-    // D-TIR-5 field-drop: the doc carries the emission policy it was built under so the serialiser
-    // knows how to render template strings (by id, from the registry) now the string fields are
-    // gone.
+    // D-TIR-5: template strings are not carried on the doc — the serialiser resolves them by id
+    // from the engine registry at the serialize/explain seams (SPEC §3.4 inline).
 
     // Reported bounds: the deterministic parseable-ts envelope when supplied (MUST 3),
     // else the open/close machinery times. Duration tracks the reported span.
@@ -1251,11 +1249,6 @@ void MetaLogEngine::stash_prev_window(const MetaLogDocument& doc)
         prev_total_ = lines_observed_;
         prev_window_end_iso_ = doc.window.end_iso;
     }
-}
-
-void MetaLogEngine::build_templates_map(MetaLogDocument& doc) const
-{
-    // ── templates dedup membership (SPEC §3.4) ──
 }
 
 void MetaLogEngine::reset_window_state()
