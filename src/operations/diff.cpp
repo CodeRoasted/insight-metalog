@@ -154,17 +154,17 @@ namespace
         for (const auto& entry : current.behavior->top_ngrams)
             cur_p[insight::ngram_id_of(entry.sequence)] = {.sequence = entry.sequence,
                                                            .probability = entry.probability};
-        for (const auto& [id, cur] : cur_p)
-            if (!prev_p.contains(id))
+        for (const auto& [ngram_id, cur] : cur_p)
+            if (!prev_p.contains(ngram_id))
                 ngram_delta.new_ngrams.push_back(cur.sequence);
-        for (const auto& [id, prev] : prev_p)
-            if (!cur_p.contains(id))
+        for (const auto& [ngram_id, prev] : prev_p)
+            if (!cur_p.contains(ngram_id))
                 ngram_delta.vanished_ngrams.push_back(prev.sequence);
         std::ranges::sort(ngram_delta.new_ngrams);
         std::ranges::sort(ngram_delta.vanished_ngrams);
-        for (const auto& [id, cur] : cur_p)
+        for (const auto& [ngram_id, cur] : cur_p)
         {
-            auto pp_it{prev_p.find(id)};
+            auto pp_it{prev_p.find(ngram_id)};
             if (pp_it == prev_p.end())
                 continue;
             const double delta = cur.probability - pp_it->second.probability;

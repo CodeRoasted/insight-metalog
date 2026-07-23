@@ -307,7 +307,7 @@ void MetaLogEngine::resolve_span_edges()
     }
 }
 
-void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
+void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event) // NOLINT(readability-function-cognitive-complexity): hot-path per-event accumulator — one coherent routine folding an event into template/cube/component/param-histogram/HLL state; a split fragments the hot path and its locality.
 {
     if (!window_start_)
         throw std::logic_error{"MetaLogEngine::ingest_event called before open_window"};
@@ -730,7 +730,7 @@ MetaLogEngine::collect_reservoir_candidates(const WindowAnalysis& analysis) cons
 // by template_id for a bit-identical reservoir), bounded by reservoir_size, with a
 // guaranteed error-class RESERVE (D-RNK-2 §5.2) ahead of the per-kind
 // (structural_role × dominant_level) diversity cap on the general pool.
-void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& analysis,
+void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& analysis, // NOLINT(readability-function-cognitive-complexity): SPEC §3.7.2 bit-identical salience-ranked reservoir admission — one coherent determinism-critical routine (tie-break by template_id), pinned by ReservoirTest.TieBreakByTemplateIdAtEqualSalience.
                                     std::vector<ReservoirCandidate>& candidates,
                                     std::unordered_set<std::string>& reserved) const
 {
@@ -1080,11 +1080,11 @@ MetaLogEngine::InternalTemplateID MetaLogEngine::dominant_path_start() const
     // (the engine keys buckets_ by content_id; the id maps via content_template_index_).
     for (const auto& [content_id, bucket] : buckets_)
     {
-        const InternalTemplateID id{content_template_index_.find(content_id)->second};
-        if (bucket.count > best_count || (bucket.count == best_count && id < start_id))
+        const InternalTemplateID tid{content_template_index_.find(content_id)->second};
+        if (bucket.count > best_count || (bucket.count == best_count && tid < start_id))
         {
             best_count = bucket.count;
-            start_id = id;
+            start_id = tid;
         }
     }
     return start_id;

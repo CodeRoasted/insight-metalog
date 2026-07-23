@@ -537,7 +537,7 @@ namespace
         absorb(rhs.behavior);
         std::vector<NGramEntry> entries;
         entries.reserve(acc.size());
-        for (auto& [id, accum] : acc)
+        for (auto& [tid, accum] : acc)
         {
             NGramEntry entry;
             entry.sequence = std::move(accum.sequence);

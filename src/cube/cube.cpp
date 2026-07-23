@@ -520,11 +520,11 @@ namespace
     // Structural cost of a step (frozen, window-independent — anti-endogamy): a LEVEL band costs
     // its reach toward the frontier ({Trace,Debug} cheapest); WHERE-drop is the last-resort
     // constant.
-    [[nodiscard]] std::uint64_t collapse_step_cost(const CollapseState& from,
-                                                   const CollapseState& to) noexcept
+    [[nodiscard]] std::uint64_t collapse_step_cost(const CollapseState& source,
+                                                   const CollapseState& target) noexcept
     {
-        if (to.level_band_floor != from.level_band_floor)
-            return to.level_band_floor; // 2 < 3 < 4
+        if (target.level_band_floor != source.level_band_floor)
+            return target.level_band_floor; // 2 < 3 < 4
         return kWhereDropCost;
     }
 

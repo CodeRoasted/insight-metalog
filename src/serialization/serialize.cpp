@@ -645,8 +645,8 @@ namespace
     {
         std::vector<std::string> out;
         out.reserve(ids.size());
-        for (const TemplateId id : ids)
-            out.push_back(insight::render(id));
+        for (const TemplateId tid : ids)
+            out.push_back(insight::render(tid));
         return out;
     }
     [[nodiscard]] std::vector<std::vector<std::string>>
@@ -948,6 +948,60 @@ namespace
         return out;
     }
 
+    dto::NGramDelta make_ngram_delta(const NGramDelta& ngram)
+    {
+        dto::NGramDelta out;
+        out.ngram_size = ngram.ngram_size;
+        if (!ngram.new_ngrams.empty())
+            out.new_ngrams = render_sequences(ngram.new_ngrams);
+        if (!ngram.vanished_ngrams.empty())
+            out.vanished_ngrams = render_sequences(ngram.vanished_ngrams);
+        if (!ngram.rate_changed.empty())
+        {
+            std::vector<dto::NGramRateChange> changes;
+            changes.reserve(ngram.rate_changed.size());
+            for (const auto& rate_change : ngram.rate_changed)
+                changes.push_back({.sequence = render_sequence(rate_change.sequence),
+                                   .previous_probability = rate_change.previous_probability,
+                                   .current_probability = rate_change.current_probability,
+                                   .delta = rate_change.delta});
+            out.rate_changed = std::move(changes);
+        }
+        return out;
+    }
+
+    dto::ServiceEdgeDelta make_service_edge_delta(const ServiceEdgeDelta& edges_delta)
+    {
+        dto::ServiceEdgeDelta delta;
+        const auto edge_rows{
+            [](const std::vector<ServiceEdge>& edges)
+            {
+                std::vector<dto::ServiceEdge> rows;
+                rows.reserve(edges.size());
+                for (const ServiceEdge& edge : edges)
+                    rows.push_back(
+                        {.caller = edge.caller, .callee = edge.callee, .weight = edge.weight});
+                return rows;
+            }};
+        if (!edges_delta.emerged.empty())
+            delta.emerged = edge_rows(edges_delta.emerged);
+        if (!edges_delta.vanished.empty())
+            delta.vanished = edge_rows(edges_delta.vanished);
+        if (!edges_delta.weight_changed.empty())
+        {
+            std::vector<dto::ServiceEdgeWeightChange> rows;
+            rows.reserve(edges_delta.weight_changed.size());
+            for (const auto& change : edges_delta.weight_changed)
+                rows.push_back({.caller = change.caller,
+                                .callee = change.callee,
+                                .previous_weight = change.previous_weight,
+                                .current_weight = change.current_weight,
+                                .delta = change.delta});
+            delta.weight_changed = std::move(rows);
+        }
+        return delta;
+    }
+
     dto::Diff make_diff(const MetaLogDiff& diff)
     {
         dto::Diff out;
@@ -987,26 +1041,7 @@ namespace
             out.branching_delta = std::move(deltas);
         }
         if (diff.ngram_delta)
-        {
-            dto::NGramDelta ngram_delta;
-            ngram_delta.ngram_size = diff.ngram_delta->ngram_size;
-            if (!diff.ngram_delta->new_ngrams.empty())
-                ngram_delta.new_ngrams = render_sequences(diff.ngram_delta->new_ngrams);
-            if (!diff.ngram_delta->vanished_ngrams.empty())
-                ngram_delta.vanished_ngrams = render_sequences(diff.ngram_delta->vanished_ngrams);
-            if (!diff.ngram_delta->rate_changed.empty())
-            {
-                std::vector<dto::NGramRateChange> changes;
-                changes.reserve(diff.ngram_delta->rate_changed.size());
-                for (const auto& rate_change : diff.ngram_delta->rate_changed)
-                    changes.push_back({.sequence = render_sequence(rate_change.sequence),
-                                       .previous_probability = rate_change.previous_probability,
-                                       .current_probability = rate_change.current_probability,
-                                       .delta = rate_change.delta});
-                ngram_delta.rate_changed = std::move(changes);
-            }
-            out.ngram_delta = std::move(ngram_delta);
-        }
+            out.ngram_delta = make_ngram_delta(*diff.ngram_delta);
         if (diff.tail_delta)
         {
             const auto& tail = *diff.tail_delta;
@@ -1027,36 +1062,7 @@ namespace
             out.reservoir_delta = make_reservoir_delta(diff.reservoir_delta);
         if (diff.service_edge_delta) // O4b (D-OTEL-21): present iff both sides carried a
                                      // service_edges block
-        {
-            dto::ServiceEdgeDelta delta;
-            const auto edge_rows{
-                [](const std::vector<ServiceEdge>& edges)
-                {
-                    std::vector<dto::ServiceEdge> rows;
-                    rows.reserve(edges.size());
-                    for (const ServiceEdge& edge : edges)
-                        rows.push_back(
-                            {.caller = edge.caller, .callee = edge.callee, .weight = edge.weight});
-                    return rows;
-                }};
-            if (!diff.service_edge_delta->emerged.empty())
-                delta.emerged = edge_rows(diff.service_edge_delta->emerged);
-            if (!diff.service_edge_delta->vanished.empty())
-                delta.vanished = edge_rows(diff.service_edge_delta->vanished);
-            if (!diff.service_edge_delta->weight_changed.empty())
-            {
-                std::vector<dto::ServiceEdgeWeightChange> rows;
-                rows.reserve(diff.service_edge_delta->weight_changed.size());
-                for (const auto& change : diff.service_edge_delta->weight_changed)
-                    rows.push_back({.caller = change.caller,
-                                    .callee = change.callee,
-                                    .previous_weight = change.previous_weight,
-                                    .current_weight = change.current_weight,
-                                    .delta = change.delta});
-                delta.weight_changed = std::move(rows);
-            }
-            out.service_edge_delta = std::move(delta);
-        }
+            out.service_edge_delta = make_service_edge_delta(*diff.service_edge_delta);
         return out;
     }
 
