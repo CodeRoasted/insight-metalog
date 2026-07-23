@@ -307,7 +307,11 @@ void MetaLogEngine::resolve_span_edges()
     }
 }
 
-void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event) // NOLINT(readability-function-cognitive-complexity): hot-path per-event accumulator — one coherent routine folding an event into template/cube/component/param-histogram/HLL state; a split fragments the hot path and its locality.
+// hot-path per-event accumulator — one coherent routine folding an event into
+// template/cube/component/param-histogram/HLL state; a split fragments the hot path and its
+// locality.
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
 {
     if (!window_start_)
         throw std::logic_error{"MetaLogEngine::ingest_event called before open_window"};
@@ -730,7 +734,11 @@ MetaLogEngine::collect_reservoir_candidates(const WindowAnalysis& analysis) cons
 // by template_id for a bit-identical reservoir), bounded by reservoir_size, with a
 // guaranteed error-class RESERVE (D-RNK-2 §5.2) ahead of the per-kind
 // (structural_role × dominant_level) diversity cap on the general pool.
-void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& analysis, // NOLINT(readability-function-cognitive-complexity): SPEC §3.7.2 bit-identical salience-ranked reservoir admission — one coherent determinism-critical routine (tie-break by template_id), pinned by ReservoirTest.TieBreakByTemplateIdAtEqualSalience.
+// SPEC §3.7.2 bit-identical salience-ranked reservoir admission — one coherent
+// determinism-critical routine (tie-break by template_id), pinned by
+// ReservoirTest.TieBreakByTemplateIdAtEqualSalience.
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& analysis,
                                     std::vector<ReservoirCandidate>& candidates,
                                     std::unordered_set<std::string>& reserved) const
 {
