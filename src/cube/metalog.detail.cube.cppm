@@ -108,7 +108,7 @@ struct Cell
 {
     Cell out{};
     for (std::size_t dim{0}; dim < kCellDims; ++dim)
-        out.value[dim] = ((mask >> dim) & 1U) ? base.value[dim] : kStar;
+        out.value[dim] = (((mask >> dim) & 1U) != 0U) ? base.value[dim] : kStar;
     return out;
 }
 

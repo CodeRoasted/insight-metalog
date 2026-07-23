@@ -73,7 +73,7 @@ namespace
                 out.new_templates.push_back(template_id);
             else if (prev_count > 0 && cur_count == 0)
                 out.vanished_templates.push_back(template_id);
-            out.template_deltas.push_back(std::move(template_delta));
+            out.template_deltas.push_back(template_delta);
         }
         std::ranges::sort(out.template_deltas,
                           [](const TemplateDelta& lhs, const TemplateDelta& rhs)
@@ -117,7 +117,7 @@ namespace
                     cur_h.contains(template_id) ? cur_h[template_id] : 0.0;
                 branch_delta.delta_bits =
                     branch_delta.current_entropy_bits - branch_delta.previous_entropy_bits;
-                out.branching_delta.push_back(std::move(branch_delta));
+                out.branching_delta.push_back(branch_delta);
             }
             std::ranges::sort(out.branching_delta,
                               [](const BranchingDelta& lhs, const BranchingDelta& rhs)
@@ -148,10 +148,12 @@ namespace
         };
         std::unordered_map<NgramId, NgramProb> prev_p;
         for (const auto& entry : previous.behavior->top_ngrams)
-            prev_p[insight::ngram_id_of(entry.sequence)] = {entry.sequence, entry.probability};
+            prev_p[insight::ngram_id_of(entry.sequence)] = {.sequence = entry.sequence,
+                                                            .probability = entry.probability};
         std::unordered_map<NgramId, NgramProb> cur_p;
         for (const auto& entry : current.behavior->top_ngrams)
-            cur_p[insight::ngram_id_of(entry.sequence)] = {entry.sequence, entry.probability};
+            cur_p[insight::ngram_id_of(entry.sequence)] = {.sequence = entry.sequence,
+                                                           .probability = entry.probability};
         for (const auto& [id, cur] : cur_p)
             if (!prev_p.contains(id))
                 ngram_delta.new_ngrams.push_back(cur.sequence);
@@ -283,7 +285,7 @@ namespace
                 if (fhd.previous_cardinality > 0 || fhd.current_cardinality > 0)
                     fhd.cardinality_delta = static_cast<std::int64_t>(fhd.current_cardinality) -
                                             static_cast<std::int64_t>(fhd.previous_cardinality);
-                out.field_histogram_deltas.push_back(std::move(fhd));
+                out.field_histogram_deltas.push_back(fhd);
             }
         }
 
@@ -432,12 +434,13 @@ namespace
         {
             if (!entry.dominant_component || entry.dominant_component->empty())
                 continue; // no WHERE label → no per-component shift attribution
+            const std::string& component{*entry.dominant_component}; // engaged: guarded just above
             for (const auto& hist : entry.ordinal_histograms)
             {
                 if (hist.schedule_id != duration_schedule)
                     continue; // only the latency/duration ladder feeds latency_shift (size/bytes is
                               // not it)
-                ComponentOrdinal& agg{by_component[*entry.dominant_component]};
+                ComponentOrdinal& agg{by_component[component]};
                 if (agg.counts.size() < hist.counts.size())
                     agg.counts.resize(hist.counts.size(), 0);
                 for (std::size_t i{0}; i < hist.counts.size(); ++i)

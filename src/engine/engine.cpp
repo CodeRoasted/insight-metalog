@@ -1010,7 +1010,7 @@ void MetaLogEngine::build_branching(BehaviorBlock& behavior, const WindowAnalysi
             }
             entry.entropy_bits = reducer.normalized_bits(static_cast<std::int64_t>(total));
         }
-        branching_rows.push_back(std::move(entry));
+        branching_rows.push_back(entry);
     }
     std::ranges::sort(branching_rows,
                       [](const BranchingEntry& lhs, const BranchingEntry& rhs)

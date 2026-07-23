@@ -212,10 +212,7 @@ namespace
     // Binary search the cell_precedes-sorted PopulatedCube (Lever B): count(cell), 0 if absent.
     [[nodiscard]] std::uint64_t count_in(const PopulatedCube& cube, const Cell& cell) noexcept
     {
-        const auto found{
-            std::lower_bound(cube.begin(), cube.end(), cell,
-                             [](const PopulatedCell& populated, const Cell& target) noexcept
-                             { return cell_precedes(populated.cell, target); })};
+        const auto found{std::ranges::lower_bound(cube, cell, cell_precedes, &PopulatedCell::cell)};
         return (found != cube.end() && found->cell == cell) ? found->agg.count : std::uint64_t{0};
     }
 
@@ -347,8 +344,7 @@ namespace
             const std::uint32_t where{cell.value[static_cast<std::size_t>(Dim::Where)]};
             if (where != kStar)
             {
-                const auto found{
-                    std::lower_bound(new_dict.begin(), new_dict.end(), old_dict[where])};
+                const auto found{std::ranges::lower_bound(new_dict, old_dict[where])};
                 remapped.value[static_cast<std::size_t>(Dim::Where)] =
                     static_cast<std::uint32_t>(found - new_dict.begin());
             }
@@ -599,8 +595,8 @@ namespace
     [[nodiscard]] CollapseState min_common_collapse(const CollapseState& lhs,
                                                     const CollapseState& rhs) noexcept
     {
-        return {std::max(lhs.level_band_floor, rhs.level_band_floor),
-                std::min(lhs.where_depth, rhs.where_depth)};
+        return {.level_band_floor = std::max(lhs.level_band_floor, rhs.level_band_floor),
+                .where_depth = std::min(lhs.where_depth, rhs.where_depth)};
     }
 
     // The reference axes stamped with a collapse depth (for a diff/compose result read at that
@@ -681,8 +677,7 @@ namespace
                     continue;
                 Cell parent{cells[i]};
                 parent.value[dim] = kStar; // un-pin one dim = one step toward the apex
-                const auto found{
-                    std::lower_bound(cells.begin(), cells.end(), parent, cell_precedes)};
+                const auto found{std::ranges::lower_bound(cells, parent, cell_precedes)};
                 if (found == cells.end() || *found != parent)
                     continue; // parent not emergent
                 has_parent[i] = true;
