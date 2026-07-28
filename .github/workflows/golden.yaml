@@ -53,7 +53,14 @@ jobs:
           - { leg: gcc,   arch: arm64, runner: ubuntu-24.04-arm, label: "gcc-15 · libstdc++ · arm64", gcc_profile: linux-gcc15-arm64-release, clang_profile: linux-clang21-libcxx-arm64-release }
           - { leg: clang, arch: arm64, runner: ubuntu-24.04-arm, label: "clang-21 · libc++ · arm64",  gcc_profile: linux-gcc15-arm64-release, clang_profile: linux-clang21-libcxx-arm64-release }
     env:
-      CONAN_HOME: ${{ github.workspace }}/.conan2
+      # PER-LEG. `github.workspace` is one fixed path per repo, so on a PERSISTENT runner two legs of
+      # this matrix share a conan home and `actions/cache` extracts into whatever is already there —
+      # one leg's cache landing on another leg's leftovers. The cache KEY below is already per-leg;
+      # this makes the PATH agree with it. Every leg here is hosted today (fresh workspace each job),
+      # so the collision is latent rather than live — it is live in insight-eidos, whose x86 legs route
+      # to the self-hosted box and where it broke the v1.8.6 golden proof on a half-downloaded spdlog
+      # tarball. The three golden.yaml files are copies; fixing only the one that fired is how they rot.
+      CONAN_HOME: ${{ github.workspace }}/.conan2-${{ matrix.arch }}-${{ matrix.leg }}
       # determinism_bitidentity.sh picks the profile matching DETERMINISM_LEG; x86↔arm64 differ only by arch.
       DETERMINISM_GCC_PROFILE: ${{ matrix.gcc_profile }}
       DETERMINISM_CLANG_PROFILE: ${{ matrix.clang_profile }}
