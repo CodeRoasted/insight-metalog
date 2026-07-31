@@ -431,7 +431,7 @@ two_windows(meta::TemplateRegistry* out_registry = nullptr)
     const auto cur{engine.close_window(t2)};
     if (out_registry != nullptr)
         *out_registry =
-            engine.registry(); // D-TIR-5: registry resolves template strings at serialise
+            engine.registry(); // SRC-D-TIR-5: registry resolves template strings at serialise
     return {prev, cur};
 }
 } // namespace

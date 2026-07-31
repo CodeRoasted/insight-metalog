@@ -184,8 +184,8 @@ namespace
             out.ngram_delta = std::move(ngram_delta);
     }
 
-    // service_edge_delta (O4b, D-OTEL-21): the service-topology delta — its OWN pass. Defined ONLY
-    // when BOTH documents carried a service_edges block (both had trace substrate); absent on
+    // service_edge_delta (O4b, SRC-D-OTEL-21): the service-topology delta — its OWN pass. Defined
+    // ONLY when BOTH documents carried a service_edges block (both had trace substrate); absent on
     // either ⇒ leave it unset (edge verdicts are *unknown*, never "all emerged" — D-OTEL-20).
     // Semantics-free set/integer arithmetic (metalog stays polarity-blind; the degraded reading +
     // fold are eidos). Both blocks are canonical-sorted, and std::map iteration is ordered →
@@ -313,7 +313,7 @@ namespace
     // ordinal_histogram_deltas (§4A.4 D-W1-1/4 — the W1 channel): per-(template_id, ordinal field)
     // pairing of the two windows' binned ordinal histograms. Only for (template_id, field_name)
     // present in BOTH top_k lists with ordinal_histograms. Carries both sides' raw counts + totals
-    // + schedule_ids — eidos gates on the schedule_ids matching (the D-W1-4 comparability gate)
+    // + schedule_ids — eidos gates on the schedule_ids matching (the SRC-D-W1-4 comparability gate)
     // then computes the exact-integer Wasserstein-1 distance. Deterministic order (template_id,
     // field_name).
     void diff_ordinal_histogram_deltas(MetaLogDiff& out, const MetaLogDocument& previous,
@@ -632,7 +632,8 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
     diff_ordinal_histogram_deltas(out, previous, current); // W1 (§4A.4 D-W1-1/4)
     diff_tail_delta(out, previous, current);
     diff_reservoir_delta(out, previous, current);    // §5.3 chronic-vs-new streaming seam
-    diff_service_edge_delta(out, previous, current); // O4b (D-OTEL-21): distilled service topology
+    diff_service_edge_delta(out, previous,
+                            current); // O4b (SRC-D-OTEL-21): distilled service topology
     // SPEC §13.6 cube_diff — the emerging border. Emitted only when both documents
     // carried a cube and their axes match (the §2.4 gate above already ensures equal
     // canonicalization_version, under which the axes are frozen identical).

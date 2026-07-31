@@ -69,8 +69,8 @@ namespace
                          const MetaLogDocument& doc)
     {
         // Counts + levels are the decision signal a composed document carries. The display
-        // template_str is gone (D-TIR-5 field-drop): it lived only for serialise/explain, resolved
-        // by id from the engine registry — never read off a composed (diff-only) document.
+        // template_str is gone (SRC-D-TIR-5 field-drop): it lived only for serialise/explain,
+        // resolved by id from the engine registry — never read off a composed (diff-only) document.
         for (const auto& entry : doc.stats.top_k)
         {
             counts[entry.template_id] += entry.count;
@@ -320,14 +320,14 @@ namespace
             const std::uint64_t cnt{cit != counts.end() ? cit->second : 0};
             const auto lit{levels.find(tid)};
             const std::optional<LogLevel> lvl{lit != levels.end() ? lit->second : std::nullopt};
-            // template_str is gone from composed documents (D-TIR-5). looks_like_failure's lexicon
-            // cue is redundant here: a reservoir candidate is folded from inputs that were ALREADY
-            // admitted by salience (carrying level + structural_surprise/novelty, the dominant
-            // severity axes); canon also lifts declared failure markers to LogLevel::Error,
-            // captured by `lvl`. The composed re-derivation re-ranks on those carried signals, not
-            // on re-parsing the string. The failure-cue tier is moot on an empty tmpl, so the
-            // D-PROV-1 echoed_source gate is a no-op here → pass false (the composed input carries
-            // no per-line provenance).
+            // template_str is gone from composed documents (SRC-D-TIR-5). looks_like_failure's
+            // lexicon cue is redundant here: a reservoir candidate is folded from inputs that were
+            // ALREADY admitted by salience (carrying level + structural_surprise/novelty, the
+            // dominant severity axes); canon also lifts declared failure markers to
+            // LogLevel::Error, captured by `lvl`. The composed re-derivation re-ranks on those
+            // carried signals, not on re-parsing the string. The failure-cue tier is moot on an
+            // empty tmpl, so the SRC-D-PROV-1 echoed_source gate is a no-op here → pass false (the
+            // composed input carries no per-line provenance).
             const auto sal{salience_score(lvl, info.role, std::string_view{},
                                           /*echoed_source=*/false, cnt, out.window.lines_observed,
                                           info.structural_surprise, info.novelty)};
@@ -608,8 +608,8 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
     rederive_reservoir(out, state, lhs, rhs);
     build_composed_tail(out, state, lhs, rhs);
 
-    // Display template strings are no longer carried on a composed document (D-TIR-5): they resolve
-    // by id from the engine registry at serialise.
+    // Display template strings are no longer carried on a composed document (SRC-D-TIR-5): they
+    // resolve by id from the engine registry at serialise.
 
     // Stability dropped per SPEC §12.1.
     out.provenance = merge_provenance(lhs, rhs);

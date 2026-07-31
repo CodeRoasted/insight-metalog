@@ -81,7 +81,7 @@ TEST(MetaLogEngineStats, TopKOrderedByCountDesc)
 // identities by construction, never a "same cluster, evolved template" merge. The
 // migrate_bucket path it exercised was deleted with the Drain clustering, and the
 // correctness it protected is now guaranteed at the source — stateless_template_id.md
-// D-TID-3; the canon phantom-pair property tests pin the run-independence directly.)
+// SRC-D-TID-3; the canon phantom-pair property tests pin the run-independence directly.)
 
 TEST(MetaLogEngineStats, TailCountAndUnique)
 {

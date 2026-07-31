@@ -385,9 +385,9 @@ TEST(SalienceScore, NoveltyAloneCanMakeNonZero)
 
 TEST(SalienceScore, EchoedSourceSkipsFailureCueTier)
 {
-    // D-PROV-1 (§3.1): an all-echoed `…failed…` template (level already demoted to Unknown by A1)
-    // must NOT be re-promoted by the LEVEL-BLIND failure-cue tier. With echoed_source=true and no
-    // other axis, the template scores 0 (not salient); a non-echoed peer keeps the failure-cue
+    // SRC-D-PROV-1 (§3.1): an all-echoed `…failed…` template (level already demoted to Unknown by
+    // A1) must NOT be re-promoted by the LEVEL-BLIND failure-cue tier. With echoed_source=true and
+    // no other axis, the template scores 0 (not salient); a non-echoed peer keeps the failure-cue
     // band. (The Unknown level contributes no severity itself — only the cue tier could fire.)
     const std::uint32_t echoed =
         meta::salience_score(std::nullopt, StructuralRole::None, "Download failed after 3 attempts",

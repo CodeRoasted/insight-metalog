@@ -36,24 +36,25 @@ struct FieldHistogram
     std::uint64_t approximate_cardinality{0};
 };
 
-// W1 ordinal carrier (§4A.4 D-W1-2): a per-template, FIELD-keyed binned histogram for a declared
-// ordinal field (canon kOrdinalFieldCatalog). Counts over the schedule's frozen log2 ladder — full
-// tail, NO frequency cap (B is small + fixed, so the carrier is bounded by construction; this is
-// exactly the representation the 4A.2 high-card suppression was a stopgap for). A distinct stream
-// from the positional, categorical `field_histograms`/`value_counts`: a field is ordinal XOR
-// categorical (D-W1-5), so the two never collide. Populated only when
+// W1 ordinal carrier (§4A.4 SRC-D-W1-2): a per-template, FIELD-keyed binned histogram for a
+// declared ordinal field (canon kOrdinalFieldCatalog). Counts over the schedule's frozen log2
+// ladder — full tail, NO frequency cap (B is small + fixed, so the carrier is bounded by
+// construction; this is exactly the representation the 4A.2 high-card suppression was a stopgap
+// for). A distinct stream from the positional, categorical `field_histograms`/`value_counts`: a
+// field is ordinal XOR categorical (D-W1-5), so the two never collide. Populated only when
 // MetaLogConfig::max_param_histograms > 0 (the batch / full-fidelity value-tracking path); empty
-// (omitted on the wire) otherwise → non-ordinal documents stay byte-identical (D-W1-4).
+// (omitted on the wire) otherwise → non-ordinal documents stay byte-identical (SRC-D-W1-4).
 struct OrdinalHistogram
 {
-    std::string field_name;  // the declared ordinal field (e.g. "latency_ms") — surfaced on the
-                             // diff row for `attributable_to` (D-W1-3)
-    std::string schedule_id; // the versioned schedule id (the eidos diff comparability key, D-W1-4)
+    std::string field_name; // the declared ordinal field (e.g. "latency_ms") — surfaced on the
+                            // diff row for `attributable_to` (D-W1-3)
+    // the versioned schedule id (the eidos diff comparability key, SRC-D-W1-4)
+    std::string schedule_id;
     std::vector<std::uint64_t> counts; // counts[B] over the schedule's log2 ladder
     std::uint64_t total{0};            // Σcounts (the per-field observation count = N for W1)
 };
 
-// The W1 ladder (§4A.4 D-W1-2): map a canonical-unit value onto its log2-octave bin index for
+// The W1 ladder (§4A.4 SRC-D-W1-2): map a canonical-unit value onto its log2-octave bin index for
 // `schedule`, clamped to [0, B-1]. Pure integer — floor(log2) by a shift loop, no float, no edge
 // table; this IS the frozen, versioned ladder (metalog owns binning; eidos is ladder-agnostic at
 // w=1). `value` is non-negative (canon's parser rejects negatives); 0 and 1 fall in bin 0.
@@ -129,7 +130,8 @@ struct OrdinalDrift
 // octave thresholds θ_k (no float, no division, no float→int — [[det-math-f5-determinism]]), so the
 // verdict is replay-stable and golden-frozen. The θ_k are pre-registered (anti-endogamy): ≥5
 // octaves → HIGH, ≥2 → MED, ≥0.5 → LOW, below → NONE. A zero total (or empty histogram) is a
-// degenerate pairing → {NONE, None}; the caller still gates the schedule-id comparability (D-W1-4).
+// degenerate pairing → {NONE, None}; the caller still gates the schedule-id comparability
+// (SRC-D-W1-4).
 [[nodiscard]] inline OrdinalDrift ordinal_w1(const std::vector<std::uint64_t>& previous,
                                              const std::vector<std::uint64_t>& current,
                                              std::uint64_t previous_total,
@@ -190,8 +192,8 @@ struct OrdinalDrift
     return drift;
 }
 
-// TemplateRegistry (D-TIR-5): the single TemplateId -> template_str association, owned OUTSIDE the
-// per-window document (the engine owns one; Sift/diff callers own a local one), injected at the
+// TemplateRegistry (SRC-D-TIR-5): the single TemplateId -> template_str association, owned OUTSIDE
+// the per-window document (the engine owns one; Sift/diff callers own a local one), injected at the
 // display seams (serialize / explain). template_str is a pure DISPLAY attribute — never read on the
 // decision path — so it does not belong in the entries that flow through the pyramid; this is its
 // one home. Append-only, intern-once-per-id (same id => same canon-masked content, so first writer
@@ -245,13 +247,13 @@ struct TopKEntry
     TemplateId
         template_id; // content hash POD (rendered to "h:"+hex at the serialize seam, spec §3.2).
                      // The display template_str lives in the engine-owned TemplateRegistry
-                     // (D-TIR-5 field-drop), resolved by id at the serialize/explain seams.
+                     // (SRC-D-TIR-5 field-drop), resolved by id at the serialize/explain seams.
     std::uint64_t count{0};
     double frequency{0.0};
     std::optional<LogLevel> dominant_level;
     // The template's dominant functional source (canon `component` — "src/auth",
     // a build job): the per-template WHERE *label* (sift_where_attribution.md
-    // D-WHERE-2). Populated from dominant_component_of(bucket.component_counts) at
+    // SRC-D-WHERE-2). Populated from dominant_component_of(bucket.component_counts) at
     // build_top_k, independent of the cube, always. EMPTY
     // (disengaged) when the format carried no component — never "" masquerading as
     // a location. Whether it is *surfaced* on a finding is decided window-level off
@@ -259,14 +261,14 @@ struct TopKEntry
     std::optional<std::string> dominant_component;
     // Empty unless MetaLogConfig::max_param_histograms > 0.
     std::vector<FieldHistogram> field_histograms;
-    // W1 ordinal histograms (§4A.4 D-W1-2), field-keyed — one per declared ordinal field seen on
-    // this template. Empty unless MetaLogConfig::max_param_histograms > 0. Sibling to
+    // W1 ordinal histograms (§4A.4 SRC-D-W1-2), field-keyed — one per declared ordinal field seen
+    // on this template. Empty unless MetaLogConfig::max_param_histograms > 0. Sibling to
     // field_histograms; never collides (a field is ordinal XOR categorical, D-W1-5).
     std::vector<OrdinalHistogram> ordinal_histograms;
 };
 
 // Per-window acquisition self-assessment (SPEC §16.x; sift_where_attribution.md
-// D-WHERE-4/5). Raw, integer STRUCTURAL FACTS about which dimensions a window
+// SRC-D-WHERE-4/5). Raw, integer STRUCTURAL FACTS about which dimensions a window
 // reliably carries — so each consumer (WHERE, the cube axis, the format-relative
 // gate) applies its OWN predicate over the same facts ("the window declares its
 // own cubeability"), instead of four format checks that drift. NOT a baked verdict.
@@ -308,33 +310,35 @@ struct AcquisitionBlock
     // it is not stored — the per-dimension factors above are the richer, non-redundant signal.
     std::uint64_t closed_cells{0};
 
-    // ── O3 span-native acquisition facts (insight_otel_epic.md §13, D-OTEL-13) — the LICENCE ──
-    // Raw, threshold-free integer facts the eidos trace-vocabulary classifiers read to decide
+    // ── O3 span-native acquisition facts (insight_otel_epic.md §13, SRC-D-OTEL-13) — the LICENCE
+    // ── Raw, threshold-free integer facts the eidos trace-vocabulary classifiers read to decide
     // whether to speak trace vocabulary (span_records > 0). span_records = span events observed
     // this window; orphan_parent_edges = spans whose declared parent did not resolve to a template
     // in the window (evicted past max_active_spans / straddled the boundary) — counted, never
-    // guessed (D-OTEL-11). Both 0 for a non-span window (additive; a non-OTEL doc is unchanged).
+    // guessed (SRC-D-OTEL-11). Both 0 for a non-span window (additive; a non-OTEL doc is
+    // unchanged).
     std::uint64_t span_records{0};
     std::uint64_t orphan_parent_edges{0};
-    // O4b Span Links (D-OTEL-9): declared cross-trace LINK targets that did not resolve to a span
-    // in this window (a cross-ROUTE link the aligned-path pooling grain hid, or an external target)
-    // — counted, never guessed, SIBLING to orphan_parent_edges (same D-OTEL-11 discipline). The
-    // declared-error-model fact: the artifact says how much link topology it could not see, so a
-    // consumer (or the streaming stitch, §5.2) tells "no cross-route links" apart from "existed but
-    // the segmentation grain hid them". 0 for a window with no unresolved links.
+    // O4b Span Links (SRC-D-OTEL-9): declared cross-trace LINK targets that did not resolve to a
+    // span in this window (a cross-ROUTE link the aligned-path pooling grain hid, or an external
+    // target) — counted, never guessed, SIBLING to orphan_parent_edges (same SRC-D-OTEL-11
+    // discipline). The declared-error-model fact: the artifact says how much link topology it could
+    // not see, so a consumer (or the streaming stitch, §5.2) tells "no cross-route links" apart
+    // from "existed but the segmentation grain hid them". 0 for a window with no unresolved links.
     std::uint64_t orphan_link_edges{0};
 
     [[nodiscard]] bool operator==(const AcquisitionBlock&) const noexcept = default;
 };
 
-// ── O4b service edge (insight_otel_epic.md §13.7.1, D-OTEL-21)
+// ── O4b service edge (insight_otel_epic.md §13.7.1, SRC-D-OTEL-21)
 // ──────────────────────────────────── The one legitimately-cubeable OTEL dimension, DISTILLED: the
 // observed span tree projected to (caller_service → callee_service) at COMPONENT granularity
 // (bounded by topology², service.name is the low-card WHERE tier), derived at close time in
 // resolve_span_edges. NOT a cube Dim (an edge is a per-PAIR fact with no per-event value — a cube
 // coordinate would fake a joint); NOT folded into top_ngrams (component-pair vs template-bigram are
-// different key spaces). It is its own additive, flag-gated block with its own diff (D-OTEL-21).
-// Deterministic: integer weights, sorted canonical (caller, callee) byte order, no float.
+// different key spaces). It is its own additive, flag-gated block with its own diff
+// (SRC-D-OTEL-21). Deterministic: integer weights, sorted canonical (caller, callee) byte order, no
+// float.
 struct ServiceEdge
 {
     std::string caller;      // caller_component = the PARENT span's service.name
@@ -343,10 +347,10 @@ struct ServiceEdge
     [[nodiscard]] bool operator==(const ServiceEdge&) const noexcept = default;
 };
 
-// The window's distilled service topology (D-OTEL-21). Present iff the window had trace substrate
-// (span_records > 0) — a non-span window OMITS the block (absence = *unknown*, not "no edges": the
-// edge-block diff requires the block on BOTH sides, D-OTEL-20). Self-edges are excluded at
-// derivation (same-component parentage is intra-service, not topology). `edges` is sorted by
+// The window's distilled service topology (SRC-D-OTEL-21). Present iff the window had trace
+// substrate (span_records > 0) — a non-span window OMITS the block (absence = *unknown*, not "no
+// edges": the edge-block diff requires the block on BOTH sides, D-OTEL-20). Self-edges are excluded
+// at derivation (same-component parentage is intra-service, not topology). `edges` is sorted by
 // (caller, callee) and bounded to the top `max_service_edges` by weight (canonical-key tie-break);
 // `dropped_edges` counts those beyond the cap — the honest truncation fact.
 struct ServiceEdgeBlock
@@ -530,13 +534,14 @@ struct CubeCardinalityStat
 // did NOT make top_k by frequency); excluded from the tail residual.
 struct ReservoirEntry
 {
-    TemplateId template_id; // display template_str resolved by id from the engine TemplateRegistry
-                            // at the serialize/explain seams (D-TIR-5 field-drop), like TopKEntry.
+    // display template_str resolved by id from the engine TemplateRegistry at the
+    // serialize/explain seams (SRC-D-TIR-5 field-drop), like TopKEntry.
+    TemplateId template_id;
     std::uint64_t count{0};
     double frequency{0.0};
     std::optional<LogLevel> dominant_level;
     // The template's dominant functional source (canon `component`) — the WHERE
-    // *label* (D-WHERE-2), mirroring TopKEntry. Populated independent of the cube,
+    // *label* (SRC-D-WHERE-2), mirroring TopKEntry. Populated independent of the cube,
     // always; EMPTY when the format carried no component. Distinct from `cube_coord`
     // (the §16.6 LOCATION cross): this is the cube-independent carrier the Sift WHERE
     // rides.
@@ -769,9 +774,10 @@ struct MetaLogDocument
     StatsBlock stats{};
     std::optional<BehaviorBlock> behavior;
     std::optional<StabilityBlock> stability;
-    // D-TIR-5 field-drop: the display strings live in the engine-owned TemplateRegistry, resolved
-    // by id at the serialize/explain seams. This producer emits SPEC §3.4's INLINE mode only — the
-    // three modes are a producer MAY, and the dedup/id-only arms were never wired (adr/0035).
+    // SRC-D-TIR-5 field-drop: the display strings live in the engine-owned TemplateRegistry,
+    // resolved by id at the serialize/explain seams. This producer emits SPEC §3.4's INLINE mode
+    // only — the three modes are a producer MAY, and the dedup/id-only arms were never wired
+    // (adr/0035).
     std::optional<std::vector<ProvenanceEntry>> provenance; // absent unless composed (SPEC §12.4)
     // Processing-identifier strings (SPEC §2.4). Opaque names of the contract
     // under which the document was produced; gate `compose()` / diff
@@ -797,14 +803,14 @@ struct MetaLogDocument
     // so the synthesized copy is always correct. See [[msvc-port-stdlib-isms]].
     bool has_cube{false};
     CubeBlock cube{};
-    // Per-window acquisition self-assessment (sift_where_attribution.md D-WHERE-4):
+    // Per-window acquisition self-assessment (sift_where_attribution.md SRC-D-WHERE-4):
     // the window's structural facts seeding the WHERE disposition + the cube-dimension
     // self-assessment (§6.1.1, feeds the collapse guardrail). Always present.
     // All-integer, so std::optional is sound here (the
     // bool+inline workaround the cube needs is for vector-owning optionals copied in
     // consumer module TUs; AcquisitionBlock is trivially copyable).
     std::optional<AcquisitionBlock> acquisition;
-    // O4b distilled service topology (insight_otel_epic.md §13.7.1, D-OTEL-21). Present iff the
+    // O4b distilled service topology (insight_otel_epic.md §13.7.1, SRC-D-OTEL-21). Present iff the
     // window had trace substrate (span_records > 0); ABSENT for a non-span window (absence =
     // unknown, the additive-block discipline — the edge diff needs the block on both sides). Owns a
     // vector but is stamped once at close and only read (never a synthesized-optional copy on the
@@ -837,10 +843,10 @@ struct MetaLogConfig
     static constexpr std::size_t kDefaultTopBranchingSize = 64;
     static constexpr std::size_t kDefaultDominantPathMaxSteps = 8;
     static constexpr std::size_t kDefaultMaxActiveTraces = 4096;
-    static constexpr std::size_t kDefaultMaxActiveSpans =
-        16384; // O3 span_id→template bound (D-OTEL-11)
-    static constexpr std::size_t kDefaultMaxServiceEdges =
-        4096; // O4b service_edges emit cap (D-OTEL-21)
+    // O3 span_id→template bound (SRC-D-OTEL-11)
+    static constexpr std::size_t kDefaultMaxActiveSpans = 16384;
+    // O4b service_edges emit cap (SRC-D-OTEL-21)
+    static constexpr std::size_t kDefaultMaxServiceEdges = 4096;
 
     // Max entries kept in stats.top_k; the rest are summarised into
     // tail_count / tail_unique. Default 64 (~10 KB envelope per spec
@@ -891,7 +897,7 @@ struct MetaLogConfig
     // (no trace context → the global ring is taken regardless), so the flag is OTEL-only.
     bool trace_scoping_enabled{true};
 
-    // O2 trace-scoping (insight_otel_epic.md D-OTEL-1, OR3): max concurrent OTEL traces whose
+    // O2 trace-scoping (insight_otel_epic.md SRC-D-OTEL-1, OR3): max concurrent OTEL traces whose
     // n-gram ring is held at once. A ring is just the last 1–2 template ids — NOT a per-trace
     // sub-fingerprint. On overflow the oldest-inserted trace's ring is evicted (deterministic
     // FIFO), losing at most one cross-record edge for that trace, never its membership. Bounds
@@ -899,15 +905,16 @@ struct MetaLogConfig
     // (events carrying a trace_id); non-OTEL ingest uses the single global ring at zero cost.
     std::size_t max_active_traces{kDefaultMaxActiveTraces};
 
-    // O3 observed-DAG (insight_otel_epic.md §13, D-OTEL-11): max span_id → template entries held
-    // in a window for close-time parent-edge resolution. A span's declared parent is resolved to an
-    // observed edge template(parent)→template(child) at close; a parent evicted past this bound (or
-    // outside the window) yields no edge + one `orphan_parent_edges` fact (counted, never guessed).
-    // Deterministic FIFO eviction of the oldest-inserted span. Bounds per-window span state at
-    // O(active spans). Consulted ONLY for span inputs (records with is_span); 0 disables the bound.
+    // O3 observed-DAG (insight_otel_epic.md §13, SRC-D-OTEL-11): max span_id → template entries
+    // held in a window for close-time parent-edge resolution. A span's declared parent is resolved
+    // to an observed edge template(parent)→template(child) at close; a parent evicted past this
+    // bound (or outside the window) yields no edge + one `orphan_parent_edges` fact (counted, never
+    // guessed). Deterministic FIFO eviction of the oldest-inserted span. Bounds per-window span
+    // state at O(active spans). Consulted ONLY for span inputs (records with is_span); 0 disables
+    // the bound.
     std::size_t max_active_spans{kDefaultMaxActiveSpans};
 
-    // O4b service-topology emit cap (D-OTEL-21): max service_edges emitted in the block; edges
+    // O4b service-topology emit cap (SRC-D-OTEL-21): max service_edges emitted in the block; edges
     // beyond this (top-weight-K, canonical-key tie-break) fold into `dropped_edges`. The
     // accumulator is bounded by topology² (service.name is low-card); this is the safety cap on the
     // emitted wire block.
@@ -928,7 +935,7 @@ struct MetaLogConfig
     std::string producer_version{"0.6.0"};
 
     // NOTE (1.7.2): the cube (SPEC §16), the per-template `dominant_component` WHERE
-    // leaf (D-WHERE-2), and the per-window `acquisition` block are ALWAYS emitted — the
+    // leaf (SRC-D-WHERE-2), and the per-window `acquisition` block are ALWAYS emitted — the
     // former `emit_cube`/`emit_where` opt-in gates are removed. The cube is permanently
     // in the §2.4 `canonicalization_version` comparability contract, and its cardinality
     // is bounded by the per-window dimensional-collapse guardrail (cube_perf_and_collapse.md
@@ -951,7 +958,7 @@ struct MetaLogConfig
     // (top_k size, reservoir admission weights/size/diversity caps, salience
     // arithmetic — §3.1 / §3.7); MUST be bumped when any of those change.
     //
-    // canonicalization_version DEFAULTS to the canon-owned constant (D-TID-16): the
+    // canonicalization_version DEFAULTS to the canon-owned constant (SRC-D-TID-16): the
     // masking rules and the version that names them live together in canon, so a
     // producer cannot silently leave old and new metalogs falsely comparable. Override
     // only to express a different canonicalization contract (e.g. a test fixture).
@@ -1021,7 +1028,7 @@ struct NGramDelta
     std::vector<NGramRateChange> rate_changed;
 };
 
-// A service edge present on BOTH sides whose observed weight moved (D-OTEL-21).
+// A service edge present on BOTH sides whose observed weight moved (SRC-D-OTEL-21).
 struct ServiceEdgeWeightChange
 {
     std::string caller;
@@ -1031,10 +1038,10 @@ struct ServiceEdgeWeightChange
     std::int64_t delta{0}; // current - previous
 };
 
-// The service-topology delta (D-OTEL-21): its OWN diff pass over the two windows' service_edges
+// The service-topology delta (SRC-D-OTEL-21): its OWN diff pass over the two windows' service_edges
 // blocks. `emerged`/`vanished` are the appeared-from-nothing / disappeared edge sets at the cube's
 // absolute emergence discipline (θ_was=0, θ_now=1). Semantics-free integer/set arithmetic — metalog
-// stays polarity-blind (the degraded reading + the fold are eidos, D-OTEL-22). Present (in
+// stays polarity-blind (the degraded reading + the fold are eidos, SRC-D-OTEL-22). Present (in
 // MetaLogDiff) ONLY when BOTH documents carried a service_edges block; absent ⇒ edge verdicts are
 // *unknown* (never "all emerged"). Edges carry the changed-side (emerged) / baseline-side
 // (vanished) weight.
@@ -1083,11 +1090,11 @@ struct FieldHistogramDelta
 
 // Per-(template_id, ordinal field) pairing of two windows' binned ordinal histograms (§4A.4
 // D-W1-1/4 — the W1 channel). Carries BOTH sides' raw counts + totals + schedule_ids; the eidos
-// diff checks the schedule_ids match (the comparability gate, D-W1-4, like canonicalization_version
-// at diff.cpp) then computes the exact-integer 1-D Wasserstein-1 earth-mover distance, its
-// direction, and the {field}_shift bucket — metalog carries the counts, eidos owns the distance (it
-// is ladder-agnostic at w=1). Only populated when the same (template_id, field_name) appears in
-// BOTH documents' ordinal_histograms.
+// diff checks the schedule_ids match (the comparability gate, SRC-D-W1-4, like
+// canonicalization_version at diff.cpp) then computes the exact-integer 1-D Wasserstein-1
+// earth-mover distance, its direction, and the {field}_shift bucket — metalog carries the counts,
+// eidos owns the distance (it is ladder-agnostic at w=1). Only populated when the same
+// (template_id, field_name) appears in BOTH documents' ordinal_histograms.
 struct OrdinalHistogramDelta
 {
     TemplateId template_id;
@@ -1255,7 +1262,7 @@ struct MetaLogDiff
     std::vector<TemplateId> vanished_templates;
     std::vector<BranchingDelta> branching_delta;
     std::optional<NGramDelta> ngram_delta;
-    // O4b service-topology delta (D-OTEL-21). Present ONLY when both documents carried a
+    // O4b service-topology delta (SRC-D-OTEL-21). Present ONLY when both documents carried a
     // service_edges block (absent ⇒ *unknown*). Additive on the DERIVED diff → no diff_version bump
     // (the ngram_delta / latency_shift derived-not-compared precedent). See ServiceEdgeDelta.
     std::optional<ServiceEdgeDelta> service_edge_delta;

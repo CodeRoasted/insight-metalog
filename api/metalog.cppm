@@ -48,7 +48,7 @@ class MetaLogEngine
     [[nodiscard]] MetaLogDocument
     close_window(Timestamp end, std::optional<ReportedWindowBounds> reported_bounds = std::nullopt);
 
-    // The TemplateId -> template_str registry (D-TIR-5): the single home of the display-only
+    // The TemplateId -> template_str registry (SRC-D-TIR-5): the single home of the display-only
     // template_str, accumulated across windows. Injected at the serialize/explain seams to resolve
     // the strings the per-window documents no longer carry.
     [[nodiscard]] const TemplateRegistry& registry() const noexcept
@@ -69,7 +69,7 @@ class MetaLogEngine
         // high value means the template EMERGED late (first-seen near lines_observed).
         std::uint64_t first_seen_index{0};
         std::unordered_map<LogLevel, std::uint64_t> level_counts;
-        // D-PROV-1 (§3.1): true iff EVERY event that formed this template was echoed script
+        // SRC-D-PROV-1 (§3.1): true iff EVERY event that formed this template was echoed script
         // source (no real runtime occurrence). AND-reduced over the events (order-independent →
         // deterministic). When true, the salience failure-cue tier is skipped — the level-blind
         // tier would otherwise re-promote an echoed `…failed…` template that A1 already demoted
@@ -81,14 +81,14 @@ class MetaLogEngine
         std::unordered_map<StructuralRole, std::uint64_t> role_counts;
         // Functional-source (canon `component`) counts seen for this template.
         // Always populated. The dominant component is the template's WHERE label (the
-        // cube-independent Sift leaf carrier, D-WHERE-2) and its §16.6 reservoir→cell
+        // cube-independent Sift leaf carrier, SRC-D-WHERE-2) and its §16.6 reservoir→cell
         // WHERE-path. Not the cube itself (the cube is the per-EVENT joint, in cube_base_).
         std::unordered_map<std::string, std::uint64_t> component_counts;
         // Per-param value histograms; index i == CanonicalEvent::params[i].
         // Populated only when config_.max_param_histograms > 0.
         std::vector<std::unordered_map<std::string, std::uint64_t>> param_value_counts;
         std::vector<std::uint64_t> param_totals;
-        // W1 ordinal accumulator (§4A.4 D-W1-2): per declared ordinal field (canon
+        // W1 ordinal accumulator (§4A.4 SRC-D-W1-2): per declared ordinal field (canon
         // kOrdinalFieldCatalog) seen on this template, its schedule + binned counts over the
         // schedule's log2 ladder. field_name → accumulator. Populated only when
         // config_.max_param_histograms > 0; field-keyed (not positional), so it never collides
@@ -161,14 +161,14 @@ class MetaLogEngine
     // max_active_traces cap with deterministic FIFO eviction of the oldest-inserted trace.
     [[nodiscard]] NgramRing& trace_ring_for(TraceId trace_id);
 
-    // O3 (D-OTEL-11): remember a span's span_id → template id (bounded FIFO under max_active_spans)
-    // and queue its declared parent edge (if any) for close-time resolution. A span NEVER enters an
-    // adjacency ring — its causality is declared, not positional.
+    // O3 (SRC-D-OTEL-11): remember a span's span_id → template id (bounded FIFO under
+    // max_active_spans) and queue its declared parent edge (if any) for close-time resolution. A
+    // span NEVER enters an adjacency ring — its causality is declared, not positional.
     void record_span(const tokenization::CanonicalEvent& event, InternalTemplateID internal_id);
-    // O3 (D-OTEL-11): at window close, resolve each queued parent edge against span_templates_ and
-    // account the observed edge template(parent)→template(child) into ngram_counts_; an unresolved
-    // parent (evicted / straddled) increments orphan_parent_edges_. Order-independent (counts are
-    // commutative), integer-only, no wall-clock → deterministic.
+    // O3 (SRC-D-OTEL-11): at window close, resolve each queued parent edge against span_templates_
+    // and account the observed edge template(parent)→template(child) into ngram_counts_; an
+    // unresolved parent (evicted / straddled) increments orphan_parent_edges_. Order-independent
+    // (counts are commutative), integer-only, no wall-clock → deterministic.
     void resolve_span_edges();
 
     // Cold-path scratch computed once per close_window and consumed by the
@@ -231,12 +231,12 @@ class MetaLogEngine
     // Intra-window closed cube (SPEC §16), built from the per-event (level, component,
     // role) joint accumulated in cube_base_. Always built (collapse-bounded, §C).
     void build_cube(MetaLogDocument& doc) const;
-    // Per-window acquisition self-assessment (D-WHERE-4/5): the window's integer
+    // Per-window acquisition self-assessment (SRC-D-WHERE-4/5): the window's integer
     // structural facts (component-axis coverage + the dimension self-assessment),
     // aggregated from the buckets' component marginals. Always built.
     void build_acquisition(MetaLogDocument& doc) const;
-    // O4b distilled service topology (D-OTEL-21): emit the service_edges block iff the window had
-    // trace substrate (span_records_ > 0), from service_edges_ — sorted canonical order, top
+    // O4b distilled service topology (SRC-D-OTEL-21): emit the service_edges block iff the window
+    // had trace substrate (span_records_ > 0), from service_edges_ — sorted canonical order, top
     // `max_service_edges` by weight (canonical-key tie-break) + dropped_edges. Absent for a
     // non-span window.
     void build_service_edges(MetaLogDocument& doc) const;
@@ -259,7 +259,7 @@ class MetaLogEngine
     // build_branching / build_dominant_path index this to stamp the domain id without
     // re-hashing; the "h:"+hex string is rendered only at the serialize seam.
     std::vector<TemplateId> content_templates_by_internal_id_;
-    // D-TIR-5: the single TemplateId -> template_str home (display-only), accumulated across
+    // SRC-D-TIR-5: the single TemplateId -> template_str home (display-only), accumulated across
     // windows and injected at the serialize/explain seams. template_str is dropped from the
     // per-window document entries that flow through the pyramid.
     TemplateRegistry registry_;
@@ -267,7 +267,7 @@ class MetaLogEngine
     // The global recent-template-id ring — the non-OTEL n-gram path (pre-OTEL behaviour,
     // byte-identical). Only [0] is used at ngram_size=2; both at ngram_size=3.
     NgramRing global_ring_{};
-    // O2 trace-scoping (D-OTEL-1): one ring per active OTEL trace, so an n-gram is formed
+    // O2 trace-scoping (SRC-D-OTEL-1): one ring per active OTEL trace, so an n-gram is formed
     // within a transaction, not across the global concurrent interleave. Bounded by
     // config_.max_active_traces with deterministic FIFO eviction; trace_ring_fifo_ holds the
     // insertion order (oldest at front). Point-lookup only — never iterated, so the
@@ -275,7 +275,7 @@ class MetaLogEngine
     std::unordered_map<TraceId, NgramRing> trace_rings_;
     std::deque<TraceId> trace_ring_fifo_;
 
-    // O3 observed-DAG (D-OTEL-11): a span record's causality is DECLARED, so it never enters an
+    // O3 observed-DAG (SRC-D-OTEL-11): a span record's causality is DECLARED, so it never enters an
     // adjacency ring. Instead its span_id → template id is remembered here, and at close_window
     // each span with a declared parent resolves template(parent)→template(child) into the SAME
     // bounded ngram_counts_ graph (one fingerprint, no fork). span_templates_ is point-lookup only
@@ -283,7 +283,7 @@ class MetaLogEngine
     // eviction under config_.max_active_spans; pending_span_edges_ holds (child template, parent
     // span_id) in ingest order — resolved at close. All empty / untouched for non-span streams
     // (zero added cost). A remembered span: its template id (for the observed template→template
-    // edge) + its component (service.name — for the O4b distilled service edge, D-OTEL-21).
+    // edge) + its component (service.name — for the O4b distilled service edge, SRC-D-OTEL-21).
     // component is owned (the canon string_view is arena-stable only within the record).
     struct SpanNode
     {
@@ -299,8 +299,8 @@ class MetaLogEngine
         std::string child_component; // the CHILD span's service.name → the service edge's callee
     };
     std::vector<PendingSpanEdge> pending_span_edges_;
-    // O4b Span Links (D-OTEL-9): a span's declared cross-trace edge to another span, resolved at
-    // close (by span_id, across traces) into the SAME distilled service topology as intra-trace
+    // O4b Span Links (SRC-D-OTEL-9): a span's declared cross-trace edge to another span, resolved
+    // at close (by span_id, across traces) into the SAME distilled service topology as intra-trace
     // parentage — source_component → component(linked). The source component is known now; the
     // linked span (and its component) is resolved at close, since it may serialize later or in
     // another trace.
@@ -310,13 +310,13 @@ class MetaLogEngine
         SpanId linked_span_id{};
     };
     std::vector<PendingLinkEdge> pending_link_edges_;
-    std::uint64_t span_records_{0};        // span events observed this window (D-OTEL-13 licence)
-    std::uint64_t orphan_parent_edges_{0}; // declared parents that did not resolve (D-OTEL-11)
-    std::uint64_t orphan_link_edges_{
-        0}; // declared LINK targets that did not resolve (D-OTEL-9); the
-            // cross-route link loss the pooling grain hid, counted not guessed
-    // O4b distilled service topology (D-OTEL-21): (caller_component, callee_component) → observed
-    // weight, accumulated in resolve_span_edges from each resolved parent→child pair whose
+    std::uint64_t span_records_{0}; // span events observed this window (SRC-D-OTEL-13 licence)
+    std::uint64_t orphan_parent_edges_{0}; // declared parents that did not resolve (SRC-D-OTEL-11)
+    // declared LINK targets that did not resolve (SRC-D-OTEL-9); the cross-route
+    // link loss the pooling grain hid, counted not guessed
+    std::uint64_t orphan_link_edges_{0};
+    // O4b distilled service topology (SRC-D-OTEL-21): (caller_component, callee_component) →
+    // observed weight, accumulated in resolve_span_edges from each resolved parent→child pair whose
     // components differ (self-edges excluded). std::map keeps the canonical (caller, callee) byte
     // order the wire block emits; bounded by topology² (service.name is the low-card WHERE tier).
     // Cleared per window.
@@ -354,7 +354,7 @@ class MetaLogEngine
 // OMITTED, never emitted as empty/zero/false (one document -> one byte
 // sequence). Consumers MUST treat an absent field as equivalent to its
 // empty/zero/false value (SPEC §0: producers omit, consumers read lenient).
-// D-TIR-5 field-drop: the display-only `template_str` no longer lives on the document — it is
+// SRC-D-TIR-5 field-drop: the display-only `template_str` no longer lives on the document — it is
 // resolved by id from the engine-owned TemplateRegistry at this seam, emitted as SPEC §3.4's inline
 // mode — the per-entry `template`. The three modes are a producer MAY; the others were never wired
 // (adr/0035). The registry MUST contain every id the document references (the engine interns every
@@ -377,8 +377,8 @@ class MetaLogEngine
 //
 // Stability is dropped (meaningless across composed inputs). A composed document carries no display
 // template_str — it is id-only; the display string resolves by id from the engine registry at the
-// serialize/explain seams (D-TIR-5, insight_perf_template_id.md §6). Counts + levels (the decision
-// signal) always carry.
+// serialize/explain seams (SRC-D-TIR-5, insight_perf_template_id.md §6). Counts + levels (the
+// decision signal) always carry.
 [[nodiscard]] MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs);
 
 // Compute the pair-wise difference between two MetaLog documents.

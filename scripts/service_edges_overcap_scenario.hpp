@@ -6,7 +6,7 @@
 //   - scripts/determinism_fixture.cpp               → the cross-compiler matrix
 //     (determinism_bitidentity.sh: gcc×clang × -O{0,3} × -ffp-contract{off,fast}).
 //
-// O4b (insight_otel_epic.md §13.7, D-OTEL-21): resolve_span_edges distils each declared span
+// O4b (insight_otel_epic.md §13.7, SRC-D-OTEL-21): resolve_span_edges distils each declared span
 // parent→child into a (caller_component → callee_component) integer-weighted edge, then
 // build_service_edges emits the top `max_service_edges` by weight with a canonical-key tie-break,
 // re-sorted into canonical (caller, callee) order for the wire, with dropped_edges = the honest

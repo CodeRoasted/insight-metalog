@@ -200,7 +200,7 @@ std::uint32_t salience_score(std::optional<LogLevel> level, StructuralRole role,
             break;
         }
     }
-    // D-PROV-1 (§3.1): the failure-cue tier is the LEVEL-BLIND re-promoter — it fires on the
+    // SRC-D-PROV-1 (§3.1): the failure-cue tier is the LEVEL-BLIND re-promoter — it fires on the
     // template text regardless of the per-event level. For an all-echoed template (script source,
     // not a runtime event) A1 already demoted the level to Unknown; skip this tier too, or it
     // re-promotes the echoed `…failed…` template above the real failure. A template seen even once

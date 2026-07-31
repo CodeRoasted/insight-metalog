@@ -99,7 +99,8 @@ void MetaLogEngine::open_window(Timestamp start)
     global_ring_ = {};
     trace_rings_.clear();
     trace_ring_fifo_.clear();
-    span_templates_.clear(); // O3 (D-OTEL-11): per-window span state resets with the trace state
+    // O3 (SRC-D-OTEL-11): per-window span state resets with the trace state
+    span_templates_.clear();
     span_fifo_.clear();
     pending_span_edges_.clear();
     span_records_ = 0;
@@ -137,7 +138,7 @@ MetaLogEngine::content_template_id_for(const tokenization::CanonicalEvent& event
         internal_id = static_cast<InternalTemplateID>(content_templates_by_internal_id_.size());
         content_templates_by_internal_id_.push_back(template_id);
         content_template_index_.emplace(content_id, internal_id);
-        // D-TIR-5: the engine's registry is the single home of the display-only template_str,
+        // SRC-D-TIR-5: the engine's registry is the single home of the display-only template_str,
         // interned once per unique id and resolved at the serialize/explain seams. Accumulates
         // across windows (the vocabulary), so older docs/baselines resolve by id.
         registry_.intern(template_id, event.template_str);
@@ -220,7 +221,8 @@ MetaLogEngine::NgramRing& MetaLogEngine::trace_ring_for(TraceId trace_id)
 void MetaLogEngine::record_span(const tokenization::CanonicalEvent& event,
                                 InternalTemplateID internal_id)
 {
-    ++span_records_; // the D-OTEL-13 licence fact (span vocabulary is spoken iff span_records_ > 0)
+    ++span_records_; // the SRC-D-OTEL-13 licence fact (span vocabulary is spoken iff span_records_
+                     // > 0)
     const SpanId span_id{event.trace.span_id};
     // Remember span_id → template for close-time parent resolution. Bounded FIFO under
     // max_active_spans with deterministic eviction of the oldest-inserted span (the O2 discipline).
@@ -235,7 +237,7 @@ void MetaLogEngine::record_span(const tokenization::CanonicalEvent& event,
             span_fifo_.pop_front();
         }
         // Remember the template id (observed template edge) + the component (O4b service edge,
-        // D-OTEL-21).
+        // SRC-D-OTEL-21).
         span_templates_.emplace(span_id, SpanNode{.template_id = internal_id,
                                                   .component = std::string{event.component}});
         span_fifo_.push_back(span_id);
@@ -248,7 +250,7 @@ void MetaLogEngine::record_span(const tokenization::CanonicalEvent& event,
                                        .parent_span_id = event.trace.parent_span_id,
                                        .child_component = std::string{event.component}});
 
-    // O4b Span Links (D-OTEL-9): queue each declared cross-trace edge source_component → linked
+    // O4b Span Links (SRC-D-OTEL-9): queue each declared cross-trace edge source_component → linked
     // span. The linked span (and its component) resolves at close, by span_id, across traces.
     for (const SpanId linked : event.linked_span_ids)
         pending_link_edges_.push_back(
@@ -275,7 +277,7 @@ void MetaLogEngine::resolve_span_edges()
         key.ids[1] = edge.child_template;
         account_ngram(key);
 
-        // O4b (D-OTEL-21): DISTIL the same declared edge to component granularity → the service
+        // O4b (SRC-D-OTEL-21): DISTIL the same declared edge to component granularity → the service
         // topology. Excluded: an unknown endpoint (empty service.name — cannot be a topology node)
         // and a self-edge (same-component parentage is intra-service, not topology). Integer
         // weight, keyed in canonical (caller, callee) order (std::map) → deterministic, no float.
@@ -285,7 +287,7 @@ void MetaLogEngine::resolve_span_edges()
             ++service_edges_[{caller, callee}];
     }
 
-    // O4b Span Links (D-OTEL-9): resolve each declared cross-trace edge into the SAME service
+    // O4b Span Links (SRC-D-OTEL-9): resolve each declared cross-trace edge into the SAME service
     // topology — source_component → component(linked span). Resolution is by span_id (across
     // traces); an unresolved link (target outside the window / evicted) yields no edge, counted as
     // an orphan (the declared-not-guessed discipline). Self-edges + unknown endpoints excluded,
@@ -297,7 +299,7 @@ void MetaLogEngine::resolve_span_edges()
         {
             ++orphan_link_edges_; // target span not in this window (cross-route / external) —
                                   // counted, never guessed; SIBLING to orphan_parent_edges
-                                  // (D-OTEL-9, Founder ruling)
+                                  // (SRC-D-OTEL-9, Founder ruling)
             continue;
         }
         const std::string& caller{link.source_component};
@@ -328,7 +330,7 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
     ++bucket.count;
     ++bucket.level_counts[event.level];
     ++bucket.role_counts[event.structural_role]; // announced role → salience
-    // D-PROV-1 (§3.1): a template is "all echoed" only while every event forming it is echoed
+    // SRC-D-PROV-1 (§3.1): a template is "all echoed" only while every event forming it is echoed
     // source. AND-reduction (order-independent) — one real runtime occurrence makes it false.
     bucket.all_echoed_source = bucket.all_echoed_source && event.echoed_source;
     ++lines_observed_;
@@ -339,7 +341,7 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
     // the keys.
     ++cube_base_[std::make_tuple(event.level, std::string{event.component}, event.structural_role)];
 
-    // Per-template component marginal — the WHERE carrier (D-WHERE-2/3) and the §16.6
+    // Per-template component marginal — the WHERE carrier (SRC-D-WHERE-2/3) and the §16.6
     // reservoir cross, feeding both the cube and the leaf `dominant_component`. Always
     // accumulated. Empty components are not counted (records_with_component then counts
     // only located records).
@@ -373,7 +375,7 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
         }
     }
 
-    // W1 ordinal observations (§4A.4 D-W1-2): bin each declared ordinal value (canon
+    // W1 ordinal observations (§4A.4 SRC-D-W1-2): bin each declared ordinal value (canon
     // kOrdinalFieldCatalog) onto its schedule's log2 ladder. Same batch / full-fidelity gate as
     // param histograms; field-keyed (not positional) — never collides with param_value_counts.
     if (config_.max_param_histograms > 0 && !event.ordinals.empty())
@@ -404,7 +406,7 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
     // pre-OTEL path, byte-identical). Both rings feed the SAME bounded ngram_counts_ graph
     // (one fingerprint, no fork — O2): the per-trace n-grams aggregate into the global graph,
     // never a per-trace sub-fingerprint (OR3).
-    // O3 (D-OTEL-11): a SPAN record's causality is DECLARED — record its span_id → template and
+    // O3 (SRC-D-OTEL-11): a SPAN record's causality is DECLARED — record its span_id → template and
     // queue its parent edge for close-time resolution; it NEVER enters an adjacency ring. Log
     // records (with or without trace context) keep the O2 ring path above/below.
     if (event.trace.is_span)
@@ -427,8 +429,8 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end,
     MetaLogDocument doc;
     stamp_envelope(doc, *window_start_, end, reported_bounds);
 
-    // O3 (D-OTEL-11): resolve the window's queued span parent edges into ngram_counts_ BEFORE the
-    // graph is analyzed, so the observed DAG feeds dominant_path / structural_surprise like any
+    // O3 (SRC-D-OTEL-11): resolve the window's queued span parent edges into ngram_counts_ BEFORE
+    // the graph is analyzed, so the observed DAG feeds dominant_path / structural_surprise like any
     // other edge. No-op for a non-span window (pending_span_edges_ empty).
     resolve_span_edges();
 
@@ -442,9 +444,9 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end,
     build_behavior(doc, analysis);
     build_stability(doc, analysis);
     build_cube(doc);        // SPEC §16 — always (unconditional; collapse-bounded, §C)
-    build_acquisition(doc); // D-WHERE-4/5 — always (the window's dimension self-assessment)
+    build_acquisition(doc); // SRC-D-WHERE-4/5 — always (the window's dimension self-assessment)
     build_service_edges(
-        doc); // O4b (D-OTEL-21) — iff the window had trace substrate (span_records > 0)
+        doc); // O4b (SRC-D-OTEL-21) — iff the window had trace substrate (span_records > 0)
 
     // Carry this window's frequencies for the next window's stability, then drop the
     // per-window state.
@@ -462,7 +464,7 @@ void MetaLogEngine::stamp_envelope(MetaLogDocument& doc, Timestamp start, Timest
     doc.metalog_version = "0.6.0";
     doc.producer.version = config_.producer_version;
     doc.source = source_;
-    // D-TIR-5: template strings are not carried on the doc — the serialiser resolves them by id
+    // SRC-D-TIR-5: template strings are not carried on the doc — the serialiser resolves them by id
     // from the engine registry at the serialize/explain seams (SPEC §3.4 inline).
 
     // Reported bounds: the deterministic parseable-ts envelope when supplied (MUST 3),
@@ -625,13 +627,13 @@ void MetaLogEngine::build_top_k(MetaLogDocument& doc, const WindowAnalysis& anal
     {
         TopKEntry entry;
         entry.template_id = template_id_for(ordered[i].first);
-        // D-TIR-5 field-drop: the display template_str is no longer copied onto the entry — it
+        // SRC-D-TIR-5 field-drop: the display template_str is no longer copied onto the entry — it
         // lives in the engine registry (interned at ingest), resolved by id at the
         // serialize/explain seams.
         entry.count = ordered[i].second->count;
         entry.frequency = total > 0.0 ? static_cast<double>(entry.count) / total : 0.0;
         entry.dominant_level = dominant_level_of(ordered[i].second->level_counts);
-        // WHERE label (D-WHERE-2): the dominant functional source — the LEAF WHERE
+        // WHERE label (SRC-D-WHERE-2): the dominant functional source — the LEAF WHERE
         // (Sift's finding-WHERE on RankedChange), independent of the cube. Always
         // computed; an empty component_counts (a free-text window) leaves it a disengaged
         // optional (never "" as a location).
@@ -664,8 +666,9 @@ void MetaLogEngine::build_top_k(MetaLogDocument& doc, const WindowAnalysis& anal
             }
         }
 
-        // W1 ordinal histograms (§4A.4 D-W1-2) — field-keyed, emitted in deterministic field-name
-        // order (the accumulator map is unordered → sort to keep the wire/golden replay-stable).
+        // W1 ordinal histograms (§4A.4 SRC-D-W1-2) — field-keyed, emitted in deterministic
+        // field-name order (the accumulator map is unordered → sort to keep the wire/golden
+        // replay-stable).
         if (config_.max_param_histograms > 0)
         {
             const auto& bucket{*ordered[i].second};
@@ -757,7 +760,7 @@ void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& ana
                       });
 
     // The error class (D-RNK-2 §5.2) — mirrors eidos `reservoir_is_error_class`: the
-    // verdict-anchored-failure signal at the metalog layer (after D-OUT-4).
+    // verdict-anchored-failure signal at the metalog layer (after SRC-D-OUT-4).
     const auto error_class{[](StructuralRole role, std::optional<LogLevel> level) noexcept
                            {
                                return role == StructuralRole::Terminator ||
@@ -782,7 +785,8 @@ void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& ana
             const Bucket& bucket{*ordered[candidate.index].second};
             ReservoirEntry entry;
             entry.template_id = template_id_for(ordered[candidate.index].first);
-            // D-TIR-5 field-drop: template_str resolved by id from the registry at display seams.
+            // SRC-D-TIR-5 field-drop: template_str resolved by id from the registry at display
+            // seams.
             entry.count = bucket.count;
             entry.frequency = total > 0.0 ? static_cast<double>(bucket.count) / total : 0.0;
             entry.dominant_level = level;
@@ -795,7 +799,7 @@ void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& ana
             if (config_.source_ref)
                 entry.within_window_ordinal = bucket.first_seen_index;
             // WHERE label + §16.6 reservoir→cell cross — both derive from the one dominant
-            // component (computed once), always. The label (D-WHERE-2) is the leaf WHERE; the
+            // component (computed once), always. The label (SRC-D-WHERE-2) is the leaf WHERE; the
             // cube cross (LOCATION-only {level, where}, read-only) feeds the cube. Empty
             // component → disengaged label; cube_location maps it to the aggregated-WHERE star.
             {
@@ -1151,7 +1155,7 @@ void MetaLogEngine::build_cube(MetaLogDocument& doc) const
     doc.has_cube = true;
 }
 
-// Per-window acquisition self-assessment (D-WHERE-4/5): the `component`-axis coverage
+// Per-window acquisition self-assessment (SRC-D-WHERE-4/5): the `component`-axis coverage
 // seed, aggregated in batch over the frozen window from the per-template component
 // marginals. records_with_component = total located events (Σ over buckets of Σ of
 // component_counts — every increment was a non-empty component, ingest_event);
@@ -1188,16 +1192,17 @@ void MetaLogEngine::build_acquisition(MetaLogDocument& doc) const
     acquisition.level_cardinality = card.per_axis[static_cast<std::size_t>(CardinalityAxis::Level)];
     acquisition.role_cardinality = card.per_axis[static_cast<std::size_t>(CardinalityAxis::Role)];
 
-    // O3 span-native facts (D-OTEL-13 licence + D-OTEL-11): raw integer counts, threshold-free.
+    // O3 span-native facts (SRC-D-OTEL-13 licence + SRC-D-OTEL-11): raw integer counts,
+    // threshold-free.
     acquisition.span_records = span_records_;
     acquisition.orphan_parent_edges = orphan_parent_edges_;
     acquisition.orphan_link_edges =
-        orphan_link_edges_; // O4b (D-OTEL-9): cross-route link loss, declared
+        orphan_link_edges_; // O4b (SRC-D-OTEL-9): cross-route link loss, declared
 
     doc.acquisition = acquisition;
 }
 
-// O4b distilled service topology (D-OTEL-21). Emitted iff the window had trace substrate
+// O4b distilled service topology (SRC-D-OTEL-21). Emitted iff the window had trace substrate
 // (span_records_ > 0) — a non-span window omits the block (absence = unknown; the edge diff needs
 // it on both sides). service_edges_ is already in canonical (caller, callee) order (std::map); emit
 // the top `max_service_edges` by weight (canonical-key tie-break), sorted back into canonical order
@@ -1270,15 +1275,16 @@ void MetaLogEngine::reset_window_state()
     global_ring_ = {};
     trace_rings_.clear();
     trace_ring_fifo_.clear();
-    span_templates_.clear(); // O3 (D-OTEL-11): per-window span state resets with the trace state
+    // O3 (SRC-D-OTEL-11): per-window span state resets with the trace state
+    span_templates_.clear();
     span_fifo_.clear();
     pending_span_edges_.clear();
     span_records_ = 0;
     orphan_parent_edges_ = 0;
     orphan_link_edges_ = 0;
-    pending_link_edges_.clear(); // O4b Span Links (D-OTEL-9): per-window link state resets too
+    pending_link_edges_.clear(); // O4b Span Links (SRC-D-OTEL-9): per-window link state resets too
     service_edges_
-        .clear(); // O4b (D-OTEL-21): per-window service topology resets with the span state
+        .clear(); // O4b (SRC-D-OTEL-21): per-window service topology resets with the span state
     ngram_counts_.clear();
     ngram_total_ = 0;
     cube_base_.clear();

@@ -88,13 +88,13 @@ int main(int argc, char** argv)
         return 0;
     }
 
-    // O4b service-topology over-cap oracle (D-OTEL-21): a SYNTHETIC span window that builds five
-    // (caller→callee) edges under a 3-edge cap, so the emitted block is decided by the over-cap
-    // top-K select — and the cap cuts THROUGH a 3-way weight tie, so the surviving edge rides the
-    // canonical-key tie-break alone. The emitted service_edges block MUST be byte-identical across
-    // every leg/arch/OS, or the "deterministic by construction" claim on the top-K select is false
-    // (a stdlib-order-dependent select would flip the surviving edge). Same window as the in-suite
-    // ServiceEdgesOverCap guard.
+    // O4b service-topology over-cap oracle (SRC-D-OTEL-21): a SYNTHETIC span window that builds
+    // five (caller→callee) edges under a 3-edge cap, so the emitted block is decided by the
+    // over-cap top-K select — and the cap cuts THROUGH a 3-way weight tie, so the surviving edge
+    // rides the canonical-key tie-break alone. The emitted service_edges block MUST be
+    // byte-identical across every leg/arch/OS, or the "deterministic by construction" claim on the
+    // top-K select is false (a stdlib-order-dependent select would flip the surviving edge). Same
+    // window as the in-suite ServiceEdgesOverCap guard.
     if (std::string{argv[1]} == "--service-edges")
     {
         namespace ml = insight::metalog;

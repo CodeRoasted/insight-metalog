@@ -1,5 +1,5 @@
 // NOLINTBEGIN
-// W1 ordinal carrier (§4A.4 D-W1-2): the field-keyed binned histogram on TopKEntry, its
+// W1 ordinal carrier (§4A.4 SRC-D-W1-2): the field-keyed binned histogram on TopKEntry, its
 // accumulation at ingest over the schedule's log2 ladder, the deterministic field-name emit order,
 // the same-as-param batch gate, and the metalog::diff ordinal_histogram_deltas pairing the eidos
 // W1 distance reads. Events are constructed directly with scope-stable storage (field_name is a

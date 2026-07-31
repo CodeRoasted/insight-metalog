@@ -42,14 +42,15 @@ namespace
         auto doc{engine.close_window(std::chrono::system_clock::time_point{} +
                                      std::chrono::seconds{60})};
         if (out_registry != nullptr)
-            *out_registry = engine.registry(); // D-TIR-5: caller serialises via the engine registry
+            *out_registry =
+                engine.registry(); // SRC-D-TIR-5: caller serialises via the engine registry
         return doc;
     }
 
-    // D-TIR-5 field-drop: entries carry only the content-derived TemplateId now (template_str moved
-    // to the registry). A membership check computes the expected id from the string (the stateless
-    // masker is a pure fn — same string → same id the engine assigned) and compares ids; no
-    // registry needed.
+    // SRC-D-TIR-5 field-drop: entries carry only the content-derived TemplateId now (template_str
+    // moved to the registry). A membership check computes the expected id from the string (the
+    // stateless masker is a pure fn — same string → same id the engine assigned) and compares ids;
+    // no registry needed.
     [[nodiscard]] bool reservoir_has(const meta::MetaLogDocument& doc, std::string_view tmpl)
     {
         const auto id{insight::template_id_of(tmpl)};
@@ -549,7 +550,7 @@ TEST(ReservoirTest, ErrorClassReserveIsExemptFromPerKindCap)
         << "the reserve is EXEMPT from the per-kind cap — multiple distinct failures survive";
 }
 
-// ── D-PROV-1 (§3.1) — the echoed-source salience gate, at the ENGINE altitude ───
+// ── SRC-D-PROV-1 (§3.1) — the echoed-source salience gate, at the ENGINE altitude ───
 // The salience FUNCTION is locked by stats:SalienceScore.EchoedSourceSkipsFailureCueTier.
 // This is its engine-level twin: it proves the bucket-level `all_echoed_source` AND-reduction
 // (engine.cpp:244 — a template is "all echoed" only while EVERY event forming it is echoed

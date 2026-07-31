@@ -87,8 +87,8 @@ namespace dto
         std::optional<std::uint64_t> approximate_cardinality; // omit when 0 (not computed)
     };
 
-    // W1 ordinal histogram (§4A.4 D-W1-2): the field-keyed binned carrier. `counts` is the full,
-    // uncapped tail over the schedule's frozen log2 ladder; `schedule_id` is the eidos
+    // W1 ordinal histogram (§4A.4 SRC-D-W1-2): the field-keyed binned carrier. `counts` is the
+    // full, uncapped tail over the schedule's frozen log2 ladder; `schedule_id` is the eidos
     // comparability key. Reflected by member name (no glaze override needed), like ParamHistogram.
     struct OrdinalHistogram
     {
@@ -105,14 +105,14 @@ namespace dto
         double frequency{0.0};
         std::optional<std::string> tmpl;      // key "template"; omitted when empty
         std::optional<std::string> level;     // spec level string; omitted when absent
-        std::optional<std::string> component; // WHERE label (D-WHERE-2); omitted when absent
+        std::optional<std::string> component; // WHERE label (SRC-D-WHERE-2); omitted when absent
         // SPEC §3.5 per-param histograms. Present only when the producer enabled
         // max_param_histograms (batch / full-fidelity path); omitted otherwise
         // (skip_null_members), so default and streaming documents are byte-unchanged.
         std::optional<std::vector<ParamHistogram>> param_histograms;
-        // W1 ordinal histograms (§4A.4 D-W1-2). Present only when the producer enabled
+        // W1 ordinal histograms (§4A.4 SRC-D-W1-2). Present only when the producer enabled
         // max_param_histograms AND the template carried a declared ordinal field; omitted otherwise
-        // (skip_null_members) → non-ordinal documents are byte-identical (D-W1-4).
+        // (skip_null_members) → non-ordinal documents are byte-identical (SRC-D-W1-4).
         std::optional<std::vector<OrdinalHistogram>> ordinal_histograms;
 
         // glaze rename: `tmpl` -> "template" (a C++ keyword), every other field by
@@ -181,7 +181,7 @@ namespace dto
         double frequency{0.0};
         std::optional<std::string> tmpl;            // key "template"; omitted when empty
         std::optional<std::string> level;           // spec level string; omitted when absent
-        std::optional<std::string> component;       // WHERE label (D-WHERE-2); omitted when absent
+        std::optional<std::string> component; // WHERE label (SRC-D-WHERE-2); omitted when absent
         std::optional<std::string> structural_role; // omitted when None
         std::uint32_t structural_surprise{0};
         std::uint32_t novelty{0};
@@ -203,7 +203,7 @@ namespace dto
         };
     };
 
-    // Per-window acquisition self-assessment (D-WHERE-4/5). The window's raw structural
+    // Per-window acquisition self-assessment (SRC-D-WHERE-4/5). The window's raw structural
     // facts (the `component`-axis coverage seed); a consumer applies its own predicate.
     // All-integer → genuinely cross-machine bit-identical. Omitted when not emitted.
     struct Acquisition
@@ -214,14 +214,15 @@ namespace dto
         std::uint64_t role_cardinality{0};    // per-dimension cardinality: role
         std::vector<std::uint64_t> where_cardinality_per_depth; // coarsest → finest (§6.1.1)
         std::uint64_t closed_cells{0};                          // P_closed — condensed cell count
-        std::uint64_t span_records{0}; // O3 (D-OTEL-13): span events observed (the licence fact)
+        std::uint64_t span_records{
+            0}; // O3 (SRC-D-OTEL-13): span events observed (the licence fact)
         std::uint64_t orphan_parent_edges{
-            0}; // O3 (D-OTEL-11): declared parents that did not resolve
+            0}; // O3 (SRC-D-OTEL-11): declared parents that did not resolve
         std::uint64_t orphan_link_edges{
-            0}; // O4b (D-OTEL-9): declared link targets that did not resolve
+            0}; // O4b (SRC-D-OTEL-9): declared link targets that did not resolve
     };
 
-    // O4b distilled service topology (D-OTEL-21). Reflected (member name == JSON key). A
+    // O4b distilled service topology (SRC-D-OTEL-21). Reflected (member name == JSON key). A
     // present-but-empty `edges` (traces existed, no cross-service edges) serialises as `[]` —
     // meaningful (no topology), NOT absence; block absence (a non-span window) is the std::optional
     // on Document.
@@ -357,9 +358,10 @@ namespace dto
         std::optional<std::string> retention_profile;
         std::optional<Coordinate> coordinate;   // §15 re-derivation coordinate
         std::optional<CubeBlock> cube;          // §16 intra-window cube; omit when not emitted
-        std::optional<Acquisition> acquisition; // D-WHERE-4 self-assessment; omit when not emitted
+        std::optional<Acquisition>
+            acquisition; // SRC-D-WHERE-4 self-assessment; omit when not emitted
         std::optional<ServiceEdgeBlock>
-            service_edges; // O4b (D-OTEL-21); omit for a non-span window
+            service_edges; // O4b (SRC-D-OTEL-21); omit for a non-span window
         std::optional<RulesetIdentity>
             ruleset; // II-7 composed-ruleset identity; omit for a legacy producer
         std::optional<std::string>
@@ -463,8 +465,9 @@ namespace dto
         std::optional<std::vector<NGramRateChange>> rate_changed;             // omit when empty
     };
 
-    // O4b service-topology delta (D-OTEL-21). Each list omitted when empty; the whole block present
-    // in the Diff DTO iff both documents carried a service_edges block (absent ⇒ *unknown*).
+    // O4b service-topology delta (SRC-D-OTEL-21). Each list omitted when empty; the whole block
+    // present in the Diff DTO iff both documents carried a service_edges block (absent ⇒
+    // *unknown*).
     struct ServiceEdgeWeightChange
     {
         std::string caller;
@@ -511,7 +514,7 @@ namespace dto
         std::optional<CubeDiff> cube_diff; // §13.6 emerging-border cube diff; omit when absent
         std::optional<ReservoirDelta> reservoir_delta; // §5.3 reservoir delta; omit when empty
         std::optional<ServiceEdgeDelta>
-            service_edge_delta; // O4b (D-OTEL-21); omit unless both sides had edges
+            service_edge_delta; // O4b (SRC-D-OTEL-21); omit unless both sides had edges
     };
 
 } // namespace dto
@@ -659,10 +662,11 @@ namespace
         return out;
     }
 
-    // D-TIR-5 field-drop: the display-only `template_str` is resolved by id from the engine-owned
-    // TemplateRegistry at this seam (the field is gone from the document). The registry holds every
-    // template id the engine ingested, so an engine-built document resolves byte-identically to the
-    // old inline field; a hand-built document must seed a registry with its strings.
+    // SRC-D-TIR-5 field-drop: the display-only `template_str` is resolved by id from the
+    // engine-owned TemplateRegistry at this seam (the field is gone from the document). The
+    // registry holds every template id the engine ingested, so an engine-built document resolves
+    // byte-identically to the old inline field; a hand-built document must seed a registry with its
+    // strings.
     [[nodiscard]] std::string resolve_template_str(const TemplateRegistry& registry,
                                                    TemplateId template_id)
     {
@@ -700,7 +704,7 @@ namespace
             }
             row.param_histograms = std::move(hists);
         }
-        // W1 ordinal histograms (§4A.4 D-W1-2) — emitted only when present (omit-when-empty).
+        // W1 ordinal histograms (§4A.4 SRC-D-W1-2) — emitted only when present (omit-when-empty).
         if (!entry.ordinal_histograms.empty())
         {
             std::vector<dto::OrdinalHistogram> ordinals;
@@ -862,7 +866,7 @@ namespace
                 .span_records = doc.acquisition->span_records,
                 .orphan_parent_edges = doc.acquisition->orphan_parent_edges,
                 .orphan_link_edges = doc.acquisition->orphan_link_edges};
-        if (doc.service_edges) // O4b (D-OTEL-21): present iff the window had trace substrate
+        if (doc.service_edges) // O4b (SRC-D-OTEL-21): present iff the window had trace substrate
         {
             dto::ServiceEdgeBlock block{.edges = {},
                                         .dropped_edges = doc.service_edges->dropped_edges};
@@ -1060,7 +1064,7 @@ namespace
             out.cube_diff = make_cube_diff(diff.cube_diff);
         if (!diff.reservoir_delta.empty())
             out.reservoir_delta = make_reservoir_delta(diff.reservoir_delta);
-        if (diff.service_edge_delta) // O4b (D-OTEL-21): present iff both sides carried a
+        if (diff.service_edge_delta) // O4b (SRC-D-OTEL-21): present iff both sides carried a
                                      // service_edges block
             out.service_edge_delta = make_service_edge_delta(*diff.service_edge_delta);
         return out;

@@ -62,9 +62,9 @@ TEST(MetaLogDocument, ReservoirNearFullExercisesTheF5M8Regime)
            "(a non-deterministic surprise score) flips bag membership; none were.";
 }
 
-// O4b service-topology (D-OTEL-21): the over-cap top-K select MUST stay non-hollow — the emitted
-// block must be OVER the cap (dropped_edges > 0) AND the cut must fall on a weight tie, so the
-// surviving last edge is decided by the canonical-key tie-break alone (the branch the cross-leg
+// O4b service-topology (SRC-D-OTEL-21): the over-cap top-K select MUST stay non-hollow — the
+// emitted block must be OVER the cap (dropped_edges > 0) AND the cut must fall on a weight tie, so
+// the surviving last edge is decided by the canonical-key tie-break alone (the branch the cross-leg
 // gate proves bit-identical). If the scenario silently stopped over-subscribing, or the tie
 // collapsed, that proof would go hollow. Also pins the derived edge VALUES (order, weights, dropped
 // count).
