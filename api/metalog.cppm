@@ -357,7 +357,7 @@ class MetaLogEngine
 // SRC-D-TIR-5 field-drop: the display-only `template_str` no longer lives on the document — it is
 // resolved by id from the engine-owned TemplateRegistry at this seam, emitted as SPEC §3.4's inline
 // mode — the per-entry `template`. The three modes are a producer MAY; the others were never wired
-// (adr/0035). The registry MUST contain every id the document references (the engine interns every
+// (ADR-9). The registry MUST contain every id the document references (the engine interns every
 // template at ingest); pass `engine.registry()`. A hand-built document needs a registry seeded with
 // its strings.
 [[nodiscard]] std::string to_json(const MetaLogDocument& doc, const TemplateRegistry& registry);

@@ -777,7 +777,7 @@ struct MetaLogDocument
     // SRC-D-TIR-5 field-drop: the display strings live in the engine-owned TemplateRegistry,
     // resolved by id at the serialize/explain seams. This producer emits SPEC §3.4's INLINE mode
     // only — the three modes are a producer MAY, and the dedup/id-only arms were never wired
-    // (adr/0035).
+    // (ADR-9).
     std::optional<std::vector<ProvenanceEntry>> provenance; // absent unless composed (SPEC §12.4)
     // Processing-identifier strings (SPEC §2.4). Opaque names of the contract
     // under which the document was produced; gate `compose()` / diff

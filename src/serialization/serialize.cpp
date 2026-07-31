@@ -833,7 +833,7 @@ namespace
                       .lines_observed = doc.window.lines_observed};
         out.source = make_source(doc.source);
         // SPEC §3.4: this producer emits the INLINE mode — the per-entry `template`, resolved by
-        // id from the engine-owned registry. The three modes are a producer MAY (adr/0035).
+        // id from the engine-owned registry. The three modes are a producer MAY (ADR-9).
         out.stats = make_stats(doc.stats, registry);
         if (doc.behavior)
             out.behavior = make_behavior(*doc.behavior);

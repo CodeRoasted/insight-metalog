@@ -481,7 +481,7 @@ void BM_StageCube_Determinism(benchmark::State& state)
     // cube_diff_of over two distinct deterministic cubes (the closed base vs its self-compose,
     // which doubles every count) — the kept cube's diff path must be bit-identical run-to-run too.
     // This is the byte-identical-cell guard the retired do-operator harness used to provide, now on
-    // the PRODUCTION cube (adr/0018 §Consequences): a non-deterministic diff cell aborts loudly.
+    // the PRODUCTION cube (ADR-19): a non-deterministic diff cell aborts loudly.
     if (composed_a)
     {
         const auto diff_a{cube::cube_diff_of(first, *composed_a)};
