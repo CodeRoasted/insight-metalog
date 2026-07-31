@@ -20,8 +20,8 @@ jobs:
       # even though it comes from the same repo+tag. metalog test_requires it (conanfile.py) — without
       # the row the gtest suite cannot resolve it. Keep both rows pinned together on a canon bump.
       vendor: |
-        insight_canon 1.8.9 CodeRoasted/insight-canon public
-        insight_semantic_github 1.8.9 CodeRoasted/insight-canon public
+        insight_canon 1.9.0 CodeRoasted/insight-canon public
+        insight_semantic_github 1.9.0 CodeRoasted/insight-canon public
       modules: '.'
       # PUBLIC repo: sift-mode: public renders the Sift comment fork-safe (read-only token); the
       # sift-post job below posts it.
