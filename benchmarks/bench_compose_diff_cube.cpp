@@ -1,7 +1,7 @@
 // NOLINTBEGIN
 // bench_compose_diff_cube.cpp — standing stage-level perf + determinism coverage for the cube's
-// per-call cost inside compose()/diff() (Cube A, kept product per adr/0018-cube-a-attribution.md;
-// design: technical_docs/architecture/cube_perf_and_collapse.md §A2/§A3). Where the detection
+// per-call cost inside compose()/diff() (Cube A, kept product per technical_docs/adr/019-eidos-attribution-cube.md D1;
+// design record: technical_docs/history/architecture-v1/cube_perf_and_collapse.md §A2/§A3). Where the detection
 // bench_cube_tick measures the cube's share of the whole matured pyramid tick, this isolates the
 // per-call cost of the pieces compose()/diff() spend their time in, so a regression in any one is
 // attributable:
