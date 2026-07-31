@@ -1,4 +1,4 @@
-// insight.metalog.internal — lone import-std manifest (1.5.1 unwrap, §11.9) + global C fixed-width
+// insight.metalog.internal — lone import-std manifest (ADR-3.D4) + global C fixed-width
 // type re-exports (metalog source uses unqualified uint64_t/int64_t/size_t etc.).
 export module insight.metalog.internal;
 export import std;

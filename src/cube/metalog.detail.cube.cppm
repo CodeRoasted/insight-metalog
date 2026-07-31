@@ -1,4 +1,4 @@
-// insight.metalog.detail.cube — SEALED cube domain (domain decomposition, §11.9.11).
+// insight.metalog.detail.cube — SEALED cube domain (domain decomposition, ADR-3.D4).
 // The intra-window closed cube (SPEC §16) and its emerging-border diff (§13.6): the
 // lattice primitives (Cell / generalize / meet / closure), the closed-cube builder,
 // the order-convex (lower, upper) border, the compose re-closure, and the §16.6

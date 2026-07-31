@@ -1,4 +1,4 @@
-// insight.metalog.bench — shared benchmark infrastructure (§11.9.11, the logcraft.bench pattern).
+// insight.metalog.bench — shared benchmark infrastructure (ADR-3.D4, the logcraft.bench pattern).
 // All benchmark TUs import this instead of spelling out the full import block. Re-exports the
 // complete metalog module surface (public facade + the sealed detail module + canon), so a
 // benchmark TU needs no further imports beyond google-benchmark (textual, third-party).

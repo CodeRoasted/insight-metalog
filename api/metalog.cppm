@@ -1,6 +1,6 @@
-// insight.metalog — public facade (1.5.1 unwrap §11.9). Consumers `import insight.metalog;`
+// insight.metalog — public facade (ADR-3.D4). Consumers `import insight.metalog;`
 // unchanged. Re-exports the api DTOs; detail is NOT re-exported. MetaLogEngine +
-// compose/diff/to_json live HERE (their impls need detail, which imports api → §11.9.6 homes them
+// compose/diff/to_json live HERE (their impls need detail, which imports api → ADR-3.D4 homes them
 // above detail to break the cycle).
 export module insight.metalog;
 import insight.metalog.internal;   // std for the engine/free-fn decls

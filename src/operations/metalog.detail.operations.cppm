@@ -1,4 +1,4 @@
-// insight.metalog.detail.operations — SEALED operations domain (domain decomposition, §11.9.11).
+// insight.metalog.detail.operations — SEALED operations domain (domain decomposition, ADR-3.D4).
 // SPEC §2.4 comparability gate: decides whether two documents may be composed/diffed, and which
 // opaque contract identifier the result may carry. Shared by compose and diff.
 // Never re-exported by the facade and never installed (PRIVATE file set).

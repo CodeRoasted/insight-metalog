@@ -1,4 +1,4 @@
-// insight.metalog.detail.stats — SEALED statistics domain (domain decomposition, §11.9.11).
+// insight.metalog.detail.stats — SEALED statistics domain (domain decomposition, ADR-3.D4).
 // HLL cardinality sketch, distribution statistics (entropy/KL/JS), salience scoring, and
 // wire-format helpers. A leaf over api+canon — imports no other metalog detail shard.
 // Never re-exported by the facade and never installed (PRIVATE file set).

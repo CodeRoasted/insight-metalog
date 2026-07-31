@@ -1,4 +1,4 @@
-// insight.metalog.api — public DATA surface (the MetaLog DTOs/config/enums, 1.5.1 unwrap §11.9).
+// insight.metalog.api — public DATA surface (the MetaLog DTOs/config/enums, ADR-3.D4).
 // Header-only structs (no impl units) → no api↔detail cycle. std via internal; canon types
 // (LogLevel/Timestamp/StructuralRole/CanonicalEvent) via import insight.canon.
 export module insight.metalog.api;
@@ -850,7 +850,7 @@ struct MetaLogConfig
 
     // Max entries kept in stats.top_k; the rest are summarised into
     // tail_count / tail_unique. Default 64 (~10 KB envelope per spec
-    // §11). Set to 0 to skip top_k emission entirely (still bounded).
+    // ADR-3.D4). Set to 0 to skip top_k emission entirely (still bounded).
     std::size_t top_k_size{kDefaultTopKSize};
 
     // Salience Reservoir size M (Tier 2): max templates retained by salience
