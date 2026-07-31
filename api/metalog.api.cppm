@@ -668,7 +668,7 @@ struct WindowBlock
 };
 
 // Override for the REPORTED window bounds at close_window, decoupled from the
-// open/close machinery times (insight_determinism_model.md § Event-time, MUST 3).
+// open/close machinery times (bibles/determinism_model.md §7).
 // A deterministic-batch caller supplies the input's parseable-timestamp envelope
 // ([min, max], or the epoch sentinel zero-width when a side has no parseable
 // timestamp) so the document's window reflects the log's own event-time span, not

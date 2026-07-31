@@ -6,7 +6,7 @@
 //   - scripts/determinism_fixture.cpp               → the cross-compiler matrix
 //     (determinism_bitidentity.sh: gcc×clang × -O{0,3} × -ffp-contract{off,fast}).
 //
-// F5-M8 (insight_determinism_model.md): the item-reservoir (§2.11) salience inputs —
+// F5-M8 (bibles/determinism_model.md): the item-reservoir (§2.11) salience inputs —
 // structural_surprise above all — were not bit-identical clang≢gcc, and an order-dependent
 // most-likely-edge pick flipped a near-tie admit/evict at the M=128 boundary → a different bag →
 // a Tier-1 violation in the production Sift batch-diff (eidos ships reservoir_size=128). The prior
