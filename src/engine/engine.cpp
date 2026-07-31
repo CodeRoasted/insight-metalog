@@ -341,7 +341,7 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
     // the keys.
     ++cube_base_[std::make_tuple(event.level, std::string{event.component}, event.structural_role)];
 
-    // Per-template component marginal — the WHERE carrier (SRC-D-WHERE-2/3) and the §16.6
+    // Per-template component marginal — the WHERE carrier (SRC-D-WHERE-2/D-WHERE-3) and the §16.6
     // reservoir cross, feeding both the cube and the leaf `dominant_component`. Always
     // accumulated. Empty components are not counted (records_with_component then counts
     // only located records).
@@ -444,7 +444,8 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end,
     build_behavior(doc, analysis);
     build_stability(doc, analysis);
     build_cube(doc);        // SPEC §16 — always (unconditional; collapse-bounded, §C)
-    build_acquisition(doc); // SRC-D-WHERE-4/5 — always (the window's dimension self-assessment)
+    // SRC-D-WHERE-4/D-WHERE-5 — always (the window's dimension self-assessment)
+    build_acquisition(doc);
     build_service_edges(
         doc); // O4b (SRC-D-OTEL-21) — iff the window had trace substrate (span_records > 0)
 
@@ -1154,7 +1155,7 @@ void MetaLogEngine::build_cube(MetaLogDocument& doc) const
     doc.has_cube = true;
 }
 
-// Per-window acquisition self-assessment (SRC-D-WHERE-4/5): the `component`-axis coverage
+// Per-window acquisition self-assessment (SRC-D-WHERE-4/D-WHERE-5): the `component`-axis coverage
 // seed, aggregated in batch over the frozen window from the per-template component
 // marginals. records_with_component = total located events (Σ over buckets of Σ of
 // component_counts — every increment was a non-empty component, ingest_event);

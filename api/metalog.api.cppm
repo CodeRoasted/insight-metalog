@@ -268,7 +268,7 @@ struct TopKEntry
 };
 
 // Per-window acquisition self-assessment (SPEC §16.x; sift_where_attribution.md
-// SRC-D-WHERE-4/5). Raw, integer STRUCTURAL FACTS about which dimensions a window
+// SRC-D-WHERE-4/D-WHERE-5). Raw, integer STRUCTURAL FACTS about which dimensions a window
 // reliably carries — so each consumer (WHERE, the cube axis, the format-relative
 // gate) applies its OWN predicate over the same facts ("the window declares its
 // own cubeability"), instead of four format checks that drift. NOT a baked verdict.
@@ -1089,7 +1089,8 @@ struct FieldHistogramDelta
 };
 
 // Per-(template_id, ordinal field) pairing of two windows' binned ordinal histograms (§4A.4
-// D-W1-1/4 — the W1 channel). Carries BOTH sides' raw counts + totals + schedule_ids; the eidos
+// D-W1-1/SRC-D-W1-4 — the W1 channel). Carries BOTH sides' raw counts + totals +
+// schedule_ids; the eidos
 // diff checks the schedule_ids match (the comparability gate, SRC-D-W1-4, like
 // canonicalization_version at diff.cpp) then computes the exact-integer 1-D Wasserstein-1
 // earth-mover distance, its direction, and the {field}_shift bucket — metalog carries the counts,
