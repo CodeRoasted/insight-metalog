@@ -310,7 +310,7 @@ struct AcquisitionBlock
     // it is not stored — the per-dimension factors above are the richer, non-redundant signal.
     std::uint64_t closed_cells{0};
 
-    // ── O3 span-native acquisition facts (insight_otel_epic.md §13, SRC-D-OTEL-13) — the LICENCE
+    // ── O3 span-native acquisition facts (ADR-29, SRC-D-OTEL-13) — the LICENCE
     // ── Raw, threshold-free integer facts the eidos trace-vocabulary classifiers read to decide
     // whether to speak trace vocabulary (span_records > 0). span_records = span events observed
     // this window; orphan_parent_edges = spans whose declared parent did not resolve to a template
@@ -330,7 +330,7 @@ struct AcquisitionBlock
     [[nodiscard]] bool operator==(const AcquisitionBlock&) const noexcept = default;
 };
 
-// ── O4b service edge (insight_otel_epic.md §13.7.1, SRC-D-OTEL-21)
+// ── O4b service edge (ADR-29, SRC-D-OTEL-21)
 // ──────────────────────────────────── The one legitimately-cubeable OTEL dimension, DISTILLED: the
 // observed span tree projected to (caller_service → callee_service) at COMPONENT granularity
 // (bounded by topology², service.name is the low-card WHERE tier), derived at close time in
@@ -810,7 +810,7 @@ struct MetaLogDocument
     // bool+inline workaround the cube needs is for vector-owning optionals copied in
     // consumer module TUs; AcquisitionBlock is trivially copyable).
     std::optional<AcquisitionBlock> acquisition;
-    // O4b distilled service topology (insight_otel_epic.md §13.7.1, SRC-D-OTEL-21). Present iff the
+    // O4b distilled service topology (ADR-29, SRC-D-OTEL-21). Present iff the
     // window had trace substrate (span_records > 0); ABSENT for a non-span window (absence =
     // unknown, the additive-block discipline — the edge diff needs the block on both sides). Owns a
     // vector but is stamped once at close and only read (never a synthesized-optional copy on the
@@ -889,7 +889,7 @@ struct MetaLogConfig
     // updating but new keys are dropped. Bounds memory.
     std::size_t max_ngram_keys{kDefaultMaxNgramKeys};
 
-    // O2 trace-scoping master switch (insight_otel_epic.md O2). Default true: an OTEL event
+    // O2 trace-scoping master switch (ADR-29 O2). Default true: an OTEL event
     // forms its n-gram WITHIN its trace. false is the CONTROL ARM — even OTEL events fall back
     // to the global ring, reproducing the polluted global-order graph on the SAME input (the
     // config mirror of the unit gate's with_trace=false arm; the scenario signal
@@ -897,7 +897,7 @@ struct MetaLogConfig
     // (no trace context → the global ring is taken regardless), so the flag is OTEL-only.
     bool trace_scoping_enabled{true};
 
-    // O2 trace-scoping (insight_otel_epic.md SRC-D-OTEL-1, OR3): max concurrent OTEL traces whose
+    // O2 trace-scoping (ADR-29 SRC-D-OTEL-1, OR3): max concurrent OTEL traces whose
     // n-gram ring is held at once. A ring is just the last 1–2 template ids — NOT a per-trace
     // sub-fingerprint. On overflow the oldest-inserted trace's ring is evicted (deterministic
     // FIFO), losing at most one cross-record edge for that trace, never its membership. Bounds
@@ -905,7 +905,7 @@ struct MetaLogConfig
     // (events carrying a trace_id); non-OTEL ingest uses the single global ring at zero cost.
     std::size_t max_active_traces{kDefaultMaxActiveTraces};
 
-    // O3 observed-DAG (insight_otel_epic.md §13, SRC-D-OTEL-11): max span_id → template entries
+    // O3 observed-DAG (ADR-29, SRC-D-OTEL-11): max span_id → template entries
     // held in a window for close-time parent-edge resolution. A span's declared parent is resolved
     // to an observed edge template(parent)→template(child) at close; a parent evicted past this
     // bound (or outside the window) yields no edge + one `orphan_parent_edges` fact (counted, never
