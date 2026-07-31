@@ -140,7 +140,7 @@ namespace
         // D-TIR-4(2): scalar-NgramId point-lookup maps, value carrying the sequence for
         // output. new_ngrams / vanished_ngrams are iterated into output, so — unlike
         // rate_changed (sorted at the end) — they are explicitly sorted here to stay
-        // determinism-stable across stdlibs (ADR 0008: never emit unordered iteration order).
+        // determinism-stable across stdlibs (ADR-16: never emit unordered iteration order).
         struct NgramProb
         {
             std::vector<TemplateId> sequence;
@@ -593,7 +593,7 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
                                      "diff");
     check_processing_identifier_gate(previous.retention_profile, current.retention_profile,
                                      "retention_profile", "diff");
-    // II-7 (ADR 0024 §4.3): two documents are comparable iff their composed-ruleset identity
+    // II-7 (ADR-17): two documents are comparable iff their composed-ruleset identity
     // matches. Both stamped + different ⇒ the docs fingerprint DIFFERENT vocabularies ⇒ REFUSE
     // (this is the "no raw inputs to re-segment" branch — a stored MetaLog cannot be re-tokenized;
     // the Sift raw path re-tokenizes both sides under the live composition, so their identities

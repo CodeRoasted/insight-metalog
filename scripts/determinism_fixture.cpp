@@ -129,7 +129,7 @@ int main(int argc, char** argv)
     namespace ml = insight::metalog;
     constexpr std::size_t kArenaBytes{std::size_t{1} << 22};
     tk::ArenaAllocator arena{kArenaBytes};
-    // The degenerate composition (ADR 0024 §3): this harness verifies metalog reservoir/cube
+    // The degenerate composition (ADR-17): this harness verifies metalog reservoir/cube
     // determinism over SYNTHETIC scenarios (not GHA dialect logs), so it needs no dialect
     // vocabulary — and as a metalog script it does not link the semantic packages. compose({}) is a
     // defined, runnable core-only state.

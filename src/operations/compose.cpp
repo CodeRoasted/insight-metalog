@@ -510,7 +510,7 @@ namespace
         // sequence for output — replaces the three vector<TemplateId>-keyed maps. One O(L)
         // id-compute + one fixed-width map op per entry instead of three sequence
         // hashes+compares. The output `entries` is re-sorted below (count desc, sequence
-        // asc), so the map iteration order is not a determinism surface (ADR 0008).
+        // asc), so the map iteration order is not a determinism surface (ADR-16).
         struct NgramAccum
         {
             std::vector<TemplateId> sequence;
@@ -569,7 +569,7 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
                                      "canonicalization_version", "compose");
     check_processing_identifier_gate(lhs.retention_profile, rhs.retention_profile,
                                      "retention_profile", "compose");
-    // II-7 (ADR 0024 §4.3): composing across DIFFERENT composed-ruleset identities merges documents
+    // II-7 (ADR-17): composing across DIFFERENT composed-ruleset identities merges documents
     // that fingerprint different vocabularies — refuse. Absence-tolerant (a legacy input proceeds).
     check_processing_identifier_gate(
         lhs.ruleset ? std::optional<std::string>{lhs.ruleset->semantic_identity} : std::nullopt,

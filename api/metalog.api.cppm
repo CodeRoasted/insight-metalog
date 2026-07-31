@@ -360,7 +360,7 @@ struct ServiceEdgeBlock
     [[nodiscard]] bool operator==(const ServiceEdgeBlock&) const noexcept = default;
 };
 
-// ── Composed-ruleset identity (II-7, ADR 0024 §4.2) ──────────────────────────────────────────────
+// ── Composed-ruleset identity (II-7, ADR-17) ─────────────────────────────────────────────────────
 // The identity of the semantic ruleset that SEGMENTED this document — the comparability key. Rides
 // every MetaLogDocument as an ADDITIVE, flag-gated block (the reservoir_delta/AcquisitionBlock
 // discipline, [[additive-gated-metalog-block-keeps-wire-version]]): no wire-version bump, and
@@ -510,7 +510,7 @@ enum class CardinalityAxis : std::uint8_t
 // §13 cardinality monitor (cube_perf_and_collapse.md C2) — the cube's distinct-value counts. A
 // PURE function of the closed cube (`cube_cardinality()`), **observability only**: never feeds the
 // deterministic content stream. The pre-collapse WARN thresholds (kComponentWarn/kCellsWarn) were
-// RETIRED (ADR 0023 / studies/005 disposition-D): they predate dimensional collapse and fired on a
+// RETIRED (ADR-18 / studies/005 disposition-D): they predate dimensional collapse and fired on a
 // standalone threshold decoupled from the actual collapse trigger (cell_count > kCubeCellBudget).
 // The WARN now fires WHEN a collapse is APPLIED (`collapse_note()`, emitted by the eidos pipeline).
 // These are the raw counts (the breakdown that annotates that WARN + the acquisition
@@ -817,13 +817,13 @@ struct MetaLogDocument
     // MSVC /O2 hot path), so std::optional is sound — the RulesetIdentity precedent,
     // [[msvc-port-stdlib-isms]].
     std::optional<ServiceEdgeBlock> service_edges;
-    // Composed-ruleset identity (II-7, ADR 0024 §4.2): the semantic_identity + package list of the
+    // Composed-ruleset identity (II-7, ADR-17): the semantic_identity + package list of the
     // ruleset that segmented this document. ABSENT = legacy producer (pre-ruleset). Stamped by the
     // producer from the ComposedSemantics that tokenized the input. RulesetIdentity owns a vector,
     // so it follows the CubeBlock precedent risk — but it is stamped once at close and only read
     // (never a synthesized-optional copy on the MSVC /O2 hot path), so std::optional is sound.
     std::optional<RulesetIdentity> ruleset;
-    // The run's terminal verdict (ADR 0025 §5): one four-class scalar per run, resolved by the
+    // The run's terminal verdict (ADR-17): one four-class scalar per run, resolved by the
     // D-OUT-RUN-1 precedence (authoritative side-input → console tail → Unknown) and stamped by the
     // producing orchestration on a WHOLE-RUN document. Additive, NO wire-version bump: Unknown is
     // the default AND the wire absence (the serializer omits it) — a legacy/verdict-free document
@@ -965,12 +965,12 @@ struct MetaLogConfig
     std::optional<std::string> canonicalization_version{
         std::string{insight::kCanonicalizationVersion}};
     std::optional<std::string> retention_profile;
-    // II-7 composed-ruleset identity (ADR 0024 §4.2): the semantic_identity + package list of the
+    // II-7 composed-ruleset identity (ADR-17): the semantic_identity + package list of the
     // composition that tokenized the input, injected by the producing binary (the engine pipeline
     // sets it from insight::engine::composed_semantics()). DEFAULT unset — a producer that does not
     // inject it emits no ruleset block (a legacy producer; absence-tolerant on the consumer).
     // Unlike canonicalization_version there is no canon-owned default: canon ships no default
-    // composition (ADR 0024 §3), so the binary that declares its package set is the only one that
+    // composition (ADR-17), so the binary that declares its package set is the only one that
     // knows the hash.
     std::optional<RulesetIdentity> ruleset;
 

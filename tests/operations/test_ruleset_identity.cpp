@@ -1,6 +1,6 @@
 // NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns
-// test_ruleset_identity.cpp — the II-7 composed-ruleset identity (ADR 0024 §4.2/§4.3): the
+// test_ruleset_identity.cpp — the II-7 composed-ruleset identity (ADR-17): the
 // RulesetIdentity block on MetaLogDocument + its comparability enforcement, which is CENTRALIZED in
 // the §2.4 processing-identifier gate shared by compose()/diff() (metalog.detail.operations).
 // semantic_identity is just another processing identifier through that one gate, so the enforcement

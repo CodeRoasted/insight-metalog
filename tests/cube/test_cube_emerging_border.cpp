@@ -17,7 +17,7 @@
 // The fixtures came with it (tests/fixtures/cube_emerging_border), and with them the whole
 // `axis: build` branch of the contract grammar retired — it had exactly one reader.
 //
-// ── THE COMPOSITION IS LOAD-BEARING, WHICH WAS MEASURED, NOT ASSUMED (ADR 0024 §3) ───────────
+// ── THE COMPOSITION IS LOAD-BEARING, WHICH WAS MEASURED, NOT ASSUMED (ADR-17) ────────────────
 // Canon ships NO default composition: every BINARY declares its semantic package set and threads
 // the result. The playground built its Tokenizer from `insight::engine::composed_semantics()` — the
 // EIDOS world's manifest list — and the first re-homing attempt here declared the EMPTY set, on the
@@ -28,7 +28,7 @@
 // PACKAGES and an empty set supplies none. The `##[error]` prefix that carries Terminator is the
 // github package's.
 //
-// So this binary declares exactly the package its fixtures require, which is what ADR 0024 asks of
+// So this binary declares exactly the package its fixtures require, which is what ADR-17 asks of
 // a binary — a test-only dependency; metalog itself stays dialect-free. The declaration is MINIMAL
 // rather than a copy of the eidos manifest list: the smaller set is the more isolating instrument,
 // and naming it here makes the coupling legible instead of inherited.

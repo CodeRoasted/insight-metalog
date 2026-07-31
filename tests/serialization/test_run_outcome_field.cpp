@@ -1,6 +1,6 @@
 // NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns
-// test_run_outcome_field.cpp — the ADR 0025 §5 additive run-verdict scalar on MetaLogDocument.
+// test_run_outcome_field.cpp — the ADR-17 additive run-verdict scalar on MetaLogDocument.
 // The additive-block discipline ([[additive-gated-metalog-block-keeps-wire-version]]), applied to a
 // plain enum field: Unknown is BOTH the in-memory default and the wire ABSENCE, so a verdict-free /
 // legacy document's JSON is byte-identical to a pre-outcome producer's — NO metalog wire-version
@@ -29,7 +29,7 @@ using insight::metalog::test::make_event;
     engine.open_window(start);
     engine.ingest_event(make_event("alpha"));
     auto doc{engine.close_window(start + std::chrono::seconds(60))};
-    doc.run_outcome = outcome; // the producing orchestration's stamp (ADR 0025 §5)
+    doc.run_outcome = outcome; // the producing orchestration's stamp (ADR-17)
     *out_registry = engine.registry();
     return doc;
 }

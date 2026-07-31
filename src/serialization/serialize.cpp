@@ -239,7 +239,7 @@ namespace dto
         std::uint64_t dropped_edges{0};
     };
 
-    // Composed-ruleset identity wire shape (II-7, ADR 0024 §4.2). Reflected (member name == JSON
+    // Composed-ruleset identity wire shape (II-7, ADR-17). Reflected (member name == JSON
     // key); the whole block is a std::optional on Document with skip_null_members → omitted for a
     // legacy producer (absence = legacy). `packages` renders in canonical (package-sorted) order.
     struct RulesetPackageRef
@@ -365,7 +365,7 @@ namespace dto
         std::optional<RulesetIdentity>
             ruleset; // II-7 composed-ruleset identity; omit for a legacy producer
         std::optional<std::string>
-            run_outcome; // ADR 0025 §5 — the run's terminal verdict; omit when Unknown
+            run_outcome; // ADR-17 — the run's terminal verdict; omit when Unknown
     };
 
     // ── Diff DTO (SPEC §13) ──
@@ -885,7 +885,7 @@ namespace
                 ruleset.packages.push_back({.name = pkg.name, .version = pkg.version});
             out.ruleset = std::move(ruleset);
         }
-        // The run verdict (ADR 0025 §5): additive, omit-when-Unknown — a verdict-free document's
+        // The run verdict (ADR-17): additive, omit-when-Unknown — a verdict-free document's
         // wire is byte-identical to a pre-outcome producer's (absence = Unknown/legacy, no version
         // bump).
         if (doc.run_outcome != insight::RunOutcome::Unknown)
