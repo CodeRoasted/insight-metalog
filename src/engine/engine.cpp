@@ -633,10 +633,9 @@ void MetaLogEngine::build_top_k(MetaLogDocument& doc, const WindowAnalysis& anal
         entry.count = ordered[i].second->count;
         entry.frequency = total > 0.0 ? static_cast<double>(entry.count) / total : 0.0;
         entry.dominant_level = dominant_level_of(ordered[i].second->level_counts);
-        // WHERE label (SRC-D-WHERE-2): the dominant functional source — the LEAF WHERE
-        // (Sift's finding-WHERE on RankedChange), independent of the cube. Always
-        // computed; an empty component_counts (a free-text window) leaves it a disengaged
-        // optional (never "" as a location).
+        // SRC-D-WHERE-2 — see metalog.api.cppm (TopKEntry) for the contract. Computed
+        // unconditionally here: the label is a property of the bucket, so making it
+        // conditional would make the document's content depend on a consumer's interest.
         if (auto component{dominant_component_of(ordered[i].second->component_counts)};
             !component.empty())
             entry.dominant_component = std::move(component);
