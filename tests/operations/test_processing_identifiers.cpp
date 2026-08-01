@@ -74,7 +74,8 @@ TEST(ProcessingIdentifiers, ComposeMismatchedCanonicalizationVersionThrows)
     const auto lhs{build_doc_with_identifiers("canon-1", "retention-A")};
     const auto rhs{build_doc_with_identifiers("canon-2", "retention-A")};
     EXPECT_THROW(meta::compose(lhs, rhs), std::invalid_argument)
-        << "§2.4 gate: canon mismatch MUST fail";
+        << "comparability gate: composing documents whose canonicalization versions are present "
+           "and unequal MUST throw — the two windows were not canonicalized alike";
 }
 
 TEST(ProcessingIdentifiers, ComposeMismatchedRetentionProfileThrows)
@@ -82,7 +83,8 @@ TEST(ProcessingIdentifiers, ComposeMismatchedRetentionProfileThrows)
     const auto lhs{build_doc_with_identifiers("canon-1", "retention-A")};
     const auto rhs{build_doc_with_identifiers("canon-1", "retention-B")};
     EXPECT_THROW(meta::compose(lhs, rhs), std::invalid_argument)
-        << "§2.4 gate: retention profile mismatch MUST fail";
+        << "comparability gate: composing documents whose retention profiles are present and "
+           "unequal MUST throw — the two windows kept different amounts of evidence";
 }
 
 TEST(ProcessingIdentifiers, DiffMismatchedCanonicalizationVersionThrows)
@@ -90,7 +92,8 @@ TEST(ProcessingIdentifiers, DiffMismatchedCanonicalizationVersionThrows)
     const auto previous{build_doc_with_identifiers("canon-1", std::nullopt)};
     const auto current{build_doc_with_identifiers("canon-2", std::nullopt)};
     EXPECT_THROW(meta::diff(previous, current), std::invalid_argument)
-        << "§2.4 gate at §13: diff across mismatched canon MUST fail";
+        << "the comparability gate binds diff as well as compose: differencing across "
+           "mismatched canonicalization versions MUST throw, never report a false change";
 }
 
 TEST(ProcessingIdentifiers, DiffMatchingIdentifiersSucceeds)

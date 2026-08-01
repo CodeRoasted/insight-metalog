@@ -14,12 +14,12 @@
 //
 // Comparing piece 2's primitives against the compose()/diff() totals locates where the stage cost
 // sits: the reductions are a thin slice, so the re-closure round-trip is the lever, not the
-// reduction tail (§A3; the interned-cube rework, [[cube-reclosure-rework-inmem-wire-split]]).
+// reduction tail (§A3; the interned-cube rework).
 //
 // Determinism (SPEC §16.9, SACRED): BM_StageCube_Determinism re-runs build_closed_cube +
 // compose_cubes + cube_diff_of and aborts if the content differs across runs — the determinism
 // guard for the kept cube's stage path. The corpus uses a local splitmix64 (portable integer RNG,
-// never a std::*_distribution — [[std-distributions-not-cross-stdlib-portable]]).
+// never a std::*_distribution, whose draw sequence is unspecified and differs across stdlibs).
 
 #include <benchmark/benchmark.h>
 

@@ -127,7 +127,7 @@ struct OrdinalDrift
 // Σ_i |CumA_i·N_b − CumB_i·N_a| (w=1, the log ladder), accumulated in a signed 128-bit integer via
 // det::FixedReducer (order-independent, exact, cross-stdlib + MSVC bit-identical); direction =
 // sign(Σ_i (CumB_i·N_a − CumA_i·N_b)). The bucket is an EXACT integer cross-multiply against frozen
-// octave thresholds θ_k (no float, no division, no float→int — [[det-math-f5-determinism]]), so the
+// octave thresholds θ_k (no float, no division, no float→int anywhere on the path), so the
 // verdict is replay-stable and golden-frozen. The θ_k are pre-registered (anti-endogamy): ≥5
 // octaves → HIGH, ≥2 → MED, ≥0.5 → LOW, below → NONE. A zero total (or empty histogram) is a
 // degenerate pairing → {NONE, None}; the caller still gates the schedule-id comparability
@@ -363,8 +363,8 @@ struct ServiceEdgeBlock
 // ── Composed-ruleset identity (II-7, ADR-17) ─────────────────────────────────────────────────────
 // The identity of the semantic ruleset that SEGMENTED this document — the comparability key. Rides
 // every MetaLogDocument as an ADDITIVE, flag-gated block (the reservoir_delta/AcquisitionBlock
-// discipline, [[additive-gated-metalog-block-keeps-wire-version]]): no wire-version bump, and
-// ABSENCE = a legacy producer (composed before the ruleset was wired). Two documents are comparable
+// discipline): no wire-version bump, and ABSENCE = a legacy producer (composed before the
+// ruleset was wired). Two documents are comparable
 // (aligned/intent AND template-grain) iff their semantic_identity matches; on mismatch the consumer
 // re-segments where raw inputs exist, refuses otherwise — never a silent compare (II-7 verbatim).
 struct RulesetPackageRef
@@ -800,7 +800,7 @@ struct MetaLogDocument
     // (a triviality-propagation bug — it memcpy's a stale _Has_value byte, spuriously engaging a
     // disengaged cube). A presence-bool + inline value keeps MetaLogDocument a copyable value with
     // DEFAULTED special members and honest triviality (bool truly trivial, CubeBlock truly not),
-    // so the synthesized copy is always correct. See [[msvc-port-stdlib-isms]].
+    // so the synthesized copy is always correct.
     bool has_cube{false};
     CubeBlock cube{};
     // Per-window acquisition self-assessment (sift_where_attribution.md SRC-D-WHERE-4):
@@ -814,8 +814,7 @@ struct MetaLogDocument
     // window had trace substrate (span_records > 0); ABSENT for a non-span window (absence =
     // unknown, the additive-block discipline — the edge diff needs the block on both sides). Owns a
     // vector but is stamped once at close and only read (never a synthesized-optional copy on the
-    // MSVC /O2 hot path), so std::optional is sound — the RulesetIdentity precedent,
-    // [[msvc-port-stdlib-isms]].
+    // MSVC /O2 hot path), so std::optional is sound — the RulesetIdentity precedent.
     std::optional<ServiceEdgeBlock> service_edges;
     // Composed-ruleset identity (II-7, ADR-17): the semantic_identity + package list of the
     // ruleset that segmented this document. ABSENT = legacy producer (pre-ruleset). Stamped by the
@@ -827,8 +826,8 @@ struct MetaLogDocument
     // D-OUT-RUN-1 precedence (authoritative side-input → console tail → Unknown) and stamped by the
     // producing orchestration on a WHOLE-RUN document. Additive, NO wire-version bump: Unknown is
     // the default AND the wire absence (the serializer omits it) — a legacy/verdict-free document
-    // reads back identical ([[additive-gated-metalog-block-keeps-wire-version]]). NOT a cube
-    // dimension (OUTCOME is the run LABEL — [[cube-dimension-model]]); a per-quantum slice document
+    // reads back identical. NOT a cube dimension (OUTCOME labels the whole run, it is not a
+    // per-event coordinate any cell could carry); a per-quantum slice document
     // (the aligned diff's per-pair windows) correctly keeps Unknown — a quantum is not a run.
     insight::RunOutcome run_outcome{insight::RunOutcome::Unknown};
 };
@@ -1287,10 +1286,9 @@ struct MetaLogDiff
     bool has_cube_diff{false};
     CubeDiffBlock cube_diff{};
     // §5.3 reservoir delta. Additive on the DERIVED diff → NO diff_version /
-    // canonicalization_version bump (the latency_shift derived-not-compared precedent,
-    // [[additive-gated-metalog-block-keeps-wire-version]]). Inline value, NOT a
-    // presence-bool pair and NOT std::optional: emptiness IS absence here (all three
-    // lists empty ⇒ the block is omitted from JSON — reservoir_delta.empty()), so a
+    // canonicalization_version bump (the latency_shift derived-not-compared precedent).
+    // Inline value, NOT a presence-bool pair and NOT std::optional: emptiness IS absence
+    // here (all three lists empty ⇒ the block is omitted from JSON — reservoir_delta.empty()), so a
     // separate has_ flag would be redundant state to keep in sync. Inline (not
     // std::optional<ReservoirDelta>) also sidesteps the MSVC consumer-synthesis bug that
     // drove cube_diff to bool+value — detection holds std::optional<MetaLogDiff>, but an

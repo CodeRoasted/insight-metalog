@@ -101,10 +101,9 @@ TEST(HllCardinalityTest, EstimatesHighCardinalityEvenWhenValueTableFull)
 
     // HLL estimate should be much larger — demonstrating the limitation is lifted.
     EXPECT_GT(fh.approximate_cardinality, 50u)
-        << "HLL must track cardinality beyond the value_counts cap. "
-           "This verifies that limitation §2 item 4 (blind cardinality explosion) "
-           "is lifted: approximate_cardinality reflects the real-world count even "
-           "when the exact value table was full.";
+        << "HLL must track cardinality beyond the value_counts cap. The exact value table "
+           "saturates at max_histogram_values, so without the HLL a cardinality explosion "
+           "is invisible: approximate_cardinality must keep counting past the cap.";
 }
 
 TEST(HllCardinalityTest, CardinalityDeltaPopulatedInDiff)

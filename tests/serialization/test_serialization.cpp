@@ -43,8 +43,8 @@ TEST(FieldHistogramSerializationTest, ValueCountsEmittedKeySorted)
     ASSERT_NE(pos_a, std::string::npos) << json;
     ASSERT_NE(pos_m, std::string::npos) << json;
     ASSERT_NE(pos_z, std::string::npos) << json;
-    EXPECT_LT(pos_a, pos_m) << "value_counts must serialise key-sorted (§15.6).\n" << json;
-    EXPECT_LT(pos_m, pos_z) << "value_counts must serialise key-sorted (§15.6).\n" << json;
+    EXPECT_LT(pos_a, pos_m) << "value_counts must serialise key-sorted.\n" << json;
+    EXPECT_LT(pos_m, pos_z) << "value_counts must serialise key-sorted.\n" << json;
 
     // entropy_bits MUST NOT be emitted: it is a float and is losslessly derivable
     // from value_counts, so a consumer that wants it computes it. Every

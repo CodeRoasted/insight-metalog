@@ -63,7 +63,7 @@ TEST(ParamHistogramsCompose, MergesValueCountsAndTotalForSharedSlot)
     EXPECT_EQ(fh.value_counts.at("/api/users"), 900U) << "overlapping key sums counts";
     EXPECT_EQ(fh.value_counts.at("/health"), 200U) << "lhs-only key carried";
     EXPECT_EQ(fh.value_counts.at("/admin"), 50U) << "rhs-only key carried";
-    EXPECT_EQ(fh.total, 1300U) << "§12.1: total = lhs.total + rhs.total";
+    EXPECT_EQ(fh.total, 1300U) << "composed total must be the exact sum lhs.total + rhs.total";
     EXPECT_GT(fh.entropy_bits, 0.0) << "entropy recomputed from merged counts";
 }
 
@@ -119,7 +119,8 @@ TEST(ParamHistogramsCompose, TruncatesMergedValueCountsToCap)
     const auto composed{meta::compose(lhs, rhs)};
     ASSERT_EQ(composed.stats.top_k[0].field_histograms.size(), 1U);
     EXPECT_EQ(composed.stats.top_k[0].field_histograms[0].value_counts.size(), kCap)
-        << "merged value_counts MUST be truncated to the cap (top-N by count, §12.1)";
+        << "merged value_counts MUST be truncated to the cap, keeping the top-N by count — "
+           "an untruncated merge makes composed document size grow with input cardinality";
 }
 
 // When neither input emits histograms (a degenerate case), the composed entry's

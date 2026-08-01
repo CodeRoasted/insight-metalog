@@ -17,7 +17,7 @@ namespace
     // constexpr struct on MSVC (which has no __int128). Same two's-complement semantics, so the
     // digest is bit-identical cross-OS. as_i128 widens a u64 count VALUE-PRESERVING (every u64 is a
     // non-negative i128) — matching native widening of a u64, NOT via int64 (which sign-flips
-    // ≥2^63). [[msvc-port-stdlib-isms]]
+    // ≥2^63).
     using i128 = insight::det::i128;
     [[nodiscard]] constexpr i128 as_i128(std::uint64_t value) noexcept
     {

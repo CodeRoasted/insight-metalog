@@ -1016,7 +1016,6 @@ void MetaLogEngine::build_branching(BehaviorBlock& behavior, const WindowAnalysi
                     continue;
                 // det::i128 (canon shim: native __int128 on gcc/clang, portable struct on MSVC).
                 // u64 count widened VALUE-PRESERVING via u128, matching native.
-                // [[msvc-port-stdlib-isms]]
                 reducer.add_fixed(static_cast<insight::det::i128>(insight::det::u128{count}) *
                                   (log2_total - insight::det::det_log2_fixed(count)));
             }

@@ -154,7 +154,6 @@ struct CellAggregate
 // B·2ⁿ pointer-chasing inserts. The sort IS the §16.4 canonical order, so close/border iterate it
 // directly and count_in binary-searches it. Reduce is order-independent (COUNT sums, `meet` is
 // commutative+associative) ⇒ an unstable sort stays bit-identical.
-// [[cube-reclosure-rework-inmem-wire-split]]
 struct PopulatedCell
 {
     Cell cell;
@@ -210,7 +209,7 @@ struct BaseRow
 // The "both documents carried a cube" presence-check is the CALLER's job (`metalog::diff`
 // gates on has_cube) — this helper takes CubeBlock by ref and owns only the axes-equality
 // gate. (The cube DTOs are bool+value, not optional<…>, since MSVC miscompiles synthesized
-// optional copies of the vector-owning cube types. [[msvc-port-stdlib-isms]])
+// optional copies of the vector-owning cube types.)
 //
 // `current_shift_by_component` is the diff-time latency_shift dimension (cube_differential_axes.md
 // §4): a per-component latency drift map the CALLER computes from the two documents' ordinal

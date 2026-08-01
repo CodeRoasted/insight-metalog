@@ -504,7 +504,8 @@ TEST(CubeDiff, OmittedWhenOneSideHasNoCube)
     doc_plain.has_cube = false;
 
     EXPECT_FALSE(meta::diff(doc_cube, doc_plain).has_cube_diff)
-        << "§13.6: a cube_diff needs a cube on BOTH sides";
+        << "a cube_diff requires a cube on BOTH sides: one side without a cube leaves the "
+           "comparison undefined, so no cube_diff may be produced";
 }
 
 // ── Compose re-closure ──────────────────────────────────────────────────────────
@@ -556,7 +557,8 @@ TEST(CubeCompose, OmittedWhenOneSideHasNoCube)
     without.has_cube = false;
 
     EXPECT_FALSE(meta::compose(with, without).has_cube)
-        << "§16.7: when either input omits a cube, the composed cube is omitted";
+        << "when either input omits a cube, the composed document must omit its cube too — "
+           "composing a present cube with an absent one would under-count silently";
 }
 
 // ── Reservoir → cell LOCATION cross ─────────────────────────────────────────────
@@ -583,7 +585,8 @@ TEST(CubeReservoirCross, SalientEntryCarriesLocation)
             fatal = &entry;
     ASSERT_NE(fatal, nullptr) << "the rare fatal must be in the reservoir";
     ASSERT_TRUE(fatal->cube_coord.has_value())
-        << "§16.6: a salient entry carries its cube LOCATION";
+        << "a salient reservoir entry must carry its cube LOCATION (level + WHERE chain) so a "
+           "consumer can place the evidence in the cube without re-deriving it";
     EXPECT_EQ(fatal->cube_coord->level, "FATAL");
     ASSERT_TRUE(fatal->cube_coord->where.has_value());
     ASSERT_EQ(fatal->cube_coord->where->size(), 1U);

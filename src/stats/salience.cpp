@@ -120,7 +120,7 @@ StructuralRole dominant_role_of(const std::unordered_map<StructuralRole, std::ui
         // Max count; ties broken by greater StructuralRole enum value, a pure
         // function of the contents (not unordered_map iteration order) so the
         // dominant role is stdlib-identical. Roles rarely tie per template,
-        // but determinism must not depend on that. [[transport-determinism-intra-window-order]]
+        // but determinism must not depend on that.
         if (count > best_count || (count == best_count && role > best))
         {
             best_count = count;

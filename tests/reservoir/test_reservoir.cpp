@@ -419,7 +419,6 @@ TEST(ReservoirTest, DiversityCapCoversDistinctKinds)
 // (Error=80 × rarity), and one rare Error failure below top_k by frequency. With the reserve
 // OFF the surprise branches fill M and the failure is tail dust; with the reserve ON the
 // failure is guaranteed a slot DESPITE its lower salience — a branch yields its slot to it.
-// [[sift-failure-lexicon-must-be-outcome-aware]] [[sift-forcing-corpus-fatigue-vs-catch]]
 namespace
 {
     constexpr std::array<std::string_view, 3> kSurpriseBranches{
@@ -496,7 +495,8 @@ TEST(ReservoirTest, ErrorClassReserveRetainsFailureAgainstNonFailureStorm)
     // a standing assertion; the reserve flips it 0→1.
     const auto no_reserve{build_high_card_window(/*error_reserve=*/0)};
     EXPECT_FALSE(reservoir_has(no_reserve, "connection refused to db"))
-        << "without the reserve, non-failure salience evicts the real failure (the §6.7 P5 loss)";
+        << "negative control broken: without the reserve, non-failure salience must evict the "
+           "real failure — that eviction is the loss the reserve exists to close";
     EXPECT_EQ(branches_retained(no_reserve), 3U)
         << "without the reserve, all three higher-salience non-failure branches keep the slots";
 }
@@ -643,7 +643,8 @@ TEST(ReservoirTest, TieBreakByTemplateIdAtEqualSalience)
     const auto tid_beta{insight::template_id_of("beta")};
     ASSERT_NE(tid_alpha, tid_beta);
     EXPECT_EQ(doc.stats.reservoir[0].template_id, std::min(tid_alpha, tid_beta))
-        << "§3.7.2: at equal salience, the smaller template_id wins (got "
+        << "deterministic tie-break broken: at equal salience the smaller template_id must win, "
+           "so the retained entry does not depend on ingestion order (got "
         << doc.stats.reservoir[0].template_id
         << "; min(tid_alpha,tid_beta)=" << std::min(tid_alpha, tid_beta) << ")";
 }
@@ -731,7 +732,8 @@ TEST(ReDerivationCoordinate, ReservoirEntryCarriesWithinWindowOrdinal)
         {
             found = true;
             ASSERT_TRUE(entry.within_window_ordinal.has_value())
-                << "§15.4 sub-coordinate must be populated when a coordinate is configured";
+                << "the within-window ordinal must be populated whenever a source_ref "
+                   "coordinate is configured — without it the entry is not re-derivable";
             EXPECT_EQ(*entry.within_window_ordinal, 20U)
                 << "first-seen ordinal after 20 benign events";
         }
@@ -760,12 +762,13 @@ TEST(ReDerivationCoordinate, ComposeCoordinateIsSetOfChildrenNotCoarseBound)
     // "see children" is forbidden, because a coarse [first, last] over-claims across the
     // children's gaps, shards and sources. Children present, addressing raw kids.
     EXPECT_FALSE(composed.coordinate->source_ref.has_value())
-        << "a composed coordinate MUST NOT carry source_ref (§15.2)";
+        << "a composed coordinate MUST NOT carry source_ref — it addresses no single source";
     EXPECT_FALSE(composed.coordinate->bounds.has_value())
-        << "a composed coordinate MUST NOT carry bounds (§15.2) — children are authoritative";
+        << "a composed coordinate MUST NOT carry bounds: a coarse [first,last] over-claims "
+           "across the children's gaps, shards and sources — the children are authoritative";
     ASSERT_TRUE(composed.coordinate->children.has_value());
     ASSERT_EQ(composed.coordinate->children->size(), 2U)
-        << "the set of the two raw children (§15.5)";
+        << "a composed coordinate carries exactly the set of its raw children, one per input";
     // Each child is a RAW coordinate addressing the input — source_ref + bounds set.
     ASSERT_TRUE((*composed.coordinate->children)[0].source_ref.has_value());
     EXPECT_EQ((*composed.coordinate->children)[0].source_ref->handle, "scenario#seed=1");
@@ -800,10 +803,11 @@ TEST(ReDerivationCoordinate, ComposedSerialisesAsChildrenOnlyXOR)
     auto& coord{(*parsed)["coordinate"]};
     EXPECT_TRUE(coord.contains("children")) << "composed coordinate must carry children\n" << json;
     EXPECT_FALSE(coord.contains("source_ref"))
-        << "§15.2: composed coordinate MUST NOT carry source_ref\n"
+        << "a composed coordinate MUST NOT serialise source_ref — children only\n"
         << json;
     EXPECT_FALSE(coord.contains("bounds"))
-        << "§15.2: composed coordinate MUST NOT carry bounds (no sentinel)\n"
+        << "a composed coordinate MUST NOT serialise bounds — no sentinel stand-in for "
+           "\"see children\"\n"
         << json;
 }
 
