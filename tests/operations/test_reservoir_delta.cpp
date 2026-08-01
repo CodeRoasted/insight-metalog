@@ -1,6 +1,7 @@
 // NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns.
-// diff(): MetaLogDiff::reservoir_delta — the §5.3 chronic-vs-new streaming seam. Set-difference
+// diff(): MetaLogDiff::reservoir_delta — the chronic-vs-new streaming seam, without which a
+// chronic rare-fatal and a genuinely new one fire identically every window. Set-difference
 // over the two documents' salience memory (top_k ∪ reservoir): new_salient / vanished_salient +
 // the ERROR/FATAL failure-frontier crossings. Additive, sorted by template_id, no version bump.
 

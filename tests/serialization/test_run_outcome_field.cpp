@@ -1,10 +1,10 @@
 // NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns
-// test_run_outcome_field.cpp — the ADR-17 additive run-verdict scalar on MetaLogDocument.
-// The additive-block discipline ([[additive-gated-metalog-block-keeps-wire-version]]), applied to a
-// plain enum field: Unknown is BOTH the in-memory default and the wire ABSENCE, so a verdict-free /
-// legacy document's JSON is byte-identical to a pre-outcome producer's — NO metalog wire-version
-// bump. Two faces:
+// test_run_outcome_field.cpp — the additive run-verdict scalar on MetaLogDocument.
+// The additive-block discipline (a new block keeps the wire version because its ABSENCE is the
+// legacy reading), applied to a plain enum field: Unknown is BOTH the in-memory default and the
+// wire ABSENCE, so a verdict-free / legacy document's JSON is byte-identical to a pre-outcome
+// producer's — NO metalog wire-version bump. Two faces:
 //   1. ABSENCE — a default (Unknown) document emits NO run_outcome key (the additive-block proof's
 //      unit leg; the byte-compare gate is the measure-first INERT run).
 //   2. PRESENCE — a stamped verdict serialises as the canonical UPPERCASE category string, and

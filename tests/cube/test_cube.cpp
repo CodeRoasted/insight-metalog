@@ -1,8 +1,8 @@
 // NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns.
-// SPEC §16 intra-window closed cube + §13.6 emerging-border cube_diff: closure /
-// condensation, the order-convex (lower, upper) border, compose re-closure, the §16.6
-// reservoir→cell LOCATION cross, the §16.5 MUST-1 tree guard, and a byte-identity golden.
+// The intra-window closed cube + its emerging-border `cube_diff`: closure / condensation, the
+// order-convex (lower, upper) border, compose re-closure, the reservoir→cell LOCATION cross,
+// the single-parent-tree guard on the WHERE chain, and a byte-identity golden.
 
 #include <gtest/gtest.h>
 
@@ -90,7 +90,7 @@ TEST(CubeBlock, AlwaysBuiltEvenOnDefaultConfig)
     EXPECT_TRUE(doc.has_cube) << "the cube is always built (1.7.2 always-on)";
 }
 
-// ── §C3 dimensional-collapse guardrail (the always-on cube's cardinality bound) ─────────────────
+// ── Dimensional-collapse guardrail (the always-on cube's cardinality bound) ─────────────────────
 
 // The oracle MUST exercise a collapse (F5-M8 oracle-coverage): a cardinality-explosion window
 // that actually FIRES the guardrail. 1500 distinct components, each at two bandable levels
@@ -138,7 +138,7 @@ TEST(CubeCollapse, GuardrailBoundsAnExplodingWindowByLevelBanding)
     EXPECT_EQ(doc.cube, build().cube) << "the collapse policy must be deterministic (F5-M8)";
 }
 
-// Compare-at-min (§C3): two cubes at DIFFERENT collapse depths MUST still diff — a window that kept
+// Compare-at-min: two cubes at DIFFERENT collapse depths MUST still diff — a window that kept
 // TRACE cannot be compared to one that banded {Trace,Debug}→Debug at native coords, so both are
 // read at the minimal common depth (the coarser). Without it the diff would VANISH on axis mismatch
 // — losing attribution at exactly the collapse transition. This proves it produces a diff at
@@ -188,7 +188,7 @@ TEST(CubeCollapse, CompareAtMinDiffsAcrossDifferentCollapseDepths)
         << "compare-at-min must be deterministic";
 }
 
-// Severity-safety (§C3, the critical guard): under budget pressure, LEVEL banding grows from the
+// Severity-safety (the critical guard): under budget pressure, LEVEL banding grows from the
 // BOTTOM and NEVER crosses the ERROR/FATAL frontier. Here 2000 components each emit all six levels;
 // even the maximal band (floor 4 = {Trace,Debug,Info,Warn}→Warn — the ceiling, kMaxLevelBandFloor=
 // Error) leaves 3 distinct levels × 2000 comps ≫ 4096, so the guardrail MUST drop WHERE (depth 1→0)
@@ -251,7 +251,7 @@ TEST(CubeCollapse, SeverityFrontierNeverCrossedWhereCollapsesInstead)
     EXPECT_EQ(doc.cube, build().cube) << "the collapse policy must be deterministic (F5-M8)";
 }
 
-// Closure-first / low-card stays full-depth (§C3): a window that fits after CLOSURE alone must NOT
+// Closure-first / low-card stays full-depth: a window that fits after CLOSURE alone must NOT
 // collapse — no LEVEL banding, full WHERE depth. Closure is lossless and applied always; collapse
 // is lossy and applied only when over budget. A low-cardinality window degrades nothing.
 TEST(CubeCollapse, ClosureFirstNoCollapseWhenUnderBudget)
@@ -286,7 +286,7 @@ TEST(CubeCollapse, ClosureFirstNoCollapseWhenUnderBudget)
         << "a fitting window must keep FULL WHERE depth (no truncation)";
 }
 
-// ── §13 cardinality monitor (the PURE compute; the eidos pipeline emits the WARN) ───────────────
+// ── Cardinality monitor (the PURE compute; the eidos pipeline emits the WARN) ───────────────────
 
 TEST(CubeCardinality, CountsDistinctPerAxisFromTheClosedCube)
 {
@@ -308,7 +308,7 @@ TEST(CubeCardinality, CountsDistinctPerAxisFromTheClosedCube)
     EXPECT_EQ(card.per_axis[static_cast<std::size_t>(meta::CardinalityAxis::Role)], 1U)
         << "single role None";
     EXPECT_EQ(card.cells, doc.cube.cell_count);
-    // The pre-collapse WARN predicates were RETIRED (studies/005 disposition-D); the meaningful
+    // The pre-collapse WARN predicates were RETIRED; the meaningful
     // trigger is collapse_note(), which is empty on a small uncollapsed cube (nothing coarsened).
     EXPECT_FALSE(meta::collapse_note(doc.cube).has_value()) << "a 3-component cube is uncollapsed";
     EXPECT_LE(card.cells, meta::CubeCardinalityStat::kCellsHard) << "the cube stays under budget";
@@ -328,7 +328,7 @@ TEST(CubeBlock, ReferenceAxesAndAggregateTotal)
     ASSERT_TRUE(doc.has_cube);
     const meta::CubeBlock& c{doc.cube};
 
-    // §16.2 reference axes: level (categorical), where (chain, floor_depth 1), structural_role.
+    // The reference axis set: level (categorical), where (chain, floor_depth 1), structural_role.
     ASSERT_EQ(c.axes.size(), 3U);
     EXPECT_EQ(c.axes[0].name, "level");
     EXPECT_EQ(c.axes[0].kind, "categorical");
@@ -341,7 +341,7 @@ TEST(CubeBlock, ReferenceAxesAndAggregateTotal)
     EXPECT_EQ(*c.axes[1].floor_depth, 1U);
     EXPECT_EQ(c.axes[2].name, "structural_role");
 
-    // §16.4: the window total lives in the closure of coord {}. Here all events share
+    // The window total lives in the closure of the fully-aggregated coord {}. Here all events share
     // role=None (level + where both vary), so the closed total-bearing cell is
     // {structural_role:"None"} (closure pins the constant role, stars the varying dims).
     const meta::CubeCell* apex{find_cell(c, std::nullopt, std::nullopt, "None")};
@@ -404,8 +404,8 @@ TEST(CubeBlock, EmptyComponentAggregatesNoWhere)
 
 namespace
 {
-// Two single-window documents under a shared contract, so diff() does not trip the
-// §2.4 gate. Window B introduces an (ERROR, db) burst absent from window A.
+// Two single-window documents under a shared processing contract, so diff() does not trip the
+// comparability gate. Window B introduces an (ERROR, db) burst absent from window A.
 [[nodiscard]] std::pair<meta::MetaLogDocument, meta::MetaLogDocument>
 two_windows(meta::TemplateRegistry* out_registry = nullptr)
 {
@@ -548,7 +548,7 @@ TEST(CubeCompose, OmittedWhenOneSideHasNoCube)
         a.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
 
     // A no-cube side now arises only from a prior composed axis-mismatch (has_cube
-    // cleared); simulate it to exercise the §16.7 "omit when either side lacks a cube" guard.
+    // cleared); simulate it to exercise the "omit when either side lacks a cube" guard.
     meta::MetaLogEngine b{cfg};
     b.open_window(std::chrono::system_clock::time_point{});
     b.ingest_event(ev("t", LogLevel::Info, "auth"));
@@ -559,7 +559,7 @@ TEST(CubeCompose, OmittedWhenOneSideHasNoCube)
         << "§16.7: when either input omits a cube, the composed cube is omitted";
 }
 
-// ── §16.6 reservoir → cell LOCATION cross ───────────────────────────────────────
+// ── Reservoir → cell LOCATION cross ─────────────────────────────────────────────
 
 TEST(CubeReservoirCross, SalientEntryCarriesLocation)
 {
@@ -592,7 +592,7 @@ TEST(CubeReservoirCross, SalientEntryCarriesLocation)
     EXPECT_FALSE(fatal->cube_coord->structural_role.has_value());
 }
 
-// ── §16.5 MUST-1 — WHERE chain is a single-parent tree ──────────────────────────
+// ── WHERE chain is a single-parent tree ─────────────────────────────────────────
 
 TEST(CubeMustOne, TreeAcceptedDagRejected)
 {
@@ -614,14 +614,14 @@ TEST(CubeMustOne, TreeAcceptedDagRejected)
 // behavioral cube determinism (order-independence, collapse rebuild-equality) is covered below /
 // in CubeCollapse.
 
-// ── Order-independence (§16; the counts are an order-independent integer sum) ─────
+// ── Order-independence (each cell's count is an order-independent integer sum) ────
 // The cube's three dims are PER-LINE-PURE functions of the event (level / component /
 // role), and each cell's COUNT is a plain sum — so the closed cube is invariant under ANY
 // ingest permutation. Build a varied window forward and row-reversed; the closed cubes must
 // be identical (per-cell coord+count, and cardinality). This is the single-component
 // property the playground 25/27/28/29/30/31 `CubeDimsArePerLinePureAndOrderIndependent`
 // proved through the full LogCraft replay — asserted here at the source, on the engine cube
-// itself, so the playground copies retire (re-homing, ROADMAP).
+// itself, which is why the playground copies could retire.
 TEST(CubeDeterminism, OrderIndependentUnderRowReversal)
 {
     const std::vector<tok::CanonicalEvent> events{
@@ -702,7 +702,7 @@ constexpr std::int64_t kHighLatencyMs{100'000};
 constexpr int kComponentCount{40};
 
 // cube_cfg() + ordinal histograms enabled (the same-as-param batch gate) + a shared processing
-// contract so diff() never trips the §2.4 comparability gate.
+// contract so diff() never trips the comparability gate.
 [[nodiscard]] meta::MetaLogConfig latency_cfg()
 {
     auto cfg{cube_cfg()};
@@ -731,8 +731,9 @@ void ingest_latency(meta::MetaLogEngine& engine, std::string_view tmpl, LogLevel
 
 // A prev/cur pair on ONE engine (shared registry, like two_windows). payments shifts from
 // `prev_ms` → `cur_ms`; auth is a STABLE second component carrying no latency — it keeps
-// payments' WHERE cell from collapsing as redundant (§16 single-component closure), so the
-// shifted (…, where=payments, latency_shift) cell is a real pinned coord, not the aggregate.
+// payments' WHERE cell from collapsing as redundant (with a single component the closure stars the
+// WHERE dimension away), so the shifted (…, where=payments, latency_shift) cell is a real pinned
+// coord, not the aggregate.
 // `event_count` lets the thin-floor test drop below kShiftSampleFloor; `emerge_in_current`
 // gives the no-move control its ACTIVE structural change (a component that exists only in
 // the current window), so its diff is non-empty without any latency move.
@@ -941,7 +942,7 @@ TEST(CubeDiffLatencyShift, SwapFlipsSignMuteSymmetry)
         << up_band << " down=" << down_band;
 }
 
-// Thin-sample floor (§6.1.1) — the DUAL of DriftUpEmergesUpShiftCell: the SAME real 10-octave
+// Thin-sample floor — the DUAL of DriftUpEmergesUpShiftCell: the SAME real 10-octave
 // move, but only 8 paired events (below ComponentOrdinal::kShiftSampleFloor = 32). ordinal_w1's
 // thresholds are scale-relative, so without the floor 8-vs-8 would manufacture up_high; WITH it the
 // axis is INADMISSIBLE and projected to * — no latency_shift axis, no shift cell. The declared

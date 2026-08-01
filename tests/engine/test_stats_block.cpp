@@ -110,8 +110,9 @@ TEST(MetaLogEngineStats, TopKSizeZeroGivesEmptyTopK)
     EXPECT_EQ(doc.stats.tail_unique, 1U);
 }
 
-// SPEC §3.6 (MetaLog 0.3): tail_summary is absent when the tail is
-// empty (everything fits in top_k), and present + populated otherwise.
+// tail_summary is optional at the document level: absent when the tail is empty
+// (everything fits in top_k), present with ALL THREE fields populated otherwise —
+// a partial tail_summary is never emitted.
 TEST(MetaLogEngineStats, TailSummaryAbsentWhenTailEmpty)
 {
     meta::MetaLogEngine engine{meta::MetaLogConfig{.top_k_size = 10, .top_ngrams_size = 0}};

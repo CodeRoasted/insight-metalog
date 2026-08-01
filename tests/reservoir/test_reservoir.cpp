@@ -1,7 +1,8 @@
 // NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns
-// Salience reservoir (Tier 2) + re-derivation coordinates: admission, caps, dedup, coordinate XOR
-// (§15.2).
+// Salience reservoir (Tier 2) + re-derivation coordinates: admission, caps, dedup, and the
+// coordinate XOR — a coordinate carries EITHER source_ref + bounds (it addresses one raw source)
+// OR children (it addresses a compose() output), never both and never neither.
 
 #include <glaze/glaze.hpp>
 #include <gtest/gtest.h>
@@ -148,7 +149,7 @@ TEST(ReservoirTest, RareBenignWithEmbeddedFailureSubstringNotAdmitted)
         << "the lexicon must not read 'error' inside a filename token as a failure cue";
 }
 
-// 2d structural_surprise (epic §5.1): a benign INFO template that severity⊗rarity
+// 2d structural_surprise: a benign INFO template that severity⊗rarity
 // scores 0 IS retained when it is reached only via a RECURRING low-probability
 // transition off the dominant path. Distinct from RareBenignNotAdmitted: there the
 // rare event is a single one-off (edge seen once → untrusted boundary artifact);
@@ -193,7 +194,7 @@ TEST(ReservoirTest, StructuralSurpriseAdmitsRecurringOffPathBranch)
         }
 }
 
-// 2d-ii self-novelty (epic §5.1/§5.2): a benign INFO template that emerges LATE
+// 2d-ii self-novelty: a benign INFO template that emerges LATE
 // in the window (recurring, count >= 2) is retained even though severity AND
 // structural_surprise score it 0. Isolation: the late template SELF-LOOPS, so its
 // max incoming transition probability is 1.0 → structural_surprise 0; it is benign
@@ -402,11 +403,11 @@ TEST(ReservoirTest, DiversityCapCoversDistinctKinds)
         << "the cap preserves a reservoir slot for the distinct failure kind";
 }
 
-// ── D-RNK-2 (§5.2) — the error-class RETENTION RESERVE (the P5 recall fix) ──────
-// The §6.7 P5 loss: a real `testTimeout (FAILED)` was correctly classified Error-class but
-// EVICTED from the metalog reservoir in a high-cardinality window — non-failure salience
-// (novelty / structural-surprise) out-competed the low-frequency failure for the bounded M
-// slots. The fix is at RETENTION, not the eidos significance cut (which is downstream of the
+// ── D-RNK-2 — the error-class RETENTION RESERVE (the P5 recall fix) ─────────────
+// The measured loss this fixes: a real `testTimeout (FAILED)` was correctly classified
+// Error-class but EVICTED from the metalog reservoir in a high-cardinality window — non-failure
+// salience (novelty / structural-surprise) out-competed the low-frequency failure for the bounded
+// M slots. The fix is at RETENTION, not the eidos significance cut (which is downstream of the
 // loss): a bounded floor of M slots is reserved for error-class templates (dominant_level ∈
 // {Error,Fatal} or Terminator) and admitted in Phase 1 — AHEAD of the general pool and
 // EXEMPT from the per-kind cap — so non-failure salience can no longer evict a real failure.
@@ -500,7 +501,7 @@ TEST(ReservoirTest, ErrorClassReserveRetainsFailureAgainstNonFailureStorm)
         << "without the reserve, all three higher-salience non-failure branches keep the slots";
 }
 
-// The reserve is EXEMPT from the per-kind diversity cap (load-bearing — §5.2). The cap
+// The reserve is EXEMPT from the per-kind diversity cap, and the exemption is load-bearing. The cap
 // governs only the GENERAL pool: it bounds how many exemplars of one (role×level) kind the
 // pool admits, which would otherwise limit error-class templates too. The reserve admits
 // error-class failures ahead of and outside that cap, so MULTIPLE distinct failures survive
@@ -550,7 +551,7 @@ TEST(ReservoirTest, ErrorClassReserveIsExemptFromPerKindCap)
         << "the reserve is EXEMPT from the per-kind cap — multiple distinct failures survive";
 }
 
-// ── SRC-D-PROV-1 (§3.1) — the echoed-source salience gate, at the ENGINE altitude ───
+// ── SRC-D-PROV-1 — the echoed-source salience gate, at the ENGINE altitude ──────────
 // The salience FUNCTION is locked by stats:SalienceScore.EchoedSourceSkipsFailureCueTier.
 // This is its engine-level twin: it proves the bucket-level `all_echoed_source` AND-reduction
 // (engine.cpp:244 — a template is "all echoed" only while EVERY event forming it is echoed
@@ -618,7 +619,7 @@ TEST(ReservoirTest, AllEchoedFailureTemplateNotAdmittedButRuntimeOccurrenceRescu
     }
 }
 
-// SPEC §3.7.2 normative MUST: salience admission is salience-ranked with a
+// A normative MUST of the format: salience admission is salience-ranked with a
 // deterministic **tie-break by template_id**, so a given input under a given
 // retention_profile yields a bit-identical reservoir. Two templates with equal
 // salience (same level, same count, no other axis differentiating) admitted into
@@ -647,7 +648,7 @@ TEST(ReservoirTest, TieBreakByTemplateIdAtEqualSalience)
         << "; min(tid_alpha,tid_beta)=" << std::min(tid_alpha, tid_beta) << ")";
 }
 
-// ── §15 re-derivation coordinate ──────────────────────────────────────────────
+// ── Re-derivation coordinate ──────────────────────────────────────────────────
 
 TEST(ReDerivationCoordinate, AbsentWithoutSourceRef)
 {
@@ -673,7 +674,7 @@ TEST(ReDerivationCoordinate, StampsWindowEventTimeBounds)
     const auto doc{engine.close_window(end)};
 
     ASSERT_TRUE(doc.coordinate.has_value());
-    // §15.2 RAW coordinate: source_ref + bounds present, children absent.
+    // RAW coordinate: source_ref + bounds present, children absent.
     ASSERT_TRUE(doc.coordinate->source_ref.has_value());
     EXPECT_EQ(doc.coordinate->source_ref->resolver_kind, "logcraft");
     EXPECT_EQ(doc.coordinate->source_ref->handle, "scenario#seed=7");
@@ -755,8 +756,9 @@ TEST(ReDerivationCoordinate, ComposeCoordinateIsSetOfChildrenNotCoarseBound)
 
     const auto composed{meta::compose(lhs, rhs)};
     ASSERT_TRUE(composed.coordinate.has_value());
-    // §15.2 COMPOSED coordinate: source_ref + bounds ABSENT (no sentinel — §15.2
-    // explicitly forbids them on composed); children present, addressing raw kids.
+    // COMPOSED coordinate: source_ref + bounds ABSENT — a sentinel pair standing in for
+    // "see children" is forbidden, because a coarse [first, last] over-claims across the
+    // children's gaps, shards and sources. Children present, addressing raw kids.
     EXPECT_FALSE(composed.coordinate->source_ref.has_value())
         << "a composed coordinate MUST NOT carry source_ref (§15.2)";
     EXPECT_FALSE(composed.coordinate->bounds.has_value())
@@ -770,7 +772,7 @@ TEST(ReDerivationCoordinate, ComposeCoordinateIsSetOfChildrenNotCoarseBound)
     ASSERT_TRUE((*composed.coordinate->children)[1].source_ref.has_value());
     EXPECT_EQ((*composed.coordinate->children)[1].source_ref->handle, "scenario#seed=2");
 }
-// Wire-level XOR (§15.2 encoding note): a composed coordinate's JSON has `children`
+// Wire-level XOR: a composed coordinate's JSON has `children`
 // and MUST NOT carry `source_ref` or `bounds` (no sentinel emission).
 TEST(ReDerivationCoordinate, ComposedSerialisesAsChildrenOnlyXOR)
 {

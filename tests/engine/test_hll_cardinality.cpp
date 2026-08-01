@@ -19,8 +19,8 @@ using insight::metalog::test::ParamEvent;
 // Verify that FieldHistogram::approximate_cardinality is populated by HLL
 // and that FieldHistogramDelta::cardinality_delta captures the growth.
 //
-// These tests verify that limitation §2 item 4 is lifted: cardinality
-// estimation now works correctly even when value_counts table is capped.
+// The point of the field: approximate_cardinality is the UNCAPPED distinct-value
+// count, so it stays right exactly where the capped value_counts table goes blind.
 
 TEST(HllCardinalityTest, ApproximateCardinalityIsNonZeroWhenHistogramsEnabled)
 {

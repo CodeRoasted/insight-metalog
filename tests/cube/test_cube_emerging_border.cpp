@@ -1,7 +1,7 @@
 // NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns.
 //
-// test_cube_emerging_border.cpp — the cube-A EMERGING BORDER oracle (SPEC §13.6 cube_diff), the
+// test_cube_emerging_border.cpp — the cube-A EMERGING BORDER oracle over `cube_diff`, the
 // pre-registered KILL-SWITCH: per difficulty class, build a baseline and a changed MetaLog document
 // (the cube is always-on since 1.7.2), diff them through the PUBLIC `meta::diff()`, and assert the
 // emerging UPPER border recovers a DECLARED antichain at recall >= floor with mis-pointing <=
@@ -28,8 +28,9 @@
 // PACKAGES and an empty set supplies none. The `##[error]` prefix that carries Terminator is the
 // github package's.
 //
-// So this binary declares exactly the package its fixtures require, which is what ADR-17 asks of
-// a binary — a test-only dependency; metalog itself stays dialect-free. The declaration is MINIMAL
+// So this binary declares exactly the package its fixtures require — the rule being that every
+// BINARY, never a library, owns its composition. It is a test-only dependency; metalog itself
+// stays dialect-free. The declaration is MINIMAL
 // rather than a copy of the eidos manifest list: the smaller set is the more isolating instrument,
 // and naming it here makes the coupling legible instead of inherited.
 

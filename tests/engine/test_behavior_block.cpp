@@ -168,7 +168,7 @@ TEST_F(BehaviorBlockTest, BoundedNgramKeysCapDistinctEntries)
     EXPECT_LE(doc.behavior->top_ngrams.size(), 4U);
 }
 
-// ── O2 trace-scoped graph: the de-pollution proof (ADR-29 O2 checkpoint) ──
+// ── O2 trace-scoped graph: the de-pollution proof ─────────────────────────
 // The measure-first gate. Two concurrent transactions, fully interleaved in the GLOBAL order:
 //   trace A: "alpha step1" -> "alpha step2" -> "alpha step3"
 //   trace B: "beta step1"  -> "beta step2"  -> "beta step3"

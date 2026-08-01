@@ -5,7 +5,8 @@
 #include <glaze/glaze.hpp>
 #include <gtest/gtest.h>
 
-// Black-box consumer: the 1.5.1 unwrap (ADR-3.D4) replaced the textual public headers with modules.
+// Black-box consumer: the package's only public surface is its named modules — there are no
+// textual public headers.
 // insight.metalog re-exports the MetaLog DTOs + engine + to_json; canon types (Timestamp/LogLevel/
 // CanonicalEvent) are reachable-not-visible through it, so the consumer imports insight.canon too.
 import insight.metalog;

@@ -1,8 +1,11 @@
 // NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns
-// test_ruleset_identity.cpp — the II-7 composed-ruleset identity (ADR-17): the
-// RulesetIdentity block on MetaLogDocument + its comparability enforcement, which is CENTRALIZED in
-// the §2.4 processing-identifier gate shared by compose()/diff() (metalog.detail.operations).
+// test_ruleset_identity.cpp — the composed-ruleset identity: the semantic packages in force are
+// content-hashed into one `semantic_identity` that rides every artifact, and two artifacts are
+// comparable only when it matches.
+// The RulesetIdentity block on MetaLogDocument + its comparability enforcement, which is
+// CENTRALIZED in the processing-identifier gate shared by compose()/diff()
+// (metalog.detail.operations).
 // semantic_identity is just another processing identifier through that one gate, so the enforcement
 // tests mirror test_processing_identifiers. Three faces:
 //   1. ROUND-TRIP — the additive block serialises and reads back via glz::generic (there is no
@@ -12,7 +15,7 @@
 //   absence-tolerant.
 //   3. MISMATCH — two documents with DIFFERENT semantic_identity are NOT comparable:
 //   compose()/diff()
-//      fail closed (the §2.4 "MUST fail" branch), never a silent compare (II-7 verbatim).
+//      fail closed on the gate's "MUST fail" branch — re-segment or refuse, never a silent compare.
 // A diff here is a comparability-contract break — fix the code, never the assertion.
 
 #include <glaze/glaze.hpp>
@@ -54,7 +57,7 @@ build_doc_with_ruleset(std::optional<meta::RulesetIdentity> ruleset,
 }
 } // namespace
 
-// ── Stamping: config.ruleset rides onto the document (II-7 §4.2) ──
+// ── Stamping: config.ruleset rides onto the document ──────────────
 TEST(RulesetIdentity, StampedFromConfigOnDocument)
 {
     const auto doc{build_doc_with_ruleset(kRulesetA)};
@@ -105,7 +108,7 @@ TEST(RulesetIdentity, LegacyProducerEmitsNoBlock)
         << "a legacy producer (no composition injected) must emit NO ruleset block: " << json;
 }
 
-// ── 3. MISMATCH — compose across DIFFERENT semantic_identity fails closed (§2.4 MUST fail) ──
+// ── 3. MISMATCH — compose across DIFFERENT semantic_identity fails closed ───────────────────
 TEST(RulesetIdentity, ComposeMismatchedSemanticIdentityThrows)
 {
     const auto lhs{build_doc_with_ruleset(kRulesetA)};
@@ -142,8 +145,7 @@ TEST(RulesetIdentity, DiffMatchingSemanticIdentitySucceeds)
 }
 
 // ── Asymmetric (one legacy side): the operation MAY proceed, but the output OMITS the identifier
-// rather than over-claim a contract the merged document only half-covers (§2.4 / II-7
-// absence-tolerant) ──
+// rather than over-claim a contract the merged document only half-covers ──
 TEST(RulesetIdentity, ComposeAsymmetricProceedsButOmitsIdentity)
 {
     const auto stamped{build_doc_with_ruleset(kRulesetA)};

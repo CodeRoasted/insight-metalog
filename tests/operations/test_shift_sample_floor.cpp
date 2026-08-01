@@ -1,7 +1,7 @@
 // NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns.
 //
-// §6.1.1 thin-sample floor CORPUS-PICK + regression guard (studies/003). ordinal_w1's octave
+// The thin-sample admissibility floor: CORPUS-PICK + regression guard. ordinal_w1's octave
 // thresholds are scale-relative (W1 = numerator/(Na·Nb)), so with no absolute-sample gate a
 // tiny pairing manufactures latency_shift=HIGH. The resampling scan below draws matched NULL
 // pairs (both sides from the SAME representative log2-duration distribution — no real shift) at
@@ -10,7 +10,7 @@
 // study over synthetic-but-representative shapes, NOT a determinism surface). The picked value is
 // frozen as ComponentOrdinal::kShiftSampleFloor; this file is its permanent regression guard:
 // the floor MUST hold the null false-shift rate under target while a real one-octave shift still
-// emerges (the positive control — the §7.4 latency_multiplier arm must survive the floor).
+// emerges (the positive control — the signed latency_shift arm must survive the floor).
 
 #include <gtest/gtest.h>
 

@@ -1,5 +1,5 @@
-// insight.metalog.test — shared white-box test infrastructure (ADR-3.D4, the logcraft.test
-// pattern). All test TUs import this instead of spelling out the full import block. Re-exports the
+// insight.metalog.test — shared white-box test infrastructure: a single test-only named module.
+// All test TUs import this instead of spelling out the full import block. Re-exports the
 // complete metalog module surface (public facade + the sealed detail module + canon), so a test TU
 // needs no further imports beyond gtest (textual, third-party).
 // Exports: make_event(), ParamEvent — the shared event fixtures the suites build windows from.

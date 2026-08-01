@@ -385,7 +385,7 @@ TEST(SalienceScore, NoveltyAloneCanMakeNonZero)
 
 TEST(SalienceScore, EchoedSourceSkipsFailureCueTier)
 {
-    // SRC-D-PROV-1 (§3.1): an all-echoed `…failed…` template (level already demoted to Unknown by
+    // SRC-D-PROV-1: an all-echoed `…failed…` template (level already demoted to Unknown by
     // A1) must NOT be re-promoted by the LEVEL-BLIND failure-cue tier. With echoed_source=true and
     // no other axis, the template scores 0 (not salient); a non-echoed peer keeps the failure-cue
     // band. (The Unknown level contributes no severity itself — only the cue tier could fire.)
@@ -436,7 +436,7 @@ TEST(WireFormat, AllLevelsMapToSpecStrings)
 
 TEST(WireFormat, UnknownMapsToInfo)
 {
-    // SPEC §3: no UNKNOWN level — falls back to INFO.
+    // The wire level vocabulary has no UNKNOWN member, so Unknown falls back to INFO.
     EXPECT_EQ(meta::level_to_spec_string(LogLevel::Unknown), "INFO");
 }
 

@@ -32,7 +32,6 @@ namespace meta = insight::metalog;
 // The near-full reservoir MUST fill to the full production M and its admit/evict boundary MUST be
 // structural-surprise-driven — the guard that keeps the F5-M8 regime exercised. The cross-leg gate
 // replays the same scenario; if it silently stopped filling, that proof would go hollow.
-// (bibles/determinism_model.md §5 M8.)
 TEST(MetaLogDocument, ReservoirNearFullExercisesTheF5M8Regime)
 {
     meta::MetaLogConfig cfg;

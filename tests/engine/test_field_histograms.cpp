@@ -187,9 +187,9 @@ TEST(FieldHistogramTest, Enabled_ValueTableBoundedByMaxHistogramValues)
 
 // ── FieldHistogramSerializationTest ───────────────────────────────────────────
 //
-// Measure-first gate (a) for the §3.5 `param_histograms` wire field. The domain
+// Measure-first gate (a) for the `param_histograms` wire field. The domain
 // FieldHistogram::value_counts is an unordered_map (iteration order not portable
-// across runs/impls), so emission MUST key-sort for §15.6 replay bit-identity.
+// across runs/impls), so emission MUST key-sort or replay bit-identity is lost.
 
 } // namespace
 

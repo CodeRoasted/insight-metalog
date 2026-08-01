@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.28)
 
-# §11.9: this consumer imports insight.metalog (a pure module built against the stdlib `std`
+# This consumer imports insight.metalog (a pure module built against the stdlib `std`
 # module), so it must scan for modules AND build/provide the same `std` module. 451f2fe2-… is
 # CMake 4.3.1's CMAKE_EXPERIMENTAL_CXX_IMPORT_STD (match the main lib + conan tool-cmake), set
 # before project().
