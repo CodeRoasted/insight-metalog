@@ -29,7 +29,7 @@ using insight::metalog::test::make_event;
     engine.open_window(start);
     engine.ingest_event(make_event("alpha"));
     auto doc{engine.close_window(start + std::chrono::seconds(60))};
-    doc.run_outcome = outcome; // the producing orchestration's stamp (ADR-17)
+    doc.run_outcome = outcome; // the producing orchestration's stamp
     *out_registry = engine.registry();
     return doc;
 }

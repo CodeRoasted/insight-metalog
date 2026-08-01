@@ -78,7 +78,7 @@ find_border(const std::vector<meta::CubeBorderCell>& cells, std::optional<std::s
 
 } // namespace
 
-// ── Block shape & condensation (§16.1/§16.2/§16.4) ──────────────────────────────
+// ── Block shape & condensation ──────────────────────────────────────────────────
 
 TEST(CubeBlock, AlwaysBuiltEvenOnDefaultConfig)
 {
@@ -400,7 +400,7 @@ TEST(CubeBlock, EmptyComponentAggregatesNoWhere)
     EXPECT_EQ(info_auth->count, 1U);
 }
 
-// ── Emerging border (§13.6) ─────────────────────────────────────────────────────
+// ── Emerging border ─────────────────────────────────────────────────────────────
 
 namespace
 {
@@ -495,7 +495,7 @@ TEST(CubeDiff, OmittedWhenOneSideHasNoCube)
         with_cube.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
 
     // The cube is always built for a raw window; the only way a doc carries no cube is a
-    // COMPOSED axis-mismatch clearing has_cube (§16.7). Simulate that side here.
+    // COMPOSED axis-mismatch clearing has_cube. Simulate that side here.
     meta::MetaLogEngine other{cfg};
     other.open_window(std::chrono::system_clock::time_point{});
     other.ingest_event(ev("a", LogLevel::Info, "auth"));
@@ -507,7 +507,7 @@ TEST(CubeDiff, OmittedWhenOneSideHasNoCube)
         << "§13.6: a cube_diff needs a cube on BOTH sides";
 }
 
-// ── Compose re-closure (§16.7 / §12.1) ──────────────────────────────────────────
+// ── Compose re-closure ──────────────────────────────────────────────────────────
 
 TEST(CubeCompose, RecloseSumsCounts)
 {
@@ -588,7 +588,7 @@ TEST(CubeReservoirCross, SalientEntryCarriesLocation)
     ASSERT_TRUE(fatal->cube_coord->where.has_value());
     ASSERT_EQ(fatal->cube_coord->where->size(), 1U);
     EXPECT_EQ(fatal->cube_coord->where->front(), "storage");
-    // Firewall (§16.6): LOCATION-only — no salience, no role leaks into the cross.
+    // Firewall: LOCATION-only — no salience, no role leaks into the cross.
     EXPECT_FALSE(fatal->cube_coord->structural_role.has_value());
 }
 
@@ -621,7 +621,7 @@ TEST(CubeMustOne, TreeAcceptedDagRejected)
 // be identical (per-cell coord+count, and cardinality). This is the single-component
 // property the playground 25/27/28/29/30/31 `CubeDimsArePerLinePureAndOrderIndependent`
 // proved through the full LogCraft replay — asserted here at the source, on the engine cube
-// itself, so the playground copies retire (re-homing, ROADMAP §1.6.2).
+// itself, so the playground copies retire (re-homing, ROADMAP).
 TEST(CubeDeterminism, OrderIndependentUnderRowReversal)
 {
     const std::vector<tok::CanonicalEvent> events{
@@ -673,7 +673,7 @@ TEST(CubeDeterminism, OrderIndependentUnderRowReversal)
            "order-independent counts)";
 }
 
-// ── The latency_shift differential axis (cube_differential_axes.md §4/§7.4) ─────────────
+// ── The latency_shift differential axis ─────────────────────────────────────────────────
 // The seam proof (Daidalos → Kleio): the Attribution Cube's first DIFFERENTIAL dimension is
 // SIGNED + polarity-MUTE. A per-component latency shift EMERGES a cube_diff cell for EITHER
 // direction (up = higher/slower, down = lower/faster); metalog judges NEITHER good/bad — the

@@ -17,7 +17,7 @@
 // The fixtures came with it (tests/fixtures/cube_emerging_border), and with them the whole
 // `axis: build` branch of the contract grammar retired — it had exactly one reader.
 //
-// ── THE COMPOSITION IS LOAD-BEARING, WHICH WAS MEASURED, NOT ASSUMED (ADR-17) ────────────────
+// ── THE COMPOSITION IS LOAD-BEARING, WHICH WAS MEASURED, NOT ASSUMED ─────────────────────────
 // Canon ships NO default composition: every BINARY declares its semantic package set and threads
 // the result. The playground built its Tokenizer from `insight::engine::composed_semantics()` — the
 // EIDOS world's manifest list — and the first re-homing attempt here declared the EMPTY set, on the

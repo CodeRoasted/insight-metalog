@@ -1,6 +1,6 @@
 // NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns
-// compose(): param_histograms carry/merge/truncation (§3.5/§12.1).
+// compose(): param_histograms carry/merge/truncation.
 
 #include <gtest/gtest.h>
 

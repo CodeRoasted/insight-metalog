@@ -678,7 +678,7 @@ TEST(ReDerivationCoordinate, StampsWindowEventTimeBounds)
     EXPECT_EQ(doc.coordinate->source_ref->resolver_kind, "logcraft");
     EXPECT_EQ(doc.coordinate->source_ref->handle, "scenario#seed=7");
     ASSERT_TRUE(doc.coordinate->bounds.has_value());
-    // Bounds are the window's EVENT-TIME integer ticks, exactly (§15.3).
+    // Bounds are the window's EVENT-TIME integer ticks, exactly.
     EXPECT_EQ(doc.coordinate->bounds->start_tick,
               static_cast<std::uint64_t>(start.time_since_epoch().count()));
     EXPECT_EQ(doc.coordinate->bounds->end_tick,

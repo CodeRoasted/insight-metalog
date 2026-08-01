@@ -58,7 +58,7 @@ using insight::template_id_of;
     return std::ranges::any_of(list, [&](const auto& e) { return e.template_id == id; });
 }
 
-// Membership snapshots must be sorted ascending by template_id — the sole output order (§5.3).
+// Membership snapshots must be sorted ascending by template_id — the sole output order.
 template <class Entry> [[nodiscard]] bool sorted_by_id(const std::vector<Entry>& list)
 {
     return std::ranges::is_sorted(list, [](const Entry& lhs, const Entry& rhs)
@@ -191,7 +191,7 @@ TEST(ReservoirDeltaTest, OutputListsSortedByTemplateId)
 }
 
 // Byte-additive guard: when neither side carries any salience memory, the block is empty AND the
-// serialized diff carries no `reservoir_delta` key at all (emptiness-as-absence, §5.3).
+// serialized diff carries no `reservoir_delta` key at all (emptiness-as-absence).
 TEST(ReservoirDeltaTest, OmittedFromJsonWhenBothMemoriesEmpty)
 {
     const auto prev{doc_with({}, {})};

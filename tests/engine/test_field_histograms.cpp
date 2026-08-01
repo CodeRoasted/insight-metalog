@@ -1,6 +1,6 @@
 // NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns
-// FieldHistogram collection: per-param value counts, entropy, bounded value tables (§3.5).
+// FieldHistogram collection: per-param value counts, entropy, bounded value tables.
 
 #include <gtest/gtest.h>
 

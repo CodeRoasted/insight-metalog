@@ -1,6 +1,6 @@
 // NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns
-// diff(): field_histogram_deltas JS divergence and tail_delta population rules (SPEC §13).
+// diff(): field_histogram_deltas JS divergence and tail_delta population rules.
 
 #include <gtest/gtest.h>
 
