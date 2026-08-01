@@ -36,10 +36,12 @@ class InsightMetalogConan(ConanFile):
 
     def layout(self):
         self.cpp.source.includedirs = ["api"]
-        # Keyed editable build dir: malf sets the env (all profiles incl. sanitizer); a RAW
-        # `conan create --profile X` instead reads it from the profile [conf] → a consumer under
-        # ANY profile links THIS dep's matching-profile build, not the libc++-default build/
-        # ([[malf-build-type-isolation]] keying gap).
+        # Keyed editable build dir. malf exports MALF_EDITABLE_BUILD_DIR for every profile
+        # (sanitizer included), so each build type gets its own tree. A RAW
+        # `conan create --profile X` exports nothing and falls back to the profile's [conf]
+        # instead: this dep then publishes its X-keyed build dir, and a consumer under ANY
+        # profile links that X build rather than the libc++-default `build/`. The build-type
+        # isolation therefore holds only while malf drives the build.
         build_dir = (os.environ.get("MALF_EDITABLE_BUILD_DIR")
                      or self.conf.get("user.malf:editable_build_dir", default="build"))
         self.cpp.build.libdirs = [build_dir]
