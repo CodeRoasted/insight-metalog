@@ -34,7 +34,7 @@ class MetaLogEngine
 
     // Account one observed canonical event. The event's template_str is the
     // content-deterministic identity (a pure function of the line's masked tokens —
-    // stateless_template_id.md); the first occurrence of a given template_str
+    // ADR-16.D5); the first occurrence of a given template_str
     // memorises it and later occurrences only bump the counter.
     void ingest_event(const tokenization::CanonicalEvent& event);
 
