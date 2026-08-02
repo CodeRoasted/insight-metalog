@@ -506,7 +506,7 @@ namespace
         behavior.ngram_size = lhs.behavior ? lhs.behavior->ngram_size : rhs.behavior->ngram_size;
         behavior.top_ngrams_size =
             lhs.behavior ? lhs.behavior->top_ngrams_size : rhs.behavior->top_ngrams_size;
-        // D-TIR-4(2): one n-gram accumulator keyed on the scalar NgramId, carrying the
+        // SRC-D-TIR-4(2): one n-gram accumulator keyed on the scalar NgramId, carrying the
         // sequence for output — replaces the three vector<TemplateId>-keyed maps. One O(L)
         // id-compute + one fixed-width map op per entry instead of three sequence
         // hashes+compares. The output `entries` is re-sorted below (count desc, sequence

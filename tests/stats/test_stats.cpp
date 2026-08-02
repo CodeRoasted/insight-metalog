@@ -15,7 +15,7 @@ namespace meta = insight::metalog;
 using insight::LogLevel;
 using insight::StructuralRole;
 
-// divergences/new_and_vanished are TemplateId-keyed (D-TIR-2). These primitives depend
+// divergences/new_and_vanished are TemplateId-keyed (SRC-D-TIR-2). These primitives depend
 // only on the count distribution + which keys match across cur/prev, so mapping each
 // label → template_id_of(label) preserves every asserted value (distinct labels →
 // distinct ids; same label → same id).

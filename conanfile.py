@@ -66,7 +66,7 @@ class InsightMetalogConan(ConanFile):
         self.test_requires("insight_semantic_github/1.9.0")
         self.test_requires("gtest/1.17.0")
         self.test_requires("benchmark/1.9.5")
-        # picosha2 — TEST-ONLY now: the lib's template_id SHA-256 moved to canon (D-TIR-1),
+        # picosha2 — TEST-ONLY now: the lib's template_id SHA-256 moved to canon (SRC-D-TIR-1),
         # but the determinism/cube tests still hash full doc JSON for their golden digests.
         self.test_requires("picosha2/1.0.0")
 

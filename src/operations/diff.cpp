@@ -137,7 +137,7 @@ namespace
             return;
         NGramDelta ngram_delta;
         ngram_delta.ngram_size = current.behavior->ngram_size;
-        // D-TIR-4(2): scalar-NgramId point-lookup maps, value carrying the sequence for
+        // SRC-D-TIR-4(2): scalar-NgramId point-lookup maps, value carrying the sequence for
         // output. new_ngrams / vanished_ngrams are iterated into output, so — unlike
         // rate_changed (sorted at the end) — they are explicitly sorted here to stay
         // determinism-stable across stdlibs (ADR-16: never emit unordered iteration order).
@@ -186,7 +186,7 @@ namespace
 
     // service_edge_delta (O4b, SRC-D-OTEL-21): the service-topology delta — its OWN pass. Defined
     // ONLY when BOTH documents carried a service_edges block (both had trace substrate); absent on
-    // either ⇒ leave it unset (edge verdicts are *unknown*, never "all emerged" — D-OTEL-20).
+    // either ⇒ leave it unset (edge verdicts are *unknown*, never "all emerged" — SRC-D-OTEL-20).
     // Semantics-free set/integer arithmetic (metalog stays polarity-blind; the degraded reading +
     // fold are eidos). Both blocks are canonical-sorted, and std::map iteration is ordered →
     // emerged/vanished/weight_changed are canonical without a re-sort. Emitted only when non-empty

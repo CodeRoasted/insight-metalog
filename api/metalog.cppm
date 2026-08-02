@@ -208,7 +208,7 @@ class MetaLogEngine
                                             const std::string& content_id) const noexcept;
     // The TemplateId POD for a window content_id string (the engine still keys its
     // per-window state by the content_id string; this bridges to the POD the domain
-    // entries carry — D-TIR-2). Cold path: called per top_k/reservoir entry.
+    // entries carry — SRC-D-TIR-2). Cold path: called per top_k/reservoir entry.
     [[nodiscard]] TemplateId template_id_for(const std::string& content_id) const;
     void stamp_envelope(MetaLogDocument& doc, Timestamp start, Timestamp end,
                         std::optional<ReportedWindowBounds> reported_bounds) const;
@@ -255,7 +255,7 @@ class MetaLogEngine
     std::unordered_map<std::string, TemplateCacheEntry, TransparentStringHash, std::equal_to<>>
         template_str_cache_;
     std::unordered_map<std::string, InternalTemplateID> content_template_index_;
-    // internal_id → the template's canon TemplateId POD (D-TIR-2). build_top_ngrams /
+    // internal_id → the template's canon TemplateId POD (SRC-D-TIR-2). build_top_ngrams /
     // build_branching / build_dominant_path index this to stamp the domain id without
     // re-hashing; the "h:"+hex string is rendered only at the serialize seam.
     std::vector<TemplateId> content_templates_by_internal_id_;

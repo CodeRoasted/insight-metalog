@@ -349,7 +349,7 @@ struct ServiceEdge
 
 // The window's distilled service topology (SRC-D-OTEL-21). Present iff the window had trace
 // substrate (span_records > 0) — a non-span window OMITS the block (absence = *unknown*, not "no
-// edges": the edge-block diff requires the block on BOTH sides, D-OTEL-20). Self-edges are excluded
+// edges": the edge-block diff requires the block on BOTH sides, SRC-D-OTEL-20). Self-edges are excluded
 // at derivation (same-component parentage is intra-service, not topology). `edges` is sorted by
 // (caller, callee) and bounded to the top `max_service_edges` by weight (canonical-key tie-break);
 // `dropped_edges` counts those beyond the cap — the honest truncation fact.

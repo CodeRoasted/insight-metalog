@@ -641,7 +641,7 @@ namespace
         return out;
     }
 
-    // D-TIR-2 render seam: the domain carries TemplateId PODs; the wire carries "h:"+hex
+    // SRC-D-TIR-2 render seam: the domain carries TemplateId PODs; the wire carries "h:"+hex
     // strings. These render an id / id-sequence at exactly this boundary (the only place the
     // string materialises). render(TemplateId) is canon's.
     [[nodiscard]] std::vector<std::string> render_sequence(const std::vector<TemplateId>& ids)

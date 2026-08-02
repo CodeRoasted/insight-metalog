@@ -72,7 +72,7 @@ add_library(insight::metalog ALIAS insight_metalog)
 
 # canon is imported by metalog's module units (consumers recompile them) → PUBLIC module link.
 # glaze (visible=False) must NOT reach the export interface (§10.9/glaze-gotchas #5) — pull its
-# includes build-only so the impl compiles its headers. (picosha2 moved to canon — D-TIR-1; it is
+# includes build-only so the impl compiles its headers. (picosha2 moved to canon — SRC-D-TIR-1; it is
 # now a metalog TEST-only dep, linked on the test target below.)
 target_link_libraries(insight_metalog
     PUBLIC  insight::canon)
@@ -131,7 +131,7 @@ if(INSIGHT_METALOG_BUILD_TESTS)
     if(TEST_SOURCES)
         include(CTest)
         find_package(GTest REQUIRED CONFIG)
-        find_package(picosha2 REQUIRED CONFIG) # test-only: golden doc-digest hashing (D-TIR-1)
+        find_package(picosha2 REQUIRED CONFIG) # test-only: golden doc-digest hashing (SRC-D-TIR-1)
         # test-only: supplies the StructuralRole rows the cube's role dimension needs
         find_package(insight_semantic_github REQUIRED CONFIG)
         enable_testing()

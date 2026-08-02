@@ -127,7 +127,7 @@ MetaLogEngine::content_template_id_for(const tokenization::CanonicalEvent& event
 
     // Compute the canon TemplateId POD once; render the "h:"+hex string for the engine's
     // string-keyed per-window state (buckets_/index/cache). The POD is what the domain
-    // carries (D-TIR-2); the string stays the engine-internal key.
+    // carries (SRC-D-TIR-2); the string stays the engine-internal key.
     const TemplateId template_id{insight::template_id_of(event.template_str)};
     std::string content_id{insight::render(template_id)};
 
@@ -1211,7 +1211,7 @@ void MetaLogEngine::build_acquisition(MetaLogDocument& doc) const
 void MetaLogEngine::build_service_edges(MetaLogDocument& doc) const
 {
     if (span_records_ == 0)
-        return; // no trace substrate → omit the block (D-OTEL-20)
+        return; // no trace substrate → omit the block (SRC-D-OTEL-20)
 
     ServiceEdgeBlock block;
     if (service_edges_.size() <= config_.max_service_edges)
