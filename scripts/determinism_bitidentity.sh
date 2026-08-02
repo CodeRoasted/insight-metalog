@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Determinism golden driver — the metalog leg of the Determinism-Golden-Proof (golden.yaml). Builds the
 # canon+metalog MODULE-LIB TOWER from source for ONE toolchain leg across the -O{0,3}×-ffp-contract
-# {off,fast} corners, asserts the serialized MetaLog document (corpus + the F5-M8 --reservoir-nearfull,
+# {off,fast} corners, asserts the serialized MetaLog document (corpus + the ADR-31.D8 --reservoir-nearfull,
 # §C3 --cube-collapse, and O4b --service-edges scenarios) is byte-identical across that leg's corners,
 # and EMITS the leg's digest (DETERMINISM_OUT).
 #
@@ -60,7 +60,7 @@ echo "build parallelism: $JOBS jobs (MemAvailable=${mem_gb}GB cpu=$ncpu)"
 
 # The CELL MATRIX = stdlib leg × optimization corner. Two orthogonal hazard axes:
 #   - stdlib leg (gcc-15/libstdc++ vs clang-21/libc++): catches ITERATION-ORDER leaks (unordered_*),
-#     the F5-M8 class — the cross-stdlib axis is the ONLY one that exposes a hash-order flip.
+#     the ADR-31.D8 class — the cross-stdlib axis is the ONLY one that exposes a hash-order flip.
 #   - optimization corner (-O{0,3} × -ffp-contract{off,fast}): catches FP-CONTRACTION / reassociation
 #     leaks — a stray float op in the det_math / salience path that -ffp=fast would reorder. A correct
 #     integer/fixed-point det core is -ffp-INVARIANT, so these MUST stay identical; a divergent -ffp
@@ -68,7 +68,7 @@ echo "build parallelism: $JOBS jobs (MemAvailable=${mem_gb}GB cpu=$ncpu)"
 #
 # LEG — golden.yaml runs ONE leg per CI job via DETERMINISM_LEG (gcc|clang), keyed into LEG_SPEC below.
 # The cross-STDLIB property (gcc-15/libstdc++ ≡ clang-21/libc++ — the only axis that exposes an
-# unordered_* iteration-order leak, F5-M8), cross-ISA, and cross-OS are all the golden.yaml `compare` of
+# unordered_* iteration-order leak, ADR-31.D8), cross-ISA, and cross-OS are all the golden.yaml `compare` of
 # every leg's emitted digest; this script proves only THIS leg's -O/-ffp sweep-invariance and emits.
 # The conan PROFILE per leg is overridable so the SAME driver runs on a 2nd ISA: the arm64 legs inject
 # DETERMINISM_GCC_PROFILE=linux-gcc15-arm64-release / DETERMINISM_CLANG_PROFILE=linux-clang21-libcxx-arm64-release
@@ -160,7 +160,7 @@ done
 
 # Gate integrity: every configured BUILT leg must produce ALL cells (no hollow one-corner green). A
 # missing compiler or a cell that fails to build (e.g. a toolchain ICE) FAILS the gate — no silent
-# degrade. DETERMINISM_LEGS is the source of truth for the built set. [F5-M8]
+# degrade. DETERMINISM_LEGS is the source of truth for the built set. [ADR-31.D8]
 expected=$(( ${#LINUX_LEGS[@]} * ${#cells[@]} ))
 for legkey in "${LINUX_LEGS[@]}"; do
   [ "${LEG_BUILT[$legkey]:-0}" -eq "${#cells[@]}" ] ||
@@ -172,7 +172,7 @@ if [ "${#builds[@]}" -eq 0 ] || [ "${#builds[@]}" -ne "$expected" ]; then
   exit 3
 fi
 
-# Each cell emits the committed corpus (5 files) THEN --reservoir-nearfull (the F5-M8 synthetic M=128
+# Each cell emits the committed corpus (5 files) THEN --reservoir-nearfull (the ADR-31.D8 synthetic M=128
 # scenario) THEN --cube-collapse (the §C3 cube dimensional-collapse guardrail — a window that FIRES a
 # collapse, so its content-driven axis-selection tie-break is proven cross-leg) THEN --service-edges
 # (the O4b service-topology over-cap window — the emitted block rides the top-K select's canonical-key
@@ -181,7 +181,7 @@ fi
 for ctag in "${builds[@]}"; do
   : >"$WORK/$ctag.out"
   for f in $CORPUS; do echo "### $(basename "$f") ###" >>"$WORK/$ctag.out"; "${BIN[$ctag]}" "$f" >>"$WORK/$ctag.out" 2>/dev/null; done
-  echo "### --reservoir-nearfull (F5-M8 synthetic M=128) ###" >>"$WORK/$ctag.out"
+  echo "### --reservoir-nearfull (ADR-31.D8 synthetic M=128) ###" >>"$WORK/$ctag.out"
   "${BIN[$ctag]}" --reservoir-nearfull >>"$WORK/$ctag.out" 2>/dev/null
   echo "### --cube-collapse (SecC3 dimensional-collapse guardrail) ###" >>"$WORK/$ctag.out"
   "${BIN[$ctag]}" --cube-collapse >>"$WORK/$ctag.out" 2>/dev/null
@@ -210,6 +210,6 @@ if [ $rc -eq 0 ]; then
 else
   echo "FAIL: determinism divergence within the '${LINUX_LEGS[*]}' leg's -O/-ffp sweep — a det_math"
   echo "  -ffp-contraction leak, an -O-sensitive ordering leak, OR (on the --reservoir-nearfull marker)"
-  echo "  the F5-M8 item-reservoir admit/evict leak. Localize: diff \$WORK/<ctag>.out vs \$WORK/$ref.out."
+  echo "  the ADR-31.D8 item-reservoir admit/evict leak. Localize: diff \$WORK/<ctag>.out vs \$WORK/$ref.out."
 fi
 exit $rc

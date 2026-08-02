@@ -7,7 +7,7 @@ name: Determinism Golden Proof
 #
 #   5 legs — gcc-x86 · clang-x86 · gcc-arm64 · clang-arm64 · msvc — each builds the canon+metalog MODULE
 #   TOWER FROM SOURCE (Approach-B det_harness: add_subdirectory(canon)+add_subdirectory(metalog) + the
-#   determinism_fixture) and EMITS its digest over the committed corpus + the F5-M8 --reservoir-nearfull,
+#   determinism_fixture) and EMITS its digest over the committed corpus + the ADR-31.D8 --reservoir-nearfull,
 #   §C3 --cube-collapse, and O4b --service-edges scenarios. The compare job asserts all five are
 #   byte-identical: that IS the proof (no committed golden
 #   to go stale). Any divergence FAILS, gating the release. The agreed digest is uploaded as
@@ -287,8 +287,8 @@ jobs:
               $b = [System.IO.File]::ReadAllBytes($tmp)
               $fs.Write($b, 0, $b.Length)
             }
-            # The F5-M8 --reservoir-nearfull section, with the exact header the Linux legs emit.
-            $rhdr = [System.Text.Encoding]::ASCII.GetBytes("### --reservoir-nearfull (F5-M8 synthetic M=128) ###`n")
+            # The ADR-31.D8 --reservoir-nearfull section, with the exact header the Linux legs emit.
+            $rhdr = [System.Text.Encoding]::ASCII.GetBytes("### --reservoir-nearfull (ADR-31.D8 synthetic M=128) ###`n")
             $fs.Write($rhdr, 0, $rhdr.Length)
             $tmp = "$work/reservoir.out"
             $p = Start-Process -FilePath $fixture -ArgumentList "--reservoir-nearfull" -NoNewWindow -Wait -PassThru -RedirectStandardOutput $tmp

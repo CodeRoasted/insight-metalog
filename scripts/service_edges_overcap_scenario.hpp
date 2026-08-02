@@ -15,7 +15,7 @@
 // it, so the claim was never *proven* across stdlib/ISA/OS. This scenario closes that: it forces
 // the over-cap path and cuts the cap THROUGH a 3-way weight tie, so the surviving 3rd edge is
 // decided PURELY by the canonical-key tie-break. If that select were stdlib-order-dependent (the
-// F5-M8 hazard class), the surviving edge — hence the whole block's bytes — would flip clang≢gcc.
+// ADR-31.D8 hazard class), the surviving edge — hence the whole block's bytes — would flip clang≢gcc.
 //
 // Header-only, NO includes: the including TU provides `std`, `insight.canon` and `insight.metalog`
 // via `import` — include this AFTER those imports. Both includers are plain TUs (not modules), so

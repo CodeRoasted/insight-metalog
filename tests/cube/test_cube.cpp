@@ -92,7 +92,7 @@ TEST(CubeBlock, AlwaysBuiltEvenOnDefaultConfig)
 
 // ── Dimensional-collapse guardrail (the always-on cube's cardinality bound) ─────────────────────
 
-// The oracle MUST exercise a collapse (F5-M8 oracle-coverage): a cardinality-explosion window
+// The oracle MUST exercise a collapse (ADR-31.D8 oracle-coverage): a cardinality-explosion window
 // that actually FIRES the guardrail. 1500 distinct components, each at two bandable levels
 // (Trace/Debug) → the un-collapsed cube exceeds the 4096-cell budget; the LEVEL interval-banding
 // {Trace,Debug}→Debug fuses the pairs and brings it back under, WITHOUT dropping the WHERE axis.
@@ -135,7 +135,7 @@ TEST(CubeCollapse, GuardrailBoundsAnExplodingWindowByLevelBanding)
     EXPECT_EQ(*level_band, 2U) << "{Trace,Debug} banded (floor 2); WHERE stays intact";
     EXPECT_EQ(where_depth.value_or(1U), 1U) << "LEVEL banding sufficed → WHERE not dropped";
     // Determinism: the collapse is a pure function of content — a rebuild is bit-identical.
-    EXPECT_EQ(doc.cube, build().cube) << "the collapse policy must be deterministic (F5-M8)";
+    EXPECT_EQ(doc.cube, build().cube) << "the collapse policy must be deterministic (ADR-31.D8)";
 }
 
 // Compare-at-min: two cubes at DIFFERENT collapse depths MUST still diff — a window that kept
@@ -248,7 +248,7 @@ TEST(CubeCollapse, SeverityFrontierNeverCrossedWhereCollapsesInstead)
     // live.
     EXPECT_EQ(where_depth.value_or(1U), 0U) << "WHERE must collapse when LEVEL banding maxes out "
                                                "below the frontier and still overflows";
-    EXPECT_EQ(doc.cube, build().cube) << "the collapse policy must be deterministic (F5-M8)";
+    EXPECT_EQ(doc.cube, build().cube) << "the collapse policy must be deterministic (ADR-31.D8)";
 }
 
 // Closure-first / low-card stays full-depth: a window that fits after CLOSURE alone must NOT

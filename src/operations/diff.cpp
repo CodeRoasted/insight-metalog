@@ -508,7 +508,7 @@ namespace
     // A document's salience memory = the template_ids of top_k ∪ reservoir with the
     // dominant_level each carries. Disjoint by construction (a reservoir template did not make
     // top_k), so no key collision. POINT-LOOKUP map only (membership + frontier level compare);
-    // never iterated into output, so the unordered_map is not a determinism surface (F5-M8),
+    // never iterated into output, so the unordered_map is not a determinism surface (ADR-31.D8),
     // exactly like component_latency_shifts above.
     [[nodiscard]] std::unordered_map<TemplateId, std::optional<LogLevel>>
     salience_memory_levels(const MetaLogDocument& doc)
@@ -534,7 +534,7 @@ namespace
     // The §5.3 reservoir delta: new/vanished rare-salient templates over the two documents'
     // salience memory + ERROR/FATAL failure-frontier crossings. Additive on the derived diff
     // (no version bump). Every list is emitted sorted by template_id — the ONLY output order,
-    // so the unordered_map membership lookups never leak (F5-M8).
+    // so the unordered_map membership lookups never leak (ADR-31.D8).
     void diff_reservoir_delta(MetaLogDiff& out, const MetaLogDocument& previous,
                               const MetaLogDocument& current)
     {

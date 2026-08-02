@@ -1,4 +1,4 @@
-// reservoir_nearfull_scenario.hpp — the shared F5-M8 near-full reservoir scenario.
+// reservoir_nearfull_scenario.hpp — the shared ADR-31.D8 near-full reservoir scenario.
 //
 // Ingested IDENTICALLY by both determinism oracles so they exercise the EXACT same M=128
 // admit/evict boundary (no drift between them):
@@ -6,7 +6,7 @@
 //   - scripts/determinism_fixture.cpp               → the cross-compiler matrix
 //     (determinism_bitidentity.sh: gcc×clang × -O{0,3} × -ffp-contract{off,fast}).
 //
-// F5-M8 (bibles/determinism_model.md): the item-reservoir (§2.11) salience inputs —
+// ADR-31.D8 (bibles/determinism_model.md): the item-reservoir (§2.11) salience inputs —
 // structural_surprise above all — were not bit-identical clang≢gcc, and an order-dependent
 // most-likely-edge pick flipped a near-tie admit/evict at the M=128 boundary → a different bag →
 // a Tier-1 violation in the production Sift batch-diff (eidos ships reservoir_size=128). The prior
@@ -24,7 +24,7 @@ namespace insight::metalog::nearfull
 // Production Sift batch-diff reservoir (diff.api-config kDefaultIngestReservoirSize=128). cap=0
 // (Founder ruling 2026-06-14): the per-kind cap keys on (StructuralRole×LogLevel)=4×7=28 kinds, so
 // the production cap=4 would hard-ceiling the reservoir at 112 — it can never reach 128. cap=0
-// admits the top-M by pure salience rank: the clean oracle for the salience VALUE, the F5-M8 root,
+// admits the top-M by pure salience rank: the clean oracle for the salience VALUE, the ADR-31.D8 root,
 // which is upstream of the admission cap.
 inline void configure(insight::metalog::MetaLogConfig& cfg)
 {
@@ -36,7 +36,7 @@ inline void configure(insight::metalog::MetaLogConfig& cfg)
 }
 
 // Drive one window that fills the item-reservoir to the full M=128 with the admit/evict boundary
-// decided by structural_surprise — the F5-M8 non-deterministic input. Caller does open_window /
+// decided by structural_surprise — the ADR-31.D8 non-deterministic input. Caller does open_window /
 // close_window around this. Deterministic given a fixed engine config (configure() above).
 inline void emit_window(insight::metalog::MetaLogEngine& engine)
 {
@@ -77,7 +77,7 @@ inline void emit_window(insight::metalog::MetaLogEngine& engine)
     // (3) Ambiguous boundary spokes: each reached by TWO equal-ratio incoming edges — X->Sa once
     //     (count 1, below the >=2 floor → surprise 0 if it wins) and Y->Sa twice (count 2 → a real
     //     surprise band if it wins). Equal ratio (1/Xout == 2/Yout, with Yout=2*Xout) makes the
-    //     most-likely-edge pick a TIE: F5-M8 resolves it by unordered_map order → clang picks one,
+    //     most-likely-edge pick a TIE: ADR-31.D8 resolves it by unordered_map order → clang picks one,
     //     gcc the other → the spoke's structural_surprise (hence whether it clears the M=128
     //     cutoff) diverges. Oversubscribed so the reservoir stays full (size==M) on both stdlibs
     //     while the BAG membership differs → the digest differs → the leak surfaces.

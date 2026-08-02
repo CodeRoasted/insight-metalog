@@ -440,7 +440,7 @@ namespace
     // build the closed cube, and while it exceeds a static-constexpr budget, apply the best
     // admissible surjection (a monotone coarsening of the base ids) and RE-CLOSE, iterating until
     // under budget. Three separated objects: BUDGET (constexpr, whole-cube), TRIGGER (content read
-    // — closed cells ≥ budget), POLICY (the surjection + the F5-M8 total-order tie-break, golden,
+    // — closed cells ≥ budget), POLICY (the surjection + the ADR-31.D8 total-order tie-break, golden,
     // version-stamped). Closure-first, collapse-last: if closure alone fits, nothing degrades.
 
     // BUDGET — a static-constexpr bound on the whole cube (measure-first seeded 2026-07-04:
@@ -531,7 +531,7 @@ namespace
     // The version-stamped POLICY: pick the admissible step maximizing Δcardinality / cost. Δ is
     // measured by trial re-closure (collapse is rare; the candidate set is ≤2). Integer
     // cross-multiply, so no float; the STRICT `>` keeps the earlier candidate on a tie ⇒ the fixed
-    // next_collapse_steps order (LEVEL before WHERE) IS the F5-M8 total-order tie-break. nullopt
+    // next_collapse_steps order (LEVEL before WHERE) IS the ADR-31.D8 total-order tie-break. nullopt
     // when no step reduces cardinality.
     [[nodiscard]] std::optional<CollapseState>
     pick_collapse_step(const BaseMultiset& base, std::uint64_t current_cells,

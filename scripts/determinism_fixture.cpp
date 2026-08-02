@@ -30,7 +30,7 @@
 import insight.canon;
 import insight.metalog;
 
-// AFTER the imports (plain TU): the shared synthetic scenarios — the F5-M8 near-full reservoir, the
+// AFTER the imports (plain TU): the shared synthetic scenarios — the ADR-31.D8 near-full reservoir, the
 // §C3 cube collapse, and the O4b service-edges over-cap topology — shared with the in-suite tests
 // so both oracles run the identical windows.
 #include "cube_collapse_scenario.hpp"
@@ -51,7 +51,7 @@ int main(int argc, char** argv)
 
     // §C3 cube dimensional-collapse oracle: a SYNTHETIC cardinality-explosion window (not a
     // tokenized corpus) that FIRES the guardrail — the closed cube exceeds the budget and the LEVEL
-    // banding {Trace,Debug}→Debug collapses it. Its axis-selection tie-break is an F5-M8-class
+    // banding {Trace,Debug}→Debug collapses it. Its axis-selection tie-break is an ADR-31.D8-class
     // content decision (a declared total order), so the emitted collapsed document MUST be
     // byte-identical across every leg/arch/OS, or the collapse policy is non-deterministic. Same
     // window as the in-suite CubeCollapse behavioral tests.
@@ -69,11 +69,11 @@ int main(int argc, char** argv)
         return 0;
     }
 
-    // F5-M8 near-full reservoir oracle: a SYNTHETIC scenario (not a tokenized corpus), driven by a
+    // ADR-31.D8 near-full reservoir oracle: a SYNTHETIC scenario (not a tokenized corpus), driven by a
     // flag so the existing corpus files + their golden are untouched. determinism_bitidentity.sh
     // replays it across the gcc×clang × -O{0,3} × -ffp-contract{off,fast} matrix; the emitted
     // document must be byte-identical across every cell, or the item-reservoir admit/evict boundary
-    // is non-deterministic (the F5-M8 leak). Same window as the in-suite ReservoirNearFull golden.
+    // is non-deterministic (the ADR-31.D8 leak). Same window as the in-suite ReservoirNearFull golden.
     if (std::string{argv[1]} == "--reservoir-nearfull")
     {
         namespace ml = insight::metalog;

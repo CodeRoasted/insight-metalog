@@ -175,7 +175,7 @@ TEST(ReservoirDeltaTest, WithinBandLevelChangeIsNotACrossing)
         << "Error→Fatal stays inside the failure band — no frontier crossing";
 }
 
-// Every output list is sorted by template_id regardless of reservoir insertion order (F5-M8: the
+// Every output list is sorted by template_id regardless of reservoir insertion order (ADR-31.D8: the
 // unordered membership lookups must never leak into output order).
 TEST(ReservoirDeltaTest, OutputListsSortedByTemplateId)
 {

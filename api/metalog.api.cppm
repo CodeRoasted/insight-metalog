@@ -1232,7 +1232,7 @@ struct FrontierCrossing
 //   * frontier_crossings — on BOTH sides' memory, dominant_level crossing the failure frontier.
 // Every list is keyed and sorted by template_id (the canonical key; TemplateId's defaulted
 // byte-order). Set-difference + integer level compares over membership that is already
-// deterministic content (F5-M8) — no unordered iteration order may leak into any output.
+// deterministic content (ADR-31.D8) — no unordered iteration order may leak into any output.
 // The reading discipline (who reads which member) is the consumer's, not the producer's:
 // new_salient + frontier_crossings are the STREAMING members (read on the anchored
 // per-scale diffs); vanished_salient is the BATCH member — a streaming consumer MUST NOT

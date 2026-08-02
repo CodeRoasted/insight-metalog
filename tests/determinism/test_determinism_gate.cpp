@@ -1,12 +1,12 @@
 // NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns.
 //
-// BEHAVIORAL coverage for the metalog document (the F5-M8 reservoir regime, the always-on
+// BEHAVIORAL coverage for the metalog document (the ADR-31.D8 reservoir regime, the always-on
 // cube/WHERE/acquisition fields, the ordinal carrier). The cross-machine BYTE-IDENTITY
 // determinism proof is a CUT/GATE-TIME assertion, NOT a unit test: the 5-leg cross-toolchain/
 // ISA/OS `Determinism Golden Proof` workflow (.github/workflows/golden.yaml) rebuilds the
 // canon+metalog tower from source and asserts all legs are byte-identical over the committed
-// corpus + the shared F5-M8 reservoir scenario (scripts/determinism_bitidentity.sh). There is NO
+// corpus + the shared ADR-31.D8 reservoir scenario (scripts/determinism_bitidentity.sh). There is NO
 // committed golden hash here (or anywhere) — determinism is proven by cross-leg AGREEMENT, emitted
 // as a per-release artifact only. These tests keep the SCENARIOS non-hollow (they exercise the
 // regimes the gate replays) and pin the derived field VALUES.
@@ -15,7 +15,7 @@
 
 import insight.metalog.test;
 
-// The shared F5-M8 near-full reservoir scenario, shared with scripts/determinism_fixture.cpp so
+// The shared ADR-31.D8 near-full reservoir scenario, shared with scripts/determinism_fixture.cpp so
 // this behavioral coverage and the cross-leg gate exercise the identical M=128 admit/evict
 // boundary.
 #include "reservoir_nearfull_scenario.hpp"
@@ -30,7 +30,7 @@ namespace tok = insight::tokenization;
 namespace meta = insight::metalog;
 
 // The near-full reservoir MUST fill to the full production M and its admit/evict boundary MUST be
-// structural-surprise-driven — the guard that keeps the F5-M8 regime exercised. The cross-leg gate
+// structural-surprise-driven — the guard that keeps the ADR-31.D8 regime exercised. The cross-leg gate
 // replays the same scenario; if it silently stopped filling, that proof would go hollow.
 TEST(MetaLogDocument, ReservoirNearFullExercisesTheF5M8Regime)
 {
@@ -57,7 +57,7 @@ TEST(MetaLogDocument, ReservoirNearFullExercisesTheF5M8Regime)
         << " top_k=" << doc.stats.top_k.size()
         << " surprise_driven_reservoir_entries=" << surprise_driven;
     EXPECT_GT(surprise_driven, 0U)
-        << "the reservoir boundary must be structural_surprise-driven so the F5-M8 hazard "
+        << "the reservoir boundary must be structural_surprise-driven so the ADR-31.D8 hazard "
            "(a non-deterministic surprise score) flips bag membership; none were.";
 }
 
