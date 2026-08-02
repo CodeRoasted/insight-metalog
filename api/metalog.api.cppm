@@ -41,13 +41,13 @@ struct FieldHistogram
 // ladder — full tail, NO frequency cap (B is small + fixed, so the carrier is bounded by
 // construction; this is exactly the representation the 4A.2 high-card suppression was a stopgap
 // for). A distinct stream from the positional, categorical `field_histograms`/`value_counts`: a
-// field is ordinal XOR categorical (D-W1-5), so the two never collide. Populated only when
+// field is ordinal XOR categorical (SRC-D-W1-5), so the two never collide. Populated only when
 // MetaLogConfig::max_param_histograms > 0 (the batch / full-fidelity value-tracking path); empty
 // (omitted on the wire) otherwise → non-ordinal documents stay byte-identical (SRC-D-W1-4).
 struct OrdinalHistogram
 {
     std::string field_name; // the declared ordinal field (e.g. "latency_ms") — surfaced on the
-                            // diff row for `attributable_to` (D-W1-3)
+                            // diff row for `attributable_to` (SRC-D-W1-3)
     // the versioned schedule id (the eidos diff comparability key, SRC-D-W1-4)
     std::string schedule_id;
     std::vector<std::uint64_t> counts; // counts[B] over the schedule's log2 ladder
@@ -257,13 +257,13 @@ struct TopKEntry
     // build_top_k, independent of the cube, always. EMPTY
     // (disengaged) when the format carried no component — never "" masquerading as
     // a location. Whether it is *surfaced* on a finding is decided window-level off
-    // the acquisition block (D-WHERE-6), not by this field's presence.
+    // the acquisition block (SRC-D-WHERE-6), not by this field's presence.
     std::optional<std::string> dominant_component;
     // Empty unless MetaLogConfig::max_param_histograms > 0.
     std::vector<FieldHistogram> field_histograms;
     // W1 ordinal histograms (§4A.4 SRC-D-W1-2), field-keyed — one per declared ordinal field seen
     // on this template. Empty unless MetaLogConfig::max_param_histograms > 0. Sibling to
-    // field_histograms; never collides (a field is ordinal XOR categorical, D-W1-5).
+    // field_histograms; never collides (a field is ordinal XOR categorical, SRC-D-W1-5).
     std::vector<OrdinalHistogram> ordinal_histograms;
 };
 
@@ -360,13 +360,13 @@ struct ServiceEdgeBlock
     [[nodiscard]] bool operator==(const ServiceEdgeBlock&) const noexcept = default;
 };
 
-// ── Composed-ruleset identity (II-7, ADR-17) ─────────────────────────────────────────────────────
+// ── Composed-ruleset identity (SRC-II-7, ADR-17) ─────────────────────────────────────────────────────
 // The identity of the semantic ruleset that SEGMENTED this document — the comparability key. Rides
 // every MetaLogDocument as an ADDITIVE, flag-gated block (the reservoir_delta/AcquisitionBlock
 // discipline): no wire-version bump, and ABSENCE = a legacy producer (composed before the
 // ruleset was wired). Two documents are comparable
 // (aligned/intent AND template-grain) iff their semantic_identity matches; on mismatch the consumer
-// re-segments where raw inputs exist, refuses otherwise — never a silent compare (II-7 verbatim).
+// re-segments where raw inputs exist, refuses otherwise — never a silent compare (SRC-II-7 verbatim).
 struct RulesetPackageRef
 {
     std::string name;    // "github"
@@ -816,14 +816,14 @@ struct MetaLogDocument
     // vector but is stamped once at close and only read (never a synthesized-optional copy on the
     // MSVC /O2 hot path), so std::optional is sound — the RulesetIdentity precedent.
     std::optional<ServiceEdgeBlock> service_edges;
-    // Composed-ruleset identity (II-7, ADR-17): the semantic_identity + package list of the
+    // Composed-ruleset identity (SRC-II-7, ADR-17): the semantic_identity + package list of the
     // ruleset that segmented this document. ABSENT = legacy producer (pre-ruleset). Stamped by the
     // producer from the ComposedSemantics that tokenized the input. RulesetIdentity owns a vector,
     // so it follows the CubeBlock precedent risk — but it is stamped once at close and only read
     // (never a synthesized-optional copy on the MSVC /O2 hot path), so std::optional is sound.
     std::optional<RulesetIdentity> ruleset;
     // The run's terminal verdict (ADR-17): one four-class scalar per run, resolved by the
-    // D-OUT-RUN-1 precedence (authoritative side-input → console tail → Unknown) and stamped by the
+    // SRC-D-OUT-RUN-1 precedence (authoritative side-input → console tail → Unknown) and stamped by the
     // producing orchestration on a WHOLE-RUN document. Additive, NO wire-version bump: Unknown is
     // the default AND the wire absence (the serializer omits it) — a legacy/verdict-free document
     // reads back identical. NOT a cube dimension (OUTCOME labels the whole run, it is not a
@@ -964,7 +964,7 @@ struct MetaLogConfig
     std::optional<std::string> canonicalization_version{
         std::string{insight::kCanonicalizationVersion}};
     std::optional<std::string> retention_profile;
-    // II-7 composed-ruleset identity (ADR-17): the semantic_identity + package list of the
+    // SRC-II-7 composed-ruleset identity (ADR-17): the semantic_identity + package list of the
     // composition that tokenized the input, injected by the producing binary (the engine pipeline
     // sets it from insight::engine::composed_semantics()). DEFAULT unset — a producer that does not
     // inject it emits no ruleset block (a legacy producer; absence-tolerant on the consumer).

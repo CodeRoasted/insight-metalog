@@ -593,7 +593,7 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
                                      "diff");
     check_processing_identifier_gate(previous.retention_profile, current.retention_profile,
                                      "retention_profile", "diff");
-    // II-7 (ADR-17): two documents are comparable iff their composed-ruleset identity
+    // SRC-II-7 (ADR-17): two documents are comparable iff their composed-ruleset identity
     // matches. Both stamped + different ⇒ the docs fingerprint DIFFERENT vocabularies ⇒ REFUSE
     // (this is the "no raw inputs to re-segment" branch — a stored MetaLog cannot be re-tokenized;
     // the Sift raw path re-tokenizes both sides under the live composition, so their identities

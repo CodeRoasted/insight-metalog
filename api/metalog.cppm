@@ -92,7 +92,7 @@ class MetaLogEngine
         // kOrdinalFieldCatalog) seen on this template, its schedule + binned counts over the
         // schedule's log2 ladder. field_name → accumulator. Populated only when
         // config_.max_param_histograms > 0; field-keyed (not positional), so it never collides
-        // with param_value_counts (a field is ordinal XOR categorical, D-W1-5).
+        // with param_value_counts (a field is ordinal XOR categorical, SRC-D-W1-5).
         struct OrdinalAccumulator
         {
             OrdinalSchedule schedule{};

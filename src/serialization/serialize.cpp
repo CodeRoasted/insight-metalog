@@ -239,7 +239,7 @@ namespace dto
         std::uint64_t dropped_edges{0};
     };
 
-    // Composed-ruleset identity wire shape (II-7, ADR-17). Reflected (member name == JSON
+    // Composed-ruleset identity wire shape (SRC-II-7, ADR-17). Reflected (member name == JSON
     // key); the whole block is a std::optional on Document with skip_null_members → omitted for a
     // legacy producer (absence = legacy). `packages` renders in canonical (package-sorted) order.
     struct RulesetPackageRef
@@ -363,7 +363,7 @@ namespace dto
         std::optional<ServiceEdgeBlock>
             service_edges; // O4b (SRC-D-OTEL-21); omit for a non-span window
         std::optional<RulesetIdentity>
-            ruleset; // II-7 composed-ruleset identity; omit for a legacy producer
+            ruleset; // SRC-II-7 composed-ruleset identity; omit for a legacy producer
         std::optional<std::string>
             run_outcome; // ADR-17 — the run's terminal verdict; omit when Unknown
     };

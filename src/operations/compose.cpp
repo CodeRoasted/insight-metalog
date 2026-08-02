@@ -569,7 +569,7 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
                                      "canonicalization_version", "compose");
     check_processing_identifier_gate(lhs.retention_profile, rhs.retention_profile,
                                      "retention_profile", "compose");
-    // II-7 (ADR-17): composing across DIFFERENT composed-ruleset identities merges documents
+    // SRC-II-7 (ADR-17): composing across DIFFERENT composed-ruleset identities merges documents
     // that fingerprint different vocabularies — refuse. Absence-tolerant (a legacy input proceeds).
     check_processing_identifier_gate(
         lhs.ruleset ? std::optional<std::string>{lhs.ruleset->semantic_identity} : std::nullopt,
@@ -583,7 +583,7 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
         carry_processing_identifier(lhs.canonicalization_version, rhs.canonicalization_version);
     out.retention_profile =
         carry_processing_identifier(lhs.retention_profile, rhs.retention_profile);
-    // II-7: carry the composed-ruleset identity only when BOTH inputs supplied it (matched — gated
+    // SRC-II-7: carry the composed-ruleset identity only when BOTH inputs supplied it (matched — gated
     // above); when one omits, omitting from the output is honest (the merge covers an input under
     // an unstated ruleset). Mirrors carry_processing_identifier for the optional<RulesetIdentity>
     // field.
