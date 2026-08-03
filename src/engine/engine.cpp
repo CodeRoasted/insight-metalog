@@ -350,10 +350,11 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
     // the keys.
     ++cube_base_[std::make_tuple(event.level, std::string{event.component}, event.structural_role)];
 
-    // Per-template component marginal — the WHERE carrier (SRC-D-WHERE-2/D-WHERE-3) and the §16.6
+    // Per-template component marginal — the WHERE carrier (SRC-D-WHERE-2) and the §16.6
     // reservoir cross, feeding both the cube and the leaf `dominant_component`. Always
-    // accumulated. Empty components are not counted (records_with_component then counts
-    // only located records).
+    // accumulated: the emit_cube/emit_where opt-in gates that once governed this population were
+    // removed (metalog.api.cppm), so no population predicate survives to state here. Empty
+    // components are not counted (records_with_component then counts only located records).
     if (!event.component.empty())
         ++bucket.component_counts[std::string{event.component}];
 
