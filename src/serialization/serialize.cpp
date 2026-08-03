@@ -179,8 +179,8 @@ namespace dto
         std::string template_id;
         std::uint64_t count{0};
         double frequency{0.0};
-        std::optional<std::string> tmpl;            // key "template"; omitted when empty
-        std::optional<std::string> level;           // spec level string; omitted when absent
+        std::optional<std::string> tmpl;      // key "template"; omitted when empty
+        std::optional<std::string> level;     // spec level string; omitted when absent
         std::optional<std::string> component; // WHERE label (SRC-D-WHERE-2); omitted when absent
         std::optional<std::string> structural_role; // omitted when None
         std::uint32_t structural_surprise{0};
@@ -214,8 +214,7 @@ namespace dto
         std::uint64_t role_cardinality{0};    // per-dimension cardinality: role
         std::vector<std::uint64_t> where_cardinality_per_depth; // coarsest → finest (§6.1.1)
         std::uint64_t closed_cells{0};                          // P_closed — condensed cell count
-        std::uint64_t span_records{
-            0}; // SRC-D-OTEL-13: span events observed (the licence fact)
+        std::uint64_t span_records{0}; // SRC-D-OTEL-13: span events observed (the licence fact)
         std::uint64_t orphan_parent_edges{
             0}; // SRC-D-OTEL-11: declared parents that did not resolve
         std::uint64_t orphan_link_edges{
@@ -356,8 +355,8 @@ namespace dto
         std::optional<std::vector<Provenance>> provenance;
         std::optional<std::string> canonicalization_version; // §2.4 processing identifiers
         std::optional<std::string> retention_profile;
-        std::optional<Coordinate> coordinate;   // §15 re-derivation coordinate
-        std::optional<CubeBlock> cube;          // §16 intra-window cube; omit when not emitted
+        std::optional<Coordinate> coordinate; // §15 re-derivation coordinate
+        std::optional<CubeBlock> cube;        // §16 intra-window cube; omit when not emitted
         std::optional<Acquisition>
             acquisition; // SRC-D-WHERE-4 self-assessment; omit when not emitted
         std::optional<ServiceEdgeBlock>

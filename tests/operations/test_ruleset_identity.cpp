@@ -123,7 +123,8 @@ TEST(RulesetIdentity, DiffMismatchedSemanticIdentityThrows)
     const auto previous{build_doc_with_ruleset(kRulesetA)};
     const auto current{build_doc_with_ruleset(kRulesetB)};
     EXPECT_THROW(meta::diff(previous, current), std::invalid_argument)
-        << "SRC-II-7: diffing across mismatched composed-ruleset identities MUST fail (re-segment or "
+        << "SRC-II-7: diffing across mismatched composed-ruleset identities MUST fail (re-segment "
+           "or "
            "refuse upstream)";
 }
 

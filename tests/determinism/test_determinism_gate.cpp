@@ -6,10 +6,10 @@
 // determinism proof is a CUT/GATE-TIME assertion, NOT a unit test: the 5-leg cross-toolchain/
 // ISA/OS `Determinism Golden Proof` workflow (.github/workflows/golden.yaml) rebuilds the
 // canon+metalog tower from source and asserts all legs are byte-identical over the committed
-// corpus + the shared ADR-31.D8 reservoir scenario (scripts/determinism_bitidentity.sh). There is NO
-// committed golden hash here (or anywhere) — determinism is proven by cross-leg AGREEMENT, emitted
-// as a per-release artifact only. These tests keep the SCENARIOS non-hollow (they exercise the
-// regimes the gate replays) and pin the derived field VALUES.
+// corpus + the shared ADR-31.D8 reservoir scenario (scripts/determinism_bitidentity.sh). There is
+// NO committed golden hash here (or anywhere) — determinism is proven by cross-leg AGREEMENT,
+// emitted as a per-release artifact only. These tests keep the SCENARIOS non-hollow (they exercise
+// the regimes the gate replays) and pin the derived field VALUES.
 
 #include <gtest/gtest.h>
 
@@ -30,8 +30,8 @@ namespace tok = insight::tokenization;
 namespace meta = insight::metalog;
 
 // The near-full reservoir MUST fill to the full production M and its admit/evict boundary MUST be
-// structural-surprise-driven — the guard that keeps the ADR-31.D8 regime exercised. The cross-leg gate
-// replays the same scenario; if it silently stopped filling, that proof would go hollow.
+// structural-surprise-driven — the guard that keeps the ADR-31.D8 regime exercised. The cross-leg
+// gate replays the same scenario; if it silently stopped filling, that proof would go hollow.
 TEST(MetaLogDocument, ReservoirNearFullExercisesTheF5M8Regime)
 {
     meta::MetaLogConfig cfg;

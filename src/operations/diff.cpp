@@ -632,7 +632,7 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
     diff_field_histogram_deltas(out, previous, current);
     diff_ordinal_histogram_deltas(out, previous, current); // W1 (§4A.4 SRC-D-W1-1/SRC-D-W1-4)
     diff_tail_delta(out, previous, current);
-    diff_reservoir_delta(out, previous, current);    // §5.3 chronic-vs-new streaming seam
+    diff_reservoir_delta(out, previous, current); // §5.3 chronic-vs-new streaming seam
     diff_service_edge_delta(out, previous,
                             current); // O4b (SRC-D-OTEL-21): distilled service topology
     // SPEC §13.6 cube_diff — the emerging border. Emitted only when both documents

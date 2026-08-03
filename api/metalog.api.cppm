@@ -349,10 +349,10 @@ struct ServiceEdge
 
 // The window's distilled service topology (SRC-D-OTEL-21). Present iff the window had trace
 // substrate (span_records > 0) — a non-span window OMITS the block (absence = *unknown*, not "no
-// edges": the edge-block diff requires the block on BOTH sides, SRC-D-OTEL-20). Self-edges are excluded
-// at derivation (same-component parentage is intra-service, not topology). `edges` is sorted by
-// (caller, callee) and bounded to the top `max_service_edges` by weight (canonical-key tie-break);
-// `dropped_edges` counts those beyond the cap — the honest truncation fact.
+// edges": the edge-block diff requires the block on BOTH sides, SRC-D-OTEL-20). Self-edges are
+// excluded at derivation (same-component parentage is intra-service, not topology). `edges` is
+// sorted by (caller, callee) and bounded to the top `max_service_edges` by weight (canonical-key
+// tie-break); `dropped_edges` counts those beyond the cap — the honest truncation fact.
 struct ServiceEdgeBlock
 {
     std::vector<ServiceEdge> edges;
@@ -360,13 +360,14 @@ struct ServiceEdgeBlock
     [[nodiscard]] bool operator==(const ServiceEdgeBlock&) const noexcept = default;
 };
 
-// ── Composed-ruleset identity (SRC-II-7, ADR-17) ─────────────────────────────────────────────────────
-// The identity of the semantic ruleset that SEGMENTED this document — the comparability key. Rides
-// every MetaLogDocument as an ADDITIVE, flag-gated block (the reservoir_delta/AcquisitionBlock
-// discipline): no wire-version bump, and ABSENCE = a legacy producer (composed before the
-// ruleset was wired). Two documents are comparable
+// ── Composed-ruleset identity (SRC-II-7, ADR-17)
+// ───────────────────────────────────────────────────── The identity of the semantic ruleset that
+// SEGMENTED this document — the comparability key. Rides every MetaLogDocument as an ADDITIVE,
+// flag-gated block (the reservoir_delta/AcquisitionBlock discipline): no wire-version bump, and
+// ABSENCE = a legacy producer (composed before the ruleset was wired). Two documents are comparable
 // (aligned/intent AND template-grain) iff their semantic_identity matches; on mismatch the consumer
-// re-segments where raw inputs exist, refuses otherwise — never a silent compare (SRC-II-7 verbatim).
+// re-segments where raw inputs exist, refuses otherwise — never a silent compare (SRC-II-7
+// verbatim).
 struct RulesetPackageRef
 {
     std::string name;    // "github"
@@ -823,12 +824,12 @@ struct MetaLogDocument
     // (never a synthesized-optional copy on the MSVC /O2 hot path), so std::optional is sound.
     std::optional<RulesetIdentity> ruleset;
     // The run's terminal verdict (ADR-17): one four-class scalar per run, resolved by the
-    // SRC-D-OUT-RUN-1 precedence (authoritative side-input → console tail → Unknown) and stamped by the
-    // producing orchestration on a WHOLE-RUN document. Additive, NO wire-version bump: Unknown is
-    // the default AND the wire absence (the serializer omits it) — a legacy/verdict-free document
-    // reads back identical. NOT a cube dimension (OUTCOME labels the whole run, it is not a
-    // per-event coordinate any cell could carry); a per-quantum slice document
-    // (the aligned diff's per-pair windows) correctly keeps Unknown — a quantum is not a run.
+    // SRC-D-OUT-RUN-1 precedence (authoritative side-input → console tail → Unknown) and stamped by
+    // the producing orchestration on a WHOLE-RUN document. Additive, NO wire-version bump: Unknown
+    // is the default AND the wire absence (the serializer omits it) — a legacy/verdict-free
+    // document reads back identical. NOT a cube dimension (OUTCOME labels the whole run, it is not
+    // a per-event coordinate any cell could carry); a per-quantum slice document (the aligned
+    // diff's per-pair windows) correctly keeps Unknown — a quantum is not a run.
     insight::RunOutcome run_outcome{insight::RunOutcome::Unknown};
 };
 

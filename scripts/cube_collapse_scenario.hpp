@@ -8,12 +8,12 @@
 //
 // The always-on cube can explode (O(B·2ⁿ)); the per-window guardrail bounds it by coarsening the
 // base
-// + re-closing. The axis-selection tie-break is an ADR-31.D8-class content decision (a declared total
-// order), so the cross-leg gate MUST replay a window that actually FIRES a collapse — else the
-// collapse policy is unproven cross-machine (the ADR-31.D8 oracle-coverage lesson). This window has
-// 1500 distinct components each at two bandable levels (Trace/Debug): the closed cube exceeds the
-// 4096-cell budget and the LEVEL interval-banding {Trace,Debug}→Debug fires (band_floor=2), WHERE
-// kept intact.
+// + re-closing. The axis-selection tie-break is an ADR-31.D8-class content decision (a declared
+// total order), so the cross-leg gate MUST replay a window that actually FIRES a collapse — else
+// the collapse policy is unproven cross-machine (the ADR-31.D8 oracle-coverage lesson). This window
+// has 1500 distinct components each at two bandable levels (Trace/Debug): the closed cube exceeds
+// the 4096-cell budget and the LEVEL interval-banding {Trace,Debug}→Debug fires (band_floor=2),
+// WHERE kept intact.
 //
 // Header-only, NO includes: the including TU provides `std`, `insight.canon` and `insight.metalog`
 // via `import` — include this AFTER those imports (ordinary textual inclusion, imported names

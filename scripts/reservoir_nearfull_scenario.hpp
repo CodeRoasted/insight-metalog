@@ -24,8 +24,8 @@ namespace insight::metalog::nearfull
 // Production Sift batch-diff reservoir (diff.api-config kDefaultIngestReservoirSize=128). cap=0
 // (Founder ruling 2026-06-14): the per-kind cap keys on (StructuralRole×LogLevel)=4×7=28 kinds, so
 // the production cap=4 would hard-ceiling the reservoir at 112 — it can never reach 128. cap=0
-// admits the top-M by pure salience rank: the clean oracle for the salience VALUE, the ADR-31.D8 root,
-// which is upstream of the admission cap.
+// admits the top-M by pure salience rank: the clean oracle for the salience VALUE, the ADR-31.D8
+// root, which is upstream of the admission cap.
 inline void configure(insight::metalog::MetaLogConfig& cfg)
 {
     cfg.top_k_size = 64;
@@ -77,8 +77,8 @@ inline void emit_window(insight::metalog::MetaLogEngine& engine)
     // (3) Ambiguous boundary spokes: each reached by TWO equal-ratio incoming edges — X->Sa once
     //     (count 1, below the >=2 floor → surprise 0 if it wins) and Y->Sa twice (count 2 → a real
     //     surprise band if it wins). Equal ratio (1/Xout == 2/Yout, with Yout=2*Xout) makes the
-    //     most-likely-edge pick a TIE: ADR-31.D8 resolves it by unordered_map order → clang picks one,
-    //     gcc the other → the spoke's structural_surprise (hence whether it clears the M=128
+    //     most-likely-edge pick a TIE: ADR-31.D8 resolves it by unordered_map order → clang picks
+    //     one, gcc the other → the spoke's structural_surprise (hence whether it clears the M=128
     //     cutoff) diverges. Oversubscribed so the reservoir stays full (size==M) on both stdlibs
     //     while the BAG membership differs → the digest differs → the leak surfaces.
     constexpr int kAmbiguous{24};

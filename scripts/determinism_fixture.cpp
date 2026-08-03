@@ -30,9 +30,9 @@
 import insight.canon;
 import insight.metalog;
 
-// AFTER the imports (plain TU): the shared synthetic scenarios — the ADR-31.D8 near-full reservoir, the
-// §C3 cube collapse, and the O4b service-edges over-cap topology — shared with the in-suite tests
-// so both oracles run the identical windows.
+// AFTER the imports (plain TU): the shared synthetic scenarios — the ADR-31.D8 near-full reservoir,
+// the §C3 cube collapse, and the O4b service-edges over-cap topology — shared with the in-suite
+// tests so both oracles run the identical windows.
 #include "cube_collapse_scenario.hpp"
 #include "reservoir_nearfull_scenario.hpp"
 #include "service_edges_overcap_scenario.hpp"
@@ -69,11 +69,12 @@ int main(int argc, char** argv)
         return 0;
     }
 
-    // ADR-31.D8 near-full reservoir oracle: a SYNTHETIC scenario (not a tokenized corpus), driven by a
-    // flag so the existing corpus files + their golden are untouched. determinism_bitidentity.sh
-    // replays it across the gcc×clang × -O{0,3} × -ffp-contract{off,fast} matrix; the emitted
-    // document must be byte-identical across every cell, or the item-reservoir admit/evict boundary
-    // is non-deterministic (the ADR-31.D8 leak). Same window as the in-suite ReservoirNearFull golden.
+    // ADR-31.D8 near-full reservoir oracle: a SYNTHETIC scenario (not a tokenized corpus), driven
+    // by a flag so the existing corpus files + their golden are untouched.
+    // determinism_bitidentity.sh replays it across the gcc×clang × -O{0,3} ×
+    // -ffp-contract{off,fast} matrix; the emitted document must be byte-identical across every
+    // cell, or the item-reservoir admit/evict boundary is non-deterministic (the ADR-31.D8 leak).
+    // Same window as the in-suite ReservoirNearFull golden.
     if (std::string{argv[1]} == "--reservoir-nearfull")
     {
         namespace ml = insight::metalog;

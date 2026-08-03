@@ -453,7 +453,7 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end,
 
     build_behavior(doc, analysis);
     build_stability(doc, analysis);
-    build_cube(doc);        // SPEC §16 — always (unconditional; collapse-bounded, §C)
+    build_cube(doc); // SPEC §16 — always (unconditional; collapse-bounded, §C)
     // SRC-D-WHERE-4/SRC-D-WHERE-5 — always (the window's dimension self-assessment)
     build_acquisition(doc);
     build_service_edges(

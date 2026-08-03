@@ -583,10 +583,10 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
         carry_processing_identifier(lhs.canonicalization_version, rhs.canonicalization_version);
     out.retention_profile =
         carry_processing_identifier(lhs.retention_profile, rhs.retention_profile);
-    // SRC-II-7: carry the composed-ruleset identity only when BOTH inputs supplied it (matched — gated
-    // above); when one omits, omitting from the output is honest (the merge covers an input under
-    // an unstated ruleset). Mirrors carry_processing_identifier for the optional<RulesetIdentity>
-    // field.
+    // SRC-II-7: carry the composed-ruleset identity only when BOTH inputs supplied it (matched —
+    // gated above); when one omits, omitting from the output is honest (the merge covers an input
+    // under an unstated ruleset). Mirrors carry_processing_identifier for the
+    // optional<RulesetIdentity> field.
     out.ruleset = (lhs.ruleset && rhs.ruleset) ? lhs.ruleset : std::nullopt;
     out.window.start_iso = iso_min(lhs.window.start_iso, rhs.window.start_iso);
     out.window.end_iso = iso_max(lhs.window.end_iso, rhs.window.end_iso);
