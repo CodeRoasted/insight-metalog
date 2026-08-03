@@ -454,7 +454,7 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end,
     build_behavior(doc, analysis);
     build_stability(doc, analysis);
     build_cube(doc);        // SPEC §16 — always (unconditional; collapse-bounded, §C)
-    // SRC-D-WHERE-4/D-WHERE-5 — always (the window's dimension self-assessment)
+    // SRC-D-WHERE-4/SRC-D-WHERE-5 — always (the window's dimension self-assessment)
     build_acquisition(doc);
     build_service_edges(
         doc); // O4b (SRC-D-OTEL-21) — iff the window had trace substrate (span_records > 0)
@@ -1166,8 +1166,8 @@ void MetaLogEngine::build_cube(MetaLogDocument& doc) const
     doc.has_cube = true;
 }
 
-// Per-window acquisition self-assessment (SRC-D-WHERE-4/D-WHERE-5): the `component`-axis coverage
-// seed, aggregated in batch over the frozen window from the per-template component
+// Per-window acquisition self-assessment (SRC-D-WHERE-4/SRC-D-WHERE-5): the `component`-axis
+// coverage seed, aggregated in batch over the frozen window from the per-template component
 // marginals. records_with_component = total located events (Σ over buckets of Σ of
 // component_counts — every increment was a non-empty component, ingest_event);
 // distinct_components = the size of the union of component values. Both are

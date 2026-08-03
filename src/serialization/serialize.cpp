@@ -203,8 +203,8 @@ namespace dto
         };
     };
 
-    // Per-window acquisition self-assessment (SRC-D-WHERE-4/D-WHERE-5). The window's raw structural
-    // facts (the `component`-axis coverage seed); a consumer applies its own predicate.
+    // Per-window acquisition self-assessment (SRC-D-WHERE-4/SRC-D-WHERE-5). The window's raw
+    // structural facts (the `component`-axis coverage seed); a consumer applies its own predicate.
     // All-integer → genuinely cross-machine bit-identical. Omitted when not emitted.
     struct Acquisition
     {

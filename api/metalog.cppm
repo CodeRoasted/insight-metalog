@@ -251,7 +251,7 @@ class MetaLogEngine
     // Intra-window closed cube (SPEC §16), built from the per-event (level, component,
     // role) joint accumulated in cube_base_. Always built (collapse-bounded, §C).
     void build_cube(MetaLogDocument& doc) const;
-    // Per-window acquisition self-assessment (SRC-D-WHERE-4/D-WHERE-5): the window's integer
+    // Per-window acquisition self-assessment (SRC-D-WHERE-4/SRC-D-WHERE-5): the window's integer
     // structural facts (component-axis coverage + the dimension self-assessment),
     // aggregated from the buckets' component marginals. Always built.
     void build_acquisition(MetaLogDocument& doc) const;

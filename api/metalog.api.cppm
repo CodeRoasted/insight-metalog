@@ -268,7 +268,7 @@ struct TopKEntry
 };
 
 // Per-window acquisition self-assessment (SPEC §16.x; sift_where_attribution.md
-// SRC-D-WHERE-4/D-WHERE-5). Raw, integer STRUCTURAL FACTS about which dimensions a window
+// SRC-D-WHERE-4/SRC-D-WHERE-5). Raw, integer STRUCTURAL FACTS about which dimensions a window
 // reliably carries — so each consumer (WHERE, the cube axis, the format-relative
 // gate) applies its OWN predicate over the same facts ("the window declares its
 // own cubeability"), instead of four format checks that drift. NOT a baked verdict.
