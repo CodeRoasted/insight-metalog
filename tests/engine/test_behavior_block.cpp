@@ -166,6 +166,21 @@ TEST_F(BehaviorBlockTest, BoundedNgramKeysCapDistinctEntries)
     auto doc{engine.close_window(start_ + std::chrono::seconds(1))};
     ASSERT_TRUE(doc.behavior.has_value());
     EXPECT_LE(doc.behavior->top_ngrams.size(), 4U);
+
+    // The cap's loss is VISIBLE, not silent. 20 distinct templates form 19 bigrams (N-1, one per
+    // event once the ring holds a predecessor); the first 4 fill the table and every later one is
+    // refused → 15 refused observations.
+    //
+    // This counts OBSERVATIONS, never distinct keys. The refusal in account_ngram happens BEFORE
+    // insertion, so a refused key is refused again on each later occurrence; distinct-key loss is
+    // not knowable without retaining exactly the unbounded set the cap exists to refuse. There is
+    // no correct distinct-key value to assert here, which is why none is asserted.
+    //
+    // Read after close_window returns: the counter is snapshotted into the last_window_ member
+    // ahead of reset_window_state(), so the live counter is already zero by now.
+    EXPECT_EQ(engine.last_window_ngram_observations_dropped(), std::uint64_t{15})
+        << "n-gram drop counter wrong at max_ngram_keys=4: 20 events -> 19 bigrams, 4 admitted, "
+           "so 15 observations must be refused and counted";
 }
 
 // ── O2 trace-scoped graph: the de-pollution proof ─────────────────────────
