@@ -56,6 +56,26 @@ class MetaLogEngine
         return registry_;
     }
 
+    // How many n-gram OBSERVATIONS the window just closed discarded at the `max_ngram_keys` cap
+    // (ADR-9.D3: adaptive lossiness never hides data loss). Valid between close_window() and the
+    // next open_window(); 0 means the cap never bound, which is the ordinary case at 4096.
+    //
+    // OBSERVATIONS, not distinct keys, and the distinction is not pedantry. account_ngram() drops
+    // BEFORE inserting, so a key rejected once is rejected again on every later occurrence — the
+    // count is occurrences lost, and the number of distinct n-grams behind it is strictly smaller
+    // and NOT knowable here. Knowing it would mean remembering the dropped keys, which is exactly
+    // the unbounded set the cap exists to refuse. Reporting this as "keys" would overstate the
+    // structural loss and understate the observational one.
+    //
+    // Observability ONLY — it never feeds the deterministic content stream and rides no wire field.
+    // metalog excludes spdlog by design, so the count lives here and the WARN fires where logging
+    // does, in the eidos pipeline at window close (Founder ruling 2026-06-20, the same split the
+    // §13 cardinality monitor uses).
+    [[nodiscard]] std::uint64_t last_window_ngram_observations_dropped() const noexcept
+    {
+        return last_window_ngram_observations_dropped_;
+    }
+
   private:
     static constexpr std::size_t kMaxTrackedNgramSize = 3;
     using InternalTemplateID = std::uint64_t;
@@ -326,6 +346,17 @@ class MetaLogEngine
     // content-derived spec IDs only when building the document.
     std::unordered_map<NGramKey, std::uint64_t, NGramKeyHash> ngram_counts_;
     std::uint64_t ngram_total_{0};
+    // Observations refused at the `max_ngram_keys` cap this window (ADR-9.D3). A COUNTER and not a
+    // log line by construction: the cap is crossed once and then every subsequent new key is
+    // refused, so warning at the drop site would emit thousands of lines per window ON THE HOT PATH
+    // — a log flood in place of a silent loss, which CLAUDE.md's hot-path doctrine forbids just as
+    // firmly. One line per window, at close, carrying the total. Do not "improve" this into a
+    // per-drop warning. It rides the drop branch that already exists, so a window that never
+    // reaches the cap pays nothing.
+    std::uint64_t ngram_observations_dropped_{0};
+    // Snapshotted from the above at close_window, BEFORE reset_window_state() clears the window, so
+    // the consumer can still read it after close_window returns. Survives the reset deliberately.
+    std::uint64_t last_window_ngram_observations_dropped_{0};
 
     // Intra-window cube base (SPEC §16): the per-EVENT joint (level, component, role) →
     // count. Always populated (one map insert per ingest). An ordered map keyed on

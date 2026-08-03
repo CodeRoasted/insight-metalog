@@ -107,6 +107,7 @@ void MetaLogEngine::open_window(Timestamp start)
     orphan_parent_edges_ = 0;
     ngram_counts_.clear();
     ngram_total_ = 0;
+    ngram_observations_dropped_ = 0; // per-window like the table it guards (ADR-9.D3)
     cube_base_.clear();
     (*hll_state_).reset();
     // NOTE: prev_freq_ / prev_window_end_iso_ are NOT cleared here —
@@ -162,7 +163,15 @@ void MetaLogEngine::account_ngram(const NGramKey& key)
     if (iterator == ngram_counts_.end())
     {
         if (ngram_counts_.size() >= config_.max_ngram_keys)
-            return; // bounded: drop new keys past the cap
+        {
+            // Bounded: refuse new keys past the cap. The refusal is COUNTED — before this, the
+            // `return` sat ahead of `++ngram_total_`, so neither the key nor the observation was
+            // recorded and a consumer could not tell a complete n-gram distribution from a
+            // truncated one (ADR-9.D3: lossiness is always VISIBLE). One increment on a branch
+            // that already existed; the WARN fires once per window in the eidos pipeline.
+            ++ngram_observations_dropped_;
+            return;
+        }
         ngram_counts_.emplace(key, 1);
     }
     else
@@ -450,7 +459,9 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end,
         doc); // O4b (SRC-D-OTEL-21) — iff the window had trace substrate (span_records > 0)
 
     // Carry this window's frequencies for the next window's stability, then drop the
-    // per-window state.
+    // per-window state. The n-gram drop count is snapshotted FIRST: reset_window_state() clears
+    // the live counter, and the consumer reads the snapshot after this function returns.
+    last_window_ngram_observations_dropped_ = ngram_observations_dropped_;
     stash_prev_window(doc);
     reset_window_state();
 
@@ -1286,6 +1297,7 @@ void MetaLogEngine::reset_window_state()
         .clear(); // O4b (SRC-D-OTEL-21): per-window service topology resets with the span state
     ngram_counts_.clear();
     ngram_total_ = 0;
+    ngram_observations_dropped_ = 0; // per-window like the table it guards (ADR-9.D3)
     cube_base_.clear();
 }
 
