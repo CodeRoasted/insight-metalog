@@ -181,6 +181,22 @@ TEST_F(BehaviorBlockTest, BoundedNgramKeysCapDistinctEntries)
     EXPECT_EQ(engine.last_window_ngram_observations_dropped(), std::uint64_t{15})
         << "n-gram drop counter wrong at max_ngram_keys=4: 20 events -> 19 bigrams, 4 admitted, "
            "so 15 observations must be refused and counted";
+
+    // Per-window, like the table it guards. reset_window_state() clears ngram_counts_ AND the
+    // global ring, so this second window starts with an empty table: 3 events form 2 bigrams,
+    // both admitted under the cap of 4, and nothing is refused.
+    //
+    // Reading the SECOND close is what makes this an arm rather than a restatement — the snapshot
+    // is taken in close_window ahead of reset_window_state(), so a counter that failed to reset
+    // would surface here as the first window's 15 leaking into a clean window.
+    engine.open_window(start_ + std::chrono::seconds(2));
+    for (int i = 0; i < 3; ++i)
+        engine.ingest_event(make_event(std::string{"clean"} + std::to_string(i)));
+    auto clean_doc{engine.close_window(start_ + std::chrono::seconds(3))};
+    ASSERT_TRUE(clean_doc.behavior.has_value());
+    EXPECT_EQ(engine.last_window_ngram_observations_dropped(), std::uint64_t{0})
+        << "the drop counter is per-window: a clean second window must report 0, not the previous "
+           "window's count";
 }
 
 // ── O2 trace-scoped graph: the de-pollution proof ─────────────────────────
