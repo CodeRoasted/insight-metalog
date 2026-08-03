@@ -747,7 +747,7 @@ MetaLogEngine::collect_reservoir_candidates(const WindowAnalysis& analysis) cons
 
 // Admit candidates to the reservoir in salience order (SPEC §3.7.2 MUST: tie-break
 // by template_id for a bit-identical reservoir), bounded by reservoir_size, with a
-// guaranteed error-class RESERVE (D-RNK-2 §5.2) ahead of the per-kind
+// guaranteed error-class RESERVE (SRC-D-RNK-2 §5.2) ahead of the per-kind
 // (structural_role × dominant_level) diversity cap on the general pool.
 // SPEC §3.7.2 bit-identical salience-ranked reservoir admission — one coherent
 // determinism-critical routine (tie-break by template_id), pinned by
@@ -771,7 +771,7 @@ void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& ana
                           return ordered[lhs.index].first < ordered[rhs.index].first;
                       });
 
-    // The error class (D-RNK-2 §5.2) — mirrors eidos `reservoir_is_error_class`: the
+    // The error class (SRC-D-RNK-2 §5.2) — mirrors eidos `reservoir_is_error_class`: the
     // verdict-anchored-failure signal at the metalog layer (after SRC-D-OUT-4).
     const auto error_class{[](StructuralRole role, std::optional<LogLevel> level) noexcept
                            {
@@ -826,7 +826,7 @@ void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& ana
 
     stats.reservoir.reserve(std::min(config_.reservoir_size, candidates.size()));
 
-    // ── Phase 1: the error-class reserve (D-RNK-2 §5.2) ──
+    // ── Phase 1: the error-class reserve (SRC-D-RNK-2 §5.2) ──
     // A bounded floor of slots admitted to error-class templates by salience (then template_id),
     // EXEMPT from the per-kind cap, BEFORE the general pool — so non-failure salience (novelty /
     // structural-surprise) can never crowd a real failure out of a high-cardinality window. The

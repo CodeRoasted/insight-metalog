@@ -123,7 +123,7 @@ struct OrdinalDrift
 };
 
 // The exact 1-D Wasserstein-1 (earth-mover) distance between two binned ordinal histograms on the
-// SAME schedule (§4A.4 D-W1-1), reduced to a shift bucket + direction. numerator =
+// SAME schedule (§4A.4 SRC-D-W1-1), reduced to a shift bucket + direction. numerator =
 // Σ_i |CumA_i·N_b − CumB_i·N_a| (w=1, the log ladder), accumulated in a signed 128-bit integer via
 // det::FixedReducer (order-independent, exact, cross-stdlib + MSVC bit-identical); direction =
 // sign(Σ_i (CumB_i·N_a − CumA_i·N_b)). The bucket is an EXACT integer cross-multiply against frozen
@@ -863,7 +863,7 @@ struct MetaLogConfig
     // (test_query_0/_1/… FAILED) and crowds out a different failure. 0 = no cap.
     std::size_t reservoir_per_kind_cap{0};
 
-    // Error-class retention RESERVE (D-RNK-2 §5.2): a bounded floor of the M slots
+    // Error-class retention RESERVE (SRC-D-RNK-2 §5.2): a bounded floor of the M slots
     // held exclusively for error-class templates (dominant_level ∈ {Error, Fatal} or
     // role Terminator — the verdict-anchored-failure signal at the metalog layer), so
     // non-failure salience (novelty / structural-surprise) can NEVER evict a real
@@ -1088,7 +1088,7 @@ struct FieldHistogramDelta
 };
 
 // Per-(template_id, ordinal field) pairing of two windows' binned ordinal histograms (§4A.4
-// D-W1-1/SRC-D-W1-4 — the W1 channel). Carries BOTH sides' raw counts + totals +
+// SRC-D-W1-1/SRC-D-W1-4 — the W1 channel). Carries BOTH sides' raw counts + totals +
 // schedule_ids; the eidos
 // diff checks the schedule_ids match (the comparability gate, SRC-D-W1-4, like
 // canonicalization_version at diff.cpp) then computes the exact-integer 1-D Wasserstein-1

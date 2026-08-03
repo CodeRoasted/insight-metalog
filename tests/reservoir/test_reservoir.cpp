@@ -403,7 +403,7 @@ TEST(ReservoirTest, DiversityCapCoversDistinctKinds)
         << "the cap preserves a reservoir slot for the distinct failure kind";
 }
 
-// ── D-RNK-2 — the error-class RETENTION RESERVE (the P5 recall fix) ─────────────
+// ── SRC-D-RNK-2 — the error-class RETENTION RESERVE (the P5 recall fix) ─────────────
 // The measured loss this fixes: a real `testTimeout (FAILED)` was correctly classified
 // Error-class but EVICTED from the metalog reservoir in a high-cardinality window — non-failure
 // salience (novelty / structural-surprise) out-competed the low-frequency failure for the bounded

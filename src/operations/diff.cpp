@@ -310,7 +310,7 @@ namespace
         return nullptr;
     }
 
-    // ordinal_histogram_deltas (§4A.4 D-W1-1/SRC-D-W1-4 — the W1 channel): per-(template_id,
+    // ordinal_histogram_deltas (§4A.4 SRC-D-W1-1/SRC-D-W1-4 — the W1 channel): per-(template_id,
     // ordinal field)
     // pairing of the two windows' binned ordinal histograms. Only for (template_id, field_name)
     // present in BOTH top_k lists with ordinal_histograms. Carries both sides' raw counts + totals
@@ -630,7 +630,7 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
     diff_branching_delta(out, previous, current);
     diff_ngram_delta(out, previous, current);
     diff_field_histogram_deltas(out, previous, current);
-    diff_ordinal_histogram_deltas(out, previous, current); // W1 (§4A.4 D-W1-1/SRC-D-W1-4)
+    diff_ordinal_histogram_deltas(out, previous, current); // W1 (§4A.4 SRC-D-W1-1/SRC-D-W1-4)
     diff_tail_delta(out, previous, current);
     diff_reservoir_delta(out, previous, current);    // §5.3 chronic-vs-new streaming seam
     diff_service_edge_delta(out, previous,
