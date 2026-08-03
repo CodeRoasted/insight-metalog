@@ -396,8 +396,8 @@ namespace
 
     // A component's summed latency distribution for this document: every top_k entry's
     // DurationLog2Ns ordinal histogram, attributed to the entry's dominant_component (the
-    // per-component MECH granularity — §7.3; the finer per-(template,component) is the deferred
-    // alternative). All duration fields share the frozen 48-bin ladder, so their counts are
+    // per-component MECH granularity — §7.3; the finer per-(template,component) is the alternative
+    // not built). All duration fields share the frozen 48-bin ladder, so their counts are
     // directly summable. Deterministic: integer sums over the ordered top_k, order-independent.
     struct ComponentOrdinal
     {

@@ -76,9 +76,9 @@ namespace dto
     // bit-identical — independent of float-hardening.
     // approximate_cardinality stays (it is the UNCAPPED distinct count, NOT derivable
     // from the capped value_counts) but is uint64-typed yet HLL-float-derived: it is
-    // deterministic under same-machine replay (v1's pairwise batch), while its
-    // cross-machine bit-identity is a separate guarantee not yet landed. Any
-    // cross-build / history signal derived from it is therefore not yet cross-machine stable.
+    // deterministic under same-machine replay (v1's pairwise batch), while
+    // cross-machine bit-identity is a separate guarantee it does NOT carry. Any
+    // cross-build / history signal derived from it is therefore not cross-machine stable.
     struct ParamHistogram
     {
         std::uint32_t param_index{0};

@@ -276,7 +276,7 @@ struct TopKEntry
 // wall-clock); the counts are order-independent → bit-identical cross-stdlib.
 // Always present. Carries the window's dimension self-assessment (§6.1.1). Extensible-
 // by-addition, emit-gated (a field ships only when its formula is corpus-picked AND a
-// consumer needs it): burstiness / mixing_proxy / a convergence readout stay DEFERRED
+// consumer needs it): burstiness / mixing_proxy / a convergence readout are ABSENT
 // (no stubs). The dimension-metadata below (component coverage + the WHERE-tree
 // cardinality-per-depth + the joint quantities) feeds the collapse guardrail (§C).
 struct AcquisitionBlock
