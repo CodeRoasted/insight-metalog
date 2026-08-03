@@ -215,9 +215,9 @@ namespace dto
         std::vector<std::uint64_t> where_cardinality_per_depth; // coarsest → finest (§6.1.1)
         std::uint64_t closed_cells{0};                          // P_closed — condensed cell count
         std::uint64_t span_records{
-            0}; // O3 (SRC-D-OTEL-13): span events observed (the licence fact)
+            0}; // SRC-D-OTEL-13: span events observed (the licence fact)
         std::uint64_t orphan_parent_edges{
-            0}; // O3 (SRC-D-OTEL-11): declared parents that did not resolve
+            0}; // SRC-D-OTEL-11: declared parents that did not resolve
         std::uint64_t orphan_link_edges{
             0}; // O4b (SRC-D-OTEL-9): declared link targets that did not resolve
     };

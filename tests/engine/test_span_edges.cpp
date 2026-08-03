@@ -1,6 +1,6 @@
 // NOLINTBEGIN — Unit tests: allow short identifiers and test-specific patterns
 //
-// O3 observed causal DAG (SRC-D-OTEL-11): a SPAN record's causality is
+// The observed causal DAG (SRC-D-OTEL-11): a SPAN record's causality is
 // DECLARED (parent_span_id), so it never enters an adjacency ring. At window close the engine
 // resolves template(parent) → template(child) into the SAME bounded n-gram graph the inferred
 // path feeds (one fingerprint, no fork). This pins:

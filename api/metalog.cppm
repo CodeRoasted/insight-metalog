@@ -181,11 +181,11 @@ class MetaLogEngine
     // max_active_traces cap with deterministic FIFO eviction of the oldest-inserted trace.
     [[nodiscard]] NgramRing& trace_ring_for(TraceId trace_id);
 
-    // O3 (SRC-D-OTEL-11): remember a span's span_id → template id (bounded FIFO under
+    // SRC-D-OTEL-11: remember a span's span_id → template id (bounded FIFO under
     // max_active_spans) and queue its declared parent edge (if any) for close-time resolution. A
     // span NEVER enters an adjacency ring — its causality is declared, not positional.
     void record_span(const tokenization::CanonicalEvent& event, InternalTemplateID internal_id);
-    // O3 (SRC-D-OTEL-11): at window close, resolve each queued parent edge against span_templates_
+    // SRC-D-OTEL-11: at window close, resolve each queued parent edge against span_templates_
     // and account the observed edge template(parent)→template(child) into ngram_counts_; an
     // unresolved parent (evicted / straddled) increments orphan_parent_edges_. Order-independent
     // (counts are commutative), integer-only, no wall-clock → deterministic.
@@ -295,7 +295,7 @@ class MetaLogEngine
     std::unordered_map<TraceId, NgramRing> trace_rings_;
     std::deque<TraceId> trace_ring_fifo_;
 
-    // O3 observed-DAG (SRC-D-OTEL-11): a span record's causality is DECLARED, so it never enters an
+    // Observed DAG (SRC-D-OTEL-11): a span record's causality is DECLARED, so it never enters an
     // adjacency ring. Instead its span_id → template id is remembered here, and at close_window
     // each span with a declared parent resolves template(parent)→template(child) into the SAME
     // bounded ngram_counts_ graph (one fingerprint, no fork). span_templates_ is point-lookup only

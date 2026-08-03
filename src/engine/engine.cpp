@@ -99,7 +99,7 @@ void MetaLogEngine::open_window(Timestamp start)
     global_ring_ = {};
     trace_rings_.clear();
     trace_ring_fifo_.clear();
-    // O3 (SRC-D-OTEL-11): per-window span state resets with the trace state
+    // SRC-D-OTEL-11: per-window span state resets with the trace state
     span_templates_.clear();
     span_fifo_.clear();
     pending_span_edges_.clear();
@@ -416,7 +416,7 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
     // pre-OTEL path, byte-identical). Both rings feed the SAME bounded ngram_counts_ graph
     // (one fingerprint, no fork — O2): the per-trace n-grams aggregate into the global graph,
     // never a per-trace sub-fingerprint (OR3).
-    // O3 (SRC-D-OTEL-11): a SPAN record's causality is DECLARED — record its span_id → template and
+    // SRC-D-OTEL-11: a SPAN record's causality is DECLARED — record its span_id → template and
     // queue its parent edge for close-time resolution; it NEVER enters an adjacency ring. Log
     // records (with or without trace context) keep the O2 ring path above/below.
     if (event.trace.is_span)
@@ -439,7 +439,7 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end,
     MetaLogDocument doc;
     stamp_envelope(doc, *window_start_, end, reported_bounds);
 
-    // O3 (SRC-D-OTEL-11): resolve the window's queued span parent edges into ngram_counts_ BEFORE
+    // SRC-D-OTEL-11: resolve the window's queued span parent edges into ngram_counts_ BEFORE
     // the graph is analyzed, so the observed DAG feeds dominant_path / structural_surprise like any
     // other edge. No-op for a non-span window (pending_span_edges_ empty).
     resolve_span_edges();
@@ -1203,7 +1203,7 @@ void MetaLogEngine::build_acquisition(MetaLogDocument& doc) const
     acquisition.level_cardinality = card.per_axis[static_cast<std::size_t>(CardinalityAxis::Level)];
     acquisition.role_cardinality = card.per_axis[static_cast<std::size_t>(CardinalityAxis::Role)];
 
-    // O3 span-native facts (SRC-D-OTEL-13 licence + SRC-D-OTEL-11): raw integer counts,
+    // Span-native facts (SRC-D-OTEL-13 licence + SRC-D-OTEL-11): raw integer counts,
     // threshold-free.
     acquisition.span_records = span_records_;
     acquisition.orphan_parent_edges = orphan_parent_edges_;
@@ -1286,7 +1286,7 @@ void MetaLogEngine::reset_window_state()
     global_ring_ = {};
     trace_rings_.clear();
     trace_ring_fifo_.clear();
-    // O3 (SRC-D-OTEL-11): per-window span state resets with the trace state
+    // SRC-D-OTEL-11: per-window span state resets with the trace state
     span_templates_.clear();
     span_fifo_.clear();
     pending_span_edges_.clear();

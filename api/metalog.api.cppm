@@ -310,7 +310,7 @@ struct AcquisitionBlock
     // it is not stored — the per-dimension factors above are the richer, non-redundant signal.
     std::uint64_t closed_cells{0};
 
-    // ── O3 span-native acquisition facts (ADR-29, SRC-D-OTEL-13) — the LICENCE
+    // ── Span-native acquisition facts (ADR-29, SRC-D-OTEL-13) — the LICENCE
     // ── Raw, threshold-free integer facts the eidos trace-vocabulary classifiers read to decide
     // whether to speak trace vocabulary (span_records > 0). span_records = span events observed
     // this window; orphan_parent_edges = spans whose declared parent did not resolve to a template
@@ -842,7 +842,7 @@ struct MetaLogConfig
     static constexpr std::size_t kDefaultTopBranchingSize = 64;
     static constexpr std::size_t kDefaultDominantPathMaxSteps = 8;
     static constexpr std::size_t kDefaultMaxActiveTraces = 4096;
-    // O3 span_id→template bound (SRC-D-OTEL-11)
+    // span_id→template bound (SRC-D-OTEL-11)
     static constexpr std::size_t kDefaultMaxActiveSpans = 16384;
     // O4b service_edges emit cap (SRC-D-OTEL-21)
     static constexpr std::size_t kDefaultMaxServiceEdges = 4096;
@@ -904,7 +904,7 @@ struct MetaLogConfig
     // (events carrying a trace_id); non-OTEL ingest uses the single global ring at zero cost.
     std::size_t max_active_traces{kDefaultMaxActiveTraces};
 
-    // O3 observed-DAG (ADR-29, SRC-D-OTEL-11): max span_id → template entries
+    // Observed DAG (ADR-29, SRC-D-OTEL-11): max span_id → template entries
     // held in a window for close-time parent-edge resolution. A span's declared parent is resolved
     // to an observed edge template(parent)→template(child) at close; a parent evicted past this
     // bound (or outside the window) yields no edge + one `orphan_parent_edges` fact (counted, never
