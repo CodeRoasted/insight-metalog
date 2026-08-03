@@ -888,7 +888,7 @@ struct MetaLogConfig
     // updating but new keys are dropped. Bounds memory.
     std::size_t max_ngram_keys{kDefaultMaxNgramKeys};
 
-    // O2 trace-scoping master switch (ADR-29 O2). Default true: an OTEL event
+    // Trace-scoping master switch (ADR-29.D1). Default true: an OTEL event
     // forms its n-gram WITHIN its trace. false is the CONTROL ARM — even OTEL events fall back
     // to the global ring, reproducing the polluted global-order graph on the SAME input (the
     // config mirror of the unit gate's with_trace=false arm; the scenario signal

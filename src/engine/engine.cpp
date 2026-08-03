@@ -409,7 +409,7 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
         }
     }
 
-    // n-gram update (ADR-29 O2 — the trace-scoped graph). An OTEL event forms its
+    // n-gram update (ADR-29.D1 — the trace-scoped graph). An OTEL event forms its
     // n-gram WITHIN its trace (the per-trace ring), so a bigram/trigram is "B followed A inside
     // ONE transaction", not across the global concurrent interleave — de-polluting dominant_path
     // / structural_surprise under concurrency. A non-OTEL event uses the single global ring (the
