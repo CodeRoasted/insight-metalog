@@ -381,11 +381,11 @@ class MetaLogEngine
 // OMITTED, never emitted as empty/zero/false (one document -> one byte
 // sequence). Consumers MUST treat an absent field as equivalent to its
 // empty/zero/false value (SPEC §0: producers omit, consumers read lenient).
-// SRC-D-TIR-5 — see metalog.api.cppm (TemplateRegistry) for the contract. Local to this seam: it emits SPEC §3.4's inline
-// mode — the per-entry `template`. The three modes are a producer MAY; the others were never wired
-// (ADR-9). The registry MUST contain every id the document references (the engine interns every
-// template at ingest); pass `engine.registry()`. A hand-built document needs a registry seeded with
-// its strings.
+// SRC-D-TIR-5 — see metalog.api.cppm (TemplateRegistry) for the contract. Local to this seam: it
+// emits SPEC §3.4's inline mode — the per-entry `template`. The three modes are a producer MAY; the
+// others were never wired (ADR-9). The registry MUST contain every id the document references (the
+// engine interns every template at ingest); pass `engine.registry()`. A hand-built document needs a
+// registry seeded with its strings.
 [[nodiscard]] std::string to_json(const MetaLogDocument& doc, const TemplateRegistry& registry);
 
 // Free serialiser for the diff document (SPEC §13). Same restrictive,
@@ -403,8 +403,8 @@ class MetaLogEngine
 //
 // Stability is dropped (meaningless across composed inputs). A composed document carries no display
 // template_str — it is id-only; the display string resolves by id from the engine registry at the
-// SRC-D-TIR-5 — see metalog.api.cppm (TemplateRegistry) for the contract. Local: counts + levels (the
-// decision signal) always carry.
+// SRC-D-TIR-5 — see metalog.api.cppm (TemplateRegistry) for the contract. Local: counts + levels
+// (the decision signal) always carry.
 [[nodiscard]] MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs);
 
 // Compute the pair-wise difference between two MetaLog documents.

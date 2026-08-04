@@ -534,7 +534,8 @@ struct CubeCardinalityStat
 // did NOT make top_k by frequency); excluded from the tail residual.
 struct ReservoirEntry
 {
-    // SRC-D-TIR-5 — see metalog.api.cppm (TemplateRegistry) for the contract. Local: same shape as TopKEntry.
+    // SRC-D-TIR-5 — see metalog.api.cppm (TemplateRegistry) for the contract. Local: same shape as
+    // TopKEntry.
     TemplateId template_id;
     std::uint64_t count{0};
     double frequency{0.0};
@@ -773,9 +774,9 @@ struct MetaLogDocument
     StatsBlock stats{};
     std::optional<BehaviorBlock> behavior;
     std::optional<StabilityBlock> stability;
-    // SRC-D-TIR-5 — see metalog.api.cppm (TemplateRegistry) for the contract. Local: this producer emits SPEC §3.4's INLINE mode
-    // only — the three modes are a producer MAY, and the dedup/id-only arms were never wired
-    // (ADR-9).
+    // SRC-D-TIR-5 — see metalog.api.cppm (TemplateRegistry) for the contract. Local: this producer
+    // emits SPEC §3.4's INLINE mode only — the three modes are a producer MAY, and the
+    // dedup/id-only arms were never wired (ADR-9).
     std::optional<std::vector<ProvenanceEntry>> provenance; // absent unless composed (SPEC §12.4)
     // Processing-identifier strings (SPEC §2.4). Opaque names of the contract
     // under which the document was produced; gate `compose()` / diff
