@@ -51,7 +51,7 @@ endif()
 
 # Build the module tower from source: canon first (so metalog's guarded find_package sees the
 # in-build insight::canon target), then metalog. Tests/benchmarks default OFF (not top-level).
-# CANON_ROOT is the canon REPO root; its buildable package lives under core/ (post-ADR-0024 the repo
+# CANON_ROOT is the canon REPO root; its buildable package lives under core/ (post-ADR-17 the repo
 # root is the shelf: core/ + semantic/* + bench/). metalog's tower needs only the semantic-unaware core.
 add_subdirectory(${CANON_ROOT}/core canon_build)
 add_subdirectory(${META_ROOT}  metalog_build)
