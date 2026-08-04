@@ -246,8 +246,7 @@ struct TopKEntry
 {
     TemplateId
         template_id; // content hash POD (rendered to "h:"+hex at the serialize seam, spec §3.2).
-                     // The display template_str lives in the engine-owned TemplateRegistry
-                     // (SRC-D-TIR-5 field-drop), resolved by id at the serialize/explain seams.
+                     // SRC-D-TIR-5 — see metalog.api.cppm (TemplateRegistry) for the contract.
     std::uint64_t count{0};
     double frequency{0.0};
     std::optional<LogLevel> dominant_level;
@@ -535,8 +534,7 @@ struct CubeCardinalityStat
 // did NOT make top_k by frequency); excluded from the tail residual.
 struct ReservoirEntry
 {
-    // display template_str resolved by id from the engine TemplateRegistry at the
-    // serialize/explain seams (SRC-D-TIR-5 field-drop), like TopKEntry.
+    // SRC-D-TIR-5 — see metalog.api.cppm (TemplateRegistry) for the contract. Local: same shape as TopKEntry.
     TemplateId template_id;
     std::uint64_t count{0};
     double frequency{0.0};
@@ -775,8 +773,7 @@ struct MetaLogDocument
     StatsBlock stats{};
     std::optional<BehaviorBlock> behavior;
     std::optional<StabilityBlock> stability;
-    // SRC-D-TIR-5 field-drop: the display strings live in the engine-owned TemplateRegistry,
-    // resolved by id at the serialize/explain seams. This producer emits SPEC §3.4's INLINE mode
+    // SRC-D-TIR-5 — see metalog.api.cppm (TemplateRegistry) for the contract. Local: this producer emits SPEC §3.4's INLINE mode
     // only — the three modes are a producer MAY, and the dedup/id-only arms were never wired
     // (ADR-9).
     std::optional<std::vector<ProvenanceEntry>> provenance; // absent unless composed (SPEC §12.4)

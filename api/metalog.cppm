@@ -48,9 +48,7 @@ class MetaLogEngine
     [[nodiscard]] MetaLogDocument
     close_window(Timestamp end, std::optional<ReportedWindowBounds> reported_bounds = std::nullopt);
 
-    // The TemplateId -> template_str registry (SRC-D-TIR-5): the single home of the display-only
-    // template_str, accumulated across windows. Injected at the serialize/explain seams to resolve
-    // the strings the per-window documents no longer carry.
+    // SRC-D-TIR-5 — see metalog.api.cppm (TemplateRegistry) for the contract.
     [[nodiscard]] const TemplateRegistry& registry() const noexcept
     {
         return registry_;
@@ -279,9 +277,7 @@ class MetaLogEngine
     // build_branching / build_dominant_path index this to stamp the domain id without
     // re-hashing; the "h:"+hex string is rendered only at the serialize seam.
     std::vector<TemplateId> content_templates_by_internal_id_;
-    // SRC-D-TIR-5: the single TemplateId -> template_str home (display-only), accumulated across
-    // windows and injected at the serialize/explain seams. template_str is dropped from the
-    // per-window document entries that flow through the pyramid.
+    // SRC-D-TIR-5 — see metalog.api.cppm (TemplateRegistry) for the contract.
     TemplateRegistry registry_;
 
     // The global recent-template-id ring — the non-OTEL n-gram path (pre-OTEL behaviour,
@@ -385,8 +381,7 @@ class MetaLogEngine
 // OMITTED, never emitted as empty/zero/false (one document -> one byte
 // sequence). Consumers MUST treat an absent field as equivalent to its
 // empty/zero/false value (SPEC §0: producers omit, consumers read lenient).
-// SRC-D-TIR-5 field-drop: the display-only `template_str` no longer lives on the document — it is
-// resolved by id from the engine-owned TemplateRegistry at this seam, emitted as SPEC §3.4's inline
+// SRC-D-TIR-5 — see metalog.api.cppm (TemplateRegistry) for the contract. Local to this seam: it emits SPEC §3.4's inline
 // mode — the per-entry `template`. The three modes are a producer MAY; the others were never wired
 // (ADR-9). The registry MUST contain every id the document references (the engine interns every
 // template at ingest); pass `engine.registry()`. A hand-built document needs a registry seeded with
@@ -408,7 +403,7 @@ class MetaLogEngine
 //
 // Stability is dropped (meaningless across composed inputs). A composed document carries no display
 // template_str — it is id-only; the display string resolves by id from the engine registry at the
-// serialize/explain seams (SRC-D-TIR-5, insight_perf_template_id.md §6). Counts + levels (the
+// SRC-D-TIR-5 — see metalog.api.cppm (TemplateRegistry) for the contract. Local: counts + levels (the
 // decision signal) always carry.
 [[nodiscard]] MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs);
 
