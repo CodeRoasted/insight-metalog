@@ -93,7 +93,9 @@ std::optional<LogLevel> dominant_level_of(const std::unordered_map<LogLevel, std
     return best_it->first;
 }
 
-std::string dominant_component_of(const std::unordered_map<std::string, std::uint64_t>& components)
+std::string
+dominant_component_of(const std::unordered_map<std::string, std::uint64_t, TransparentStringHash,
+                                               std::equal_to<>>& components)
 {
     const std::string* best{nullptr};
     std::uint64_t best_count{0};

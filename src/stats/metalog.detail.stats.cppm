@@ -198,7 +198,8 @@ dominant_role_of(const std::unordered_map<StructuralRole, std::uint64_t>& roles)
 // string when the template carried no component. Feeds the §16.6 reservoir→cell cross
 // (the WHERE-path of a salient template's LOCATION).
 [[nodiscard]] std::string
-dominant_component_of(const std::unordered_map<std::string, std::uint64_t>& components);
+dominant_component_of(const std::unordered_map<std::string, std::uint64_t, TransparentStringHash,
+                                               std::equal_to<>>& components);
 
 // Structural-surprise band (0..100) for the MOST-LIKELY incoming edge p = c/t into
 // a template: high only when even a template's easiest way in is rare. Integer

@@ -192,6 +192,48 @@ struct OrdinalDrift
     return drift;
 }
 
+// ── Transparent lookup helpers (ADR-9.D2 — the cube-key heap fix) ──────────────────
+// Namespace-scope and EXPORTED: the engine's hot-path maps key on them, and
+// dominant_component_of's signature names the component map's full type from the
+// stats partition — a class-member helper would be invisible there.
+// Both exist so a STEADY-STATE HIT constructs no std::string key: the maps below are
+// per-event hot path, and materialising the lookup key cost 2 general-heap
+// allocations per event for a >SSO component (measured, bench_cube_key_alloc;
+// ~19 ns/event on gcc-15 = 28% of ingest_event). A MISS still copies — the map must
+// own its key — so key BYTES, map ordering and determinism are untouched.
+// (template_str_cache_ below already used this exact shape for the same reason —
+// the cube fix extends the house pattern to the two remaining hot-path maps, it
+// does not invent one.)
+struct TransparentStringHash
+{
+    using is_transparent = void;
+    [[nodiscard]] std::size_t operator()(std::string_view value) const noexcept
+    {
+        return std::hash<std::string_view>{}(value);
+    }
+};
+// Orders exactly as std::less<std::tuple<LogLevel, std::string, StructuralRole>>:
+// lexicographic over (level, component bytes, role). std::string's operator< IS
+// byte-wise string_view comparison, so admitting a string_view middle changes which
+// TYPES can ask, never where a key sorts — iteration order is bit-identical.
+struct TransparentCubeKeyLess
+{
+    using is_transparent = void;
+    template <typename LhsString, typename RhsString>
+    [[nodiscard]] bool
+    operator()(const std::tuple<LogLevel, LhsString, StructuralRole>& lhs,
+               const std::tuple<LogLevel, RhsString, StructuralRole>& rhs) const noexcept
+    {
+        if (std::get<0>(lhs) != std::get<0>(rhs))
+            return std::get<0>(lhs) < std::get<0>(rhs);
+        const std::string_view lhs_component{std::get<1>(lhs)};
+        const std::string_view rhs_component{std::get<1>(rhs)};
+        if (const int order{lhs_component.compare(rhs_component)}; order != 0)
+            return order < 0;
+        return std::get<2>(lhs) < std::get<2>(rhs);
+    }
+};
+
 // TemplateRegistry (SRC-D-TIR-5): the single TemplateId -> template_str association, owned OUTSIDE
 // the per-window document (the engine owns one; Sift/diff callers own a local one), injected at the
 // display seams (serialize / explain). template_str is a pure DISPLAY attribute — never read on the

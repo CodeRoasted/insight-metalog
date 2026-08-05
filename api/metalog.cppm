@@ -101,7 +101,15 @@ class MetaLogEngine
         // Always populated. The dominant component is the template's WHERE label (the
         // cube-independent Sift leaf carrier, SRC-D-WHERE-2) and its §16.6 reservoir→cell
         // WHERE-path. Not the cube itself (the cube is the per-EVENT joint, in cube_base_).
-        std::unordered_map<std::string, std::uint64_t> component_counts;
+        //
+        // TRANSPARENT hash/eq (ADR-9.D2): a steady-state hit is looked up by string_view
+        // and constructs no key — measured at 1 general-heap allocation per event for a
+        // >SSO component before this (bench_cube_key_alloc). std::hash<string> ==
+        // std::hash<string_view> over equal bytes is a C++17 GUARANTEE, so bucket layout
+        // is unchanged — and dominant_component_of is a pure function of contents anyway
+        // (its own comment says so), so no observable byte can move.
+        std::unordered_map<std::string, std::uint64_t, TransparentStringHash, std::equal_to<>>
+            component_counts;
         // Per-param value histograms; index i == CanonicalEvent::params[i].
         // Populated only when config_.max_param_histograms > 0.
         std::vector<std::unordered_map<std::string, std::uint64_t>> param_value_counts;
@@ -154,19 +162,6 @@ class MetaLogEngine
     {
         std::string content_id;
         InternalTemplateID internal_id{};
-    };
-
-    // Transparent hash so the per-event template_str_cache_ lookup takes a
-    // std::string_view (the arena-stable CanonicalEvent::template_str) WITHOUT
-    // constructing a std::string on the hot path — heterogeneous find/contains.
-    // Insertion (a cache miss, once per distinct template) still owns the key.
-    struct TransparentStringHash
-    {
-        using is_transparent = void;
-        [[nodiscard]] std::size_t operator()(std::string_view key) const noexcept
-        {
-            return std::hash<std::string_view>{}(key);
-        }
     };
 
     [[nodiscard]] TemplateLookup content_template_id_for(const tokenization::CanonicalEvent& event);
@@ -358,7 +353,9 @@ class MetaLogEngine
     // count. Always populated (one map insert per ingest). An ordered map keyed on
     // api/canon types only (no detail type in
     // the facade interface); the closure is built from it at close_window in build_cube.
-    std::map<std::tuple<LogLevel, std::string, StructuralRole>, std::uint64_t> cube_base_;
+    std::map<std::tuple<LogLevel, std::string, StructuralRole>, std::uint64_t,
+             TransparentCubeKeyLess>
+        cube_base_;
 
     // Cross-window state for stability. Populated at the end of each
     // close_window with this window's per-template counts and end

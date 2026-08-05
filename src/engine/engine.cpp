@@ -346,9 +346,17 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
 
     // SPEC §16 cube: accumulate the per-EVENT joint (level, component, role) — ALWAYS
     // (the cube is unconditional; the collapse guardrail bounds its cardinality, §C). The
-    // component string_view is arena-stable only within the window, so it is COPIED into
-    // the keys.
-    ++cube_base_[std::make_tuple(event.level, std::string{event.component}, event.structural_role)];
+    // component string_view is arena-stable only within the window, so it is copied into
+    // the key ON FIRST SIGHT ONLY: a steady-state hit looks up by string_view through the
+    // transparent comparator and constructs nothing (ADR-9.D2 — measured at 1 heap
+    // allocation per event per >SSO component before this, bench_cube_key_alloc).
+    if (auto hit{
+            cube_base_.find(std::make_tuple(event.level, event.component, event.structural_role))};
+        hit != cube_base_.end())
+        ++hit->second;
+    else
+        ++cube_base_[std::make_tuple(event.level, std::string{event.component},
+                                     event.structural_role)];
 
     // Per-template component marginal — the WHERE carrier (SRC-D-WHERE-2) and the §16.6
     // reservoir cross, feeding both the cube and the leaf `dominant_component`. Always
@@ -356,7 +364,14 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
     // removed (metalog.api.cppm), so no population predicate survives to state here. Empty
     // components are not counted (records_with_component then counts only located records).
     if (!event.component.empty())
-        ++bucket.component_counts[std::string{event.component}];
+    {
+        // Same shape as the cube key above: hit by view, copy on first sight only.
+        if (auto hit{bucket.component_counts.find(event.component)};
+            hit != bucket.component_counts.end())
+            ++hit->second;
+        else
+            ++bucket.component_counts[std::string{event.component}];
+    }
 
     // Per-param field histogram accumulation.
     // Gated on config_.max_param_histograms == 0 (default) → single
