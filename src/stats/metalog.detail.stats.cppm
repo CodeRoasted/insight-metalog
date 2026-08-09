@@ -190,6 +190,21 @@ new_and_vanished(const std::unordered_map<TemplateId, std::uint64_t>& cur,
 // map). Roles are deterministic per template, so dominant_role_of is "the" role.
 [[nodiscard]] std::optional<LogLevel>
 dominant_level_of(const std::unordered_map<LogLevel, std::uint64_t>& levels);
+// DN-32.D3 — the same argmax, plus the provenance of the level it picked: DECLARED iff the
+// bucket saw at least one observation AT THAT LEVEL whose level came from canon's declared layer.
+// One declared witness is enough — the claim then rests on something a producer stated, not only
+// on what canon read in the words; zero witnesses is what makes a downstream severity
+// inference-only.
+//
+// A SEPARATE FUNCTION rather than a parameter on the argmax, because the two answer different
+// questions and only one of them may reach a document: this one is what an OUTPUT entry
+// (TopKEntry / ReservoirEntry) must use, and the type system enforces that — `dominant_level_of`
+// returns a bare LogLevel, which no longer assigns to `dominant_level`. `dominant_level_of` stays
+// for the internal consumers where provenance is irrelevant (salience scoring reads severity, not
+// evidence quality).
+[[nodiscard]] std::optional<EventLevel>
+dominant_event_level_of(const std::unordered_map<LogLevel, std::uint64_t>& levels,
+                        const std::unordered_map<LogLevel, std::uint64_t>& declared_levels);
 [[nodiscard]] StructuralRole
 dominant_role_of(const std::unordered_map<StructuralRole, std::uint64_t>& roles);
 

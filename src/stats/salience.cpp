@@ -93,6 +93,22 @@ std::optional<LogLevel> dominant_level_of(const std::unordered_map<LogLevel, std
     return best_it->first;
 }
 
+std::optional<EventLevel>
+dominant_event_level_of(const std::unordered_map<LogLevel, std::uint64_t>& levels,
+                        const std::unordered_map<LogLevel, std::uint64_t>& declared_levels)
+{
+    const auto dominant{dominant_level_of(levels)};
+    if (!dominant)
+        return std::nullopt;
+    // ONE declared witness at the winning level is enough. The question this answers is not "how
+    // often was it declared" but "is there anything but a guess behind this level" — and a single
+    // producer statement answers it. Thresholding the witness count would be a number to tune, and
+    // DN-32.D3 moves no numbers.
+    const auto witness{declared_levels.find(*dominant)};
+    const bool declared{witness != declared_levels.end() && witness->second > 0};
+    return declared ? EventLevel::declared(*dominant) : EventLevel::inferred(*dominant);
+}
+
 std::string
 dominant_component_of(const std::unordered_map<std::string, std::uint64_t, TransparentStringHash,
                                                std::equal_to<>>& components)

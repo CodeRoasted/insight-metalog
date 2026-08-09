@@ -500,7 +500,7 @@ namespace
     // The ERROR/FATAL failure frontier. A template is "in failure" iff its dominant_level is
     // Error or Fatal — Unknown sorts above Fatal numerically but is NOT a failure, so this is
     // an explicit membership test, never a `>= Error` compare.
-    [[nodiscard]] constexpr bool is_failure_level(std::optional<LogLevel> level) noexcept
+    [[nodiscard]] constexpr bool is_failure_level(std::optional<EventLevel> level) noexcept
     {
         return level == LogLevel::Error || level == LogLevel::Fatal;
     }
@@ -510,10 +510,10 @@ namespace
     // top_k), so no key collision. POINT-LOOKUP map only (membership + frontier level compare);
     // never iterated into output, so the unordered_map is not a determinism surface (ADR-31.D8),
     // exactly like component_latency_shifts above.
-    [[nodiscard]] std::unordered_map<TemplateId, std::optional<LogLevel>>
+    [[nodiscard]] std::unordered_map<TemplateId, std::optional<EventLevel>>
     salience_memory_levels(const MetaLogDocument& doc)
     {
-        std::unordered_map<TemplateId, std::optional<LogLevel>> level_of;
+        std::unordered_map<TemplateId, std::optional<EventLevel>> level_of;
         level_of.reserve(doc.stats.top_k.size() + doc.stats.reservoir.size());
         for (const auto& entry : doc.stats.top_k)
             level_of.emplace(entry.template_id, entry.dominant_level);
@@ -538,9 +538,9 @@ namespace
     void diff_reservoir_delta(MetaLogDiff& out, const MetaLogDocument& previous,
                               const MetaLogDocument& current)
     {
-        const std::unordered_map<TemplateId, std::optional<LogLevel>> prev_levels{
+        const std::unordered_map<TemplateId, std::optional<EventLevel>> prev_levels{
             salience_memory_levels(previous)};
-        const std::unordered_map<TemplateId, std::optional<LogLevel>> cur_levels{
+        const std::unordered_map<TemplateId, std::optional<EventLevel>> cur_levels{
             salience_memory_levels(current)};
         ReservoirDelta& delta{out.reservoir_delta};
 
@@ -562,7 +562,7 @@ namespace
             const auto prev_it{prev_levels.find(template_id)};
             if (prev_it == prev_levels.end())
                 continue; // not on both sides → not a crossing (it is a new/vanished member)
-            const std::optional<LogLevel> prev_level{prev_it->second};
+            const std::optional<EventLevel> prev_level{prev_it->second};
             if (is_failure_level(prev_level) == is_failure_level(cur_level))
                 continue; // failure-membership unchanged → no crossing
             delta.frontier_crossings.push_back(

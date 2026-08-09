@@ -683,8 +683,10 @@ namespace
         // SPEC §3.4: the per-entry `template` is optional on the wire; this producer emits it.
         if (std::string str{resolve_template_str(registry, entry.template_id)}; !str.empty())
             row.tmpl = std::move(str);
+        // DN-32.D3: the WIRE carries the level alone. The provenance half of EventLevel is
+        // domain-only, so this row's bytes are unchanged and the spec is untouched.
         if (entry.dominant_level)
-            row.level = level_to_spec_string(*entry.dominant_level);
+            row.level = level_to_spec_string(entry.dominant_level->value());
         if (entry.dominant_component)
             row.component = *entry.dominant_component;
         if (!entry.field_histograms.empty())
@@ -728,8 +730,10 @@ namespace
         row.frequency = entry.frequency;
         if (std::string str{resolve_template_str(registry, entry.template_id)}; !str.empty())
             row.tmpl = std::move(str);
+        // DN-32.D3: the WIRE carries the level alone. The provenance half of EventLevel is
+        // domain-only, so this row's bytes are unchanged and the spec is untouched.
         if (entry.dominant_level)
-            row.level = level_to_spec_string(*entry.dominant_level);
+            row.level = level_to_spec_string(entry.dominant_level->value());
         if (entry.dominant_component)
             row.component = *entry.dominant_component;
         if (entry.structural_role != StructuralRole::None)
@@ -903,8 +907,10 @@ namespace
     {
         dto::ReservoirDeltaEntry row;
         row.template_id = insight::render(entry.template_id);
+        // DN-32.D3: the WIRE carries the level alone. The provenance half of EventLevel is
+        // domain-only, so this row's bytes are unchanged and the spec is untouched.
         if (entry.dominant_level)
-            row.level = level_to_spec_string(*entry.dominant_level);
+            row.level = level_to_spec_string(entry.dominant_level->value());
         if (entry.structural_role != StructuralRole::None)
             row.structural_role = std::string{to_string(entry.structural_role)};
         row.salience = entry.salience;
@@ -940,10 +946,11 @@ namespace
                 dto::FrontierCrossing row;
                 row.template_id = insight::render(crossing.template_id);
                 row.direction = crossing.direction == FrontierDirection::Up ? "up" : "down";
+                // DN-32.D3: the wire carries the levels alone — provenance is domain-only.
                 if (crossing.previous_level)
-                    row.previous_level = level_to_spec_string(*crossing.previous_level);
+                    row.previous_level = level_to_spec_string(crossing.previous_level->value());
                 if (crossing.current_level)
-                    row.current_level = level_to_spec_string(*crossing.current_level);
+                    row.current_level = level_to_spec_string(crossing.current_level->value());
                 rows.push_back(std::move(row));
             }
             out.frontier_crossings = std::move(rows);

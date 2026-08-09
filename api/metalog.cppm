@@ -87,6 +87,21 @@ class MetaLogEngine
         // high value means the template EMERGED late (first-seen near lines_observed).
         std::uint64_t first_seen_index{0};
         std::unordered_map<LogLevel, std::uint64_t> level_counts;
+        // DN-32.D3 — the DECLARED half of level_counts: the same keys, counting only the events
+        // whose level came from a position whose MEANING is the level (canon's declared layer)
+        // rather than from its content-inference layer. A template's dominant level is
+        // CORROBORATED iff this map holds a nonzero count at that level; absent one, the level is
+        // canon's guess and a claim resting on it may not contradict a declared run outcome.
+        //
+        // A SIBLING MAP RATHER THAN A RICHER KEY, on purpose: keying level_counts by
+        // (level, declared) would split one template's Error observations into two buckets and
+        // silently change which level wins dominance — the tie-break in dominant_level_of reads
+        // COUNTS, and a split count is a different number. This carries the new fact without
+        // moving any existing one, so every shipped level value is byte-identical.
+        //
+        // Deterministic: a single keyed lookup, never an iteration, so the unordered_map's order
+        // never reaches an output.
+        std::unordered_map<LogLevel, std::uint64_t> declared_level_counts;
         // SRC-D-PROV-1 (§3.1): true iff EVERY event that formed this template was echoed script
         // source (no real runtime occurrence). AND-reduced over the events (order-independent →
         // deterministic). When true, the salience failure-cue tier is skipped — the level-blind

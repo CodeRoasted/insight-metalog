@@ -291,7 +291,19 @@ struct TopKEntry
                      // SRC-D-TIR-5 — see metalog.api.cppm (TemplateRegistry) for the contract.
     std::uint64_t count{0};
     double frequency{0.0};
-    std::optional<LogLevel> dominant_level;
+    // DN-32.D3 — the level AND its provenance, as one value (canon `EventLevel`). DECLARED
+    // means at least one observation at this level came from a position whose MEANING is the
+    // level; otherwise it is canon's content inference, and a downstream claim resting on it
+    // carries an error term a declared one does not.
+    //
+    // THE PROVENANCE HALF IS DOMAIN-ONLY, NEVER SERIALISED — the wire row still carries the
+    // level string alone (serialize.cpp), so the MetaLog spec and every document byte are
+    // untouched. That is affordable because nothing deserialises a MetaLogDocument: this
+    // package exposes `to_json` and no inverse, so a document only ever reaches a consumer
+    // in-process, with the marker intact. The day an inverse exists, this field is a spec
+    // question and not a local edit — and it would fail SAFE (absent = inferred = the
+    // under-claiming direction), which is why the default is spelled that way.
+    std::optional<EventLevel> dominant_level;
     // The template's dominant functional source (canon `component` — "src/auth",
     // a build job): the per-template WHERE *label* (sift_where_attribution.md
     // SRC-D-WHERE-2). Populated from dominant_component_of(bucket.component_counts) at
@@ -581,7 +593,19 @@ struct ReservoirEntry
     TemplateId template_id;
     std::uint64_t count{0};
     double frequency{0.0};
-    std::optional<LogLevel> dominant_level;
+    // DN-32.D3 — the level AND its provenance, as one value (canon `EventLevel`). DECLARED
+    // means at least one observation at this level came from a position whose MEANING is the
+    // level; otherwise it is canon's content inference, and a downstream claim resting on it
+    // carries an error term a declared one does not.
+    //
+    // THE PROVENANCE HALF IS DOMAIN-ONLY, NEVER SERIALISED — the wire row still carries the
+    // level string alone (serialize.cpp), so the MetaLog spec and every document byte are
+    // untouched. That is affordable because nothing deserialises a MetaLogDocument: this
+    // package exposes `to_json` and no inverse, so a document only ever reaches a consumer
+    // in-process, with the marker intact. The day an inverse exists, this field is a spec
+    // question and not a local edit — and it would fail SAFE (absent = inferred = the
+    // under-claiming direction), which is why the default is spelled that way.
+    std::optional<EventLevel> dominant_level;
     // The template's dominant functional source (canon `component`) — the WHERE
     // *label* (SRC-D-WHERE-2), mirroring TopKEntry. Populated independent of the cube,
     // always; EMPTY when the format carried no component. Distinct from `cube_coord`
@@ -1248,7 +1272,10 @@ enum class FrontierDirection : std::uint8_t
 struct ReservoirDeltaEntry
 {
     TemplateId template_id;
-    std::optional<LogLevel> dominant_level;
+    // DN-32.D3: the snapshot carries the level AND its provenance, because this member is a
+    // STREAMING decision signal (§5.3 chronic-vs-new) — a snapshot that dropped the marker would
+    // be a claim rebuilt from a guess with the guess no longer visible.
+    std::optional<EventLevel> dominant_level;
     StructuralRole structural_role{StructuralRole::None};
     std::uint32_t salience{0};
     std::uint64_t count{0};
@@ -1262,8 +1289,11 @@ struct FrontierCrossing
 {
     TemplateId template_id;
     FrontierDirection direction;
-    std::optional<LogLevel> previous_level;
-    std::optional<LogLevel> current_level;
+    // DN-32.D3: both sides carry their provenance. A crossing is the input to an ESCALATION
+    // reading downstream (§5.3 chronic-but-erupted restores full confidence), so a consumer must
+    // be able to see whether the levels that define the crossing were declared or inferred.
+    std::optional<EventLevel> previous_level;
+    std::optional<EventLevel> current_level;
     [[nodiscard]] bool operator==(const FrontierCrossing&) const noexcept = default;
 };
 

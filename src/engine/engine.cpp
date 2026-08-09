@@ -338,6 +338,11 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
     }
     ++bucket.count;
     ++bucket.level_counts[event.level];
+    // DN-32.D3: the same observation, counted a second time only when its level was DECLARED.
+    // The pair is written here together, off one event, so a level can never be accumulated
+    // without its provenance being accounted for.
+    if (event.declared_level)
+        ++bucket.declared_level_counts[event.level];
     ++bucket.role_counts[event.structural_role]; // announced role → salience
     // SRC-D-PROV-1 (§3.1): a template is "all echoed" only while every event forming it is echoed
     // source. AND-reduction (order-independent) — one real runtime occurrence makes it false.
@@ -660,7 +665,8 @@ void MetaLogEngine::build_top_k(MetaLogDocument& doc, const WindowAnalysis& anal
         // serialize/explain seams.
         entry.count = ordered[i].second->count;
         entry.frequency = total > 0.0 ? static_cast<double>(entry.count) / total : 0.0;
-        entry.dominant_level = dominant_level_of(ordered[i].second->level_counts);
+        entry.dominant_level = dominant_event_level_of(ordered[i].second->level_counts,
+                                                       ordered[i].second->declared_level_counts);
         // SRC-D-WHERE-2 — see metalog.api.cppm (TopKEntry) for the contract. Computed
         // unconditionally here: the label is a property of the bucket, so making it
         // conditional would make the document's content depend on a consumer's interest.
@@ -788,7 +794,7 @@ void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& ana
 
     // The error class (SRC-D-RNK-2 §5.2) — mirrors eidos `reservoir_is_error_class`: the
     // verdict-anchored-failure signal at the metalog layer (after SRC-D-OUT-4).
-    const auto error_class{[](StructuralRole role, std::optional<LogLevel> level) noexcept
+    const auto error_class{[](StructuralRole role, std::optional<EventLevel> level) noexcept
                            {
                                return role == StructuralRole::Terminator ||
                                       level == LogLevel::Error || level == LogLevel::Fatal;
@@ -796,18 +802,19 @@ void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& ana
     // Per-kind diversity key for the general pool: packs the two small enums into one
     // integer counter so M optimises COVERAGE of distinct salient kinds over depth.
     constexpr unsigned kKindRoleShift{8U};
-    const auto kind_key{
-        [](StructuralRole role, std::optional<LogLevel> level) noexcept
-        {
-            const auto lvl{level ? static_cast<std::uint16_t>(*level) : std::uint16_t{0xFFU}};
-            return static_cast<std::uint16_t>((static_cast<std::uint16_t>(role) << kKindRoleShift) |
-                                              lvl);
-        }};
+    const auto kind_key{[](StructuralRole role, std::optional<EventLevel> level) noexcept
+                        {
+                            const auto lvl{level ? static_cast<std::uint16_t>(level->value())
+                                                 : std::uint16_t{0xFFU}};
+                            return static_cast<std::uint16_t>(
+                                (static_cast<std::uint16_t>(role) << kKindRoleShift) | lvl);
+                        }};
     // Build + push one reservoir entry for an already-decided candidate; mark it reserved
     // (excluded from the tail residual, SPEC §3.7.3). level/role are passed in so the two
     // admission phases compute the dominant maps once.
     const auto admit_one{
-        [&](const ReservoirCandidate& candidate, std::optional<LogLevel> level, StructuralRole role)
+        [&](const ReservoirCandidate& candidate, std::optional<EventLevel> level,
+            StructuralRole role)
         {
             const Bucket& bucket{*ordered[candidate.index].second};
             ReservoirEntry entry;
@@ -831,7 +838,8 @@ void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& ana
             // component → disengaged label; cube_location maps it to the aggregated-WHERE star.
             {
                 auto component{dominant_component_of(bucket.component_counts)};
-                entry.cube_coord = cube::cube_location(level, component);
+                entry.cube_coord = cube::cube_location(
+                    level ? std::optional<LogLevel>{level->value()} : std::nullopt, component);
                 if (!component.empty())
                     entry.dominant_component = std::move(component);
             }
@@ -857,7 +865,8 @@ void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& ana
             if (reserved_used >= reserve || stats.reservoir.size() >= config_.reservoir_size)
                 break;
             const Bucket& bucket{*ordered[candidate.index].second};
-            const auto level{dominant_level_of(bucket.level_counts)};
+            const auto level{
+                dominant_event_level_of(bucket.level_counts, bucket.declared_level_counts)};
             const auto role{dominant_role_of(bucket.role_counts)};
             if (!error_class(role, level))
                 continue;
@@ -879,7 +888,8 @@ void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& ana
         if (reserved.contains(ordered[candidate.index].first))
             continue; // promoted by the reserve in phase 1
         const Bucket& bucket{*ordered[candidate.index].second};
-        const auto level{dominant_level_of(bucket.level_counts)};
+        const auto level{
+            dominant_event_level_of(bucket.level_counts, bucket.declared_level_counts)};
         const auto role{dominant_role_of(bucket.role_counts)};
         if (config_.reservoir_per_kind_cap > 0)
         {

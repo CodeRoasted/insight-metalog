@@ -23,7 +23,7 @@ using insight::template_id_of;
 {
     meta::ReservoirEntry entry;
     entry.template_id = template_id_of(tmpl);
-    entry.dominant_level = level;
+    entry.dominant_level = insight::EventLevel::declared(level);
     entry.salience = salience;
     entry.count = count;
     return entry;
@@ -36,7 +36,7 @@ using insight::template_id_of;
 {
     meta::TopKEntry entry;
     entry.template_id = template_id_of(tmpl);
-    entry.dominant_level = level;
+    entry.dominant_level = insight::EventLevel::declared(level);
     entry.count = count;
     return entry;
 }

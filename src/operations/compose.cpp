@@ -65,7 +65,7 @@ namespace
     }
 
     void aggregate_top_k(std::unordered_map<TemplateId, std::uint64_t>& counts,
-                         std::unordered_map<TemplateId, std::optional<LogLevel>>& levels,
+                         std::unordered_map<TemplateId, std::optional<EventLevel>>& levels,
                          const MetaLogDocument& doc)
     {
         // Counts + levels are the decision signal a composed document carries. The display
@@ -85,7 +85,7 @@ namespace
     // full merged count. Lets the composed top_k ranking and the re-derived reservoir
     // see the rare-salient templates' counts, which `aggregate_top_k` alone misses.
     void aggregate_reservoir(std::unordered_map<TemplateId, std::uint64_t>& counts,
-                             std::unordered_map<TemplateId, std::optional<LogLevel>>& levels,
+                             std::unordered_map<TemplateId, std::optional<EventLevel>>& levels,
                              const MetaLogDocument& doc)
     {
         for (const auto& entry : doc.stats.reservoir)
@@ -177,7 +177,7 @@ namespace
     struct ComposeState
     {
         std::unordered_map<TemplateId, std::uint64_t> counts;
-        std::unordered_map<TemplateId, std::optional<LogLevel>> levels;
+        std::unordered_map<TemplateId, std::optional<EventLevel>> levels;
         std::vector<std::pair<TemplateId, std::uint64_t>> ordered;
         std::unordered_set<TemplateId> reserved;
     };
@@ -319,7 +319,7 @@ namespace
             const auto cit{counts.find(tid)};
             const std::uint64_t cnt{cit != counts.end() ? cit->second : 0};
             const auto lit{levels.find(tid)};
-            const std::optional<LogLevel> lvl{lit != levels.end() ? lit->second : std::nullopt};
+            const std::optional<EventLevel> lvl{lit != levels.end() ? lit->second : std::nullopt};
             // template_str is gone from composed documents (SRC-D-TIR-5). looks_like_failure's
             // lexicon cue is redundant here: a reservoir candidate is folded from inputs that were
             // ALREADY admitted by salience (carrying level + structural_surprise/novelty, the
@@ -328,9 +328,13 @@ namespace
             // carried signals, not on re-parsing the string. The failure-cue tier is moot on an
             // empty tmpl, so the SRC-D-PROV-1 echoed_source gate is a no-op here → pass false (the
             // composed input carries no per-line provenance).
-            const auto sal{salience_score(lvl, info.role, std::string_view{},
-                                          /*echoed_source=*/false, cnt, out.window.lines_observed,
-                                          info.structural_surprise, info.novelty)};
+            // salience reads SEVERITY, not evidence quality — provenance is deliberately not a
+            // salience input (a declared Error and an inferred one are equally worth retaining).
+            const auto sal{
+                salience_score(lvl ? std::optional<LogLevel>{lvl->value()} : std::nullopt,
+                               info.role, std::string_view{},
+                               /*echoed_source=*/false, cnt, out.window.lines_observed,
+                               info.structural_surprise, info.novelty)};
             if (sal > 0U)
                 res_cands.push_back(
                     ComposeReservoirCandidate{.template_id = tid,
@@ -384,7 +388,10 @@ namespace
             entry.novelty = cand.novelty;
             entry.salience = cand.salience;
             if (inputs_have_cube)
-                entry.cube_coord = cube::cube_location(entry.dominant_level, cand.where_leaf);
+                entry.cube_coord = cube::cube_location(
+                    entry.dominant_level ? std::optional<LogLevel>{entry.dominant_level->value()}
+                                         : std::nullopt,
+                    cand.where_leaf);
             out.stats.reservoir.push_back(std::move(entry));
             reserved.insert(cand.template_id);
         }
