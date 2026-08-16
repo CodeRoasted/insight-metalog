@@ -48,9 +48,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { leg: gcc,   arch: x86,   runner: ubuntu-latest,    label: "gcc-15 · libstdc++ · x86",   gcc_profile: linux-gcc16-release,       clang_profile: linux-clang21-libcxx-release }
+          - { leg: gcc,   arch: x86,   runner: ubuntu-latest,    label: "gcc-16 · libstdc++ · x86",   gcc_profile: linux-gcc16-release,       clang_profile: linux-clang21-libcxx-release }
           - { leg: clang, arch: x86,   runner: ubuntu-latest,    label: "clang-21 · libc++ · x86",    gcc_profile: linux-gcc16-release,       clang_profile: linux-clang21-libcxx-release }
-          - { leg: gcc,   arch: arm64, runner: ubuntu-24.04-arm, label: "gcc-15 · libstdc++ · arm64", gcc_profile: linux-gcc16-arm64-release, clang_profile: linux-clang21-libcxx-arm64-release }
+          - { leg: gcc,   arch: arm64, runner: ubuntu-24.04-arm, label: "gcc-16 · libstdc++ · arm64", gcc_profile: linux-gcc16-arm64-release, clang_profile: linux-clang21-libcxx-arm64-release }
           - { leg: clang, arch: arm64, runner: ubuntu-24.04-arm, label: "clang-21 · libc++ · arm64",  gcc_profile: linux-gcc16-arm64-release, clang_profile: linux-clang21-libcxx-arm64-release }
     env:
       # PER-LEG. `github.workspace` is one fixed path per repo, so on a PERSISTENT runner two legs of

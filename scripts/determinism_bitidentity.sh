@@ -59,7 +59,7 @@ JOBS=$(( mem_gb / 3 )); [ "$JOBS" -lt 1 ] && JOBS=1; [ "$JOBS" -gt "$ncpu" ] && 
 echo "build parallelism: $JOBS jobs (MemAvailable=${mem_gb}GB cpu=$ncpu)"
 
 # The CELL MATRIX = stdlib leg × optimization corner. Two orthogonal hazard axes:
-#   - stdlib leg (gcc-15/libstdc++ vs clang-21/libc++): catches ITERATION-ORDER leaks (unordered_*),
+#   - stdlib leg (ship gcc/libstdc++ vs clang-21/libc++): catches ITERATION-ORDER leaks (unordered_*),
 #     the ADR-31.D8 class — the cross-stdlib axis is the ONLY one that exposes a hash-order flip.
 #   - optimization corner (-O{0,3} × -ffp-contract{off,fast}): catches FP-CONTRACTION / reassociation
 #     leaks — a stray float op in the det_math / salience path that -ffp=fast would reorder. A correct
@@ -67,7 +67,7 @@ echo "build parallelism: $JOBS jobs (MemAvailable=${mem_gb}GB cpu=$ncpu)"
 #     cell is a det_math gap. (-DNDEBUG is fixed from Release; only -O / -ffp vary per cell.)
 #
 # LEG — golden.yaml runs ONE leg per CI job via DETERMINISM_LEG (gcc|clang), keyed into LEG_SPEC below.
-# The cross-STDLIB property (gcc-15/libstdc++ ≡ clang-21/libc++ — the only axis that exposes an
+# The cross-STDLIB property (ship gcc/libstdc++ ≡ clang-21/libc++ — the only axis that exposes an
 # unordered_* iteration-order leak, ADR-31.D8), cross-ISA, and cross-OS are all the golden.yaml `compare` of
 # every leg's emitted digest; this script proves only THIS leg's -O/-ffp sweep-invariance and emits.
 # The conan PROFILE per leg is overridable so the SAME driver runs on a 2nd ISA: the arm64 legs inject
@@ -75,20 +75,27 @@ echo "build parallelism: $JOBS jobs (MemAvailable=${mem_gb}GB cpu=$ncpu)"
 # (the only x86↔arm64 difference is the profile's arch/-march; the compiler binaries are wired identically).
 GCC_PROFILE="${DETERMINISM_GCC_PROFILE:-linux-gcc16-release}"
 CLANG_PROFILE="${DETERMINISM_CLANG_PROFILE:-linux-clang21-libcxx-release}"
+# The PROFILE is the ONLY compiler authority: the harness cmake gets CC/CXX extracted from the
+# leg profile's [buildenv], never a hand-kept binary name. WHY (measured 2026-08-16): the old
+# leg array carried literal `g++-15:gcc-15` bins that were passed as -DCMAKE_C/CXX_COMPILER;
+# conan_toolchain.cmake sets no compiler, so the -D literals WON over the profile — a desk run
+# with DETERMINISM_GCC_PROFILE=linux-gcc16-release silently built BOTH gcc legs with the PATH's
+# g++-15 and the 15.3-vs-16.2 byte-compare was 15.3-vs-15.3, vacuous. (In CI the missing g++-15
+# skipped the leg and the ADR-31.D8 cell-count gate redded — loud there, silent at the desk.)
 declare -A LEG_SPEC=(
-  [gcc15-libstdcxx]="g++-15:gcc-15:$GCC_PROFILE"     # cxx-bin:cc-bin:conan-profile
-  [clang21-libcxx]="clang++-21:clang-21:$CLANG_PROFILE"
+  [gcc-libstdcxx]="$GCC_PROFILE"
+  [clang-libcxx]="$CLANG_PROFILE"
 )
 # DETERMINISM_LEG (singular) = the canon-golden-workflow interface: run ONE compiler per job so the
 # cross-stdlib property comes from the workflow's compare of the per-leg digests (gcc-x86 == clang-x86),
 # exactly like canon's det_public_proof.sh. Maps to the single LEG_SPEC key; overrides DETERMINISM_LEGS.
 case "${DETERMINISM_LEG:-}" in
-  gcc)   DETERMINISM_LEGS="gcc15-libstdcxx" ;;
-  clang) DETERMINISM_LEGS="clang21-libcxx" ;;
+  gcc)   DETERMINISM_LEGS="gcc-libstdcxx" ;;
+  clang) DETERMINISM_LEGS="clang-libcxx" ;;
   '')    : ;;
   *) echo "::error::unknown DETERMINISM_LEG='$DETERMINISM_LEG' (expected gcc|clang)" >&2; exit 2 ;;
 esac
-read -ra LINUX_LEGS <<<"${DETERMINISM_LEGS:-clang21-libcxx}"
+read -ra LINUX_LEGS <<<"${DETERMINISM_LEGS:-clang-libcxx}"
 
 cells=(
   "O3_off:-O3 -ffp-contract=off"
@@ -102,13 +109,13 @@ builds=()
 for legkey in "${LINUX_LEGS[@]}"; do
   spec="${LEG_SPEC[$legkey]:-}"
   [ -n "$spec" ] || { echo "UNKNOWN LEG: '$legkey' (known: ${!LEG_SPEC[*]})"; exit 2; }
-  IFS=: read -r cxxbin ccbin profile <<<"$spec"
+  profile="$spec"
   tag="$legkey"
   [ -f "$CONAN_HOME/profiles/$profile" ] || { echo "MISSING PROFILE: $profile (leg $tag)"; continue; }
 
-  # Preflight: the PROFILE is the source of truth for the compiler (its [buildenv] CXX), NOT the
-  # leg-array `cxxbin` — e.g. linux-gcc16-release pins CXX=/opt/gcc-16.2/bin/g++ (from-source 15.3,
-  # PR124309) which the runner may not have provisioned. Check the profile's compiler exists and FAIL
+  # Preflight: the PROFILE is the source of truth for the compiler (its [buildenv] CXX/CC) —
+  # e.g. linux-gcc16-release pins CXX=/opt/gcc-16.2/bin/g++ (the published from-source asset)
+  # which the runner may not have provisioned. Check the profile's compiler exists and FAIL
   # FAST with the path, instead of letting conan invoke a missing compiler and surfacing it as a
   # buried "fmt cmake.configure Error 1" 1000 lines deep. (Was lost on the gcc-15.3 CI-drift, 2026-06-15.)
   prof_cxx="$(sed -nE 's/^[[:space:]]*CXX[[:space:]]*=[[:space:]]*//p' "$CONAN_HOME/profiles/$profile" | tail -1)"
@@ -116,13 +123,19 @@ for legkey in "${LINUX_LEGS[@]}"; do
   # PATH-relative name (linux-clang21-libcxx-release → clang++-21). Accept either: `-x` for a path,
   # `command -v` for a PATH lookup. (A bare name MUST NOT be tested with `-x` alone — that checks the
   # CWD, falsely failing a PATH-resolvable compiler; it silently skipped the clang leg, 2026-06-16.)
-  if [ -n "$prof_cxx" ] && ! { [ -x "$prof_cxx" ] || command -v "$prof_cxx" >/dev/null 2>&1; }; then
-    echo "MISSING COMPILER: $prof_cxx — profile '$profile' [buildenv] points here but the runner has"
-    echo "  no such binary on PATH or at that path. (e.g. linux-gcc16-release pins from-source"
-    echo "  /opt/gcc-16.2 for PR124309 — provision it in CI, or point the profile at an available toolchain.)"
+  if [ -z "$prof_cxx" ] || ! { [ -x "$prof_cxx" ] || command -v "$prof_cxx" >/dev/null 2>&1; }; then
+    echo "MISSING COMPILER: '${prof_cxx:-<no CXX in profile>}' — profile '$profile' [buildenv] points here"
+    echo "  but the runner has no such binary on PATH or at that path. (e.g. linux-gcc16-release pins"
+    echo "  from-source /opt/gcc-16.2 — provision it in CI, or point the profile at an available toolchain.)"
     continue
   fi
-  command -v "$cxxbin" >/dev/null || { echo "MISSING COMPILER: $cxxbin (leg $tag)"; continue; }
+  prof_cc="$(sed -nE 's/^[[:space:]]*CC[[:space:]]*=[[:space:]]*//p' "$CONAN_HOME/profiles/$profile" | tail -1)"
+  [ -n "$prof_cc" ] || prof_cc="$prof_cxx"   # a CXX-only profile: harness C code rides the CXX driver's cc
+  # Resolve PATH-relative names to absolute paths and PRINT the leg's compiler identity — the
+  # one line that makes a wrong-compiler leg impossible to miss in any log.
+  cxx_abs="$(command -v "$prof_cxx")" || cxx_abs="$prof_cxx"
+  cc_abs="$(command -v "$prof_cc")" || cc_abs="$prof_cc"
+  echo "leg $tag: CXX=$cxx_abs ($("$cxx_abs" --version 2>/dev/null | head -1))"
 
   # conan install once per leg (the deps are -O/-ffp-independent); each cell re-cmakes the tower.
   legdir="$WORK/conan-$tag"
@@ -143,7 +156,7 @@ for legkey in "${LINUX_LEGS[@]}"; do
     # failing stage's log (a one-line "BUILD FAIL" with no diagnostics is useless under CI).
     if ! cmake -S "$HARNESS" -B "$bdir" -G Ninja \
           -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_C_COMPILER="$ccbin" -DCMAKE_CXX_COMPILER="$cxxbin" \
+          -DCMAKE_C_COMPILER="$cc_abs" -DCMAKE_CXX_COMPILER="$cxx_abs" \
           -DCMAKE_TOOLCHAIN_FILE="$toolchain" \
           -DCANON_ROOT="$CANON" -DMETA_ROOT="$META" \
           -DCELL_FLAGS="$cflags -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_OFF" >"$bdir.cfg.log" 2>&1; then

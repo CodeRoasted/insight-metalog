@@ -3,7 +3,7 @@
 # The twin of canon's public proof, scoped to the canon+metalog tower. The 1.5.1 unwrap turned
 # both into C++20 modules, deleting the textual headers determinism_bitidentity.sh's single-shot
 # `$cxx canon/src metalog/src fixture.cpp` recompile #include'd. "N ways" (here the 2 cross-stdlib
-# legs gcc-15/libstdc++ × clang-21/libc++) is now: build canon+metalog as a MODULE STATIC-LIB tower
+# legs ship-gcc/libstdc++ × clang-21/libc++) is now: build canon+metalog as a MODULE STATIC-LIB tower
 # per leg via their real CXX_MODULE_STD build, and link the constant determinism_fixture against it.
 # Building the libs IS recompiling canon+metalog under the leg's codegen; only the trivial fixture
 # moves from recompile to link, so the diagonal's coverage is unchanged. determinism_bitidentity.sh
