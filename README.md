@@ -35,7 +35,7 @@ A MetaLog document is a **deterministic** function of its input window — the s
 
 ## Requirements
 
-- GCC 15 with C++23
+- GCC 16 with C++23
 - CMake 3.28+ with C++23 named-module support
 - Ninja
 - Conan 2.x
