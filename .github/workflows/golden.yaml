@@ -48,10 +48,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { leg: gcc,   arch: x86,   runner: ubuntu-latest,    label: "gcc-15 · libstdc++ · x86",   gcc_profile: linux-gcc15-release,       clang_profile: linux-clang21-libcxx-release }
-          - { leg: clang, arch: x86,   runner: ubuntu-latest,    label: "clang-21 · libc++ · x86",    gcc_profile: linux-gcc15-release,       clang_profile: linux-clang21-libcxx-release }
-          - { leg: gcc,   arch: arm64, runner: ubuntu-24.04-arm, label: "gcc-15 · libstdc++ · arm64", gcc_profile: linux-gcc15-arm64-release, clang_profile: linux-clang21-libcxx-arm64-release }
-          - { leg: clang, arch: arm64, runner: ubuntu-24.04-arm, label: "clang-21 · libc++ · arm64",  gcc_profile: linux-gcc15-arm64-release, clang_profile: linux-clang21-libcxx-arm64-release }
+          - { leg: gcc,   arch: x86,   runner: ubuntu-latest,    label: "gcc-15 · libstdc++ · x86",   gcc_profile: linux-gcc16-release,       clang_profile: linux-clang21-libcxx-release }
+          - { leg: clang, arch: x86,   runner: ubuntu-latest,    label: "clang-21 · libc++ · x86",    gcc_profile: linux-gcc16-release,       clang_profile: linux-clang21-libcxx-release }
+          - { leg: gcc,   arch: arm64, runner: ubuntu-24.04-arm, label: "gcc-15 · libstdc++ · arm64", gcc_profile: linux-gcc16-arm64-release, clang_profile: linux-clang21-libcxx-arm64-release }
+          - { leg: clang, arch: arm64, runner: ubuntu-24.04-arm, label: "clang-21 · libc++ · arm64",  gcc_profile: linux-gcc16-arm64-release, clang_profile: linux-clang21-libcxx-arm64-release }
     env:
       # PER-LEG. `github.workspace` is one fixed path per repo, so on a PERSISTENT runner two legs of
       # this matrix share a conan home and `actions/cache` extracts into whatever is already there —
@@ -84,15 +84,15 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Provision gcc-15.3 toolchain (OUR OWN — 15.3 only; arm64 asset auto-picked by uname -m)
+      - name: Provision gcc-16.2 toolchain (OUR OWN — 15.3 only; arm64 asset auto-picked by uname -m)
         if: matrix.leg == 'gcc'
-        uses: CodeRoasted/malf-toolchain/.github/actions/setup-gcc153@main
+        uses: CodeRoasted/malf-toolchain/.github/actions/setup-gcc@main
 
       - name: Provision clang-21 + libc++-21
         if: matrix.leg == 'clang'
         uses: CodeRoasted/malf-toolchain/.github/actions/setup-clang21-libcxx@main
 
-      - name: Base — ninja + CMake 4.3.x (+ gcc-15.3 /opt wiring on the gcc leg)
+      - name: Base — ninja + CMake 4.3.x (+ gcc-16.2 /opt wiring on the gcc leg)
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build python3 build-essential
@@ -101,13 +101,13 @@ jobs:
           hash -r
           case "$(cmake --version | head -1)" in *" 4.3."*) cmake --version ;; *) echo "::error::expected CMake 4.3.x (got: $(cmake --version | head -1))"; exit 1 ;; esac
           if [ "${{ matrix.leg }}" = "gcc" ]; then
-            sudo update-alternatives --install /usr/bin/gcc gcc /opt/gcc-15.3/bin/gcc 1000
-            sudo update-alternatives --install /usr/bin/g++ g++ /opt/gcc-15.3/bin/g++ 1000
-            sudo update-alternatives --set gcc /opt/gcc-15.3/bin/gcc
-            sudo update-alternatives --set g++ /opt/gcc-15.3/bin/g++
-            sudo ln -sf /opt/gcc-15.3/bin/g++ /usr/local/bin/g++-15
-            sudo ln -sf /opt/gcc-15.3/bin/gcc /usr/local/bin/gcc-15
-            g++ --version | grep -qE ' 15\.' || { echo "ERROR: bare g++ is not gcc-15.3 (/opt)"; exit 1; }
+            sudo update-alternatives --install /usr/bin/gcc gcc /opt/gcc-16.2/bin/gcc 1000
+            sudo update-alternatives --install /usr/bin/g++ g++ /opt/gcc-16.2/bin/g++ 1000
+            sudo update-alternatives --set gcc /opt/gcc-16.2/bin/gcc
+            sudo update-alternatives --set g++ /opt/gcc-16.2/bin/g++
+            sudo ln -sf /opt/gcc-16.2/bin/g++ /usr/local/bin/g++-15
+            sudo ln -sf /opt/gcc-16.2/bin/gcc /usr/local/bin/gcc-15
+            g++ --version | grep -qE ' 15\.' || { echo "ERROR: bare g++ is not gcc-16.2 (/opt)"; exit 1; }
           fi
 
       - name: Setup Conan

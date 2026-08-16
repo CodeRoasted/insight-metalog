@@ -71,9 +71,9 @@ echo "build parallelism: $JOBS jobs (MemAvailable=${mem_gb}GB cpu=$ncpu)"
 # unordered_* iteration-order leak, ADR-31.D8), cross-ISA, and cross-OS are all the golden.yaml `compare` of
 # every leg's emitted digest; this script proves only THIS leg's -O/-ffp sweep-invariance and emits.
 # The conan PROFILE per leg is overridable so the SAME driver runs on a 2nd ISA: the arm64 legs inject
-# DETERMINISM_GCC_PROFILE=linux-gcc15-arm64-release / DETERMINISM_CLANG_PROFILE=linux-clang21-libcxx-arm64-release
+# DETERMINISM_GCC_PROFILE=linux-gcc16-arm64-release / DETERMINISM_CLANG_PROFILE=linux-clang21-libcxx-arm64-release
 # (the only x86↔arm64 difference is the profile's arch/-march; the compiler binaries are wired identically).
-GCC_PROFILE="${DETERMINISM_GCC_PROFILE:-linux-gcc15-release}"
+GCC_PROFILE="${DETERMINISM_GCC_PROFILE:-linux-gcc16-release}"
 CLANG_PROFILE="${DETERMINISM_CLANG_PROFILE:-linux-clang21-libcxx-release}"
 declare -A LEG_SPEC=(
   [gcc15-libstdcxx]="g++-15:gcc-15:$GCC_PROFILE"     # cxx-bin:cc-bin:conan-profile
@@ -107,19 +107,19 @@ for legkey in "${LINUX_LEGS[@]}"; do
   [ -f "$CONAN_HOME/profiles/$profile" ] || { echo "MISSING PROFILE: $profile (leg $tag)"; continue; }
 
   # Preflight: the PROFILE is the source of truth for the compiler (its [buildenv] CXX), NOT the
-  # leg-array `cxxbin` — e.g. linux-gcc15-release pins CXX=/opt/gcc-15.3/bin/g++ (from-source 15.3,
+  # leg-array `cxxbin` — e.g. linux-gcc16-release pins CXX=/opt/gcc-16.2/bin/g++ (from-source 15.3,
   # PR124309) which the runner may not have provisioned. Check the profile's compiler exists and FAIL
   # FAST with the path, instead of letting conan invoke a missing compiler and surfacing it as a
   # buried "fmt cmake.configure Error 1" 1000 lines deep. (Was lost on the gcc-15.3 CI-drift, 2026-06-15.)
   prof_cxx="$(sed -nE 's/^[[:space:]]*CXX[[:space:]]*=[[:space:]]*//p' "$CONAN_HOME/profiles/$profile" | tail -1)"
-  # A profile CXX may be an ABSOLUTE path (linux-gcc15-release → /opt/gcc-15.3/bin/g++) OR a
+  # A profile CXX may be an ABSOLUTE path (linux-gcc16-release → /opt/gcc-16.2/bin/g++) OR a
   # PATH-relative name (linux-clang21-libcxx-release → clang++-21). Accept either: `-x` for a path,
   # `command -v` for a PATH lookup. (A bare name MUST NOT be tested with `-x` alone — that checks the
   # CWD, falsely failing a PATH-resolvable compiler; it silently skipped the clang leg, 2026-06-16.)
   if [ -n "$prof_cxx" ] && ! { [ -x "$prof_cxx" ] || command -v "$prof_cxx" >/dev/null 2>&1; }; then
     echo "MISSING COMPILER: $prof_cxx — profile '$profile' [buildenv] points here but the runner has"
-    echo "  no such binary on PATH or at that path. (e.g. linux-gcc15-release pins from-source"
-    echo "  /opt/gcc-15.3 for PR124309 — provision it in CI, or point the profile at an available toolchain.)"
+    echo "  no such binary on PATH or at that path. (e.g. linux-gcc16-release pins from-source"
+    echo "  /opt/gcc-16.2 for PR124309 — provision it in CI, or point the profile at an available toolchain.)"
     continue
   fi
   command -v "$cxxbin" >/dev/null || { echo "MISSING COMPILER: $cxxbin (leg $tag)"; continue; }

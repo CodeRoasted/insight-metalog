@@ -50,8 +50,8 @@ malf test .
 
 # Or directly
 conan install . \
-  --profile:host=linux-gcc15-release \
-  --profile:build=linux-gcc15-release \
+  --profile:host=linux-gcc16-release \
+  --profile:build=linux-gcc16-release \
   --build=missing
 cmake --preset conan-release
 cmake --build build --preset conan-release
@@ -59,8 +59,8 @@ ctest --test-dir build --output-on-failure
 
 # Create the Conan package
 conan create . \
-  --profile:host=linux-gcc15-release \
-  --profile:build=linux-gcc15-release \
+  --profile:host=linux-gcc16-release \
+  --profile:build=linux-gcc16-release \
   --build=missing \
   --build-test=missing
 ```
