@@ -9,9 +9,10 @@ packages:
     # insight_canon and this entry was never resynced.
     depends: [insight_canon, insight_semantic_github]
 
-# ── The build system's INVENTORY (DN-33.D2) — see insight-canon/packages.yml for the contract ───
-# FOUND BY THE PREDICATE, NOT BY A SWEEP, and that is the point: DN-33.D3 was written asserting
-# `insight-canon/proof/` was the ONLY orphan, and the derived check found this second one of the
+# ── The build system's INVENTORY (ADR-3.D9) — see insight-canon/packages.yml for the contract ───
+# FOUND BY THE PREDICATE, NOT BY A SWEEP, and that is the point: the derived-clause ruling (now
+# ADR-3.D9) was minted asserting `insight-canon/proof/` was the ONLY orphan, and the derived
+# check found this second one of the
 # identical species on its first run. A hand-kept population was already incomplete on the day it
 # was written — which is precisely why the rule is "derive it", never "list it".
 inventory:
