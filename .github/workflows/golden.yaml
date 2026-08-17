@@ -364,8 +364,12 @@ jobs:
   # row, on a graph GitHub itself declares (`compare` needs [proof-linux, proof-msvc] — the
   # genuine release-gate fan-in of THIS workflow, never a prop). Dispatch-only: the
   # workflow_call (tag), schedule and pull_request paths gain one SKIPPED job and nothing
-  # else. Baseline = the REAL v1.9.3 Release compare per-job log (job 95034222434,
-  # pre-migration), so the pair differs on genuinely shipped changes; the changed side is
+  # else. Baseline = the REAL pre-migration WEEKLY-SCHEDULE compare per-job log (job
+  # 93390520636, 2026-08-10, gcc-15-era): a schedule run renders the job bare ("compare"),
+  # exactly as a dispatch run does — run 3 measured that a workflow_call baseline renders
+  # "golden / compare" (DN-37.D14) and the pair then only produces vanished/new PHASE
+  # events, leaving the fold nothing to fold. Same context + different commits = matched
+  # rendering with genuinely shipped differences; the changed side is
   # THIS run's compare, Action-acquired per-job (never an assembled buffer — DN-37.D28).
   # The permissions block is load-bearing: jobgraph.ts fail-softs to ABSENT on a denied
   # jobs listing, which leaves the fold inert and reads exactly like a refute.
@@ -377,7 +381,7 @@ jobs:
       actions: read
       contents: read
     steps:
-      - name: Baseline — the real v1.9.3 golden/compare per-job log (Release run 31891808449)
+      - name: Baseline — the real pre-migration scheduled-run compare per-job log (run 31367452345, 2026-08-10)
         env:
           GH_TOKEN: ${{ github.token }}
         # --allow-escape-sequences: job logs carry ANSI color codes and CI's gh refuses to
@@ -387,7 +391,7 @@ jobs:
         # a raw-vs-ingested pair collapses the baseline into one empty template (104x
         # h:e3b0c442..., the whole diff garbage). Same trap class as DN-37.D28, one seam over.
         run: |
-          gh api --allow-escape-sequences /repos/CodeRoasted/insight-metalog/actions/jobs/95034222434/logs \
+          gh api --allow-escape-sequences /repos/CodeRoasted/insight-metalog/actions/jobs/93390520636/logs \
             | sed -e 's/\x1b\[[0-9;]*[A-Za-z]//g' -e 's/\x1b\][^\x07]*\x07//g' -E -e 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z //' \
             > sift-baseline-compare-v193.log
           wc -l sift-baseline-compare-v193.log
