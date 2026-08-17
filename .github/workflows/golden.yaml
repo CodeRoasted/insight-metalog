@@ -380,7 +380,9 @@ jobs:
       - name: Baseline — the real v1.9.3 golden/compare per-job log (Release run 31891808449)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh api /repos/CodeRoasted/insight-metalog/actions/jobs/95034222434/logs > sift-baseline-compare-v193.log
+        # --allow-escape-sequences: job logs carry ANSI color codes and CI's gh refuses to
+        # redirect them without the flag (the first witness dispatch died exactly there).
+        run: gh api --allow-escape-sequences /repos/CodeRoasted/insight-metalog/actions/jobs/95034222434/logs > sift-baseline-compare-v193.log
       - name: Drive the fold live — THIS run's compare vs the banked pre-migration baseline
         id: sift
         uses: CodeRoasted/sift-action@v1
