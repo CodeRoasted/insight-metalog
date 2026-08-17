@@ -381,11 +381,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         # --allow-escape-sequences: job logs carry ANSI color codes and CI's gh refuses to
-        # redirect them without the flag (the first witness dispatch died exactly there).
-        run: gh api --allow-escape-sequences /repos/CodeRoasted/insight-metalog/actions/jobs/95034222434/logs > sift-baseline-compare-v193.log
+        # redirect them without the flag (the first witness dispatch died exactly there). The
+        # raw dump is then stripped to the Action's OWN ingested shape — ANSI + the leading
+        # timestamp column — because a path= baseline meets the engine as-is, and run 2 proved
+        # a raw-vs-ingested pair collapses the baseline into one empty template (104x
+        # h:e3b0c442..., the whole diff garbage). Same trap class as DN-37.D28, one seam over.
+        run: |
+          gh api --allow-escape-sequences /repos/CodeRoasted/insight-metalog/actions/jobs/95034222434/logs \
+            | sed -e 's/\x1b\[[0-9;]*[A-Za-z]//g' -e 's/\x1b\][^\x07]*\x07//g' -E -e 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z //' \
+            > sift-baseline-compare-v193.log
+          wc -l sift-baseline-compare-v193.log
       - name: Drive the fold live — THIS run's compare vs the banked pre-migration baseline
         id: sift
-        uses: CodeRoasted/sift-action@v1
+        uses: CodeRoasted/sift-action@main   # main pins engine-v1.9.4 (the contract's shipped engine); @v1 still resolves the 1.9.3-era Action
         with:
           target-job: "compare"
           baseline: "path=sift-baseline-compare-v193.log"
