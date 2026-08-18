@@ -30,8 +30,37 @@ A MetaLog document is a **deterministic** function of its input window — the s
 | Field | Value |
 |---|---|
 | Conan name | `insight_metalog` |
-| Spec conformance | MetaLog v0.6.0 |
+| Spec target | MetaLog v0.6.0 — **not conformant today**, see below |
 | Visibility | CodeRoast-owned package |
+
+### Conformance, stated exactly
+
+MetaLog `SPEC.md` §8 clause 1 makes conformance a machine check: *"Every MetaLog it emits
+validates against `schema/metalog.v0.schema.json`"*, and §8 closes with *"The schema is the
+test."* Measured on the 17 documents this project publishes as determinism evidence
+(`coderoast-hub/determinism/metalog.determinism_golden.txt`), against the published
+`metalog-spec/schema/metalog.v0.schema.json`: **31 validation errors**. So the honest
+statement is that this producer **targets** v0.6.0 and does not meet clause 1 at HEAD.
+
+All 31 are one species — a field emitted inside a schema object declared
+`additionalProperties: false` — and they split two ways, which decides who fixes what:
+
+| emitted field | errors | in SPEC prose? | in the schema? | side at fault |
+|---|---|---|---|---|
+| `stats.top_k[].component` | 28 | no | no | **this producer** |
+| `stats.top_k[].ordinal_histograms` | 2 | no | no | **this producer** |
+| `cube.axes[].band_floor` | 1 | **yes** (§16.2, §16.10) | no | **the schema** |
+
+`metalog-spec/GOVERNANCE.md` §3 decides the first two: *"If the spec and the reference
+implementation disagree, the spec wins, and the reference implementation is treated as
+buggy."* Two undescribed fields on a closed object is that case; `SPEC.md` §7 already names
+where vendor data belongs (`extensions`, reverse-DNS-keyed) and says to open an issue for a
+field the spec lacks. `band_floor` is the opposite case — the spec's normative prose defines
+it as an axis collapse stamp and makes it load-bearing (*"a truncated granularity MUST NOT
+be mistakable for a full one"*), and only `$defs/cube_axis` has not caught up.
+
+This row will read `Spec conformance | MetaLog v0.6.0` again when the count is zero, and not
+before.
 
 ## Requirements
 
