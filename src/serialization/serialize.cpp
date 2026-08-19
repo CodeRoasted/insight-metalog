@@ -263,25 +263,41 @@ namespace dto
         std::uint64_t dropped_edges{0};
     };
 
-    // The document-root §7 container (see TopKExtensions for the mechanism). Both members
-    // describe the observed window, so both pass the subject leg of the disposition test; both
+    // The per-run transport declaration (ADR-23) as the wire carries it. `names` is the ORDERED
+    // outside-in declaration and `catalog_version` the catalogue it resolves against — a row
+    // rename is a comparability event (ADR-23.D3), so a name without its catalogue version is
+    // unresolvable by a later reader.
+    //
+    // `names` is a plain vector, never an optional: the EMPTY array is the payload for an
+    // undeclared run, and skip_null_members would erase exactly the statement being made.
+    struct TransportDeclaration
+    {
+        std::string catalog_version;
+        std::vector<std::string> names;
+    };
+
+    // The document-root §7 container (see TopKExtensions for the mechanism). Every member
+    // describes the observed window, so all pass the subject leg of the disposition test; all
     // fail the comparability leg, and for different reasons — `acquisition`'s
     // `where_cardinality_per_depth` and `closed_cells` presuppose OUR depth model and OUR closure
-    // geometry, and `service_edges` has one implementer, so standardising it would make the
-    // standard a description of this vendor. Namespacing keeps the content (it is our declared
+    // geometry, `service_edges` has one implementer, so standardising it would make the
+    // standard a description of this vendor, and `transport`'s names are drawn from CANON's own
+    // catalogue, so a bare `transport` member would plant a vendor vocabulary in a vendor-neutral
+    // standard. Namespacing keeps the content (it is our declared
     // error model made machine-readable — deleting it would make our documents LESS falsifiable)
     // while telling a reader which half of the document is the standard's.
     struct DocumentExtensions
     {
         std::optional<Acquisition> acquisition;
         std::optional<ServiceEdgeBlock> service_edges;
+        std::optional<TransportDeclaration> transport;
 
         struct glaze
         {
             using T = DocumentExtensions;
-            static constexpr auto value =
-                glz::object("fr.coderoast.acquisition", &T::acquisition,
-                            "fr.coderoast.service_edges", &T::service_edges);
+            static constexpr auto value = glz::object(
+                "fr.coderoast.acquisition", &T::acquisition, "fr.coderoast.service_edges",
+                &T::service_edges, "fr.coderoast.transport", &T::transport);
         };
     };
 
@@ -930,7 +946,18 @@ namespace
                     {.caller = edge.caller, .callee = edge.callee, .weight = edge.weight});
             extensions.service_edges = std::move(block);
         }
-        if (extensions.acquisition || extensions.service_edges)
+        // ADR-23 per-run declaration. Present on every PRODUCED document (the engine stamps it
+        // unconditionally); absent only on a composed document whose inputs disagreed.
+        if (doc.transport)
+            extensions.transport = dto::TransportDeclaration{
+                .catalog_version = doc.transport->catalog_version, .names = doc.transport->names};
+        // The container is emitted when ANY member is present — never gated on a SUBSET of them.
+        // It read `acquisition || service_edges` while those were the only two, which made the
+        // transport member's existence silently conditional on an unrelated sibling riding along:
+        // a document with a declaration and neither sibling would have dropped the whole
+        // container, and a conditionally-present key is indistinguishable from a dead one to any
+        // existence gate.
+        if (extensions.acquisition || extensions.service_edges || extensions.transport)
             out.extensions = std::move(extensions);
         if (doc.ruleset)
         {

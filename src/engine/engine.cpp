@@ -520,6 +520,11 @@ void MetaLogEngine::stamp_envelope(MetaLogDocument& doc, Timestamp start, Timest
     // ruleset that segmented the input, injected via config by the producing binary. Absent for a
     // legacy producer (config.ruleset unset) → the block is omitted from the wire.
     doc.ruleset = config_.ruleset;
+    // ADR-23 per-run transport declaration: stamped UNCONDITIONALLY, so a produced document always
+    // states what was declared — an undeclared run carries the block with an empty `names[]`
+    // rather than dropping it, because a key emitted only for a non-empty stack is
+    // indistinguishable from a producer that cannot emit the key at all.
+    doc.transport = config_.transport;
 
     // §15 re-derivation coordinate: when a source_ref is configured, stamp the
     // window's EVENT-TIME bounds as integer ticks (no float; bit-identical across

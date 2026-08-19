@@ -595,6 +595,17 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
     // under an unstated ruleset). Mirrors carry_processing_identifier for the
     // optional<RulesetIdentity> field.
     out.ruleset = (lhs.ruleset && rhs.ruleset) ? lhs.ruleset : std::nullopt;
+    // ADR-23 per-run transport declaration: carried only when both inputs declared the SAME stack.
+    // It is NOT a compose gate and must not become one — the declaration gates nothing by
+    // construction (ADR-23.D4: it is deliberately outside the identity path), so composing across
+    // two declarations is legal and merely leaves the result with no single declaration to state.
+    // Omitting is then the honest output, and it is the one case where the block may be absent: an
+    // empty `names[]` here would claim the merged runs declared NOTHING, which is a wrong claim
+    // rather than an absent one. Hence the explicit equality test — unlike `ruleset` above, no
+    // gate ran first to prove the two sides matched.
+    out.transport = (lhs.transport && rhs.transport && *lhs.transport == *rhs.transport)
+                        ? lhs.transport
+                        : std::nullopt;
     out.window.start_iso = iso_min(lhs.window.start_iso, rhs.window.start_iso);
     out.window.end_iso = iso_max(lhs.window.end_iso, rhs.window.end_iso);
     out.window.lines_observed = lhs.window.lines_observed + rhs.window.lines_observed;

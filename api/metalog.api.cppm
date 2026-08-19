@@ -439,6 +439,33 @@ struct RulesetIdentity
     [[nodiscard]] bool operator==(const RulesetIdentity&) const noexcept = default;
 };
 
+// ── Per-run transport declaration (ADR-23) ─────────────────────
+//
+// WHICH delivery layers the declarer said wrap this run's lines. DISCLOSURE, never evidence: canon
+// knows transports and deduces nothing, so a reader learns what was DECLARED — a wrong declaration
+// stays wrong, loudly, and the declarer owns it (ADR-23.D2). Nothing here licenses a comparability
+// statement across transport; ADR-23.D6 owns that claim and keeps it closed.
+//
+// It is NOT identity and NOT a comparability gate: the transform GRAMMAR (the catalogue) enters
+// `semantic_identity`, the per-run declaration does not, and two runs ± a declared transform MUST
+// carry the same identity or transport-invariance is only being asserted (ADR-23.D4). So this
+// block gates nothing on compose/diff — it rides the document as a namespaced §7 extension member.
+struct TransportDeclaration
+{
+    // ORDERED, outside-in — the order the delivery layers were applied, mirroring
+    // `insight::transport::IngestDeclaration::stack`. EMPTY means "nothing was declared", which is
+    // a fact about the run and is NOT the same as the member being absent.
+    std::vector<std::string> names;
+    // The catalogue those names resolve against. Not decoration: a catalogue row rename is a
+    // comparability event (ADR-23.D3), so a name recorded without its catalogue version is
+    // unresolvable by a later reader — and recording an unresolvable name is worse than recording
+    // nothing. Defaults to the canon-owned constant for `canonicalization_version`'s reason: the
+    // names and the catalogue that resolves them live together in canon, so a producer cannot
+    // record a name against a catalogue it did not analyze under.
+    std::string catalog_version{insight::transport::kTransportCatalogVersion};
+    [[nodiscard]] bool operator==(const TransportDeclaration&) const noexcept = default;
+};
+
 // ── Cube (SPEC §16) ────────────────────────────────────────────
 //
 // Intra-window joint categorical condensation: a CLOSED cube over a small, fixed
@@ -920,6 +947,20 @@ struct MetaLogDocument
     // so it follows the CubeBlock precedent risk — but it is stamped once at close and only read
     // (never a synthesized-optional copy on the MSVC /O2 hot path), so std::optional is sound.
     std::optional<RulesetIdentity> ruleset;
+    // The per-run transport declaration (ADR-23). The PRODUCER stamps it on EVERY closed window,
+    // unconditionally — an empty `names[]` says "nothing was declared", and that must never
+    // degrade into the member's absence: "no stack declared" and "this producer cannot emit the
+    // field" are different facts about the run, and a conditionally-emitted key collapses them
+    // into one absence for every consumer.
+    //
+    // std::optional anyway, and the engagement carries the OTHER fact: a COMPOSED document whose
+    // inputs declared different stacks makes no single declaration, and writing an empty `names[]`
+    // there would be a WRONG claim rather than an absent one. compose() carries the block only
+    // when both inputs agree — the `ruleset` treatment, plus an explicit equality test because
+    // this block deliberately gates nothing (ADR-23.D4) and so has no gate to have matched them.
+    // Owns a vector but is stamped once at close and only read, so std::optional is sound here for
+    // the RulesetIdentity/ServiceEdgeBlock reason.
+    std::optional<TransportDeclaration> transport;
     // The run's terminal verdict (ADR-17): one four-class scalar per run, resolved by the
     // SRC-D-OUT-RUN-1 precedence (authoritative side-input → console tail → Unknown) and stamped by
     // the producing orchestration on a WHOLE-RUN document. Additive, NO wire-version bump: Unknown
@@ -1070,6 +1111,16 @@ struct MetaLogConfig
     // composition (ADR-17), so the binary that declares its package set is the only one that
     // knows the hash.
     std::optional<RulesetIdentity> ruleset;
+
+    // The stream's DECLARED transport stack (ADR-23), injected by the producing binary from the
+    // same object that holds the semantic coordinates (eidos `PipelineConfig::transport`). Stamped
+    // onto every closed document; NOT optional, because "nothing declared" is the default state of
+    // a run and not the absence of a statement — the empty `names[]` IS the degenerate stack.
+    //
+    // The producer records the declaration; it never resolves, verifies or applies it. Peeling is
+    // the caller's (ADR-23: line identity is a pure function of PEELED content, so the stack never
+    // reaches a tokenizer), and this field is on the RECORDING path only.
+    TransportDeclaration transport;
 
     // Max number of wildcard positions to histogram per top_k entry.
     // 0 = disabled (default — zero overhead on the ingest_event hot path;
