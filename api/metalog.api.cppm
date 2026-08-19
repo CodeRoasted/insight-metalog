@@ -764,6 +764,21 @@ struct ReportedWindowBounds
 // pin-coherence: mirrors insight_metalog
 inline constexpr std::string_view kProducerVersion{"1.9.6"};
 
+// The SPEC edition this producer writes against, stamped into `metalog_version` (SPEC §9). ONE
+// spelling, for the reason stated directly above: the DTO default and the engine's own
+// `stamp_envelope` carried two independent literals — the same duplication shape that produced the
+// producer-version defect, one spec bump from the same failure. This is a DIFFERENT axis from
+// kProducerVersion: only the spec's MAJOR is normatively coupled (§9), and the version is owned by
+// metalog-spec, not by this workspace's release baseline — so the bump never rewrites it and the
+// marker below points at the document that declares it rather than at a recipe.
+//
+// Hand-carried for kProducerVersion's reason, which applies unchanged: this interface unit is
+// recompiled by every consumer, so a compile definition here would let a consumer's build of the
+// api module disagree with the linked engine.
+//
+// pin-coherence: mirrors metalog-spec/SPEC.md
+inline constexpr std::string_view kMetaLogSpecVersion{"0.8.0"};
+
 struct ProducerBlock
 {
     std::string name{"insight"};
@@ -849,10 +864,9 @@ struct MetaLogDocument
 {
     // The SPEC version this document conforms to. Only its MAJOR is normatively coupled (§9), so
     // this is a claim about which edition of the standard the bytes were written against — the
-    // producer's own version is `producer.version`, a separate axis.
-    //
-    // pin-coherence: mirrors metalog-spec/SPEC.md
-    std::string metalog_version{"0.8.0"};
+    // producer's own version is `producer.version`, a separate axis. kMetaLogSpecVersion owns the
+    // value (and carries the pin-coherence marker that guards it against the spec).
+    std::string metalog_version{kMetaLogSpecVersion};
     ProducerBlock producer{};
     WindowBlock window{};
     SourceBlock source{};

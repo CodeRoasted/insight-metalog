@@ -494,8 +494,7 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end,
 void MetaLogEngine::stamp_envelope(MetaLogDocument& doc, Timestamp start, Timestamp end,
                                    std::optional<ReportedWindowBounds> reported_bounds) const
 {
-    // pin-coherence: mirrors metalog-spec/SPEC.md
-    doc.metalog_version = "0.8.0";
+    doc.metalog_version = kMetaLogSpecVersion;
     doc.producer.version = config_.producer_version;
     doc.source = source_;
     // SRC-D-TIR-5: template strings are not carried on the doc — the serialiser resolves them by id
