@@ -32,11 +32,18 @@
 // has ever put a REAL composed identity and the DEFAULT `canonicalization_version` on the same
 // document and compared two of them. That is precisely the joint the defect lives in.
 //
-// TWO ARMS PRE-REGISTERED RED. Arms ③ and ④ encode the TARGET behaviour (post-fold), so they
-// SKIP rather than fail today and self-flip to a hard PASS the moment the ruleset identity is
-// folded into `canonicalization_version` — no edit. Arms ① and ② are GREEN today and must stay
-// green in both worlds: they are the instrument-integrity legs, and without them ③/④ would be
-// comparing two identical things and skipping for the wrong reason.
+// ALL FOUR ARMS ARE GREEN TODAY, AND THAT IS THE HOMING CALL, NOT AN OVERSIGHT. §2.4's bump MUST
+// is a claim about a VALUE, and the value is not this package's to produce: canon ships no default
+// composition, so only the BINARY that declares a package set can compute a ruleset-aware token,
+// and the fold lands at that injection seam. A "the two tokens must differ" arm homed here would be
+// a can't-PASS gate — it would keep skipping after the defect was fixed, because nothing it can
+// reach ever changes. That arm lives where it can flip, in
+// insight-eidos/engine/tests/pipeline/production_processing_identifier_test.cpp. What this file
+// owns is the MECHANISM and the HARM: ① and ② establish that the two rulesets are real and produce
+// genuinely different documents; ③ pins the boundary (the library's token cannot see the
+// composition, and reds if it ever synthesizes one); ④ exhibits the harm — the only thing refusing
+// the incomparable pair is a member SPEC §7 tells consumers to ignore. ④'s subject is the `ruleset`
+// member, so it dies with that member at the fold; that is the fold's own cascade, not debt.
 //
 // Determinism: no RNG, no wall clock (fixed epoch 1'700'000'000 s), single-threaded, literal input
 // bytes, integer timing only. Both arms consume BYTE-IDENTICAL input; the composition is the only
@@ -214,15 +221,26 @@ TEST_F(RulesetCoverageTest, TheCompositionSwapChangesWhatTheDocumentSays)
            "block stamped on either side — the tokenization difference never reached the wire";
 }
 
-// ── ③ THE PROPERTY — §2.4's bump MUST, over a real ruleset change. PRE-REGISTERED RED ──────────
+// ── ③ THE BOUNDARY — this library's default token cannot see the composition ───────────────────
 //
-// §2.4 requires `canonicalization_version` to be bumped when the output-affecting semantics of
-// masking / tokenization / classification change. ② has just measured that a package-set swap
-// changes exactly that. So the two documents MUST NOT carry equal tokens.
+// GREEN today, and it must STAY green: it is a positive boundary assertion, not a pre-registered
+// red, and the difference is a homing call worth stating because the obvious placement is wrong.
 //
-// Flips to green when the composed-ruleset identity is folded into `canonicalization_version`
-// (masking version ⊕ composed-ruleset hash) and the `ruleset` member dies.
-TEST_F(RulesetCoverageTest, Section24BumpMustHoldsWhenTheRulesetChanges)
+// §2.4's bump MUST is a claim about a VALUE, and the value is not this package's to produce.
+// `MetaLogConfig::canonicalization_version` defaults to a canon-owned constant, and canon ships no
+// default composition at all — the composed package set exists only in the BINARY that declares it.
+// So metalog can never derive a ruleset-aware token, and the fold (`masking version ⊕ composed
+// hash`) lands at the injection seam, in the same producer that injects `composed_semantics()`. A
+// "the tokens must differ" arm homed here would therefore be a can't-PASS gate: it would go on
+// skipping after the defect was fixed, because nothing it can reach ever changes. That arm lives
+// where it can flip — insight-eidos/engine/tests/pipeline/production_processing_identifier_test.cpp
+// reads the token off a document the real InsightPipeline emitted.
+//
+// What IS this package's to state is the boundary: two genuinely different rulesets (①) producing
+// genuinely different documents (②) leave the library's §2.4 token untouched. That is the mechanism
+// of the §2.4 hole, it is permanent here, and it reds if someone ever teaches the library to
+// synthesize a token it has no information to synthesize.
+TEST_F(RulesetCoverageTest, TheLibraryDefaultTokenIsBlindToTheComposition)
 {
     const Arm a{build_arm(core_only, /*stamp_ruleset=*/true)};
     const Arm b{build_arm(with_github, /*stamp_ruleset=*/true)};
@@ -232,47 +250,49 @@ TEST_F(RulesetCoverageTest, Section24BumpMustHoldsWhenTheRulesetChanges)
     ASSERT_NE(a.doc.ruleset->semantic_identity, b.doc.ruleset->semantic_identity)
         << "the arms carry the same composed identity — ① should have caught this first";
 
-    if (a.doc.canonicalization_version != b.doc.canonicalization_version)
-        SUCCEED() << "the ruleset fold landed: a package-set swap moves the §2.4 token. core_only="
-                  << show(a.doc.canonicalization_version)
-                  << " with_github=" << show(b.doc.canonicalization_version);
-    else
-        GTEST_SKIP()
-            << "PRE-REGISTERED RED — SPEC §2.4 bump MUST is violated by the producer today.\n"
-               "  Two documents over ONE byte-identical stream, tokenized under two different "
-               "composed package sets, carry an EQUAL `canonicalization_version`:\n"
-               "    canonicalization_version (both arms) = "
-            << show(a.doc.canonicalization_version)
-            << "\n"
-               "    ruleset.semantic_identity  core_only = "
-            << a.doc.ruleset->semantic_identity
-            << "\n"
-               "    ruleset.semantic_identity with_github = "
-            << b.doc.ruleset->semantic_identity
-            << "\n"
-               "  §2.4 defines that token as naming masking, TOKENIZATION and classification, with "
-               "a normative MUST to bump it when their output-affecting semantics change. The "
-               "semantics did change (see arm ②) and the token did not, because it is the "
-               "canon-owned masking constant — which the composition hash PREFIXES INTO ITS OWN "
-               "PREIMAGE, so it is an input to the ruleset identity and cannot be a function of "
-               "it.\n"
-               "  Flips to green when the composed-ruleset identity is folded into "
-               "`canonicalization_version`.";
+    EXPECT_EQ(a.doc.canonicalization_version, b.doc.canonicalization_version)
+        << "the library produced two DIFFERENT §2.4 tokens for two different rulesets:\n"
+           "    core_only   = "
+        << show(a.doc.canonicalization_version)
+        << "\n"
+           "    with_github = "
+        << show(b.doc.canonicalization_version)
+        << "\n"
+           "  It has no information to do that with: canon ships no default composition, so a "
+           "ruleset-aware token can only be computed by the binary that declares the package set "
+           "and injected here. If the fold landed inside this package, it is synthesizing a "
+           "comparability key from something that is not the composition — which is worse than the "
+           "hole it replaces.";
+
+    // THE MEASUREMENT the ruleset-fold ruling rests on, recorded where the mechanism is: one
+    // stream, two real rulesets, one §2.4 token. Not a tolerance and not a heuristic — the two
+    // values are byte-equal because the token is the canon masking constant, which canon PREFIXES
+    // INTO the preimage it hashes into semantic_identity. It is an input to the ruleset identity
+    // and can never be a function of it, so no amount of care on this side closes the gap.
+    EXPECT_EQ(a.doc.canonicalization_version,
+              std::optional<std::string>{std::string{insight::kCanonicalizationVersion}})
+        << "the default token is no longer insight::kCanonicalizationVersion: "
+        << show(a.doc.canonicalization_version)
+        << ". This assertion pins WHERE the value comes from; if the default moved, the eidos "
+           "production pin is reading a different contract than this file describes.";
 }
 
-// ── ④ THE HARM — a §7-compliant consumer cannot see the refusal. PRE-REGISTERED RED ────────────
+// ── ④ THE HARM — the only refusal rides a member the standard tells consumers to ignore ────────
 //
-// Our own gate DOES refuse this pair today, but only because it also checks `ruleset` — a
-// NON-STANDARD member. SPEC §7 orders consumers to ignore what they do not know, so a second
-// implementer holding only the standard has no `ruleset` to check and no reason to look for one.
-// Stripping it is not a contrivance: it is what a conformant foreign consumer's view of these two
-// documents IS.
+// GREEN today. This arm's SUBJECT is the `ruleset` member, so it dies with that member when the
+// fold lands — and that is the correct cascade, not debt: once the identity rides
+// `canonicalization_version`, "strip the non-standard member" has no referent and the property
+// collapses into the eidos pin. It is live and load-bearing until then, because it is the only
+// place the actual harm is exhibited rather than argued.
 //
-// The two operations are asserted together. compose() and diff are the two §2.4-gated operations;
-// a fold that armed one and not the other would leave the hole open on the other.
+// SPEC §7 orders consumers to ignore what they do not know. A second implementer holding only the
+// specification has no `ruleset` to check and no reason to look for one, so stripping it is not a
+// contrivance — it is what a conformant foreign consumer's view of these two documents IS. Under
+// that view the pair, whose tokenizations genuinely differ (②), is ACCEPTED.
 //
-// Flips to green when the fold lands, because the refusal then rides the standard token itself.
-TEST_F(RulesetCoverageTest, AStandardOnlyConsumerRefusesTheIncomparablePair)
+// compose() and diff are asserted together: they are the two §2.4-gated operations, and a hole open
+// on one of them is open.
+TEST_F(RulesetCoverageTest, OnlyANonStandardMemberRefusesTheIncomparablePair)
 {
     const Arm a{build_arm(core_only, /*stamp_ruleset=*/true)};
     const Arm b{build_arm(with_github, /*stamp_ruleset=*/true)};
@@ -294,40 +314,25 @@ TEST_F(RulesetCoverageTest, AStandardOnlyConsumerRefusesTheIncomparablePair)
             return false;
         }};
 
-    // ORACLE INTEGRITY: the refusal must exist somewhere today, or "the standard-only view does not
+    // ORACLE INTEGRITY: the refusal must exist somewhere, or "the standard-only view does not
     // refuse" is measuring a gate that never bites at all rather than one a consumer cannot reach.
     ASSERT_TRUE(refuses(a.doc, b.doc, /*as_diff=*/false))
         << "our own compose() accepted two different composed rulesets — the ruleset gate itself "
            "is broken, which is a different defect from the one this arm is about";
+    ASSERT_TRUE(refuses(a.doc, b.doc, /*as_diff=*/true))
+        << "our own diff accepted two different composed rulesets";
 
     meta::MetaLogDocument standard_a{a.doc};
     meta::MetaLogDocument standard_b{b.doc};
     standard_a.ruleset.reset(); // §7: "Consumers MUST ignore unknown extensions."
     standard_b.ruleset.reset();
 
-    const bool compose_refused{refuses(standard_a, standard_b, /*as_diff=*/false)};
-    const bool diff_refused{refuses(standard_a, standard_b, /*as_diff=*/true)};
-
-    if (compose_refused && diff_refused)
-        SUCCEED()
-            << "the ruleset fold landed: the refusal now rides the standard's own §2.4 token, "
-               "so a consumer holding only the specification refuses the pair too";
-    else
-        GTEST_SKIP()
-            << "PRE-REGISTERED RED — the refusal is invisible to a conformant foreign consumer.\n"
-               "  With `ruleset` present our gate REFUSES the pair. With `ruleset` stripped — the "
-               "view SPEC §7 gives any consumer that does not know our non-standard members — "
-               "compose() refused: "
-            << (compose_refused ? "yes" : "NO")
-            << ", diff refused: " << (diff_refused ? "yes" : "NO")
-            << ".\n"
-               "  Both must be yes. Both arms carry canonicalization_version = "
-            << show(standard_a.canonicalization_version)
-            << " (equal), so the standard's own comparability gate passes a pair whose "
-               "tokenizations differ, and the consumer merges or differences across them believing "
-               "it checked. The refusal we do have rides a member the standard tells consumers to "
-               "ignore.\n"
-               "  Flips to green when the composed-ruleset identity is folded into "
-               "`canonicalization_version`.";
+    EXPECT_FALSE(refuses(standard_a, standard_b, /*as_diff=*/false))
+        << "compose() refused the pair with `ruleset` stripped, so the refusal rides a STANDARD "
+           "member and this file's whole argument is stale — re-derive it before acting on it. "
+           "canonicalization_version (both arms) = "
+        << show(standard_a.canonicalization_version);
+    EXPECT_FALSE(refuses(standard_a, standard_b, /*as_diff=*/true))
+        << "diff refused the pair with `ruleset` stripped — same, re-derive before acting";
 }
 // NOLINTEND
