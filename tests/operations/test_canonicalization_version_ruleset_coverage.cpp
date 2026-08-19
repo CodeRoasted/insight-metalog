@@ -49,7 +49,6 @@
 // bytes, integer timing only. Both arms consume BYTE-IDENTICAL input; the composition is the only
 // variable.
 
-#include <glaze/glaze.hpp>
 #include <gtest/gtest.h>
 
 import insight.metalog.test; // std + metalog (+ detail) + insight.canon (compose/transport)
