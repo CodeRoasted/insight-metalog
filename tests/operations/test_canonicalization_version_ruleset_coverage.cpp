@@ -249,6 +249,17 @@ TEST_F(RulesetCoverageTest, TheLibraryDefaultTokenIsBlindToTheComposition)
     ASSERT_NE(a.doc.ruleset->semantic_identity, b.doc.ruleset->semantic_identity)
         << "the arms carry the same composed identity — ① should have caught this first";
 
+    // PRINTED UNCONDITIONALLY, not only on failure. This arm IS the measurement the ruleset-fold
+    // ruling rests on, and a measurement that surfaces only when it breaks is not on the record: a
+    // reader auditing the ruling would see a green tick and no numbers. One line, at the one site
+    // where all three values exist together.
+    std::cout << "[ MEASURED ] one stream, two real rulesets:\n"
+              << "             canonicalization_version   = "
+              << show(a.doc.canonicalization_version) << " (core-only) / "
+              << show(b.doc.canonicalization_version) << " (github)\n"
+              << "             ruleset.semantic_identity  = " << a.doc.ruleset->semantic_identity
+              << " (core-only) / " << b.doc.ruleset->semantic_identity << " (github)\n";
+
     EXPECT_EQ(a.doc.canonicalization_version, b.doc.canonicalization_version)
         << "the library produced two DIFFERENT §2.4 tokens for two different rulesets:\n"
            "    core_only   = "
