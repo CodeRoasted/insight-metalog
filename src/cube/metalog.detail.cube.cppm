@@ -161,15 +161,16 @@ struct PopulatedCell
 };
 using PopulatedCube = std::vector<PopulatedCell>;
 
-// ── Severity normalisation ─────────────────────────────────────────────────────
-// Fold LogLevel::Unknown → Info so the Level value-id is bijective with its spec
-// string (level_to_spec_string maps BOTH Unknown and Info to "INFO"); without this,
-// two distinct value-ids would serialise to one coord (a duplicate cell). The cube is
-// built on the normalised level; the wire string is level_to_spec_string of it.
-[[nodiscard]] inline LogLevel cube_level(LogLevel level) noexcept
-{
-    return level == LogLevel::Unknown ? LogLevel::Info : level;
-}
+// The Unknown → Info fold that used to live here is GONE (DN-43.D10). It existed for one reason —
+// level_to_spec_string mapped BOTH Unknown and Info to "INFO", so two value-ids would have
+// serialised to one coord — and that reason was itself the defect: an ABSENCE was being published
+// as the FACT `INFO`. With the string total (`Unknown` → "UNKNOWN") the fold has no argument left,
+// and the cube carries "no level observed" as its own axis value. An OMISSION would have been wrong
+// here in the other direction: §16.4 makes an absent axis mean AGGREGATED (`*`), so omitting
+// `coord.level` would publish "summed over every level" where we mean "no level observed".
+// This re-partitions the level axis, splits cells and moves `level_cardinality`; the
+// canonicalization_version bump this work already owes is what makes old and new documents
+// incomparable at the §2.4 gate, so no comparison spans the change.
 
 // ── Base observation (the engine's per-window joint) ────────────────────────────
 // One (level, component, role) joint with its multiplicity. An empty `component`

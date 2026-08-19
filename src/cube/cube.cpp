@@ -20,20 +20,27 @@ namespace
     // ── enum ↔ wire-string inverses (round-trip a recovered cube) ───────────────────
     // The cube value-ids are the canon enum casts (Level/Role) and the interned component
     // index (Where). Recovering a cube from its DTO cells re-parses the wire strings back
-    // to those enums. cube_level folds Unknown→Info, so "INFO" → Info round-trips exactly.
+    // to those enums. level_to_spec_string is a total injection over the seven LogLevel
+    // members, so this is its exact inverse and every emitted coord round-trips.
     [[nodiscard]] LogLevel level_from_spec(std::string_view spec) noexcept
     {
         if (spec == "TRACE")
             return LogLevel::Trace;
         if (spec == "DEBUG")
             return LogLevel::Debug;
+        if (spec == "INFO")
+            return LogLevel::Info;
         if (spec == "WARN")
             return LogLevel::Warn;
         if (spec == "ERROR")
             return LogLevel::Error;
         if (spec == "FATAL")
             return LogLevel::Fatal;
-        return LogLevel::Info; // "INFO" and any unknown spec
+        // "UNKNOWN" and any string outside the vocabulary. Reading an unrecognised token as
+        // `Unknown` is the honest disposition now that the enum has a member meaning exactly "no
+        // level observed"; it used to read as `Info`, which invented a severity for a string this
+        // producer never emits.
+        return LogLevel::Unknown;
     }
 
     [[nodiscard]] StructuralRole role_from_string(std::string_view text) noexcept
@@ -454,6 +461,10 @@ namespace
     // max floor stops at Error's index so {Error,Fatal} are never banded (the distinction
     // failure_lexicon / role=Terminator / border-attribution all preserve). {Trace,Debug} is the
     // cheapest, near-lossless.
+    // `Unknown` (id 6) is a LIVE cube value since DN-43.D10 and sits above Fatal in the enum, so no
+    // floor ever reaches it. That is the correct disposition rather than an accident of the
+    // ordering: it is not a severity, it is the statement that none was observed, and banding it
+    // into one would re-create the fabrication the un-fold removed.
     inline constexpr std::uint32_t kMaxLevelBandFloor{
         static_cast<std::uint32_t>(LogLevel::Error)}; // 4
     // The WHERE tree is one depth-1 chain today ⇒ prefix-truncation degenerates to a drop (depth
@@ -762,8 +773,7 @@ CubeBlock build_closed_cube(std::span<const BaseRow> base_rows)
     for (const BaseRow& row : base_rows)
     {
         Cell cell;
-        cell.value[static_cast<std::size_t>(Dim::Level)] =
-            static_cast<std::uint32_t>(cube_level(row.level));
+        cell.value[static_cast<std::size_t>(Dim::Level)] = static_cast<std::uint32_t>(row.level);
         cell.value[static_cast<std::size_t>(Dim::Where)] = component_id(labels, row.component);
         cell.value[static_cast<std::size_t>(Dim::Role)] = static_cast<std::uint32_t>(row.role);
         events.emplace_back(cell, row.count);
@@ -774,8 +784,11 @@ CubeBlock build_closed_cube(std::span<const BaseRow> base_rows)
 CubeCoord cube_location(std::optional<LogLevel> level, std::string_view component)
 {
     CubeCoord coord; // LOCATION only: level + where, never role, never salience (§16.6)
+    // An engaged optional carrying Unknown is a LOCATION whose level was never observed: it gets
+    // the "UNKNOWN" axis value. A DISENGAGED optional is the different fact — no level dimension
+    // for this location at all — and stars the axis by omission (DN-43.D10).
     if (level)
-        coord.level = level_to_spec_string(cube_level(*level));
+        coord.level = level_to_spec_string(*level);
     if (!component.empty())
         coord.where = std::vector<std::string>{std::string{component}};
     return coord;

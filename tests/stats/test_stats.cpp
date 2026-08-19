@@ -434,10 +434,36 @@ TEST(WireFormat, AllLevelsMapToSpecStrings)
     EXPECT_EQ(meta::level_to_spec_string(LogLevel::Fatal), "FATAL");
 }
 
-TEST(WireFormat, UnknownMapsToInfo)
+// DN-43.D10. This assertion used to read `"INFO"` under the comment "the wire vocabulary has no
+// UNKNOWN member, so Unknown falls back to INFO" — true about the vocabulary and no licence for the
+// fabrication: an ABSENCE was published as the FACT `INFO`. The two acts have DIFFERENT mechanics
+// and the pair below is what stops them being collapsed into one.
+TEST(WireFormat, UnknownGetsItsOwnCubeAxisTokenRatherThanBorrowingInfo)
 {
-    // The wire level vocabulary has no UNKNOWN member, so Unknown falls back to INFO.
-    EXPECT_EQ(meta::level_to_spec_string(LogLevel::Unknown), "INFO");
+    // The CUBE's need. §16.4 makes an ABSENT axis mean AGGREGATED (`*`), so a cell whose level was
+    // never observed cannot omit — it would publish "summed over every level". Only a distinct
+    // string is legal, and only "MUST be a string" is required of it.
+    EXPECT_EQ(meta::level_to_spec_string(LogLevel::Unknown), "UNKNOWN");
+    EXPECT_NE(meta::level_to_spec_string(LogLevel::Unknown),
+              meta::level_to_spec_string(LogLevel::Info));
+}
+
+TEST(WireFormat, EveryProducerAbsenceOmitsTheRowLevelMember)
+{
+    // The ROW's need, and the producer holds TWO spellings of the one wire absence.
+    EXPECT_FALSE(meta::spec_level_of(std::nullopt).has_value()) << "disengaged optional";
+    EXPECT_FALSE(meta::spec_level_of(std::optional{insight::EventLevel{}}).has_value())
+        << "engaged optional carrying EventLevel{} — the same fact, the same omission";
+    EXPECT_FALSE(
+        meta::spec_level_of(std::optional{insight::EventLevel::inferred(LogLevel::Unknown)})
+            .has_value());
+
+    // …and an observed level still renders, on both provenance species: the wire carries the level
+    // alone, so a declared and an inferred ERROR produce the same member.
+    EXPECT_EQ(meta::spec_level_of(std::optional{insight::EventLevel::inferred(LogLevel::Error)}),
+              std::optional<std::string>{"ERROR"});
+    EXPECT_EQ(meta::spec_level_of(std::optional{insight::EventLevel::declared(LogLevel::Error)}),
+              std::optional<std::string>{"ERROR"});
 }
 
 } // namespace

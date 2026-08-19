@@ -245,7 +245,26 @@ dominant_component_of(const std::unordered_map<std::string, std::uint64_t, Trans
 // RFC 3339 UTC, fixed widths, always trailing 'Z' (e.g. "2026-04-24T10:00:00Z").
 [[nodiscard]] std::string format_rfc3339_utc(Timestamp timestamp);
 
-// SPEC level string. UNKNOWN maps to INFO — the spec defines no UNKNOWN level.
+// SPEC level string — TOTAL, and `Unknown` is its own token. This is the CUBE's need: §16.4 makes
+// an ABSENT axis mean AGGREGATED (`*`), so a cell whose level was never observed must carry a
+// distinct value rather than omit one, or "no level observed" collides with "summed over every
+// level" at the exact seam the closure algebra runs on. Not for a wire ROW member — those omit;
+// see spec_level_of below (DN-43.D10).
 [[nodiscard]] std::string level_to_spec_string(LogLevel level);
+
+// The ONE seam that folds the producer's TWO absences into the wire's one, for every optional
+// `level` MEMBER (`stats.top_k[].level`, `reservoir_entry.level`, the reservoir-delta rows, the
+// frontier-crossing levels).
+//
+// The producer holds two internal spellings of "no level was observed": a DISENGAGED optional, and
+// an ENGAGED optional carrying `EventLevel{}` (whose value is `LogLevel::Unknown`). The wire has
+// exactly one, and it is omission — `level` is typed as a bare string with NO enum, is absent from
+// every `required` array, and SPEC §3.8 reads "optional — severity level WHEN KNOWN". The standard
+// already legislates this act on `component`, which it declares "the same species as `level`": a
+// producer MUST omit it when the observation carried none, because "an absent location that renders
+// as present is worse than a gap a consumer can see." Rendering an absence as `INFO` did all three
+// things §3.8 forbids on the sibling — a value from producer state, where the observation carried
+// none, rendering an absence as present. nullopt here ⇒ the member is omitted.
+[[nodiscard]] std::optional<std::string> spec_level_of(const std::optional<EventLevel>& level);
 
 } // namespace insight::metalog

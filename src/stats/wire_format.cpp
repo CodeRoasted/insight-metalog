@@ -42,8 +42,19 @@ std::string level_to_spec_string(LogLevel level)
         return "FATAL";
     case LogLevel::Unknown:
     default:
-        return "INFO"; // spec doesn't define UNKNOWN
+        // The spec defining no UNKNOWN level is true and licenses nothing: a wire ROW does not need
+        // an UNKNOWN token, it needs the member OMITTED (spec_level_of). A cube COORD does need a
+        // token, because omitting an axis there already means "aggregated over all levels" — a
+        // different fact. §16.4 requires only that a value be a string, so a distinct one is legal.
+        return "UNKNOWN";
     }
+}
+
+std::optional<std::string> spec_level_of(const std::optional<EventLevel>& level)
+{
+    if (!level || level->value() == LogLevel::Unknown)
+        return std::nullopt;
+    return level_to_spec_string(level->value());
 }
 
 } // namespace insight::metalog

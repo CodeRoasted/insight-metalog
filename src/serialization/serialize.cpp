@@ -730,10 +730,11 @@ namespace
         // SPEC §3.4: the per-entry `template` is optional on the wire; this producer emits it.
         if (std::string str{resolve_template_str(registry, entry.template_id)}; !str.empty())
             row.tmpl = std::move(str);
-        // DN-32.D3: the WIRE carries the level alone. The provenance half of EventLevel is
-        // domain-only, so this row's bytes are unchanged and the spec is untouched.
-        if (entry.dominant_level)
-            row.level = level_to_spec_string(entry.dominant_level->value());
+        // DN-32.D3: the WIRE carries the level alone — the provenance half of EventLevel is
+        // domain-only. DN-43.D10: and an ABSENCE is omitted, exactly as the line below already does
+        // for `component`, the member SPEC §3.8 declares the same species. spec_level_of folds the
+        // producer's two absences into the wire's one.
+        row.level = spec_level_of(entry.dominant_level);
         if (entry.dominant_component)
             row.component = *entry.dominant_component;
         if (!entry.field_histograms.empty())
@@ -778,10 +779,11 @@ namespace
         row.frequency = entry.frequency;
         if (std::string str{resolve_template_str(registry, entry.template_id)}; !str.empty())
             row.tmpl = std::move(str);
-        // DN-32.D3: the WIRE carries the level alone. The provenance half of EventLevel is
-        // domain-only, so this row's bytes are unchanged and the spec is untouched.
-        if (entry.dominant_level)
-            row.level = level_to_spec_string(entry.dominant_level->value());
+        // DN-32.D3: the WIRE carries the level alone — the provenance half of EventLevel is
+        // domain-only. DN-43.D10: and an ABSENCE is omitted, exactly as the line below already does
+        // for `component`, the member SPEC §3.8 declares the same species. spec_level_of folds the
+        // producer's two absences into the wire's one.
+        row.level = spec_level_of(entry.dominant_level);
         if (entry.dominant_component)
             row.component = *entry.dominant_component;
         if (entry.structural_role != StructuralRole::None)
@@ -958,10 +960,9 @@ namespace
     {
         dto::ReservoirDeltaEntry row;
         row.template_id = insight::render(entry.template_id);
-        // DN-32.D3: the WIRE carries the level alone. The provenance half of EventLevel is
-        // domain-only, so this row's bytes are unchanged and the spec is untouched.
-        if (entry.dominant_level)
-            row.level = level_to_spec_string(entry.dominant_level->value());
+        // DN-32.D3 + DN-43.D10 — see make_top_k_entry: the wire carries the level alone, and an
+        // absence is omitted rather than rendered.
+        row.level = spec_level_of(entry.dominant_level);
         if (entry.structural_role != StructuralRole::None)
             row.structural_role = std::string{to_string(entry.structural_role)};
         row.salience = entry.salience;
@@ -998,10 +999,9 @@ namespace
                 row.template_id = insight::render(crossing.template_id);
                 row.direction = crossing.direction == FrontierDirection::Up ? "up" : "down";
                 // DN-32.D3: the wire carries the levels alone — provenance is domain-only.
-                if (crossing.previous_level)
-                    row.previous_level = level_to_spec_string(crossing.previous_level->value());
-                if (crossing.current_level)
-                    row.current_level = level_to_spec_string(crossing.current_level->value());
+                // DN-43.D10: both sides omit on an absence.
+                row.previous_level = spec_level_of(crossing.previous_level);
+                row.current_level = spec_level_of(crossing.current_level);
                 rows.push_back(std::move(row));
             }
             out.frontier_crossings = std::move(rows);
