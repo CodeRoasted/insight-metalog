@@ -750,10 +750,22 @@ struct ReportedWindowBounds
     Timestamp end;
 };
 
+// This package's own version, stamped into `producer.version` (SPEC §2.1). ONE spelling for the
+// package: the DTO default below and MetaLogEngineConfig::producer_version were two independent
+// literals, nothing outside the release test_package reads either, and both sat at 0.6.0 for the
+// whole 1.x line while the recipe moved to 1.9.6.
+//
+// Hand-carried rather than fed from the recipe, and that is a decision, not a gap: this interface
+// unit is RECOMPILED by every consumer, so a compile definition here would let a consumer's build
+// of the api module disagree with the linked engine. That is the hazard insight-canon's
+// CMakeLists already rules on for its own behaviour switches. The bump obligation therefore rides
+// the cut ceremony (operations/001 OPS-1.S15), and the release test_package pins what is emitted.
+inline constexpr std::string_view kProducerVersion{"1.9.6"};
+
 struct ProducerBlock
 {
     std::string name{"insight"};
-    std::string version{"0.6.0"};
+    std::string version{kProducerVersion};
     std::string implementation_uri{"https://github.com/CodeRoasted/insight"};
 };
 
@@ -998,8 +1010,8 @@ struct MetaLogConfig
     // Cap on `behavior.dominant_path` length; 0 disables.
     std::size_t dominant_path_max_steps{kDefaultDominantPathMaxSteps};
 
-    // Reported as producer.version in the envelope.
-    std::string producer_version{"0.6.0"};
+    // Reported as producer.version in the envelope; kProducerVersion owns the value.
+    std::string producer_version{kProducerVersion};
 
     // NOTE (1.7.2): the cube (SPEC §16), the per-template `dominant_component` WHERE
     // leaf (SRC-D-WHERE-2), and the per-window `acquisition` block are ALWAYS emitted — the
