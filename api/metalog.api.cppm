@@ -850,6 +850,8 @@ struct MetaLogDocument
     // The SPEC version this document conforms to. Only its MAJOR is normatively coupled (§9), so
     // this is a claim about which edition of the standard the bytes were written against — the
     // producer's own version is `producer.version`, a separate axis.
+    //
+    // pin-coherence: mirrors metalog-spec/SPEC.md
     std::string metalog_version{"0.8.0"};
     ProducerBlock producer{};
     WindowBlock window{};
