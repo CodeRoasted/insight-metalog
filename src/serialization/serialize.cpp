@@ -146,11 +146,10 @@ namespace dto
         struct glaze
         {
             using T = TopKEntry;
-            static constexpr auto value =
-                glz::object("template_id", &T::template_id, "count", &T::count, "frequency",
-                            &T::frequency, "template", &T::tmpl, "level", &T::level, "component",
-                            &T::component, "param_histograms", &T::param_histograms, "extensions",
-                            &T::extensions);
+            static constexpr auto value = glz::object(
+                "template_id", &T::template_id, "count", &T::count, "frequency", &T::frequency,
+                "template", &T::tmpl, "level", &T::level, "component", &T::component,
+                "param_histograms", &T::param_histograms, "extensions", &T::extensions);
         };
     };
 
