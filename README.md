@@ -1,6 +1,6 @@
 # insight-metalog
 
-**insight-metalog** — MetaLog v0.6.0 producer.
+**insight-metalog** — MetaLog v0.8.0 producer.
 
 `insight_metalog` consumes an event sequence from `insight_canon` and produces a **bounded statistical fingerprint** of a window of log behaviour: composition, session framing, HLL-backed field-cardinality estimation, transition-stability ratios, and diff-encoded deltas between windows.
 
@@ -30,37 +30,45 @@ A MetaLog document is a **deterministic** function of its input window — the s
 | Field | Value |
 |---|---|
 | Conan name | `insight_metalog` |
-| Spec target | MetaLog v0.6.0 — **not conformant today**, see below |
+| Spec conformance | MetaLog v0.8.0 — **the producer clears §8 clause 1**; the published evidence has not been regenerated yet, see below |
 | Visibility | CodeRoast-owned package |
 
 ### Conformance, stated exactly
 
 MetaLog `SPEC.md` §8 clause 1 makes conformance a machine check: *"Every MetaLog it emits
 validates against `schema/metalog.v0.schema.json`"*, and §8 closes with *"The schema is the
-test."* Measured on the 17 documents this project publishes as determinism evidence
-(`coderoast-hub/determinism/metalog.determinism_golden.txt`), against the published
-`metalog-spec/schema/metalog.v0.schema.json`: **31 validation errors**. So the honest
-statement is that this producer **targets** v0.6.0 and does not meet clause 1 at HEAD.
+test."* Two different things can be measured against that sentence, and conflating them is how
+a green gets over-read:
 
-All 31 are one species — a field emitted inside a schema object declared
-`additionalProperties: false` — and they split two ways, which decides who fixes what:
+| subject | measured | result |
+|---|---|---|
+| **what this producer emits** — 17 documents regenerated from source at HEAD | `metalog_validate.py --expect-documents 17` | **0 errors · 0 legal-but-undescribed · CONFORMANT** |
+| **what we have PUBLISHED** — `coderoast-hub/determinism/metalog.determinism_golden.txt`, still the pre-migration bytes | same command | **2 errors · 1 class · NONCONFORMANT** |
 
-| emitted field | errors | in SPEC prose? | in the schema? | side at fault |
-|---|---|---|---|---|
-| `stats.top_k[].component` | 28 | no | no | **this producer** |
-| `stats.top_k[].ordinal_histograms` | 2 | no | no | **this producer** |
-| `cube.axes[].band_floor` | 1 | **yes** (§16.2, §16.10) | no | **the schema** |
+The published bytes are a **snapshot of an older producer**, not a second defect: the two rows
+converge the moment the determinism evidence is regenerated, which is an outgoing act on a
+public surface and not this repo's to take.
 
-`metalog-spec/GOVERNANCE.md` §3 decides the first two: *"If the spec and the reference
-implementation disagree, the spec wins, and the reference implementation is treated as
-buggy."* Two undescribed fields on a closed object is that case; `SPEC.md` §7 already names
-where vendor data belongs (`extensions`, reverse-DNS-keyed) and says to open an issue for a
-field the spec lacks. `band_floor` is the opposite case — the spec's normative prose defines
-it as an axis collapse stamp and makes it load-bearing (*"a truncated granularity MUST NOT
-be mistakable for a full one"*), and only `$defs/cube_axis` has not caught up.
+How the producer got there, since the count moved twice and each move had a different owner:
 
-This row will read `Spec conformance | MetaLog v0.6.0` again when the count is zero, and not
-before.
+* **29 of the original 31** were a **schema lag**, not a producer bug — `component` and
+  `band_floor` were real members the schema had no description for. `metalog-spec` v0.8.0
+  describes them (§3.8, `$defs/cube_axis`), and this producer emits them **unchanged**.
+* **The remaining 2** were a genuine producer bug: `stats.top_k[].ordinal_histograms` was written
+  as a bare member of a closed object. Its bins ride an **unfrozen** log2 ladder and carry
+  `schedule_id`, an engine-side key, so two independent producers would emit incomparable bins —
+  it is vendor data, and `SPEC.md` §7 says where vendor data goes. It now ships under
+  `stats.top_k[].extensions["fr.coderoast.ordinal_histograms"]`.
+* `acquisition` and `service_edges` were legal (they sat at the open root) but **undescribed**, so
+  a reader could not tell our error model from the standard's content. Both moved under the
+  document-root `extensions` container with the same `fr.coderoast.` prefix. The content is
+  unchanged: `acquisition` is our declared error model made machine-readable (it is what lets a
+  consumer distinguish *"no cross-route links"* from *"links existed and the grain hid them"*), and
+  deleting it would make these documents **less** falsifiable.
+
+`metalog-spec/GOVERNANCE.md` §3 is what decides which side of a disagreement moves: *"If the spec
+and the reference implementation disagree, the spec wins, and the reference implementation is
+treated as buggy."*
 
 ## Requirements
 

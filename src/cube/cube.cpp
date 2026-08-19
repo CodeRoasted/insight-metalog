@@ -710,8 +710,8 @@ namespace
 
 std::vector<CubeAxis> reference_axes()
 {
-    // Canonical key order: Level, Where, Role (Dim order). WHERE is a depth-1 chain in
-    // v0.6.0 (grounded in canon `component`); the chain + floor_depth carry the roll-up
+    // Canonical key order: Level, Where, Role (Dim order). WHERE is a depth-1 chain
+    // today (grounded in canon `component`); the chain + floor_depth carry the roll-up
     // mechanism so 1.5.5's dimensional-shrink is a content change, not a schema change.
     CubeAxis level{
         .name = "level", .kind = "categorical", .chain = std::nullopt, .floor_depth = std::nullopt};
@@ -733,7 +733,7 @@ bool where_chain_is_tree(std::span<const std::vector<std::string>> paths)
     // single-parent tree iff no value-node ever appears under two different parents — a
     // value with two parents is a DAG, which breaks prefix-truncation roll-up (a finer
     // node would roll up to two coarser nodes → double-counting → the border ill-defined).
-    // At depth 1 (the v0.6.0 regime) every component is a child of the root, so a flat
+    // At depth 1 (the regime today) every component is a child of the root, so a flat
     // single-level chain is always a tree.
     std::map<std::pair<std::size_t, std::string>, std::string> parent_of;
     for (const std::vector<std::string>& path : paths)

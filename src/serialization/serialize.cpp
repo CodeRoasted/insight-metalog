@@ -7,7 +7,7 @@ import insight.metalog.api;
 import insight.canon;
 import insight.metalog.detail.stats;
 
-// MetaLog JSON serialiser (SPEC v0.6.0 envelope). The restrictive, omit-empty
+// MetaLog JSON serialiser (SPEC v0.8.0 envelope). The restrictive, omit-empty
 // glaze DTO layer: a per-wire struct mirror of the domain types + the make_*
 // builders that translate domain -> DTO, behind the two free `to_json`
 // overloads. Single responsibility — serialization only (no producer state, no
@@ -18,7 +18,7 @@ namespace insight::metalog
 
 // ── JSON serialiser (glaze, DTO layer) ─────────────────────────
 //
-// Serialization is a thin DTO mirroring the MetaLog v0.6.0 envelope: each
+// Serialization is a thin DTO mirroring the MetaLog v0.8.0 envelope: each
 // DTO field name IS the JSON key, so the struct declaration reads as the
 // schema and glaze reflects it with zero stringly-typed mapping. The domain
 // types stay free of any serialization concern.
@@ -98,6 +98,32 @@ namespace dto
         std::uint64_t total{0};
     };
 
+    // ── SPEC §7 `extensions` — the ONLY carrier of non-standard members ──
+    //
+    // The reverse-DNS key IS the wire key, and a C++ identifier cannot hold a '.', so every
+    // container spells its keys in a glaze meta instead of being reflected. One struct per
+    // placement §7's table grants (the document root, and `stats.top_k[]`); a member the spec
+    // later describes leaves its container and becomes a bare member of the standard object,
+    // which is the whole point of keeping the two surfaces apart.
+    //
+    // Each member is an optional and each container is an optional: a row/document with no
+    // vendor data emits no `extensions` key at all, so the omit-when-absent discipline the rest
+    // of this file follows is unbroken and an empty container can never reach the wire.
+    struct TopKExtensions
+    {
+        // Fails the comparability leg of the disposition test: the bins ride an unfrozen log2
+        // ladder and `schedule_id` is an engine-side key, so two producers would emit
+        // incomparable bins. It stays namespaced until an RFC freezes the ladder.
+        std::optional<std::vector<OrdinalHistogram>> ordinal_histograms;
+
+        struct glaze
+        {
+            using T = TopKExtensions;
+            static constexpr auto value =
+                glz::object("fr.coderoast.ordinal_histograms", &T::ordinal_histograms);
+        };
+    };
+
     struct TopKEntry
     {
         std::string template_id;
@@ -110,10 +136,10 @@ namespace dto
         // max_param_histograms (batch / full-fidelity path); omitted otherwise
         // (skip_null_members), so default and streaming documents are byte-unchanged.
         std::optional<std::vector<ParamHistogram>> param_histograms;
-        // W1 ordinal histograms (§4A.4 SRC-D-W1-2). Present only when the producer enabled
-        // max_param_histograms AND the template carried a declared ordinal field; omitted otherwise
-        // (skip_null_members) → non-ordinal documents are byte-identical (SRC-D-W1-4).
-        std::optional<std::vector<OrdinalHistogram>> ordinal_histograms;
+        // The §7 container (see TopKExtensions). Carries the W1 ordinal histograms, which are
+        // ours and not the standard's; omitted when the row has no vendor data, so a non-ordinal
+        // row is byte-identical to one from a producer that has none (SRC-D-W1-4).
+        std::optional<TopKExtensions> extensions;
 
         // glaze rename: `tmpl` -> "template" (a C++ keyword), every other field by
         // reflection.
@@ -123,12 +149,12 @@ namespace dto
             static constexpr auto value =
                 glz::object("template_id", &T::template_id, "count", &T::count, "frequency",
                             &T::frequency, "template", &T::tmpl, "level", &T::level, "component",
-                            &T::component, "param_histograms", &T::param_histograms,
-                            "ordinal_histograms", &T::ordinal_histograms);
+                            &T::component, "param_histograms", &T::param_histograms, "extensions",
+                            &T::extensions);
         };
     };
 
-    // Cube coordinate (SPEC §16.4) — an OPEN object keyed by axis name. The v0.6.0
+    // Cube coordinate (SPEC §16.4) — an OPEN object keyed by axis name. The §16.2
     // reference axes are level (categorical), where (chain, prefix-path array), and
     // structural_role (categorical); skip_null_members omits an absent (aggregated) axis.
     // A future axis is one more optional field — the wire object stays open over names.
@@ -236,6 +262,28 @@ namespace dto
     {
         std::vector<ServiceEdge> edges;
         std::uint64_t dropped_edges{0};
+    };
+
+    // The document-root §7 container (see TopKExtensions for the mechanism). Both members
+    // describe the observed window, so both pass the subject leg of the disposition test; both
+    // fail the comparability leg, and for different reasons — `acquisition`'s
+    // `where_cardinality_per_depth` and `closed_cells` presuppose OUR depth model and OUR closure
+    // geometry, and `service_edges` has one implementer, so standardising it would make the
+    // standard a description of this vendor. Namespacing keeps the content (it is our declared
+    // error model made machine-readable — deleting it would make our documents LESS falsifiable)
+    // while telling a reader which half of the document is the standard's.
+    struct DocumentExtensions
+    {
+        std::optional<Acquisition> acquisition;
+        std::optional<ServiceEdgeBlock> service_edges;
+
+        struct glaze
+        {
+            using T = DocumentExtensions;
+            static constexpr auto value =
+                glz::object("fr.coderoast.acquisition", &T::acquisition,
+                            "fr.coderoast.service_edges", &T::service_edges);
+        };
     };
 
     // Composed-ruleset identity wire shape (SRC-II-7, ADR-17). Reflected (member name == JSON
@@ -357,14 +405,14 @@ namespace dto
         std::optional<std::string> retention_profile;
         std::optional<Coordinate> coordinate; // §15 re-derivation coordinate
         std::optional<CubeBlock> cube;        // §16 intra-window cube; omit when not emitted
-        std::optional<Acquisition>
-            acquisition; // SRC-D-WHERE-4 self-assessment; omit when not emitted
-        std::optional<ServiceEdgeBlock>
-            service_edges; // O4b (SRC-D-OTEL-21); omit for a non-span window
         std::optional<RulesetIdentity>
             ruleset; // SRC-II-7 composed-ruleset identity; omit for a legacy producer
         std::optional<std::string>
             run_outcome; // ADR-17 — the run's terminal verdict; omit when Unknown
+        // DECLARED LAST: the standard's members first, then the §7 container that says "everything
+        // below this key is ours". Carries the SRC-D-WHERE-4 acquisition self-assessment and the
+        // O4b (SRC-D-OTEL-21) service topology; omitted when a document has neither.
+        std::optional<DocumentExtensions> extensions;
     };
 
     // ── Diff DTO (SPEC §13) ──
@@ -705,7 +753,8 @@ namespace
             }
             row.param_histograms = std::move(hists);
         }
-        // W1 ordinal histograms (§4A.4 SRC-D-W1-2) — emitted only when present (omit-when-empty).
+        // W1 ordinal histograms (§4A.4 SRC-D-W1-2) — emitted only when present (omit-when-empty),
+        // under the row's §7 container, which is itself created only for a row that needs it.
         if (!entry.ordinal_histograms.empty())
         {
             std::vector<dto::OrdinalHistogram> ordinals;
@@ -715,7 +764,7 @@ namespace
                                                          .schedule_id = hist.schedule_id,
                                                          .counts = hist.counts,
                                                          .total = hist.total});
-            row.ordinal_histograms = std::move(ordinals);
+            row.extensions = dto::TopKExtensions{.ordinal_histograms = std::move(ordinals)};
         }
         return row;
     }
@@ -858,8 +907,9 @@ namespace
             out.coordinate = make_coordinate(*doc.coordinate);
         if (doc.has_cube)
             out.cube = make_cube(doc.cube);
+        dto::DocumentExtensions extensions;
         if (doc.acquisition)
-            out.acquisition = dto::Acquisition{
+            extensions.acquisition = dto::Acquisition{
                 .records_with_component = doc.acquisition->records_with_component,
                 .distinct_components = doc.acquisition->distinct_components,
                 .level_cardinality = doc.acquisition->level_cardinality,
@@ -877,8 +927,10 @@ namespace
             for (const ServiceEdge& edge : doc.service_edges->edges)
                 block.edges.push_back(
                     {.caller = edge.caller, .callee = edge.callee, .weight = edge.weight});
-            out.service_edges = std::move(block);
+            extensions.service_edges = std::move(block);
         }
+        if (extensions.acquisition || extensions.service_edges)
+            out.extensions = std::move(extensions);
         if (doc.ruleset)
         {
             dto::RulesetIdentity ruleset{.semantic_identity = doc.ruleset->semantic_identity,

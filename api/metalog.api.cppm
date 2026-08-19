@@ -8,7 +8,7 @@ import insight.canon;
 export namespace insight::metalog
 {
 
-// ── Spec envelope (mirrors v0.6.0 schema) ──────────────────────
+// ── Spec envelope (mirrors the v0.8.0 schema) ──────────────────
 
 // Per-template per-wildcard-position value frequency table.
 //
@@ -471,7 +471,7 @@ struct CubeAxis
 };
 
 // A cell coordinate (§16.4), generic over axes. An ABSENT axis means aggregated
-// (`*`). The v0.6.0 reference axes are fixed (level, structural_role, where), so
+// (`*`). The §16.2 reference axes are fixed (level, structural_role, where), so
 // the coord is the three optional keys; a future axis is one more optional field
 // (the wire object is open over axis names). A `categorical` value is a string; a
 // `chain` value (`where`) is an ordered prefix-path array (`[i]` = chain level i).
@@ -524,7 +524,7 @@ struct CubeBaseRow
 // in canonical coord-sorted order; the closure regenerates every non-closed cell
 // losslessly. `cell_count`/`raw_cell_count` expose the collapse rate (condensation
 // measure) the closure achieved. floor_saturation is a degenerate health metric at
-// floor_depth=1 (a diff-time concept) and is intentionally omitted in v0.6.0.
+// floor_depth=1 (a diff-time concept) and is intentionally omitted.
 struct CubeBlock
 {
     std::vector<CubeAxis> axes;
@@ -833,7 +833,10 @@ struct ProvenanceEntry
 
 struct MetaLogDocument
 {
-    std::string metalog_version{"0.6.0"};
+    // The SPEC version this document conforms to. Only its MAJOR is normatively coupled (§9), so
+    // this is a claim about which edition of the standard the bytes were written against — the
+    // producer's own version is `producer.version`, a separate axis.
+    std::string metalog_version{"0.8.0"};
     ProducerBlock producer{};
     WindowBlock window{};
     SourceBlock source{};

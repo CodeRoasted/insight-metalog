@@ -240,7 +240,7 @@ dominant_component_of(const std::unordered_map<std::string, std::uint64_t, Trans
 
 // ── Wire-format helpers ───────────────────────────────────────────────────────
 // MetaLog wire-format helpers (spec §2/§3): rendering domain values into the
-// exact strings the v0.6.0 envelope requires.
+// exact strings the envelope requires.
 
 // RFC 3339 UTC, fixed widths, always trailing 'Z' (e.g. "2026-04-24T10:00:00Z").
 [[nodiscard]] std::string format_rfc3339_utc(Timestamp timestamp);

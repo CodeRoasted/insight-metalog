@@ -21,8 +21,8 @@ export namespace insight::metalog::cube
 {
 
 // ── Fixed schema (§16.2/§16.4) ─────────────────────────────────────────────────
-// The v0.6.0 reference axes, in the canonical key order Level=0, Where=1, Role=2.
-// WHERE is a single-level chain in v0.6.0 (grounded in canon `component`); the chain
+// The §16.2 reference axes, in the canonical key order Level=0, Where=1, Role=2.
+// WHERE is a single-level chain today (grounded in canon `component`); the chain
 // representation carries the roll-up mechanism so the 1.5.5 dimensional-shrink lands
 // with NO schema change (floor_depth shrinks, cells roll up — §16.3).
 // The STORED cube's dimension count (Level, Where, Role) — the reference-axes count and the
@@ -184,7 +184,7 @@ struct BaseRow
 
 // ── Public operations ──────────────────────────────────────────────────────────
 
-// The fixed v0.6.0 reference axes (level categorical, structural_role categorical,
+// The fixed §16.2 reference axes (level categorical, structural_role categorical,
 // where chain over ["component"] at floor_depth 1). Frozen per
 // (canonicalization_version, retention_profile) — never adapted per window (§16.2).
 [[nodiscard]] std::vector<CubeAxis> reference_axes();

@@ -607,7 +607,7 @@ TEST(CubeMustOne, TreeAcceptedDagRejected)
     const std::vector<std::vector<std::string>> dag{{"a", "x"}, {"b", "x"}};
     EXPECT_FALSE(cube::where_chain_is_tree(dag));
 
-    // Depth-1 chains (the v0.6.0 regime) are vacuously trees.
+    // Depth-1 chains (the depth-1 regime) are vacuously trees.
     const std::vector<std::vector<std::string>> flat{{"auth"}, {"db"}, {"web"}};
     EXPECT_TRUE(cube::where_chain_is_tree(flat));
 }

@@ -7,7 +7,7 @@ import insight.canon;
 import insight.metalog.detail.stats;
 import insight.metalog.detail.cube;
 
-// MetaLog producer engine (SPEC v0.6.0). The stateful streaming side: one window
+// MetaLog producer engine (SPEC v0.8.0). The stateful streaming side: one window
 // of CanonicalEvents in (open_window / ingest_event) -> one bounded MetaLog
 // document out (close_window). Single responsibility — production; serialization,
 // compose and diff live in their own translation units, and the cross-cutting
@@ -494,7 +494,7 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end,
 void MetaLogEngine::stamp_envelope(MetaLogDocument& doc, Timestamp start, Timestamp end,
                                    std::optional<ReportedWindowBounds> reported_bounds) const
 {
-    doc.metalog_version = "0.6.0";
+    doc.metalog_version = "0.8.0";
     doc.producer.version = config_.producer_version;
     doc.source = source_;
     // SRC-D-TIR-5: template strings are not carried on the doc — the serialiser resolves them by id
