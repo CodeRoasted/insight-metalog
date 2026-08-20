@@ -42,6 +42,11 @@ test_package/metadata/
 !.conan2/profiles/**
 !.conan2/global.conf
 
+# The desk default of scripts/spec_conformance_gate.sh, and the artifact golden.yaml's compare
+# job writes. There is no committed golden by design (it is the per-release agreed digest, so it
+# cannot go stale) — an emitted one must never re-enter git.
+/determinism-golden.txt
+
 # Benchmark outputs are ephemeral; the published baseline lives in coderoast-hub (single source
 # of truth). A regenerated baseline.json must NOT re-enter git — no negation.
 bench_results/
