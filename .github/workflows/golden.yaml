@@ -21,6 +21,12 @@ name: Determinism Golden Proof
 # PUBLIC + anonymous (no secrets): anyone can fork metalog + canon and reproduce it. arm64 + msvc run on
 # HOSTED runners only (a self-hosted runner on a public repo = fork-PR RCE); hosted minutes are free.
 #
+# The `compare` job carries a SECOND, independent gate over the same artifact: the agreed digest is
+# validated against the PUBLISHED MetaLog schema (metalog-spec SPEC §8 clause 1) before it is
+# uploaded. Byte-identity and conformance are different properties — five legs can agree perfectly on
+# bytes that no longer match the standard — and this is the only place both are asked of the exact
+# bytes the Release attaches. Logic: scripts/spec_conformance_gate.sh.
+#
 # Runs on every PR to main (full matrix — determinism caught in the PR) + the Release gate
 # (workflow_call) + a weekly drift catch + manual dispatch.
 
@@ -339,6 +345,28 @@ jobs:
     permissions:
       contents: read
     steps:
+      # Checked out FIRST: this action cleans its destination, and `digests/` lands here below.
+      # The checkout is what lets the conformance gate rebuild the section roster from the corpus
+      # files on disk instead of carrying a hand-kept list of them.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      # The STANDARD this producer declares it writes against, plus the validator SPEC §8 clause 1
+      # calls "the test". PUBLIC + anonymous, exactly like the malf-toolchain and insight-canon
+      # checkouts above — the workflow stays forkable. `main`, never a tag: metalog-spec is on a
+      # deliberately decoupled version line and never carries the uniform vX.Y.Z tag, so a tag ref
+      # would 404. That does mean the oracle can move under a fixed producer; see the gate's header.
+      - name: Check out metalog-spec into _spec/ (the schema + its validator; PUBLIC, anonymous)
+        uses: actions/checkout@v5
+        with:
+          repository: CodeRoasted/metalog-spec
+          path: _spec
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: Download every leg's digest
         uses: actions/download-artifact@v7
         with:
@@ -351,6 +379,39 @@ jobs:
           digests-dir: digests
           min-legs: '5'
           out: ${{ github.workspace }}/determinism-golden.txt
+
+      - name: Set up Python for the validator
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install the validator's oracle (the pinned requirements, never a hand-picked subset)
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check -r _spec/conformance/requirements.txt
+
+      # THE PRODUCER-SIDE CONFORMANCE GATE, and it sits HERE — between the compare and the upload —
+      # on purpose. `attach-golden` publishes the `determinism-golden` artifact to the Release, and
+      # the hub evidence pipeline republishes it from there; judging the agreed digest before it is
+      # ever uploaded means a nonconformant golden does not become an artifact at all, so there is
+      # no path (not even "download it from the failed run") by which those bytes reach a reader.
+      #
+      # Until this existed, conformance was checked in exactly ONE place: the superproject's
+      # `metalog-conformance` job, over the coderoast-hub bytes at `ref: main` — i.e. AFTER
+      # tag → release → publish. That job answers "what is a reader exposed to right now" and it
+      # stays; this one answers "does what we are about to publish still match the standard", which
+      # is a question no gate was asking.
+      #
+      # The logic is a committed script rather than inline YAML because a gate nobody can run at the
+      # desk is a gate nobody can prove reds. It carries its own arming step (the validator's
+      # 12-fixture self-test), so the desk run and this run are the same instrument with no second
+      # copy to drift. Its exit codes are the validator's, unmerged: 1 = the producer's documents are
+      # schema-invalid, 2 = the gate could not run honestly. Never let a future edit collapse them.
+      - name: SPEC §8 clause 1 over the agreed golden (GATING — before the upload)
+        run: bash scripts/spec_conformance_gate.sh
+        env:
+          GOLDEN: ${{ github.workspace }}/determinism-golden.txt
+          SPEC_ROOT: ${{ github.workspace }}/_spec
 
       - name: Upload the validated golden (the Release attaches it)
         uses: actions/upload-artifact@v7
