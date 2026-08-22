@@ -8,9 +8,10 @@
 // (metalog.detail.operations).
 // semantic_identity is just another processing identifier through that one gate, so the enforcement
 // tests mirror test_processing_identifiers. Three faces:
-//   1. ROUND-TRIP — the additive block serialises and reads back via glz::generic (there is no
-//   typed
-//      parser; the wire is read generically), member-name == JSON key.
+//   1. ROUND-TRIP — the block serialises under the SPEC §7 container
+//      (`extensions["fr.coderoast.ruleset"]` — vendor-shaped, so namespaced, never a bare root
+//      member) and reads back via glz::generic (there is no typed parser; the wire is read
+//      generically); inside the block, member-name == JSON key.
 //   2. ABSENCE — a legacy producer (config.ruleset unset) emits NO block; the consumer is
 //   absence-tolerant.
 //   3. MISMATCH — two documents with DIFFERENT semantic_identity are NOT comparable:
@@ -68,8 +69,7 @@ TEST(RulesetIdentity, StampedFromConfigOnDocument)
     EXPECT_EQ(doc.ruleset->packages[1].name, "test_frameworks");
 }
 
-// ── 1. ROUND-TRIP via glz::generic (no typed parser) — the additive block, member-name == JSON key
-// ──
+// ── 1. ROUND-TRIP via glz::generic (no typed parser) — the block rides the §7 container ──
 TEST(RulesetIdentity, RoundTripsThroughGenericJson)
 {
     meta::TemplateRegistry registry;
@@ -78,10 +78,16 @@ TEST(RulesetIdentity, RoundTripsThroughGenericJson)
 
     const auto parsed{glz::read_json<glz::generic>(json)};
     ASSERT_TRUE(parsed.has_value()) << json;
-    ASSERT_TRUE((*parsed).contains("ruleset"))
-        << "the stamped ruleset block must serialise: " << json;
+    EXPECT_FALSE((*parsed).contains("ruleset"))
+        << "SPEC §7: the ruleset block is vendor data and must never be a BARE root member: "
+        << json;
+    ASSERT_TRUE((*parsed).contains("extensions"))
+        << "the stamped ruleset block must serialise under the §7 container: " << json;
+    ASSERT_TRUE((*parsed)["extensions"].contains("fr.coderoast.ruleset"))
+        << "the stamped ruleset block must serialise as extensions[\"fr.coderoast.ruleset\"]: "
+        << json;
 
-    auto& ruleset{(*parsed)["ruleset"]};
+    auto& ruleset{(*parsed)["extensions"]["fr.coderoast.ruleset"]};
     ASSERT_TRUE(ruleset.contains("semantic_identity")) << json;
     EXPECT_EQ(ruleset["semantic_identity"].get<std::string>(), "a1b2c3d4e5f60718")
         << "the comparability KEY must round-trip verbatim: " << json;
@@ -106,6 +112,12 @@ TEST(RulesetIdentity, LegacyProducerEmitsNoBlock)
     ASSERT_TRUE(parsed.has_value()) << json;
     EXPECT_FALSE((*parsed).contains("ruleset"))
         << "a legacy producer (no composition injected) must emit NO ruleset block: " << json;
+    // The §7 container itself may exist (the engine stamps the transport declaration on every
+    // produced document) — the assertion is on the ruleset KEY, not the container.
+    if ((*parsed).contains("extensions"))
+        EXPECT_FALSE((*parsed)["extensions"].contains("fr.coderoast.ruleset"))
+            << "a legacy producer must emit NO ruleset block under the §7 container either: "
+            << json;
 }
 
 // ── 3. MISMATCH — compose across DIFFERENT semantic_identity fails closed ───────────────────

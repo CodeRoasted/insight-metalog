@@ -102,9 +102,13 @@ namespace dto
     //
     // The reverse-DNS key IS the wire key, and a C++ identifier cannot hold a '.', so every
     // container spells its keys in a glaze meta instead of being reflected. One struct per
-    // placement §7's table grants (the document root, and `stats.top_k[]`); a member the spec
-    // later describes leaves its container and becomes a bare member of the standard object,
-    // which is the whole point of keeping the two surfaces apart.
+    // placement: the document root and `stats.top_k[]` are granted by §7's table; the diff root
+    // is not in that table, but the diff root is open (`additionalProperties: true`), so its
+    // container is schema-legal — and a namespaced container is the nearest form to §7 the wire
+    // admits for vendor data the diff carries, where a bare vendor member is the form §7
+    // forbids outright. A member the spec later describes leaves its container and becomes a
+    // bare member of the standard object, which is the whole point of keeping the two surfaces
+    // apart.
     //
     // Each member is an optional and each container is an optional: a row/document with no
     // vendor data emits no `extensions` key at all, so the omit-when-absent discipline the rest
@@ -276,34 +280,10 @@ namespace dto
         std::vector<std::string> names;
     };
 
-    // The document-root §7 container (see TopKExtensions for the mechanism). Every member
-    // describes the observed window, so all pass the subject leg of the disposition test; all
-    // fail the comparability leg, and for different reasons — `acquisition`'s
-    // `where_cardinality_per_depth` and `closed_cells` presuppose OUR depth model and OUR closure
-    // geometry, `service_edges` has one implementer, so standardising it would make the
-    // standard a description of this vendor, and `transport`'s names are drawn from CANON's own
-    // catalogue, so a bare `transport` member would plant a vendor vocabulary in a vendor-neutral
-    // standard. Namespacing keeps the content (it is our declared
-    // error model made machine-readable — deleting it would make our documents LESS falsifiable)
-    // while telling a reader which half of the document is the standard's.
-    struct DocumentExtensions
-    {
-        std::optional<Acquisition> acquisition;
-        std::optional<ServiceEdgeBlock> service_edges;
-        std::optional<TransportDeclaration> transport;
-
-        struct glaze
-        {
-            using T = DocumentExtensions;
-            static constexpr auto value = glz::object(
-                "fr.coderoast.acquisition", &T::acquisition, "fr.coderoast.service_edges",
-                &T::service_edges, "fr.coderoast.transport", &T::transport);
-        };
-    };
-
-    // Composed-ruleset identity wire shape (SRC-II-7, ADR-17). Reflected (member name == JSON
-    // key); the whole block is a std::optional on Document with skip_null_members → omitted for a
-    // legacy producer (absence = legacy). `packages` renders in canonical (package-sorted) order.
+    // Composed-ruleset identity wire shape (SRC-II-7, ADR-17). Reflected INSIDE the block
+    // (member name == JSON key); the whole block rides the document-root §7 container below,
+    // and is omitted for a legacy producer (absence = legacy). `packages` renders in canonical
+    // (package-sorted) order.
     struct RulesetPackageRef
     {
         std::string name;
@@ -314,6 +294,37 @@ namespace dto
     {
         std::string semantic_identity; // the composed content hash (hex) — the comparability key
         std::vector<RulesetPackageRef> packages; // the composed set, for legibility
+    };
+
+    // The document-root §7 container (see TopKExtensions for the mechanism). Every member
+    // describes the observed window, so all pass the subject leg of the disposition test; all
+    // fail the comparability leg, and for different reasons — `acquisition`'s
+    // `where_cardinality_per_depth` and `closed_cells` presuppose OUR depth model and OUR closure
+    // geometry, `service_edges` has one implementer, so standardising it would make the
+    // standard a description of this vendor, `transport`'s names are drawn from CANON's own
+    // catalogue, so a bare `transport` member would plant a vendor vocabulary in a vendor-neutral
+    // standard, and `ruleset`'s comparability role is one the standard already owns through the
+    // §2.4 opaque processing identifiers — everything the block carries beyond an opaque hash
+    // (the `packages[]` name/version list) is one vendor's distribution model, so freezing it
+    // would standardise packaging metadata no other implementer has. Namespacing keeps the
+    // content (it is our declared error model made machine-readable — deleting it would make our
+    // documents LESS falsifiable) while telling a reader which half of the document is the
+    // standard's.
+    struct DocumentExtensions
+    {
+        std::optional<Acquisition> acquisition;
+        std::optional<ServiceEdgeBlock> service_edges;
+        std::optional<TransportDeclaration> transport;
+        std::optional<RulesetIdentity> ruleset;
+
+        struct glaze
+        {
+            using T = DocumentExtensions;
+            static constexpr auto value = glz::object(
+                "fr.coderoast.acquisition", &T::acquisition, "fr.coderoast.service_edges",
+                &T::service_edges, "fr.coderoast.transport", &T::transport, "fr.coderoast.ruleset",
+                &T::ruleset);
+        };
     };
 
     struct Stats
@@ -420,13 +431,12 @@ namespace dto
         std::optional<std::string> retention_profile;
         std::optional<Coordinate> coordinate; // §15 re-derivation coordinate
         std::optional<CubeBlock> cube;        // §16 intra-window cube; omit when not emitted
-        std::optional<RulesetIdentity>
-            ruleset; // SRC-II-7 composed-ruleset identity; omit for a legacy producer
         std::optional<std::string>
             run_outcome; // ADR-17 — the run's terminal verdict; omit when Unknown
         // DECLARED LAST: the standard's members first, then the §7 container that says "everything
-        // below this key is ours". Carries the SRC-D-WHERE-4 acquisition self-assessment and the
-        // O4b (SRC-D-OTEL-21) service topology; omitted when a document has neither.
+        // below this key is ours". Carries the SRC-D-WHERE-4 acquisition self-assessment, the
+        // O4b (SRC-D-OTEL-21) service topology, the ADR-23 transport declaration, and the
+        // SRC-II-7 composed-ruleset identity; omitted when a document has none of them.
         std::optional<DocumentExtensions> extensions;
     };
 
@@ -546,6 +556,24 @@ namespace dto
         std::optional<std::vector<ServiceEdgeWeightChange>> weight_changed; // omit when empty
     };
 
+    // The diff-root §7 container (see TopKExtensions for the mechanism, and the file-head note
+    // for this root's legality: §7's placement table does not name it, but the diff root is open,
+    // so a namespaced container is schema-legal where the bare vendor member is what §7 forbids).
+    // `service_edge_delta` is here because the block it diffs is itself vendor data — the
+    // document-root `fr.coderoast.service_edges` topology — and a diff of vendor data is vendor
+    // data.
+    struct DiffExtensions
+    {
+        std::optional<ServiceEdgeDelta> service_edge_delta;
+
+        struct glaze
+        {
+            using T = DiffExtensions;
+            static constexpr auto value =
+                glz::object("fr.coderoast.service_edge_delta", &T::service_edge_delta);
+        };
+    };
+
     struct TailDelta
     {
         std::uint64_t previous_tail_template_count{0};
@@ -575,8 +603,10 @@ namespace dto
         std::optional<TailDelta> tail_delta;
         std::optional<CubeDiff> cube_diff; // §13.6 emerging-border cube diff; omit when absent
         std::optional<ReservoirDelta> reservoir_delta; // §5.3 reservoir delta; omit when empty
-        std::optional<ServiceEdgeDelta>
-            service_edge_delta; // O4b (SRC-D-OTEL-21); omit unless both sides had edges
+        // DECLARED LAST: the standard's members first, then the §7 container (the Document
+        // discipline). Carries the O4b (SRC-D-OTEL-21) service-topology delta; omitted when the
+        // diff has no vendor data.
+        std::optional<DiffExtensions> extensions;
     };
 
 } // namespace dto
@@ -951,14 +981,9 @@ namespace
         if (doc.transport)
             extensions.transport = dto::TransportDeclaration{
                 .catalog_version = doc.transport->catalog_version, .names = doc.transport->names};
-        // The container is emitted when ANY member is present — never gated on a SUBSET of them.
-        // It read `acquisition || service_edges` while those were the only two, which made the
-        // transport member's existence silently conditional on an unrelated sibling riding along:
-        // a document with a declaration and neither sibling would have dropped the whole
-        // container, and a conditionally-present key is indistinguishable from a dead one to any
-        // existence gate.
-        if (extensions.acquisition || extensions.service_edges || extensions.transport)
-            out.extensions = std::move(extensions);
+        // SRC-II-7 composed-ruleset identity — under the §7 container because §2.4's opaque
+        // identifiers already own its comparability role and its `packages[]` list is one
+        // vendor's distribution model (the DocumentExtensions rationale).
         if (doc.ruleset)
         {
             dto::RulesetIdentity ruleset{.semantic_identity = doc.ruleset->semantic_identity,
@@ -966,8 +991,17 @@ namespace
             ruleset.packages.reserve(doc.ruleset->packages.size());
             for (const RulesetPackageRef& pkg : doc.ruleset->packages)
                 ruleset.packages.push_back({.name = pkg.name, .version = pkg.version});
-            out.ruleset = std::move(ruleset);
+            extensions.ruleset = std::move(ruleset);
         }
+        // The container is emitted when ANY member is present — never gated on a SUBSET of them.
+        // It read `acquisition || service_edges` while those were the only two, which made the
+        // transport member's existence silently conditional on an unrelated sibling riding along:
+        // a document with a declaration and neither sibling would have dropped the whole
+        // container, and a conditionally-present key is indistinguishable from a dead one to any
+        // existence gate.
+        if (extensions.acquisition || extensions.service_edges || extensions.transport ||
+            extensions.ruleset)
+            out.extensions = std::move(extensions);
         // The run verdict (ADR-17): additive, omit-when-Unknown — a verdict-free document's
         // wire is byte-identical to a pre-outcome producer's (absence = Unknown/legacy, no version
         // bump).
@@ -1148,9 +1182,14 @@ namespace
             out.cube_diff = make_cube_diff(diff.cube_diff);
         if (!diff.reservoir_delta.empty())
             out.reservoir_delta = make_reservoir_delta(diff.reservoir_delta);
+        dto::DiffExtensions extensions;
         if (diff.service_edge_delta) // O4b (SRC-D-OTEL-21): present iff both sides carried a
                                      // service_edges block
-            out.service_edge_delta = make_service_edge_delta(*diff.service_edge_delta);
+            extensions.service_edge_delta = make_service_edge_delta(*diff.service_edge_delta);
+        // Emitted when ANY member is present — the make_document gate discipline, one member so
+        // far.
+        if (extensions.service_edge_delta)
+            out.extensions = std::move(extensions);
         return out;
     }
 
