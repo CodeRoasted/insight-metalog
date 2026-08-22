@@ -30,7 +30,7 @@ A MetaLog document is a **deterministic** function of its input window — the s
 | Field | Value |
 |---|---|
 | Conan name | `insight_metalog` |
-| Spec conformance | MetaLog v0.8.0 — **the producer clears §8 clause 1**; the published evidence has not been regenerated yet, see below |
+| Spec conformance | MetaLog v0.8.0 — **the producer clears §8 clause 1**, and the published determinism evidence validates CONFORMANT, see below |
 | Visibility | CodeRoast-owned package |
 
 ### Conformance, stated exactly
@@ -43,11 +43,12 @@ a green gets over-read:
 | subject | measured | result |
 |---|---|---|
 | **what this producer emits** — 17 documents regenerated from source at HEAD | `metalog_validate.py --expect-documents 17` | **0 errors · 0 legal-but-undescribed · CONFORMANT** |
-| **what we have PUBLISHED** — `coderoast-hub/determinism/metalog.determinism_golden.txt`, still the pre-migration bytes | same command | **2 errors · 1 class · NONCONFORMANT** |
+| **what we have PUBLISHED** — `coderoast-hub/determinism/metalog.determinism_golden.txt` | same command | **0 errors · 0 legal-but-undescribed · CONFORMANT** (17 documents) |
 
-The published bytes are a **snapshot of an older producer**, not a second defect: the two rows
-converge the moment the determinism evidence is regenerated, which is an outgoing act on a
-public surface and not this repo's to take.
+The published bytes are a **snapshot**, not a live measurement: they can drift from the first
+row whenever the producer moves ahead of the published evidence, which is why both are measured
+rather than one being inferred from the other. Regenerating the evidence is an outgoing act on
+a public surface and not this repo's to take.
 
 How the producer got there, since the count moved twice and each move had a different owner:
 
