@@ -12,6 +12,7 @@
 #include <chrono>
 #include <fstream>
 #include <iostream>
+#include <spdlog/common.h> // spdlog::level — named for init_logging's sink/level choice in main
 #include <string>
 #include <vector>
 
@@ -42,6 +43,24 @@ int main(int argc, char** argv)
 #if defined(_WIN32)
     _setmode(_fileno(stdout), _O_BINARY); // LF-exact stdout, matching the Linux golden (no CRLF)
 #endif
+
+    // Same invariant, second threat — and the one canon's det_proof.cpp already fixed for ITS
+    // artifact while this sibling fixture kept the defect. NOTHING but the emitted documents may
+    // reach this stdout: canon's engine loggers carry a wall-clock `[%Y-%m-%d %H:%M:%S.%e]`
+    // pattern, and with no init_logging call they resolve to spdlog's DEFAULT logger, whose sink
+    // is stdout. An unelided build therefore interleaves timestamped lines into the bytes this
+    // gate compares across the gcc x clang x -O{0,2,3} x -ffp-contract matrix, and the artifact
+    // stops being a function of the corpus: two runs of ONE binary on ONE input differ, so the
+    // cross-build comparison reports a determinism failure that is really a logging failure.
+    // determinism_bitidentity.sh compiles the macros out in its own cells, which is why the
+    // matrix legs never saw it — but that makes the artifact's determinism a property of the
+    // CALLER's flags rather than of the fixture, and every other caller (a desk run, an
+    // inventory build) gets the corrupting default. The sink choice belongs here, where the
+    // contract is. Level stays `info` rather than `off`: the diagnostics are not the defect,
+    // their DESTINATION was — silencing them would answer artifact purity by deleting
+    // observability.
+    insight::logging::init_logging(spdlog::level::info, /*diagnostics_to_stderr=*/true);
+
     if (argc < 2)
     {
         std::cerr
