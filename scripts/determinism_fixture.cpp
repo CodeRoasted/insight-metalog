@@ -44,22 +44,24 @@ int main(int argc, char** argv)
     _setmode(_fileno(stdout), _O_BINARY); // LF-exact stdout, matching the Linux golden (no CRLF)
 #endif
 
-    // Same invariant, second threat — and the one canon's det_proof.cpp already fixed for ITS
-    // artifact while this sibling fixture kept the defect. NOTHING but the emitted documents may
-    // reach this stdout: canon's engine loggers carry a wall-clock `[%Y-%m-%d %H:%M:%S.%e]`
-    // pattern, and with no init_logging call they resolve to spdlog's DEFAULT logger, whose sink
-    // is stdout. An unelided build therefore interleaves timestamped lines into the bytes this
-    // gate compares across the gcc x clang x -O{0,2,3} x -ffp-contract matrix, and the artifact
-    // stops being a function of the corpus: two runs of ONE binary on ONE input differ, so the
-    // cross-build comparison reports a determinism failure that is really a logging failure.
-    // determinism_bitidentity.sh compiles the macros out in its own cells, which is why the
-    // matrix legs never saw it — but that makes the artifact's determinism a property of the
-    // CALLER's flags rather than of the fixture, and every other caller (a desk run, an
-    // inventory build) gets the corrupting default. The sink choice belongs here, where the
-    // contract is. Level stays `info` rather than `off`: the diagnostics are not the defect,
-    // their DESTINATION was — silencing them would answer artifact purity by deleting
-    // observability.
-    insight::logging::init_logging(spdlog::level::info, /*diagnostics_to_stderr=*/true);
+    // Same invariant, second threat. NOTHING but the emitted documents may reach this stdout:
+    // canon's engine loggers carry a wall-clock `[%Y-%m-%d %H:%M:%S.%e]` pattern, so an
+    // interleaved record makes this artifact a function of the operator rather than of the corpus,
+    // and the gate that compares it across the gcc x clang x -O{0,2,3} x -ffp-contract matrix
+    // reports a determinism failure that is really a logging failure. Measured here, back when an
+    // un-initialised canon resolved to spdlog's default STDOUT logger: two runs of ONE binary on
+    // ONE input, two sha256, the differing bytes a wall clock inside a log line.
+    // determinism_bitidentity.sh compiled the macros out in its own cells, which is why the matrix
+    // legs never saw it — and that is precisely what made the artifact's determinism a property of
+    // the CALLER's flags rather than of this fixture.
+    //
+    // canon's un-initialised state is stderr-only now (DN-53.D3), so this call is no longer what
+    // stands between the golden and a log line. It stays for what the quiet fallback deliberately
+    // does not give: the module records carry their `[insight.*]` tag, and the level is `info`
+    // rather than the fallback's `warn`. Level stays `info` rather than `off`: the diagnostics
+    // were never the defect, their DESTINATION was — silencing them would answer artifact purity
+    // by deleting observability.
+    insight::logging::init_logging(spdlog::level::info);
 
     if (argc < 2)
     {
