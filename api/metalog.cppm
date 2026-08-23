@@ -386,8 +386,8 @@ class MetaLogEngine
     std::unique_ptr<HllState> hll_state_;
 };
 
-// Free serialiser. Produces a serialised JSON document conforming to the
-// v0.8.0 MetaLog envelope.
+// Free serialiser. Produces a serialised JSON document conforming to the MetaLog
+// envelope at `kMetaLogSpecVersion`.
 //
 // Output is canonical and restrictive: empty/default optional fields are
 // OMITTED, never emitted as empty/zero/false (one document -> one byte

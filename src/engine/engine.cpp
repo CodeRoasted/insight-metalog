@@ -7,7 +7,7 @@ import insight.canon;
 import insight.metalog.detail.stats;
 import insight.metalog.detail.cube;
 
-// MetaLog producer engine (SPEC v0.8.0). The stateful streaming side: one window
+// MetaLog producer engine. The stateful streaming side: one window
 // of CanonicalEvents in (open_window / ingest_event) -> one bounded MetaLog
 // document out (close_window). Single responsibility — production; serialization,
 // compose and diff live in their own translation units, and the cross-cutting
@@ -852,6 +852,9 @@ void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& ana
             reserved.insert(ordered[candidate.index].first);
         }};
 
+    // SPEC §3.7 / §8 clause 4: declare the cap AT the site that enforces it — both phases below
+    // stop at `config_.reservoir_size`, so the declaration and the bound cannot drift apart.
+    stats.reservoir_size = config_.reservoir_size;
     stats.reservoir.reserve(std::min(config_.reservoir_size, candidates.size()));
 
     // ── Phase 1: the error-class reserve (SRC-D-RNK-2 §5.2) ──
@@ -1077,6 +1080,10 @@ void MetaLogEngine::build_branching(BehaviorBlock& behavior, const WindowAnalysi
     if (branching_rows.size() > config_.top_branching_size)
         branching_rows.resize(config_.top_branching_size);
     behavior.branching = std::move(branching_rows);
+    // SPEC §4.2 / §8 clause 4: an OMITTED `branching_size` asserts "no cap"; this producer caps,
+    // so the declaration is owed on every document carrying the block, and it is made here, at
+    // the truncation that enforces it.
+    behavior.branching_size = config_.top_branching_size;
 }
 
 // dominant_path (SPEC §4.1): greedy highest-count walk from the busiest template.

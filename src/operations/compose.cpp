@@ -620,6 +620,12 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
     ComposeState state;
     aggregate_and_order(state, lhs, rhs);
     out.stats.top_k_size = lhs.stats.top_k_size;
+    // `stats.reservoir_size` is deliberately NOT carried. It is a §8-clause-4 CLAIM — "this
+    // array is bounded by this number" — and the composed reservoir is bounded by the UNION of
+    // the inputs' reservoirs, never by either input's M (rederive_reservoir admits every
+    // salience-positive candidate). Measured: two documents at M=4 with disjoint salient sets
+    // compose to 8 entries. Declaring M here would ship exactly the false-cap statement this
+    // producer emits the field to avoid; an undeclared cap is not a claim (SPEC §8 clause 4).
     out.stats.unique_templates = state.ordered.size();
 
     build_composed_top_k(out, state, lhs, rhs);

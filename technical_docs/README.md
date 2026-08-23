@@ -4,7 +4,7 @@ Technical reference for the insight-metalog library: MetaLog production, composi
 
 ## Read Order
 
-1. [metalog.md](phases/metalog.md) — MetaLog v0.8.0 producer lifecycle, document structure, `compose()`, `diff()`, and the `MetaLogEngine` API.
+1. [metalog.md](phases/metalog.md) — MetaLog v0.9.0 producer lifecycle, document structure, `compose()`, `diff()`, and the `MetaLogEngine` API.
 
 ## Pipeline Position
 

@@ -8,7 +8,9 @@ import insight.canon;
 export namespace insight::metalog
 {
 
-// ── Spec envelope (mirrors the v0.8.0 schema) ──────────────────
+// ── Spec envelope (mirrors the published MetaLog schema; the version it conforms to is
+//    `kMetaLogSpecVersion` below — the ONE spelling, guarded against SPEC.md by the
+//    superproject pin-coherence gate) ────────────────────────────
 
 // Per-template per-wildcard-position value frequency table.
 //
@@ -558,6 +560,13 @@ struct CubeBlock
     std::vector<CubeCell> cells;
     std::uint64_t cell_count{0};     // number of closed cells emitted
     std::uint64_t raw_cell_count{0}; // raw (pre-closure) populated-cell count
+    // SPEC §16.10 `cube.cell_budget` — the STATIC producer constant the per-window collapse
+    // bounds `cells` by. It dominates every other term of the §11.3 envelope formula, so an
+    // undeclared budget leaves a consumer unable to price the block at all. Stamped by the
+    // bounded-cube builder (cube.cpp), which is the one place that both owns the budget and
+    // enforces it; optional so a hand-built CubeBlock declares nothing rather than declaring
+    // a budget of zero (the schema's minimum is 1).
+    std::optional<std::uint64_t> cell_budget;
 
     // DOMAIN-ONLY (in-memory), NEVER serialised — the wire `dto::CubeBlock` (serialize.cpp) omits
     // both, so the wire format is structurally unchanged ("stores closed cells, not base" is a
@@ -575,7 +584,7 @@ struct CubeBlock
     [[nodiscard]] bool operator==(const CubeBlock& other) const noexcept
     {
         return axes == other.axes && cells == other.cells && cell_count == other.cell_count &&
-               raw_cell_count == other.raw_cell_count;
+               raw_cell_count == other.raw_cell_count && cell_budget == other.cell_budget;
     }
 };
 
@@ -726,6 +735,14 @@ struct StatsBlock
     // Empty unless MetaLogConfig::reservoir_size > 0. The tail residual excludes
     // these (a promoted template is not double-counted in the omitted mass).
     std::vector<ReservoirEntry> reservoir;
+    // SPEC §3.7 `stats.reservoir_size` — the cap this document's `reservoir` was admitted
+    // under. ABSENT is a declared posture, not a default: the spec reads an omitted cap as
+    // "the producer declares no cap" (§8 clause 4: an undeclared cap is not a claim), which
+    // is why this is optional rather than a sentinel. A producer that declares it owes the
+    // clause: the array MUST be bounded by the value. Set by the engine from
+    // MetaLogConfig::reservoir_size; left ABSENT by compose(), whose re-derived reservoir is
+    // bounded by the union of its inputs' reservoirs, not by any single configured cap.
+    std::optional<std::size_t> reservoir_size;
 };
 
 // One n-gram row in the behaviour block. `sequence` holds the
@@ -745,6 +762,12 @@ struct BehaviorBlock
     std::optional<std::uint64_t> graph_edge_count;
     std::optional<std::vector<TemplateId>> dominant_path; // absent when not computed
     std::optional<std::vector<BranchingEntry>> branching; // absent when not computed
+    // SPEC §4.2 `behavior.branching_size` — the cap `branching` was truncated to. `branching`
+    // is the one variable-length block the spec places no cap on, so §4.2 reads an omitted
+    // field as "the producer declares NO cap" — an assertion, not a silence. This producer
+    // DOES cap (MetaLogConfig::top_branching_size), so the field is owed on every document
+    // that carries `branching`, and is absent exactly where `branching` is.
+    std::optional<std::size_t> branching_size;
 };
 
 struct StabilityBlock
@@ -804,7 +827,7 @@ inline constexpr std::string_view kProducerVersion{"1.9.6"};
 // api module disagree with the linked engine.
 //
 // pin-coherence: mirrors metalog-spec/SPEC.md
-inline constexpr std::string_view kMetaLogSpecVersion{"0.8.0"};
+inline constexpr std::string_view kMetaLogSpecVersion{"0.9.0"};
 
 struct ProducerBlock
 {

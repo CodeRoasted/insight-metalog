@@ -7,18 +7,18 @@ import insight.metalog.api;
 import insight.canon;
 import insight.metalog.detail.stats;
 
-// MetaLog JSON serialiser (SPEC v0.8.0 envelope). The restrictive, omit-empty
-// glaze DTO layer: a per-wire struct mirror of the domain types + the make_*
-// builders that translate domain -> DTO, behind the two free `to_json`
-// overloads. Single responsibility — serialization only (no producer state, no
-// compose/diff semantics).
+// MetaLog JSON serialiser (the SPEC envelope at `kMetaLogSpecVersion`). The
+// restrictive, omit-empty glaze DTO layer: a per-wire struct mirror of the domain
+// types + the make_* builders that translate domain -> DTO, behind the two free
+// `to_json` overloads. Single responsibility — serialization only (no producer
+// state, no compose/diff semantics).
 
 namespace insight::metalog
 {
 
 // ── JSON serialiser (glaze, DTO layer) ─────────────────────────
 //
-// Serialization is a thin DTO mirroring the MetaLog v0.8.0 envelope: each
+// Serialization is a thin DTO mirroring the MetaLog envelope: each
 // DTO field name IS the JSON key, so the struct declaration reads as the
 // schema and glaze reflects it with zero stringly-typed mapping. The domain
 // types stay free of any serialization concern.
@@ -198,6 +198,9 @@ namespace dto
         std::vector<CubeCell> cells;
         std::uint64_t cell_count{0};
         std::uint64_t raw_cell_count{0};
+        // SPEC §16.10 — the static closed-cell budget. It dominates the §11.3 envelope sum, so a
+        // consumer that cannot read it cannot price the block at all.
+        std::optional<std::uint64_t> cell_budget;
     };
 
     // Salience reservoir entry (Tier 2). Self-describing: carries WHY it was kept
@@ -331,6 +334,10 @@ namespace dto
     {
         std::uint64_t unique_templates{0};
         std::size_t top_k_size{0};
+        // SPEC §3.7 — the reservoir's cap. Declared only on a document that CARRIES a reservoir:
+        // §3.7's SHOULD is conditioned on emitting the block, and a cap declared beside an absent
+        // array prices a term the document does not have.
+        std::optional<std::size_t> reservoir_size;
         std::uint64_t tail_count{0};
         std::uint64_t tail_unique{0};
         std::vector<TopKEntry> top_k;
@@ -360,6 +367,9 @@ namespace dto
         std::size_t ngram_size{2};
         std::vector<NGramEntry> top_ngrams;
         std::size_t top_ngrams_size{0};
+        // SPEC §4.2 — the branching cap. Its ABSENCE asserts "no cap", so it travels with the
+        // `branching` array and never alone.
+        std::optional<std::size_t> branching_size;
         std::optional<std::uint64_t> graph_edge_count;
         std::optional<std::vector<std::string>> dominant_path;
         std::optional<std::vector<BranchingEntry>> branching;
@@ -700,6 +710,7 @@ namespace
                 dto::CubeCell{.coord = make_cube_coord(cell.coord), .count = cell.count});
         out.cell_count = cube.cell_count;
         out.raw_cell_count = cube.raw_cell_count;
+        out.cell_budget = cube.cell_budget;
         return out;
     }
 
@@ -869,6 +880,7 @@ namespace
             for (const auto& entry : stats.reservoir)
                 rows.push_back(make_reservoir_entry(entry, registry));
             out.reservoir = std::move(rows);
+            out.reservoir_size = stats.reservoir_size;
         }
         return out;
     }
@@ -896,6 +908,7 @@ namespace
                                 .total_outgoing = branch.total_outgoing,
                                 .entropy_bits = branch.entropy_bits});
             out_bh.branching = std::move(rows);
+            out_bh.branching_size = behavior.branching_size;
         }
         return out_bh;
     }

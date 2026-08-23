@@ -148,6 +148,114 @@ TEST(FieldHistogramSerializationTest, BoundedDocumentOverhead)
         << "B cap_bound=" << cap_bound << "B";
 }
 
+// ── DeclaredCapSerializationTest ──────────────────────────────────────────────
+//
+// SPEC §8 clause 4 made the caps decidable from the document alone, and §4.2 made the
+// ABSENCE of `behavior.branching_size` a positive assertion ("the producer declares no
+// cap"). So for every variable-length block this producer caps, two things are pinned
+// here: the cap is DECLARED beside the array it bounds, and it is declared ONLY there —
+// a cap standing next to an absent array would price a term the document does not carry,
+// and an absent cap next to a capped array is the false statement §4.2 describes.
+// String-level assertions on purpose: the claim is about emitted BYTES.
+
+namespace
+{
+    // One window carrying all three capped blocks: a rare error below a small top_k
+    // (populates `stats.reservoir`), repeated transitions (populate `behavior.branching`),
+    // and the always-on cube.
+    meta::MetaLogDocument window_with_every_capped_block(meta::MetaLogConfig config,
+                                                         meta::TemplateRegistry& registry)
+    {
+        meta::MetaLogEngine engine{config};
+        const std::chrono::system_clock::time_point t0{};
+        engine.open_window(t0);
+        for (int rep{0}; rep < 100; ++rep)
+        {
+            engine.ingest_event(meta::test::make_event("alpha steady event"));
+            engine.ingest_event(meta::test::make_event("beta steady event"));
+            engine.ingest_event(meta::test::make_event("gamma steady event"));
+        }
+        engine.ingest_event(
+            meta::test::make_event("connection refused to db", insight::LogLevel::Error));
+        auto doc{engine.close_window(t0 + std::chrono::seconds{60})};
+        registry = engine.registry();
+        return doc;
+    }
+} // namespace
+
+TEST(DeclaredCapSerializationTest, EveryEmittedCappedBlockDeclaresItsCapAndHonoursIt)
+{
+    constexpr std::size_t kReservoirCap{8};
+    constexpr std::size_t kBranchingCap{4};
+    meta::TemplateRegistry registry;
+    const auto doc{
+        window_with_every_capped_block(meta::MetaLogConfig{.top_k_size = 3,
+                                                           .reservoir_size = kReservoirCap,
+                                                           .emit_stability = false,
+                                                           .top_branching_size = kBranchingCap},
+                                       registry)};
+    const std::string json{meta::to_json(doc, registry)};
+
+    ASSERT_FALSE(doc.stats.reservoir.empty()) << "fixture must populate the reservoir.\n" << json;
+    ASSERT_TRUE(doc.behavior.has_value()) << json;
+    ASSERT_TRUE(doc.behavior->branching.has_value()) << json;
+    ASSERT_FALSE(doc.behavior->branching->empty()) << "fixture must populate branching.\n" << json;
+    ASSERT_TRUE(doc.has_cube) << "the cube is always-on.\n" << json;
+
+    // Declared — with the value the producer actually applied.
+    EXPECT_NE(json.find("\"reservoir_size\":" + std::to_string(kReservoirCap)), std::string::npos)
+        << "stats.reservoir_size must be declared beside an emitted reservoir (SPEC §3.7).\n"
+        << json;
+    EXPECT_NE(json.find("\"branching_size\":" + std::to_string(kBranchingCap)), std::string::npos)
+        << "behavior.branching_size must be declared beside emitted branching — its absence "
+           "asserts NO cap (SPEC §4.2), and this producer caps.\n"
+        << json;
+    EXPECT_NE(json.find("\"cell_budget\":4096"), std::string::npos)
+        << "cube.cell_budget must be declared beside emitted cells (SPEC §16.10).\n"
+        << json;
+
+    // …and honoured: SPEC §8 clause 4 — the array is truthfully bounded by the cap the
+    // SAME document declares for it.
+    ASSERT_TRUE(doc.stats.reservoir_size.has_value()) << json;
+    EXPECT_LE(doc.stats.reservoir.size(), *doc.stats.reservoir_size)
+        << "clause 4: reservoir holds " << doc.stats.reservoir.size() << " under a declared cap of "
+        << *doc.stats.reservoir_size << ".\n"
+        << json;
+    ASSERT_TRUE(doc.behavior->branching_size.has_value()) << json;
+    EXPECT_LE(doc.behavior->branching->size(), *doc.behavior->branching_size)
+        << "clause 4: branching holds " << doc.behavior->branching->size()
+        << " under a declared cap of " << *doc.behavior->branching_size << ".\n"
+        << json;
+    ASSERT_TRUE(doc.cube.cell_budget.has_value()) << json;
+    EXPECT_LE(doc.cube.cells.size(), *doc.cube.cell_budget)
+        << "clause 4: cube holds " << doc.cube.cells.size() << " cells under a declared budget of "
+        << *doc.cube.cell_budget << ".\n"
+        << json;
+}
+
+TEST(DeclaredCapSerializationTest, ABlockThatIsNotEmittedDeclaresNoCap)
+{
+    meta::TemplateRegistry registry;
+    const auto doc{window_with_every_capped_block(
+        meta::MetaLogConfig{.top_k_size = 3,
+                            .reservoir_size = 0, // reservoir disabled
+                            .emit_stability = false,
+                            .top_branching_size = 0}, // branching disabled
+        registry)};
+    const std::string json{meta::to_json(doc, registry)};
+
+    ASSERT_TRUE(doc.stats.reservoir.empty()) << json;
+    ASSERT_TRUE(doc.behavior.has_value()) << "behavior still carries top_ngrams.\n" << json;
+    EXPECT_FALSE(doc.behavior->branching.has_value()) << json;
+
+    EXPECT_EQ(json.find("\"reservoir_size\""), std::string::npos)
+        << "a cap beside an absent array prices a term the document does not carry.\n"
+        << json;
+    EXPECT_EQ(json.find("\"branching_size\""), std::string::npos)
+        << "a cap beside an absent array prices a term the document does not carry.\n"
+        << json;
+}
+
 // ── FieldHistogramDiffTest ────────────────────────────────────────────────────
 
 } // namespace

@@ -1,6 +1,6 @@
 # insight-metalog
 
-**insight-metalog** — MetaLog v0.8.0 producer.
+**insight-metalog** — MetaLog v0.9.0 producer.
 
 `insight_metalog` consumes an event sequence from `insight_canon` and produces a **bounded statistical fingerprint** of a window of log behaviour: composition, session framing, HLL-backed field-cardinality estimation, transition-stability ratios, and diff-encoded deltas between windows.
 
@@ -30,25 +30,29 @@ A MetaLog document is a **deterministic** function of its input window — the s
 | Field | Value |
 |---|---|
 | Conan name | `insight_metalog` |
-| Spec conformance | MetaLog v0.8.0 — **the producer clears §8 clause 1**, and the published determinism evidence validates CONFORMANT, see below |
+| Spec conformance | MetaLog v0.9.0 — **the producer clears §8 clauses 1 and 4**, and the published determinism evidence validates CONFORMANT, see below |
 | Visibility | CodeRoast-owned package |
 
 ### Conformance, stated exactly
 
 MetaLog `SPEC.md` §8 clause 1 makes conformance a machine check: *"Every MetaLog it emits
-validates against `schema/metalog.v0.schema.json`"*, and §8 closes with *"The schema is the
-test."* Two different things can be measured against that sentence, and conflating them is how
-a green gets over-read:
+validates against `schema/metalog.v0.schema.json`"* — *"the schema is the test **for clause
+1**"*. Since v0.9.0, clause 4 is machine-decided too — in the shipped validator rather than the
+schema, because `maxItems` takes a constant while the bound is a sibling field's value — so a
+producer that declares a cap is held to it. Two different things can be measured against those
+clauses, and conflating them is how a green gets over-read:
 
 | subject | measured | result |
 |---|---|---|
-| **what this producer emits** — 17 documents regenerated from source at HEAD | `metalog_validate.py --expect-documents 17` | **0 errors · 0 legal-but-undescribed · CONFORMANT** |
+| **what this producer emits** — 18 documents regenerated from source at HEAD | `metalog_validate.py --expect-documents 18` | **0 errors · 0 cap-exceeded · 0 legal-but-undescribed · CONFORMANT** |
 | **what we have PUBLISHED** — `coderoast-hub/determinism/metalog.determinism_golden.txt` | same command | **0 errors · 0 legal-but-undescribed · CONFORMANT** (17 documents) |
 
 The published bytes are a **snapshot**, not a live measurement: they can drift from the first
 row whenever the producer moves ahead of the published evidence, which is why both are measured
 rather than one being inferred from the other. Regenerating the evidence is an outgoing act on
-a public surface and not this repo's to take.
+a public surface and not this repo's to take. **They have drifted, and legally:** the snapshot
+was cut at MetaLog 0.8.0, the producer now emits 0.9.0, and the snapshot still validates because
+0.9.0's three additions are optional — an undeclared cap is not a claim (§8 clause 4).
 
 How the producer got there, since the count moved twice and each move had a different owner:
 

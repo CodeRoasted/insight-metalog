@@ -656,6 +656,11 @@ namespace
             cube = close_and_emit(collapsed_base(base, state), labels);
         }
         stamp_collapse(cube.axes, state);
+        // SPEC §16.10 / §8 clause 4: declare the BUDGET on the block it bounds. Stamped here
+        // rather than in close_and_emit because this is the only caller that runs the TRIGGER —
+        // close_and_emit also serves the trial re-closures of pick_collapse_step, whose blocks
+        // are costed and discarded, never emitted.
+        cube.cell_budget = kCubeCellBudget;
         return cube;
     }
 

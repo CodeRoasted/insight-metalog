@@ -2,7 +2,7 @@
 
 Status: shipped. Package: insight-metalog (single-package repo). The public API is the `insight.metalog` named module (`api/insight/metalog.cppm` — `MetaLogEngine`, `compose()`, `diff()`) over the `insight.metalog.api` contract layer; the envelope internals are the sealed `insight.metalog.detail` module. Tests mirror the concerns under `tests/{engine,serialize,diff,compose,reservoir,determinism}/` and import the `insight.metalog.test` aggregate.
 
-insight-metalog is the compression layer. It turns one bounded window of canonical events into a deterministic MetaLog v0.8.0 document, plus spec-level `compose()` and `diff()` helpers used by detection.
+insight-metalog is the compression layer. It turns one bounded window of canonical events into a deterministic MetaLog v0.9.0 document, plus spec-level `compose()` and `diff()` helpers used by detection.
 
 ## Input
 
@@ -19,7 +19,7 @@ Input events are `CanonicalEvent` records from insight-canon tokenization, optio
 
 ## Output
 
-The primary output is `MetaLogDocument` with `metalog_version == "0.8.0"`:
+The primary output is `MetaLogDocument` with `metalog_version == "0.9.0"`:
 
 | Block | Contents |
 |---|---|
@@ -69,6 +69,7 @@ It intentionally does not decide whether a window is anomalous. Cross-window bas
 
 - MetaLog is lossy by design; lossiness is acceptable only while LogCraft-injected incidents remain detectable downstream.
 - The document is bounded by top-K, tail summaries, n-gram caps, and histogram caps.
+- Every cap the producer applies is DECLARED in the document beside the array it bounds — `stats.top_k_size`, `stats.reservoir_size`, `behavior.top_ngrams_size`, `behavior.branching_size`, `cube.cell_budget` — and only when that array is emitted. SPEC §8 clause 4 makes a declared cap a checkable claim, and §4.2 makes an omitted `branching_size` the positive assertion "no cap", so silence is never the default here. `compose()` declares no `reservoir_size`: its re-derived reservoir is bounded by the union of its inputs' reservoirs, not by any single configured cap.
 - `attribution` is reserved by the spec and is not emitted by the current producer.
 - `compose()` drops fields that cannot be represented exactly after aggregation, such as some raw branching/histogram detail.
 - `diff(previous, current)` treats `current - previous` as the polarity for counts, rates, and structural deltas.
