@@ -987,8 +987,9 @@ struct MetaLogConfig
     static constexpr std::size_t kDefaultMaxServiceEdges = 4096;
 
     // Max entries kept in stats.top_k; the rest are summarised into
-    // tail_count / tail_unique. Default 64 (~10 KB envelope per spec
-    // ADR-3.D4). Set to 0 to skip top_k emission entirely (still bounded).
+    // tail_count / tail_unique. Default 64 (~10 KB inline envelope, per the size table in
+    // metalog-spec/SPEC.md §11 — which declares itself INFORMATIVE, so the figure is an
+    // expectation and not a bound). Set to 0 to skip top_k emission entirely (still bounded).
     std::size_t top_k_size{kDefaultTopKSize};
 
     // Salience Reservoir size M (Tier 2): max templates retained by salience
@@ -1139,6 +1140,68 @@ struct MetaLogConfig
 
     [[nodiscard]] bool operator==(const MetaLogConfig&) const noexcept = default;
 };
+
+// ── SPEC §2.4 retention profile ────────────────────────────────
+
+// The generation of the SALIENCE ARITHMETIC this producer implements — the half of §2.4's
+// `retention_profile` that no configuration field can express. §2.4 names the profile as covering
+// the top_k size, the reservoir's admission weights / size / diversity caps AND the salience
+// arithmetic; the size and the caps are MetaLogConfig members, while the admission weights and the
+// arithmetic are compiled in (src/stats/salience.cpp — the band ladder, the inverse-probability
+// surprise thresholds, the rarity modulation, the template_id tie-break). Two documents produced
+// under the SAME tuple by two binaries whose ladders differ are not comparable, and only this
+// constant can say so. Same species as insight::kCanonicalizationVersion, which names the masking
+// generation for the sibling identifier.
+//
+// BUMP OBLIGATION: any edit to the salience arithmetic that can move a retained bag for some input
+// bumps this. The observable that catches a missed bump is the near-full reservoir golden
+// (scripts/reservoir_nearfull_scenario.hpp, ADR-31.D8): an arithmetic change moves it, so a moved
+// golden landing with this generation unchanged IS the defect — the two travel together.
+inline constexpr std::string_view kSalienceArithmeticGeneration{"salience-1"};
+
+// The SPEC §2.4 `retention_profile` for a producer configuration — DERIVED from the parameters, and
+// deliberately never a hand-written literal. A hand-written name can drift from what the engine
+// actually applied, and a document whose stamp names retention it did NOT use is worse than an
+// unstamped one: the gate then certifies a comparability that does not hold, silently, on both
+// sides.
+//
+// Shape: "<arithmetic generation>/k<top_k>-m<reservoir>-c<per_kind_cap>-e<error_reserve>", e.g.
+// "salience-1/k128-m0-c0-e0". Two properties the callers rely on, both structural:
+//   • INJECTIVE — each axis is a one-letter tag plus a non-empty decimal run, the axes are joined
+//     by '-' (which no decimal run contains) and the generation is separated by '/' (which appears
+//     nowhere else), so the string determines the tuple and two distinct tuples cannot collide.
+//   • RECONSTRUCTABLE — the retention a stored document was produced under is readable off the
+//     stamp alone, months later, without the config that produced it. That is why this is a
+//     legible name and not a hash.
+// Deterministic across toolchains: integer std::to_chars only — no locale, no float, no hashing.
+//
+// The spec fixes no format and no registry (§2.4: "opaque strings … producers and consumers within
+// an environment MUST agree on their meaning out-of-band"), so this shape is ours to choose; what
+// the spec fixes is the MUST-bump, and deriving the name is how that MUST is discharged by
+// construction rather than by remembering.
+[[nodiscard]] inline std::string retention_profile_name(const MetaLogConfig& config)
+{
+    // Any std::size_t in base 10, plus its one-character axis tag.
+    constexpr std::size_t kAxisFieldMax{std::numeric_limits<std::size_t>::digits10 + 2};
+    std::string name{kSalienceArithmeticGeneration};
+    const auto append_axis{
+        [&name](char tag, std::size_t value)
+        {
+            std::array<char, kAxisFieldMax> digits{};
+            const auto written{std::to_chars(digits.data(), digits.data() + digits.size(), value)};
+            name.push_back(tag);
+            name.append(digits.data(), written.ptr);
+        }};
+    name.push_back('/');
+    append_axis('k', config.top_k_size);
+    name.push_back('-');
+    append_axis('m', config.reservoir_size);
+    name.push_back('-');
+    append_axis('c', config.reservoir_per_kind_cap);
+    name.push_back('-');
+    append_axis('e', config.reservoir_error_reserve);
+    return name;
+}
 
 // ── Diff document (SPEC §13) ───────────────────────────────────
 
