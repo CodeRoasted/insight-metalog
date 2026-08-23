@@ -19,6 +19,10 @@ import insight.metalog.test;
 // this behavioral coverage and the cross-leg gate exercise the identical M=128 admit/evict
 // boundary.
 #include "reservoir_nearfull_scenario.hpp"
+// The SECOND ADR-31.D8 reservoir arm — the tuple the streaming surface ships
+// (`salience-1/k128-m64-c0-e16`), where the error-class RESERVE is live and the batch arm has no
+// opinion. Same sharing contract as above.
+#include "reservoir_streaming_scenario.hpp"
 // The shared O4b service-topology over-cap scenario, shared with the fixture so this guard and the
 // cross-leg gate exercise the identical over-cap top-K select (the canonical-key tie-break).
 #include "service_edges_overcap_scenario.hpp"
@@ -59,6 +63,114 @@ TEST(MetaLogDocument, ReservoirNearFullExercisesTheF5M8Regime)
     EXPECT_GT(surprise_driven, 0U)
         << "the reservoir boundary must be structural_surprise-driven so the ADR-31.D8 hazard "
            "(a non-deterministic surprise score) flips bag membership; none were.";
+}
+
+// The SECOND ADR-31.D8 arm, at the tuple the STREAMING surface ships
+// (`salience-1/k128-m64-c0-e16`). The arm above is anchored at `top_k 64 / M 128 / cap 0 /
+// reserve 0` — the Sift batch diff — so without this one the flagship determinism proof never runs
+// at the configuration we deploy, and the error-class RESERVE (live only here) is never driven at
+// all. This guard keeps the scenario NON-HOLLOW; the bit-identity assertion itself is the cross-leg
+// gate's (determinism_bitidentity.sh + golden.yaml), which replays the identical window.
+//
+// Every expectation below is a property the cross-leg gate would go blind without, and each one can
+// FAIL — measured, by inverting engine.cpp's most-likely-edge tie-break to prefer the FEWER-
+// observation edge: `error_class` 16 -> 24 and `ambiguous` 8 -> 0, two reds, while
+// `reservoir.size()` stayed at 64. A size-only guard would have called that regression green.
+TEST(MetaLogDocument, ReservoirStreamingExercisesTheShippedTupleReserveAndEdgeTie)
+{
+    namespace streaming = meta::streaming_nearfull;
+
+    meta::MetaLogConfig cfg;
+    streaming::configure(cfg);
+    meta::MetaLogEngine engine{cfg};
+
+    using Clock = std::chrono::system_clock;
+    const Clock::time_point t0{std::chrono::seconds{1700000000}};
+    const Clock::time_point t1{std::chrono::seconds{1700000060}};
+    engine.open_window(t0);
+    streaming::emit_window(engine);
+    const auto doc{engine.close_window(t1)};
+
+    // Group membership is read off the interned template text, not off a derived band, so a failure
+    // names the population that moved rather than a number.
+    std::size_t error_class{0};
+    std::size_t ambiguous{0};
+    std::size_t ambiguous_at_full_surprise{0};
+    std::size_t solid{0};
+    for (const auto& entry : doc.stats.reservoir)
+    {
+        const std::string_view tmpl{engine.registry().lookup(entry.template_id)};
+        if (entry.structural_role == insight::StructuralRole::Terminator ||
+            entry.dominant_level == insight::LogLevel::Error ||
+            entry.dominant_level == insight::LogLevel::Fatal)
+            ++error_class;
+        if (tmpl.starts_with("ambiguous boundary spoke"))
+        {
+            ++ambiguous;
+            if (entry.structural_surprise == 90U)
+                ++ambiguous_at_full_surprise;
+        }
+        if (tmpl.starts_with("dispatched task"))
+            ++solid;
+    }
+
+    const auto census = [&]
+    {
+        return "  reservoir=" + std::to_string(doc.stats.reservoir.size()) + "/" +
+               std::to_string(cfg.reservoir_size) + " error_class=" + std::to_string(error_class) +
+               " solid=" + std::to_string(solid) + " ambiguous=" + std::to_string(ambiguous) +
+               " (at surprise 90: " + std::to_string(ambiguous_at_full_surprise) +
+               ") unique_templates=" + std::to_string(doc.stats.unique_templates) +
+               " top_k=" + std::to_string(doc.stats.top_k.size());
+    };
+
+    ASSERT_EQ(doc.stats.reservoir.size(), cfg.reservoir_size)
+        << "the streaming fixture must fill the item-reservoir to the full shipped M="
+        << cfg.reservoir_size
+        << "; a short reservoir means the admit/evict BOUNDARY is never "
+           "reached and the arm proves nothing.\n"
+        << census();
+
+    // ADR-20.D7, measured. The general pool is over-subscribed at the 8100 band by 64 candidates
+    // for 48 slots, so with `reservoir_error_reserve = 0` NOT ONE error-class template survives.
+    // Exactly kErrorReserve says both halves at once: the reserve admits, and it BOUNDS (24
+    // error-class candidates compete for 16 slots, and the 8 that lose do not sneak in through the
+    // general pool).
+    EXPECT_EQ(error_class, streaming::kErrorReserve)
+        << "the error-class reserve is the ONLY reason a failure is retained in this window, so "
+           "this count is the reserve itself. Anything else means the reserve stopped binding "
+           "(more) or stopped admitting (fewer), and the shipped `e16` axis is no longer measured "
+           "by anything.\n"
+        << census();
+
+    // The equal-ratio edge tie-break, at the boundary. 40 solid + 24 ambiguous share the 8100 band
+    // for 48 free slots, so at least (48 - 40) ambiguous MUST be admitted and at least 16 of the
+    // band MUST be rejected. Lose the tie-break and every ambiguous spoke falls to 3600 and the
+    // error class's reserve overflow takes those seats — which is exactly what the cross-leg gate
+    // would then see as moved bytes.
+    ASSERT_GE(ambiguous,
+              streaming::kGeneralSlots - static_cast<std::size_t>(streaming::kSolidSpokes))
+        << "the ambiguous equal-ratio spokes lost their seats at the reservoir boundary: the "
+           "most-likely-edge TIE is no longer resolved to the higher-observation edge, or the "
+           "window stopped over-subscribing the 8100 band.\n"
+        << census();
+    EXPECT_LT(ambiguous, static_cast<std::size_t>(streaming::kAmbiguousSpokes))
+        << "every ambiguous spoke was admitted, so the boundary no longer CUTS the tie group and a "
+           "surprise-score divergence could no longer change the bag.\n"
+        << census();
+    EXPECT_EQ(ambiguous_at_full_surprise, ambiguous)
+        << "an admitted ambiguous spoke carries a structural_surprise other than 90 — the tie "
+           "resolved to the single-observation edge, which is the ADR-31.D8 defect itself.\n"
+        << census();
+
+    // The general pool is filled by the 8100 band ALONE — which is what makes the two statements
+    // above compose into one fact: every retained failure is there because of the reserve, and
+    // every general slot is decided at the equal-ratio boundary.
+    EXPECT_EQ(solid + ambiguous, streaming::kGeneralSlots)
+        << "a template from below the 8100 band reached the general pool, so the pool is no longer "
+           "saturated by the solid/ambiguous tie group and the boundary has drifted off the "
+           "equal-ratio spokes this arm exists to drive.\n"
+        << census();
 }
 
 // O4b service-topology (SRC-D-OTEL-21): the over-cap top-K select MUST stay non-hollow — the

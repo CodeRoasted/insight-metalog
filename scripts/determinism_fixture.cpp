@@ -36,6 +36,7 @@ import insight.metalog;
 // tests so both oracles run the identical windows.
 #include "cube_collapse_scenario.hpp"
 #include "reservoir_nearfull_scenario.hpp"
+#include "reservoir_streaming_scenario.hpp"
 #include "service_edges_overcap_scenario.hpp"
 
 int main(int argc, char** argv)
@@ -65,8 +66,8 @@ int main(int argc, char** argv)
 
     if (argc < 2)
     {
-        std::cerr
-            << "usage: determinism_fixture <corpus | --reservoir-nearfull | --cube-collapse>\n";
+        std::cerr << "usage: determinism_fixture <corpus | --reservoir-nearfull | "
+                     "--reservoir-streaming | --cube-collapse | --service-edges>\n";
         return 2;
     }
 
@@ -105,6 +106,27 @@ int main(int argc, char** argv)
         using Clock = std::chrono::system_clock;
         engine.open_window(Clock::time_point{std::chrono::seconds{1700000000}});
         ml::nearfull::emit_window(engine);
+        const auto doc{engine.close_window(Clock::time_point{std::chrono::seconds{1700000060}})};
+        std::cout << ml::to_json(doc, engine.registry()) << "\n";
+        return 0;
+    }
+
+    // The SECOND ADR-31.D8 reservoir oracle, at the tuple the STREAMING surface ships
+    // (`salience-1/k128-m64-c0-e16`). The arm above is anchored at the Sift BATCH tuple
+    // (top_k 64 / M 128 / reserve 0), so it is silent about both the shipped candidate population
+    // and the error-class RESERVE — which is live only here. Replayed across the same
+    // gcc×clang × -O{0,3} × -ffp-contract{off,fast} matrix and the same five golden.yaml legs; the
+    // emitted document must be byte-identical, or the boundary the deployed configuration decides
+    // every window is non-deterministic. Same window as the in-suite ReservoirStreaming guard.
+    if (std::string{argv[1]} == "--reservoir-streaming")
+    {
+        namespace ml = insight::metalog;
+        ml::MetaLogConfig cfg;
+        ml::streaming_nearfull::configure(cfg);
+        ml::MetaLogEngine engine{cfg};
+        using Clock = std::chrono::system_clock;
+        engine.open_window(Clock::time_point{std::chrono::seconds{1700000000}});
+        ml::streaming_nearfull::emit_window(engine);
         const auto doc{engine.close_window(Clock::time_point{std::chrono::seconds{1700000060}})};
         std::cout << ml::to_json(doc, engine.registry()) << "\n";
         return 0;

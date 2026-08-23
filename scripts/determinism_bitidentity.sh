@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Determinism golden driver — the metalog leg of the Determinism-Golden-Proof (golden.yaml). Builds the
 # canon+metalog MODULE-LIB TOWER from source for ONE toolchain leg across the -O{0,3}×-ffp-contract
-# {off,fast} corners, asserts the serialized MetaLog document (corpus + the ADR-31.D8 --reservoir-nearfull,
-# §C3 --cube-collapse, and O4b --service-edges scenarios) is byte-identical across that leg's corners,
+# {off,fast} corners, asserts the serialized MetaLog document (corpus + the ADR-31.D8 --reservoir-nearfull
+# and --reservoir-streaming arms — the Sift BATCH tuple and the SHIPPED streaming tuple — plus the §C3
+# --cube-collapse and O4b --service-edges scenarios) is byte-identical across that leg's corners,
 # and EMITS the leg's digest (DETERMINISM_OUT).
 #
 # There is NO committed golden (retired — no more committed-golden apparatus). Cross-toolchain / cross-
@@ -186,16 +187,20 @@ if [ "${#builds[@]}" -eq 0 ] || [ "${#builds[@]}" -ne "$expected" ]; then
 fi
 
 # Each cell emits the committed corpus (5 files) THEN --reservoir-nearfull (the ADR-31.D8 synthetic M=128
-# scenario) THEN --cube-collapse (the §C3 cube dimensional-collapse guardrail — a window that FIRES a
-# collapse, so its content-driven axis-selection tie-break is proven cross-leg) THEN --service-edges
-# (the O4b service-topology over-cap window — the emitted block rides the top-K select's canonical-key
-# tie-break, proven cross-leg). Compare every built cell to the reference — byte-identity across the
-# leg's -O/-ffp sweep.
+# scenario, the Sift BATCH tuple) THEN --reservoir-streaming (the SECOND ADR-31.D8 arm, at the tuple the
+# streaming surface ships — salience-1/k128-m64-c0-e16, where the error-class reserve is live and the
+# batch arm has no opinion) THEN --cube-collapse (the §C3 cube dimensional-collapse guardrail — a window
+# that FIRES a collapse, so its content-driven axis-selection tie-break is proven cross-leg) THEN
+# --service-edges (the O4b service-topology over-cap window — the emitted block rides the top-K select's
+# canonical-key tie-break, proven cross-leg). Compare every built cell to the reference — byte-identity
+# across the leg's -O/-ffp sweep.
 for ctag in "${builds[@]}"; do
   : >"$WORK/$ctag.out"
   for f in $CORPUS; do echo "### $(basename "$f") ###" >>"$WORK/$ctag.out"; "${BIN[$ctag]}" "$f" >>"$WORK/$ctag.out" 2>/dev/null; done
   echo "### --reservoir-nearfull (ADR-31.D8 synthetic M=128) ###" >>"$WORK/$ctag.out"
   "${BIN[$ctag]}" --reservoir-nearfull >>"$WORK/$ctag.out" 2>/dev/null
+  echo "### --reservoir-streaming (ADR-31.D8 shipped streaming tuple k128-m64-c0-e16) ###" >>"$WORK/$ctag.out"
+  "${BIN[$ctag]}" --reservoir-streaming >>"$WORK/$ctag.out" 2>/dev/null
   echo "### --cube-collapse (SecC3 dimensional-collapse guardrail) ###" >>"$WORK/$ctag.out"
   "${BIN[$ctag]}" --cube-collapse >>"$WORK/$ctag.out" 2>/dev/null
   echo "### --service-edges (O4b service-topology over-cap top-K tie-break) ###" >>"$WORK/$ctag.out"
@@ -211,7 +216,8 @@ done
 
 if [ $rc -eq 0 ]; then
   echo "PASS: byte-identical across ${#builds[@]} built cell(s) — corpus + --reservoir-nearfull +"
-  echo "  --cube-collapse + --service-edges, over the '${LINUX_LEGS[*]}' leg's -O{0,3}×-ffp{off,fast} sweep."
+  echo "  --reservoir-streaming + --cube-collapse + --service-edges, over the '${LINUX_LEGS[*]}' leg's"
+  echo "  -O{0,3}×-ffp{off,fast} sweep."
   # Cross-leg-agreement mode (the ONLY mode now — no committed golden): emit this leg's full digest
   # (corpus + reservoir, byte-identical across its own -O×-ffp cells above) for the golden.yaml compare
   # job to byte-compare against every other leg (gcc/clang × x86/arm64 + msvc). One leg per job → the
@@ -222,7 +228,8 @@ if [ $rc -eq 0 ]; then
   fi
 else
   echo "FAIL: determinism divergence within the '${LINUX_LEGS[*]}' leg's -O/-ffp sweep — a det_math"
-  echo "  -ffp-contraction leak, an -O-sensitive ordering leak, OR (on the --reservoir-nearfull marker)"
-  echo "  the ADR-31.D8 item-reservoir admit/evict leak. Localize: diff \$WORK/<ctag>.out vs \$WORK/$ref.out."
+  echo "  -ffp-contraction leak, an -O-sensitive ordering leak, OR (on either --reservoir-* marker)"
+  echo "  the ADR-31.D8 item-reservoir admit/evict leak — the streaming marker is the one that speaks"
+  echo "  about the DEPLOYED tuple. Localize: diff \$WORK/<ctag>.out vs \$WORK/$ref.out."
 fi
 exit $rc

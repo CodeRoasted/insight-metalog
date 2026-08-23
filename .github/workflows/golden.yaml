@@ -7,8 +7,10 @@ name: Determinism Golden Proof
 #
 #   5 legs — gcc-x86 · clang-x86 · gcc-arm64 · clang-arm64 · msvc — each builds the canon+metalog MODULE
 #   TOWER FROM SOURCE (Approach-B det_harness: add_subdirectory(canon)+add_subdirectory(metalog) + the
-#   determinism_fixture) and EMITS its digest over the committed corpus + the ADR-31.D8 --reservoir-nearfull,
-#   §C3 --cube-collapse, and O4b --service-edges scenarios. The compare job asserts all five are
+#   determinism_fixture) and EMITS its digest over the committed corpus + the TWO ADR-31.D8 reservoir arms
+#   (--reservoir-nearfull, the Sift BATCH tuple; --reservoir-streaming, the tuple the streaming surface
+#   SHIPS — salience-1/k128-m64-c0-e16, where the error-class reserve is live), the §C3 --cube-collapse
+#   and the O4b --service-edges scenarios. The compare job asserts all five are
 #   byte-identical: that IS the proof (no committed golden
 #   to go stale). Any divergence FAILS, gating the release. The agreed digest is uploaded as
 #   `determinism-golden` — the Release attaches it (per-release artifact, never committed).
@@ -280,7 +282,7 @@ jobs:
           if (-not $fixture) { Write-Error "det_fixture.exe not produced — the MSVC det harness build failed"; exit 1 }
           "$fixture" | Out-File -FilePath "$env:GITHUB_WORKSPACE/det_fixture_path.txt" -Encoding ascii -NoNewline
 
-      - name: Emit the MSVC digest (corpus + reservoir + cube-collapse + service-edges — the EXACT bytes the Linux legs emit)
+      - name: Emit the MSVC digest (corpus + both reservoir arms + cube-collapse + service-edges — the EXACT bytes the Linux legs emit)
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -307,6 +309,17 @@ jobs:
             $tmp = "$work/reservoir.out"
             $p = Start-Process -FilePath $fixture -ArgumentList "--reservoir-nearfull" -NoNewWindow -Wait -PassThru -RedirectStandardOutput $tmp
             if ($p.ExitCode -ne 0) { throw "det_fixture --reservoir-nearfull failed (exit $($p.ExitCode))" }
+            $b = [System.IO.File]::ReadAllBytes($tmp)
+            $fs.Write($b, 0, $b.Length)
+            # The SECOND ADR-31.D8 arm: --reservoir-streaming, at the tuple the streaming surface SHIPS
+            # (salience-1/k128-m64-c0-e16). The batch arm above is silent about both the shipped candidate
+            # population and the error-class reserve, so without this section the five-leg proof never runs
+            # at the deployed configuration. Same header + order as the Linux legs — must match.
+            $sthdr = [System.Text.Encoding]::ASCII.GetBytes("### --reservoir-streaming (ADR-31.D8 shipped streaming tuple k128-m64-c0-e16) ###`n")
+            $fs.Write($sthdr, 0, $sthdr.Length)
+            $tmp = "$work/reservoir_streaming.out"
+            $p = Start-Process -FilePath $fixture -ArgumentList "--reservoir-streaming" -NoNewWindow -Wait -PassThru -RedirectStandardOutput $tmp
+            if ($p.ExitCode -ne 0) { throw "det_fixture --reservoir-streaming failed (exit $($p.ExitCode))" }
             $b = [System.IO.File]::ReadAllBytes($tmp)
             $fs.Write($b, 0, $b.Length)
             # The §C3 --cube-collapse section (same header + order as the Linux legs — must match).

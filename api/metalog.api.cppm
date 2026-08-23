@@ -1154,9 +1154,12 @@ struct MetaLogConfig
 // generation for the sibling identifier.
 //
 // BUMP OBLIGATION: any edit to the salience arithmetic that can move a retained bag for some input
-// bumps this. The observable that catches a missed bump is the near-full reservoir golden
-// (scripts/reservoir_nearfull_scenario.hpp, ADR-31.D8): an arithmetic change moves it, so a moved
-// golden landing with this generation unchanged IS the defect — the two travel together.
+// bumps this. The observable that catches a missed bump is the pair of near-full reservoir goldens
+// (scripts/reservoir_nearfull_scenario.hpp at the Sift BATCH tuple, scripts/
+// reservoir_streaming_scenario.hpp at the SHIPPED streaming tuple — ADR-31.D8): an arithmetic
+// change moves them, so a moved golden landing with this generation unchanged IS the defect — they
+// travel together. Two arms and not one because a seam fix proves only the arm it was measured on,
+// and the streaming arm is the only one that drives the error-class reserve at all.
 inline constexpr std::string_view kSalienceArithmeticGeneration{"salience-1"};
 
 // The SPEC §2.4 `retention_profile` for a producer configuration — DERIVED from the parameters, and
