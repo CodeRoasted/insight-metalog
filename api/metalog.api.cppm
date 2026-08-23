@@ -1169,7 +1169,8 @@ inline constexpr std::string_view kSalienceArithmeticGeneration{"salience-1"};
 // sides.
 //
 // Shape: "<arithmetic generation>/k<top_k>-m<reservoir>-c<per_kind_cap>-e<error_reserve>", e.g.
-// "salience-1/k128-m0-c0-e0". Two properties the callers rely on, both structural:
+// "salience-1/k128-m64-c0-e16" — the shipped streaming tuple. Two properties the callers rely on,
+// both structural:
 //   • INJECTIVE — each axis is a one-letter tag plus a non-empty decimal run, the axes are joined
 //     by '-' (which no decimal run contains) and the generation is separated by '/' (which appears
 //     nowhere else), so the string determines the tuple and two distinct tuples cannot collide.
