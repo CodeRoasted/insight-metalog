@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# SPEC §8 clause 1 over the digest THIS repo publishes — the producer-side half of
-# "the schema is the test" (metalog-spec SPEC.md §8).
+# SPEC §8 clauses 1 and 4 over the digest THIS repo publishes — the producer-side half
+# of "the schema is the test" (metalog-spec SPEC.md §8). Clause 4 joined at spec v0.9.0:
+# it is decided in the shipped validator rather than the schema, because `maxItems` takes
+# a constant while the bound is a sibling field's value. Both clauses are asked of the
+# exact bytes that ship.
 #
 # ── Why the producer needs its own leg
 # The superproject's `metalog-conformance` job judges the coderoast-hub bytes at
@@ -82,9 +85,9 @@ echo "  oracle : $SPEC_ROOT  (schema/ + SPEC.md + conformance/)"
 echo "  corpus : $CORPUS_DIR"
 echo
 
-# ── ARMING, first on purpose. Twelve fixtures with hand-authored expectations, four of
-# them controls the self-test refuses to run without. The one that decides whether this
-# gate means anything: the digest is `### name ###` sections whose bodies are JSONL, one
+# ── ARMING, first on purpose. Fixtures with hand-authored expectations, several of them
+# controls the self-test refuses to run without; it prints its own counts, so they are not
+# restated here to go stale. The one that decides whether this gate means anything: the digest is `### name ###` sections whose bodies are JSONL, one
 # document PER LINE, and a reader that takes a section as one document validates its
 # first line and reports a smaller, entirely plausible number. A failure here means
 # repair the instrument — it says nothing about this producer.
@@ -141,7 +144,7 @@ echo
 # ── THE VERDICT. --expect-documents is the tripwire between the two readers: if the
 # validator's parser sees a different number than the count above, it exits 2 rather
 # than judging whatever subset it could see.
-echo "── SPEC §8 clause 1 over the agreed golden ──"
+echo "── SPEC §8 clauses 1 and 4 over the agreed golden ──"
 rc=0
 python3 "$VALIDATOR" \
   --schema-dir "$SCHEMA_DIR" \
@@ -152,13 +155,15 @@ python3 "$VALIDATOR" \
 case "$rc" in
   0)
     echo
-    echo "PASS: this producer's published digest is conformant with SPEC §8 clause 1."
-    echo "  READ IT NARROWLY. §8 has four clauses and this is the first. Clause 2 (every"
+    echo "PASS: this producer's published digest is conformant with SPEC §8 clauses 1 and 4."
+    echo "  READ IT NARROWLY. §8 has four clauses and this covers two. Clause 2 (every"
     echo "  required field populated per its definition) is covered only where the schema"
     echo "  can express it; clause 3 (template_id computed per §3.2) has no pinned"
-    echo "  cross-implementation vector to check against; clause 4 (top_k truthfully"
-    echo "  bounded at top_k_size) is not checked at all. \`format\` is an annotation here,"
-    echo "  not an assertion — asserting it would be stricter than the clause this names."
+    echo "  cross-implementation vector to check against. Clause 4 carries its own limit:"
+    echo "  it checks the caps the documents DECLARE, so a cap this producer stops"
+    echo "  declaring leaves its array unchecked and the green says nothing about it."
+    echo "  \`format\` is an annotation here, not an assertion — asserting it would be"
+    echo "  stricter than the clauses this names."
     ;;
   1)
     echo "::error::this producer's digest does NOT validate against the published MetaLog schema — see the path/keyword/member list above. A member reported [nowhere] is this producer extending outside SPEC §7 \`extensions\`, which is a fix here; a member reported [in SPEC.md] may instead be a schema that lags its own prose, which is a metalog-spec change under its GOVERNANCE §3. The tag is a lead, not a verdict — open the section before acting on it." >&2
