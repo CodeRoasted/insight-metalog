@@ -55,10 +55,17 @@ inline void configure(insight::metalog::MetaLogConfig& cfg)
 
 // The count the emitted document must declare, derived from the config rather than asserted as a
 // literal — `kDistinctTemplates - 1` bigrams, `max_ngram_keys` admitted, the rest refused.
+//
+// SATURATING, and the saturation is load-bearing rather than defensive. A cap at or above the
+// bigram count refuses nothing, and this is unsigned arithmetic: the subtraction would wrap to a
+// number in the quintillions and the guard's failure message — the message whose whole job is to
+// say "THE SECTION WENT HOLLOW" — would print garbage in precisely the case it exists to catch.
 [[nodiscard]] inline std::uint64_t
 expected_dropped_observations(const insight::metalog::MetaLogConfig& cfg)
 {
-    return static_cast<std::uint64_t>(kDistinctTemplates - 1 - cfg.max_ngram_keys);
+    constexpr std::size_t kBigrams{kDistinctTemplates - 1};
+    return kBigrams > cfg.max_ngram_keys ? static_cast<std::uint64_t>(kBigrams - cfg.max_ngram_keys)
+                                         : 0U;
 }
 
 // Drive one window whose n-gram accounting bound BINDS. Caller does open_window / close_window
