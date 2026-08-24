@@ -76,8 +76,11 @@ mapfile -t fixture_flags < <(grep -oE 'argv\[1\][^=]*== *"--[a-z0-9-]+"' "$FIXTU
 [ "${#fixture_flags[@]}" -gt 0 ] ||
   die2 "found no 'argv[1] == \"--flag\"' dispatch in $FIXTURE — either the fixture stopped taking flags or this guard's pattern went stale; both make its verdict meaningless"
 
-missing_row="$(comm -23 <(printf '%s\n' "${fixture_flags[@]}") <(printf '%s\n' "${roster_flags[@]}" | LC_ALL=C sort -u))"
-missing_branch="$(comm -13 <(printf '%s\n' "${fixture_flags[@]}") <(printf '%s\n' "${roster_flags[@]}" | LC_ALL=C sort -u))"
+# LC_ALL=C on comm as well as on the sorts that feed it: comm compares under the AMBIENT locale, so
+# two C-sorted inputs read by a UTF-8 comm can be declared out of order and silently mis-merged —
+# which here would invent a missing flag, or hide one. Both sides, one collation, end to end.
+missing_row="$(LC_ALL=C comm -23 <(printf '%s\n' "${fixture_flags[@]}") <(printf '%s\n' "${roster_flags[@]}" | LC_ALL=C sort -u))"
+missing_branch="$(LC_ALL=C comm -13 <(printf '%s\n' "${fixture_flags[@]}") <(printf '%s\n' "${roster_flags[@]}" | LC_ALL=C sort -u))"
 [ -z "$missing_row" ] ||
   fail "the fixture dispatches$(printf ' %s' $missing_row) and the roster does not list it — that scenario is compiled, and NO leg replays it. Add the row to $ROSTER (emission order is digest order)."
 [ -z "$missing_branch" ] ||
