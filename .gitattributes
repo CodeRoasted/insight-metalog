@@ -24,5 +24,3 @@
 # Byte-exact reference data — never eol-normalize (corpora/goldens/fixtures
 # carry intentional CRLF / NUL / ANSI; a Windows checkout must preserve them verbatim).
 scripts/determinism_corpus/** -text
-scripts/determinism_golden.txt -text
-scripts/determinism_golden.sha256 -text
