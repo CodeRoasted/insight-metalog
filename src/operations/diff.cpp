@@ -640,10 +640,8 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
     // (DN-42.D17 §4): the §2.4 gate above freezes the axis SET per canonicalization_version, but
     // NOT the per-window collapse STAMPS (band_floor / floor_depth, §16.10) — two windows of the
     // same contract routinely differ there, and §16.10 mandates diffing that pair at the minimal
-    // common collapse rather than refusing it. cube_diff_of returns optional<CubeDiffBlock> and
-    // that optional is always engaged today; it is a local in metalog's own TU, not a
-    // consumer-synthesized member, so the MSVC bug that drove MetaLogDocument::cube to bool+value
-    // does not apply to it.
+    // common collapse rather than refusing it. So the presence check below is the whole gate:
+    // cube_diff_of is total over the pair it is handed.
     if (previous.has_cube && current.has_cube)
     {
         // The diff-only latency_shift differential axis (§4): a per-component SIGNED latency shift
@@ -652,11 +650,8 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
         // duration data → the plain 3-D border.
         const std::unordered_map<std::string, OrdinalDrift> latency_shifts{
             component_latency_shifts(previous, current)};
-        if (auto cube_diff{cube::cube_diff_of(previous.cube, current.cube, latency_shifts)})
-        {
-            out.cube_diff = std::move(*cube_diff);
-            out.has_cube_diff = true;
-        }
+        out.cube_diff = cube::cube_diff_of(previous.cube, current.cube, latency_shifts);
+        out.has_cube_diff = true;
     }
 
     return out;

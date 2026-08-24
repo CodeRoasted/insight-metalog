@@ -471,8 +471,8 @@ void BM_StageCube_Determinism(benchmark::State& state)
                      "bit-identical across runs\n";
         std::abort();
     }
-    const std::optional<meta::CubeBlock> composed_a{cube::compose_cubes(first, second)};
-    const std::optional<meta::CubeBlock> composed_b{cube::compose_cubes(first, second)};
+    const meta::CubeBlock composed_a{cube::compose_cubes(first, second)};
+    const meta::CubeBlock composed_b{cube::compose_cubes(first, second)};
     if (composed_a != composed_b)
     {
         std::cerr << "bench_compose_diff_cube DETERMINISM FAILURE: compose_cubes not "
@@ -483,16 +483,13 @@ void BM_StageCube_Determinism(benchmark::State& state)
     // which doubles every count) — the kept cube's diff path must be bit-identical run-to-run too.
     // This is the byte-identical-cell guard the retired do-operator harness used to provide, now on
     // the PRODUCTION cube (ADR-19): a non-deterministic diff cell aborts loudly.
-    if (composed_a)
+    const auto diff_a{cube::cube_diff_of(first, composed_a)};
+    const auto diff_b{cube::cube_diff_of(first, composed_a)};
+    if (diff_a != diff_b)
     {
-        const auto diff_a{cube::cube_diff_of(first, *composed_a)};
-        const auto diff_b{cube::cube_diff_of(first, *composed_a)};
-        if (diff_a != diff_b)
-        {
-            std::cerr << "bench_compose_diff_cube DETERMINISM FAILURE: cube_diff_of not "
-                         "bit-identical across runs\n";
-            std::abort();
-        }
+        std::cerr << "bench_compose_diff_cube DETERMINISM FAILURE: cube_diff_of not "
+                     "bit-identical across runs\n";
+        std::abort();
     }
     for (auto _ : state)
     {

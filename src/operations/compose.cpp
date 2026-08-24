@@ -739,18 +739,13 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
         out.behavior = std::move(behavior);
     // SPEC §16.7 / §12.1: the cube is RE-CLOSED, not merged cell-by-cell (the
     // distributive counts add but the closure/border do not). Omitted when either input
-    // omits a cube, and that presence check is the ONLY gate — compose_cubes has one `return`
-    // and rolls the pair to its MINIMAL COMMON COLLAPSE (§C3) rather than refusing unequal
-    // stamps (DN-42.D17 §4). Its optional<CubeBlock> is always engaged today; it is a local in
-    // metalog's TU — unaffected by the MSVC consumer-synthesis bug that drove the cube member
-    // to bool+value.
+    // omits a cube, and that presence check is the ONLY gate — compose_cubes rolls the pair to its
+    // MINIMAL COMMON COLLAPSE (§C3) rather than refusing unequal stamps (DN-42.D17 §4), so it is
+    // total over the pair it is handed.
     if (lhs.has_cube && rhs.has_cube)
     {
-        if (auto composed{cube::compose_cubes(lhs.cube, rhs.cube)})
-        {
-            out.cube = std::move(*composed);
-            out.has_cube = true;
-        }
+        out.cube = cube::compose_cubes(lhs.cube, rhs.cube);
+        out.has_cube = true;
     }
 
     return out;

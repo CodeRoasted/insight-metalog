@@ -813,7 +813,7 @@ CubeCoord cube_location(std::optional<LogLevel> level, std::string_view componen
     return coord;
 }
 
-std::optional<CubeDiffBlock>
+CubeDiffBlock
 cube_diff_of(const CubeBlock& previous, const CubeBlock& current,
              const std::unordered_map<std::string, OrdinalDrift>& current_shift_by_component)
 {
@@ -880,7 +880,7 @@ cube_diff_of(const CubeBlock& previous, const CubeBlock& current,
     return diff;
 }
 
-std::optional<CubeBlock> compose_cubes(const CubeBlock& lhs, const CubeBlock& rhs)
+CubeBlock compose_cubes(const CubeBlock& lhs, const CubeBlock& rhs)
 {
     // §12.1 + §C3 compose = MERGE: re-closed, not merged cell-by-cell, and rolled to the min common
     // collapse (a composed cube is as precise as its COARSEST member — a member banded to DEBUG

@@ -216,10 +216,8 @@ struct BaseRow
 // inside a JSONC example and in a schema `description`. What this emits is CONTAINMENT — the
 // reference axes stamped at the pair's minimal common collapse, plus the latency_shift
 // differential axis that neither input carried.
-// So `cube_diff_of` has exactly one `return` and it is always engaged; the only gate in the path
-// is the caller's "both documents carried a cube" presence check (`metalog::diff` on has_cube).
-// (The cube DTOs are bool+value, not optional<…>, since MSVC miscompiles synthesized
-// optional copies of the vector-owning cube types.)
+// The ONE gate in the path is the caller's "both documents carried a cube" presence check
+// (`metalog::diff` on has_cube) — this verb itself never refuses a pair.
 //
 // `current_shift_by_component` is the diff-time latency_shift dimension (cube_differential_axes.md
 // §4): a per-component latency drift map the CALLER computes from the two documents' ordinal
@@ -235,18 +233,18 @@ struct BaseRow
 // which reads only level/where off the stored inputs — never compares it diff-vs-state). When empty
 // (the default — no comparable ordinal data, or nothing shifted), the diff is the plain 3-D border,
 // byte-identical to before.
-[[nodiscard]] std::optional<CubeDiffBlock>
+[[nodiscard]] CubeDiffBlock
 cube_diff_of(const CubeBlock& previous, const CubeBlock& current,
              const std::unordered_map<std::string, OrdinalDrift>& current_shift_by_component = {});
 
 // Compose two cube blocks (§16.7 / §12.1): the distributive counts merge, but the
 // closure does NOT — the merged cube is RE-CLOSED from the recovered base.
 //
-// NO AXES-EQUALITY GATE HERE EITHER (DN-42.D17 §4) — same shape as cube_diff_of above: one
-// `return`, always engaged, rolling the pair to its MINIMAL COMMON COLLAPSE (§C3) rather than
-// refusing unequal stamps. §2.4 freezes the axis SET per canonicalization_version, NOT the
-// per-window collapse stamps (§16.10). As with cube_diff_of, the "both present, else omit"
-// presence-check is the CALLER's job (in `metalog::compose`); takes CubeBlock by ref.
-[[nodiscard]] std::optional<CubeBlock> compose_cubes(const CubeBlock& lhs, const CubeBlock& rhs);
+// NO AXES-EQUALITY GATE HERE EITHER (DN-42.D17 §4) — same shape as cube_diff_of above: it rolls
+// the pair to its MINIMAL COMMON COLLAPSE (§C3) rather than refusing unequal stamps. §2.4 freezes
+// the axis SET per canonicalization_version, NOT the per-window collapse stamps (§16.10). As with
+// cube_diff_of, the "both present, else omit" presence-check is the CALLER's job (in
+// `metalog::compose`).
+[[nodiscard]] CubeBlock compose_cubes(const CubeBlock& lhs, const CubeBlock& rhs);
 
 } // namespace insight::metalog::cube
