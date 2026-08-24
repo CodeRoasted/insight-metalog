@@ -9,7 +9,8 @@ name: Determinism Golden Proof
 #   TOWER FROM SOURCE (Approach-B det_harness: add_subdirectory(canon)+add_subdirectory(metalog) + the
 #   determinism_fixture) and EMITS its digest over the committed corpus + the TWO ADR-31.D8 reservoir arms
 #   (--reservoir-nearfull, the Sift BATCH tuple; --reservoir-streaming, the tuple the streaming surface
-#   SHIPS — salience-1/k128-m64-c0-e16, where the error-class reserve is live), the §C3 --cube-collapse
+#   SHIPS — salience-1/k128-m64-c0-e16, where the error-class reserve is live), the §C3 --cube-collapse,
+#   the §4 --ngram-cap (the only section carrying `behavior.dropped_ngram_observations`)
 #   and the O4b --service-edges scenarios. The compare job asserts all five are
 #   byte-identical: that IS the proof (no committed golden
 #   to go stale). Any divergence FAILS, gating the release. The agreed digest is uploaded as
@@ -282,7 +283,7 @@ jobs:
           if (-not $fixture) { Write-Error "det_fixture.exe not produced — the MSVC det harness build failed"; exit 1 }
           "$fixture" | Out-File -FilePath "$env:GITHUB_WORKSPACE/det_fixture_path.txt" -Encoding ascii -NoNewline
 
-      - name: Emit the MSVC digest (corpus + both reservoir arms + cube-collapse + service-edges — the EXACT bytes the Linux legs emit)
+      - name: Emit the MSVC digest (corpus + both reservoir arms + cube-collapse + ngram-cap + service-edges — the EXACT bytes the Linux legs emit)
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -328,6 +329,18 @@ jobs:
             $tmp = "$work/cube_collapse.out"
             $p = Start-Process -FilePath $fixture -ArgumentList "--cube-collapse" -NoNewWindow -Wait -PassThru -RedirectStandardOutput $tmp
             if ($p.ExitCode -ne 0) { throw "det_fixture --cube-collapse failed (exit $($p.ExitCode))" }
+            $b = [System.IO.File]::ReadAllBytes($tmp)
+            $fs.Write($b, 0, $b.Length)
+            # The SPEC Sec4 --ngram-cap section (same header + order as the Linux legs — must match).
+            # This is the ONLY section of the digest whose document CARRIES
+            # `behavior.dropped_ngram_observations`: every other one stays under `max_ngram_keys`, and
+            # Sec4 reads an absent key as an affirmative zero, so without this section no leg has ever
+            # compared bytes for a document that has the key at all.
+            $nhdr = [System.Text.Encoding]::ASCII.GetBytes("### --ngram-cap (Sec4 n-gram accounting bound BINDING) ###`n")
+            $fs.Write($nhdr, 0, $nhdr.Length)
+            $tmp = "$work/ngram_cap.out"
+            $p = Start-Process -FilePath $fixture -ArgumentList "--ngram-cap" -NoNewWindow -Wait -PassThru -RedirectStandardOutput $tmp
+            if ($p.ExitCode -ne 0) { throw "det_fixture --ngram-cap failed (exit $($p.ExitCode))" }
             $b = [System.IO.File]::ReadAllBytes($tmp)
             $fs.Write($b, 0, $b.Length)
             # The O4b --service-edges section (same header + order as the Linux legs — must match). The

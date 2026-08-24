@@ -26,6 +26,9 @@ import insight.metalog.test;
 // The shared O4b service-topology over-cap scenario, shared with the fixture so this guard and the
 // cross-leg gate exercise the identical over-cap top-K select (the canonical-key tie-break).
 #include "service_edges_overcap_scenario.hpp"
+// The SPEC §4 accounting-bound scenario — the ONE window in the whole determinism digest whose
+// emitted document CARRIES `behavior.dropped_ngram_observations`. Same sharing contract as above.
+#include "ngram_cap_scenario.hpp"
 
 namespace
 {
@@ -216,6 +219,71 @@ TEST(MetaLogDocument, ServiceEdgesOverCapExercisesTheTieBreak)
         << "the tie-break must keep the canonical-smallest weight-2 key {gateway,auth}; a "
            "different "
            "3rd edge means the top-K select is stdlib-order-dependent (non-deterministic).";
+}
+
+// SPEC §4 accounting bound: the `--ngram-cap` scenario MUST stay non-hollow — the window's bigram
+// stream must genuinely OVERRUN `max_ngram_keys`, so the emitted document CARRIES
+// `behavior.dropped_ngram_observations` rather than omitting it. That carrying is the entire
+// reason the section exists: every other section of the digest (the committed corpus and the four
+// sibling scenarios) stays under the bound, and §4 reads an absent key in a 0.7.0+ document as an
+// affirmative "nothing was dropped" — so if this scenario stopped binding, the digest would go
+// back to containing zero documents with the key, the cross-leg compare and the §8 validator would
+// both stay green, and the coverage would be gone with nothing red.
+//
+// THE COUNT IS DERIVED, NOT COPIED. `expected_dropped_observations(cfg)` recomputes
+// `kDistinctTemplates - 1 - max_ngram_keys` from the config in hand, so a moved producer default
+// reds here with its arithmetic instead of reding on a stale literal. The one literal kept is the
+// SHIPPED value (1903 at ngram 2 / cap 4096, hand-checked), asserted beside it — a derivation that
+// agrees with itself proves nothing, and this pair is what separates "the formula still holds"
+// from "the cut Sift embeds still produces this number".
+TEST(MetaLogDocument, NgramCapBindsSoTheDigestCarriesTheDroppedObservationCount)
+{
+    meta::MetaLogConfig cfg;
+    meta::ngram_cap::configure(cfg);
+    meta::MetaLogEngine engine{cfg};
+
+    using Clock = std::chrono::system_clock;
+    const Clock::time_point t0{std::chrono::seconds{1700000000}};
+    const Clock::time_point t1{std::chrono::seconds{1700000060}};
+    engine.open_window(t0);
+    meta::ngram_cap::emit_window(engine);
+    const auto doc{engine.close_window(t1)};
+
+    // The scenario precondition, not the property: if the templates collapsed into fewer shapes
+    // the bigram arithmetic below is arbitrary rather than wrong.
+    ASSERT_EQ(doc.stats.unique_templates, meta::ngram_cap::kDistinctTemplates)
+        << "each of the " << meta::ngram_cap::kDistinctTemplates
+        << " one-shot strings must form its OWN template for the bigram count to hold; got "
+        << doc.stats.unique_templates;
+
+    // The block must EXIST before its member can be read — a block-absent document would satisfy a
+    // naive "the field is not what I expected" reading while testing nothing.
+    ASSERT_TRUE(doc.behavior.has_value())
+        << "top_ngrams_size is non-zero and the stream formed n-grams, so the §4 block is owed";
+    ASSERT_FALSE(doc.behavior->top_ngrams.empty())
+        << "a populated behavior block, or the count below is about an empty section";
+
+    ASSERT_TRUE(doc.behavior->dropped_ngram_observations.has_value())
+        << "THE SECTION WENT HOLLOW: the bound refused nothing, so this document omits the key and "
+           "the digest is back to carrying zero documents that have it. "
+        << meta::ngram_cap::kDistinctTemplates << " templates form "
+        << (meta::ngram_cap::kDistinctTemplates - 1) << " bigrams against a cap of "
+        << cfg.max_ngram_keys;
+    EXPECT_EQ(*doc.behavior->dropped_ngram_observations,
+              meta::ngram_cap::expected_dropped_observations(cfg))
+        << "derived: " << meta::ngram_cap::kDistinctTemplates << " - 1 - " << cfg.max_ngram_keys;
+    EXPECT_EQ(*doc.behavior->dropped_ngram_observations, std::uint64_t{1903})
+        << "the SHIPPED number, at the cut sift embeds (ngram 2 / max_ngram_keys 4096). If this "
+           "reds while the derived assertion above stays green, a producer default moved and the "
+           "scenario is no longer anchored on the configuration that ships.";
+
+    // The admitted table filled exactly to its bound, which is what makes the refusal count a
+    // statement about the CAP rather than about a stream that ran short.
+    EXPECT_EQ(doc.behavior->top_ngrams.size(), cfg.top_ngrams_size)
+        << "every admitted bigram is at count 1, so the top-N select runs entirely on its "
+           "`sequence` tie-break over " << cfg.max_ngram_keys
+        << " candidates — a tie-break that stopped being a total order surfaces as a cross-leg "
+           "byte difference and nowhere else in this corpus";
 }
 
 // The always-on document (1.7.2): cube + WHERE + acquisition are unconditional. Pins the

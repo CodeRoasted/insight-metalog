@@ -35,6 +35,7 @@ import insight.metalog;
 // the §C3 cube collapse, and the O4b service-edges over-cap topology — shared with the in-suite
 // tests so both oracles run the identical windows.
 #include "cube_collapse_scenario.hpp"
+#include "ngram_cap_scenario.hpp"
 #include "reservoir_nearfull_scenario.hpp"
 #include "reservoir_streaming_scenario.hpp"
 #include "service_edges_overcap_scenario.hpp"
@@ -67,7 +68,8 @@ int main(int argc, char** argv)
     if (argc < 2)
     {
         std::cerr << "usage: determinism_fixture <corpus | --reservoir-nearfull | "
-                     "--reservoir-streaming | --cube-collapse | --service-edges>\n";
+                     "--reservoir-streaming | --cube-collapse | --service-edges | "
+                     "--ngram-cap>\n";
         return 2;
     }
 
@@ -127,6 +129,28 @@ int main(int argc, char** argv)
         using Clock = std::chrono::system_clock;
         engine.open_window(Clock::time_point{std::chrono::seconds{1700000000}});
         ml::streaming_nearfull::emit_window(engine);
+        const auto doc{engine.close_window(Clock::time_point{std::chrono::seconds{1700000060}})};
+        std::cout << ml::to_json(doc, engine.registry()) << "\n";
+        return 0;
+    }
+
+    // SPEC §4 n-gram accounting-bound oracle: a SYNTHETIC window whose bigram stream OVERRUNS
+    // `max_ngram_keys`, so the emitted document CARRIES `behavior.dropped_ngram_observations`
+    // instead of omitting it. Every other section of this digest — the committed corpus and the
+    // four synthetic scenarios — stays under the bound, so §4's absence-means-zero encoding makes
+    // the field absent in all of them: without this arm the byte-identity sweep and the spec's own
+    // §8 validator have never once judged a document that carries the key. The bound BINDS on the
+    // real stream (563 of 34 506 GitHub windows at the cut Sift embeds), which is what makes the
+    // gap worth a section rather than a note. Same window as the in-suite NgramCapBinds guard.
+    if (std::string{argv[1]} == "--ngram-cap")
+    {
+        namespace ml = insight::metalog;
+        ml::MetaLogConfig cfg;
+        ml::ngram_cap::configure(cfg);
+        ml::MetaLogEngine engine{cfg};
+        using Clock = std::chrono::system_clock;
+        engine.open_window(Clock::time_point{std::chrono::seconds{1700000000}});
+        ml::ngram_cap::emit_window(engine);
         const auto doc{engine.close_window(Clock::time_point{std::chrono::seconds{1700000060}})};
         std::cout << ml::to_json(doc, engine.registry()) << "\n";
         return 0;

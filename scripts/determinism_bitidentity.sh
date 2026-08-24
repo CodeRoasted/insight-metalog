@@ -3,7 +3,7 @@
 # canon+metalog MODULE-LIB TOWER from source for ONE toolchain leg across the -O{0,3}×-ffp-contract
 # {off,fast} corners, asserts the serialized MetaLog document (corpus + the ADR-31.D8 --reservoir-nearfull
 # and --reservoir-streaming arms — the Sift BATCH tuple and the SHIPPED streaming tuple — plus the §C3
-# --cube-collapse and O4b --service-edges scenarios) is byte-identical across that leg's corners,
+# --cube-collapse, the §4 --ngram-cap and the O4b --service-edges scenarios) is byte-identical across that leg's corners,
 # and EMITS the leg's digest (DETERMINISM_OUT).
 #
 # There is NO committed golden (retired — no more committed-golden apparatus). Cross-toolchain / cross-
@@ -191,7 +191,10 @@ fi
 # streaming surface ships — salience-1/k128-m64-c0-e16, where the error-class reserve is live and the
 # batch arm has no opinion) THEN --cube-collapse (the §C3 cube dimensional-collapse guardrail — a window
 # that FIRES a collapse, so its content-driven axis-selection tie-break is proven cross-leg) THEN
-# --service-edges (the O4b service-topology over-cap window — the emitted block rides the top-K select's
+# --ngram-cap (the SPEC §4 accounting-bound window — the ONLY section of this digest that CARRIES
+# `behavior.dropped_ngram_observations`; every other one stays under the bound, so §4's
+# absence-means-zero encoding leaves the key absent and no leg has ever judged a document that has
+# it) THEN --service-edges (the O4b service-topology over-cap window — the emitted block rides the top-K select's
 # canonical-key tie-break, proven cross-leg). Compare every built cell to the reference — byte-identity
 # across the leg's -O/-ffp sweep.
 for ctag in "${builds[@]}"; do
@@ -203,6 +206,8 @@ for ctag in "${builds[@]}"; do
   "${BIN[$ctag]}" --reservoir-streaming >>"$WORK/$ctag.out" 2>/dev/null
   echo "### --cube-collapse (SecC3 dimensional-collapse guardrail) ###" >>"$WORK/$ctag.out"
   "${BIN[$ctag]}" --cube-collapse >>"$WORK/$ctag.out" 2>/dev/null
+  echo "### --ngram-cap (Sec4 n-gram accounting bound BINDING) ###" >>"$WORK/$ctag.out"
+  "${BIN[$ctag]}" --ngram-cap >>"$WORK/$ctag.out" 2>/dev/null
   echo "### --service-edges (O4b service-topology over-cap top-K tie-break) ###" >>"$WORK/$ctag.out"
   "${BIN[$ctag]}" --service-edges >>"$WORK/$ctag.out" 2>/dev/null
 done
@@ -216,7 +221,7 @@ done
 
 if [ $rc -eq 0 ]; then
   echo "PASS: byte-identical across ${#builds[@]} built cell(s) — corpus + --reservoir-nearfull +"
-  echo "  --reservoir-streaming + --cube-collapse + --service-edges, over the '${LINUX_LEGS[*]}' leg's"
+  echo "  --reservoir-streaming + --cube-collapse + --ngram-cap + --service-edges, over the '${LINUX_LEGS[*]}' leg's"
   echo "  -O{0,3}×-ffp{off,fast} sweep."
   # Cross-leg-agreement mode (the ONLY mode now — no committed golden): emit this leg's full digest
   # (corpus + reservoir, byte-identical across its own -O×-ffp cells above) for the golden.yaml compare

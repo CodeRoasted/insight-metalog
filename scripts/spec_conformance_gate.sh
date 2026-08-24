@@ -124,7 +124,8 @@ fi
 # The roster, derived from the files on disk rather than listed here: a corpus file
 # added tomorrow is demanded on arrival, and one that stopped emitting is a red instead
 # of a smaller green. Containment, not equality — the driver's synthetic scenario
-# sections (--reservoir-nearfull, --reservoir-streaming, --cube-collapse, --service-edges) are extra sections
+# sections (--reservoir-nearfull, --reservoir-streaming, --cube-collapse, --ngram-cap,
+# --service-edges) are extra sections
 # by design, and demanding an exact set would red this gate the day a scenario is added.
 missing=""
 for f in "$CORPUS_DIR"/*.log; do
