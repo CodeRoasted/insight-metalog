@@ -65,10 +65,14 @@ class MetaLogEngine
     // the unbounded set the cap exists to refuse. Reporting this as "keys" would overstate the
     // structural loss and understate the observational one.
     //
-    // Observability ONLY — it never feeds the deterministic content stream and rides no wire field.
-    // metalog excludes spdlog by design, so the count lives here and the WARN fires where logging
-    // does, in the eidos pipeline at window close (Founder ruling 2026-06-20, the same split the
-    // §13 cardinality monitor uses).
+    // THE QUANTITY RIDES THE WIRE (SPEC §4 `behavior.dropped_ngram_observations`, set in
+    // build_behavior); this ACCESSOR is the observability path and nothing else, and the two are
+    // not redundant. metalog excludes spdlog by design, so the count lives here and the WARN fires
+    // where logging does, in the eidos pipeline at window close (Founder ruling 2026-06-20, the
+    // same split the §13 cardinality monitor uses) — and this accessor is the ONLY reader that
+    // survives the case the wire field cannot cover, a window whose `behavior` block is omitted
+    // (top_ngrams_size = 0) and which therefore has no §4 block to carry the count.
+    // Neither reader feeds the deterministic content stream.
     [[nodiscard]] std::uint64_t last_window_ngram_observations_dropped() const noexcept
     {
         return last_window_ngram_observations_dropped_;

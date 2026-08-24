@@ -367,6 +367,12 @@ namespace dto
         std::size_t ngram_size{2};
         std::vector<NGramEntry> top_ngrams;
         std::size_t top_ngrams_size{0};
+        // SPEC §4 — observations refused at the accounting bound. Key order follows §4's own
+        // example (directly after `top_ngrams_size`). A PASS-THROUGH of the domain optional, never
+        // a second place that decides the omission: the "engaged implies > 0" invariant belongs to
+        // whoever computed the value, and re-deciding it here would make a broken producer emit
+        // correct bytes, which is exactly the laundering that keeps a defect out of a test.
+        std::optional<std::uint64_t> dropped_ngram_observations;
         // SPEC §4.2 — the branching cap. Its ABSENCE asserts "no cap", so it travels with the
         // `branching` array and never alone.
         std::optional<std::size_t> branching_size;
@@ -895,6 +901,7 @@ namespace
             out_bh.top_ngrams.push_back({.sequence = render_sequence(ngram.sequence),
                                          .count = ngram.count,
                                          .probability = ngram.probability});
+        out_bh.dropped_ngram_observations = behavior.dropped_ngram_observations;
         out_bh.graph_edge_count = behavior.graph_edge_count;
         if (behavior.dominant_path && !behavior.dominant_path->empty())
             out_bh.dominant_path = render_sequence(*behavior.dominant_path);

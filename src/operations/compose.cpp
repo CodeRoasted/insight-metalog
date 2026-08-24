@@ -513,6 +513,18 @@ namespace
         behavior.ngram_size = lhs.behavior ? lhs.behavior->ngram_size : rhs.behavior->ngram_size;
         behavior.top_ngrams_size =
             lhs.behavior ? lhs.behavior->top_ngrams_size : rhs.behavior->top_ngrams_size;
+        // SPEC §12.1: `C.behavior.dropped_ngram_observations` is the SUM of both inputs' values,
+        // an absent input counting as zero, and it is OMITTED when that sum is zero. The omission
+        // is not cosmetic — compose() carries `lhs.metalog_version` (0.9.0), and §4 makes an
+        // absent key in a 0.7.0+ document AFFIRM that nothing was dropped. So a sum written as 0
+        // would be a wrong claim, and a sum silently not written at all is the same wrong claim
+        // about inputs that DID drop. Commutative by construction, unlike the two caps above
+        // (DN-56.D6, not this lane's fix).
+        if (const std::uint64_t dropped{
+                (lhs.behavior ? lhs.behavior->dropped_ngram_observations.value_or(0) : 0) +
+                (rhs.behavior ? rhs.behavior->dropped_ngram_observations.value_or(0) : 0)};
+            dropped > 0)
+            behavior.dropped_ngram_observations = dropped;
         // SRC-D-TIR-4(2): one n-gram accumulator keyed on the scalar NgramId, carrying the
         // sequence for output — replaces the three vector<TemplateId>-keyed maps. One O(L)
         // id-compute + one fixed-width map op per entry instead of three sequence

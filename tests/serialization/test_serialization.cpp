@@ -256,6 +256,84 @@ TEST(DeclaredCapSerializationTest, ABlockThatIsNotEmittedDeclaresNoCap)
         << json;
 }
 
+// ── DroppedNgramObservationsWireTest ──────────────────────────────────────────
+//
+// SPEC §4 `behavior.dropped_ngram_observations`, on the BYTES. The field is the one place the
+// format lets a producer confess the heavier of its two n-gram losses — the accounting bound,
+// which refuses a key before it is ever counted, as opposed to `top_ngrams`' ranking cut — and §4
+// makes its ABSENCE normative: in a document declaring 0.7.0 or later an omitted key affirms that
+// nothing was dropped. So both directions are wire claims and both are pinned here, from ONE
+// fixture whose only moving part is the cap.
+
+namespace
+{
+    // 20 distinct templates in one window: 19 bigrams, `cap` admitted, the rest refused. At
+    // cap = 4 that is 15 refused observations; at the producer default the cap never binds and
+    // the count is a true zero.
+    meta::MetaLogDocument window_of_twenty_distinct_templates(std::size_t cap,
+                                                              meta::TemplateRegistry& registry)
+    {
+        meta::MetaLogEngine engine{meta::MetaLogConfig{.top_k_size = 16,
+                                                       .top_ngrams_size = 16,
+                                                       .max_ngram_keys = cap,
+                                                       .emit_stability = false}};
+        const std::chrono::system_clock::time_point t0{};
+        engine.open_window(t0);
+        for (int i{0}; i < 20; ++i)
+            engine.ingest_event(meta::test::make_event("t" + std::to_string(i)));
+        auto doc{engine.close_window(t0 + std::chrono::seconds{60})};
+        registry = engine.registry();
+        return doc;
+    }
+} // namespace
+
+TEST(DroppedNgramObservationsWireTest, ACappedWindowWritesTheRefusedObservationCount)
+{
+    meta::TemplateRegistry registry;
+    const auto doc{window_of_twenty_distinct_templates(/*cap=*/4, registry)};
+    const std::string json{meta::to_json(doc, registry)};
+
+    ASSERT_TRUE(doc.behavior.has_value()) << json;
+    // 19 bigrams, 4 admitted → 15 refused. Hand arithmetic, not a second call into the producer.
+    EXPECT_NE(json.find("\"dropped_ngram_observations\":15"), std::string::npos)
+        << "SPEC §4: a window whose accounting bound BOUND must report the refused observation "
+           "count — 20 distinct templates form 19 bigrams, 4 fit under the cap, 15 are refused.\n"
+        << json;
+}
+
+TEST(DroppedNgramObservationsWireTest, AnUncappedWindowOmitsTheKeyRatherThanWritingZero)
+{
+    meta::TemplateRegistry registry;
+    // The producer default (MetaLogConfig::kDefaultMaxNgramKeys = 4096) against 19 bigrams: the
+    // cap cannot bind, so the count is a genuine zero rather than an unmeasured one.
+    const auto doc{
+        window_of_twenty_distinct_templates(meta::MetaLogConfig{}.max_ngram_keys, registry)};
+    const std::string json{meta::to_json(doc, registry)};
+
+    // THE ABSENCE MUST BE ATTRIBUTABLE TO THE ZERO, and these three assertions are what make it
+    // so. A document with no behavior block, or with an empty n-gram array, would satisfy the
+    // "key not found" check below while proving nothing at all about the omission rule.
+    ASSERT_TRUE(doc.behavior.has_value()) << "the block must be PRESENT, or the absence below is "
+                                             "the block's, not the field's.\n"
+                                          << json;
+    ASSERT_FALSE(doc.behavior->top_ngrams.empty())
+        << "the block must be POPULATED — an empty n-gram array is a different silence.\n"
+        << json;
+    ASSERT_NE(json.find("\"top_ngrams_size\":16"), std::string::npos)
+        << "the emitted BYTES must carry the behavior block the assertion below is about.\n"
+        << json;
+
+    EXPECT_FALSE(doc.behavior->dropped_ngram_observations.has_value())
+        << "at cap 4096 nothing can be refused, so the domain value must be absent — it reported "
+        << doc.behavior->dropped_ngram_observations.value_or(0) << ".\n"
+        << json;
+    EXPECT_EQ(json.find("\"dropped_ngram_observations\""), std::string::npos)
+        << "SPEC §4: OMITTED when zero — the key is never written, not written as 0. The schema's "
+           "`minimum: 1` refuses a 0, and the omission is what keeps a never-binding producer "
+           "byte-identical to one that has no bound at all.\n"
+        << json;
+}
+
 // ── FieldHistogramDiffTest ────────────────────────────────────────────────────
 
 } // namespace

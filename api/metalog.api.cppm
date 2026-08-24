@@ -759,6 +759,21 @@ struct BehaviorBlock
     std::size_t ngram_size{2};
     std::vector<NGramEntry> top_ngrams;
     std::size_t top_ngrams_size{0};
+    // SPEC §4 `behavior.dropped_ngram_observations` — n-gram OBSERVATIONS refused at the
+    // producer's accounting bound (MetaLogConfig::max_ngram_keys) BEFORE ever being counted. A
+    // heavier loss than `top_ngrams`' ranking cut, and the reason it is reported rather than
+    // inferred: an n-gram that would have ranked first can be absent purely because it arrived
+    // late. OBSERVATIONS and never distinct keys — see last_window_ngram_observations_dropped()
+    // for why the distinct count is not knowable.
+    //
+    // OPTIONAL because §4 makes the ABSENCE normative: in a document declaring 0.7.0 or later an
+    // omitted key MEANS zero, so a producer whose cap never binds emits bytes identical to one
+    // that has no cap at all. A sentinel 0 would write a claim where the spec asks for silence,
+    // and the published schema refuses it outright (`minimum: 1`). ENGAGED IMPLIES > 0 is the
+    // invariant of this field, and it is held by whoever sets it — the engine at the window it
+    // truncated, compose() at the sum — never by the serializer, which passes it through so that
+    // a broken producer reds a test instead of being silently laundered on the way out.
+    std::optional<std::uint64_t> dropped_ngram_observations;
     std::optional<std::uint64_t> graph_edge_count;
     std::optional<std::vector<TemplateId>> dominant_path; // absent when not computed
     std::optional<std::vector<BranchingEntry>> branching; // absent when not computed

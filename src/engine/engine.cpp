@@ -970,6 +970,20 @@ void MetaLogEngine::build_behavior(MetaLogDocument& doc, const WindowAnalysis& a
     BehaviorBlock behavior;
     behavior.ngram_size = config_.ngram_size;
     behavior.top_ngrams_size = config_.top_ngrams_size;
+    // SPEC §4 `dropped_ngram_observations` — declared here, at the window whose accounting bound
+    // it describes, and OMITTED when that bound refused nothing. The omission is the whole point:
+    // §4 reads an absent key in a 0.7.0+ document as "no observations were dropped", so a window
+    // that stayed under its cap keeps emitting exactly the bytes it emitted before this field
+    // existed. Writing a 0 would spend a key to say what the silence already says, and the
+    // published schema's `minimum: 1` rejects it.
+    //
+    // Read BEFORE the snapshot in close_window: this runs inside the same close, so the live
+    // counter is still the window's own. The block-absent early return above is the field's one
+    // boundary — with no `behavior` there is no §4 block to carry the count, and a document that
+    // omits the block claims nothing about n-grams either way. The loss is still stated on that
+    // path, by the pipeline's per-window WARN (insight-eidos, ADR-9.D3).
+    if (ngram_observations_dropped_ > 0)
+        behavior.dropped_ngram_observations = ngram_observations_dropped_;
     build_top_ngrams(behavior);
 
     // graph_edge_count: count(A→B) edges from the transition view (reused from

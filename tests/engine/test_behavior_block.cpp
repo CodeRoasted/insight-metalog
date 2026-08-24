@@ -182,6 +182,16 @@ TEST_F(BehaviorBlockTest, BoundedNgramKeysCapDistinctEntries)
         << "n-gram drop counter wrong at max_ngram_keys=4: 20 events -> 19 bigrams, 4 admitted, "
            "so 15 observations must be refused and counted";
 
+    // …and the count reaches the DOCUMENT, which is the only surface a consumer reads (SPEC §4
+    // `dropped_ngram_observations`). The engine-side accessor above is observability; this is the
+    // claim on the wire. Same hand-computed oracle, deliberately: a second implementation of the
+    // arithmetic would prove the two agreed, not that either was right.
+    ASSERT_TRUE(doc.behavior->dropped_ngram_observations.has_value())
+        << "the cap bound this window (15 refused observations) and §4 makes an ABSENT key mean "
+           "zero in a 0.7.0+ document — omitting it here ships a false statement";
+    EXPECT_EQ(*doc.behavior->dropped_ngram_observations, std::uint64_t{15})
+        << "document field must carry the same 19-4=15 the engine counter does";
+
     // Per-window, like the table it guards. reset_window_state() clears ngram_counts_ AND the
     // global ring, so this second window starts with an empty table: 3 events form 2 bigrams,
     // both admitted under the cap of 4, and nothing is refused.
@@ -197,6 +207,90 @@ TEST_F(BehaviorBlockTest, BoundedNgramKeysCapDistinctEntries)
     EXPECT_EQ(engine.last_window_ngram_observations_dropped(), std::uint64_t{0})
         << "the drop counter is per-window: a clean second window must report 0, not the previous "
            "window's count";
+
+    // The OMISSION arm, and what makes it an arm rather than an incidental absence: this document
+    // carries a populated behavior block (asserted above and below), so the only thing that can
+    // explain the missing key is the zero itself. A block-absent document would satisfy a naive
+    // "key not present" check while testing nothing.
+    ASSERT_FALSE(clean_doc.behavior->top_ngrams.empty())
+        << "fixture must produce a POPULATED behavior block, or the absence below proves nothing";
+    EXPECT_FALSE(clean_doc.behavior->dropped_ngram_observations.has_value())
+        << "SPEC §4: OMITTED when zero — a clean window must say nothing, not say 0. It reported "
+        << *clean_doc.behavior->dropped_ngram_observations;
+}
+
+// ── SPEC §12.1: the composed document's drop count is the SUM, absent counting as zero ────────
+//
+// The three arms — absent+absent, absent+N, M+N — are the whole algebra of the clause, and the
+// commutativity check that closes the test is what the sum gives for free where the two caps
+// beside it do not (DN-56.D6). Every expectation is the arithmetic written out, never a second
+// call into the code under test. Windows are produced by the real engine so the numbers are the
+// producer's own: with `max_ngram_keys = K` and `E` distinct templates in one window, the events
+// form `E-1` bigrams, `K` are admitted and `E-1-K` refused.
+TEST_F(BehaviorBlockTest, ComposeSumsDroppedNgramObservationsAndOmitsAZeroSum)
+{
+    constexpr std::size_t kTinyCap{4};
+    // E distinct templates in one window under kTinyCap -> (E-1-kTinyCap) refused observations.
+    const auto window_with_distinct_templates{
+        [&](const std::string& prefix, int distinct)
+        {
+            meta::MetaLogEngine engine{meta::MetaLogConfig{
+                .top_k_size = 16,
+                .top_ngrams_size = 16,
+                .max_ngram_keys = kTinyCap,
+            }};
+            engine.open_window(start_);
+            for (int i = 0; i < distinct; ++i)
+                engine.ingest_event(make_event(prefix + std::to_string(i)));
+            return engine.close_window(start_ + std::chrono::seconds(1));
+        }};
+
+    // 20 distinct -> 19 bigrams, 4 admitted, 15 refused.
+    const auto dropped_15{window_with_distinct_templates("t", 20)};
+    // 10 distinct -> 9 bigrams, 4 admitted, 5 refused.
+    const auto dropped_5{window_with_distinct_templates("u", 10)};
+    // 4 distinct -> 3 bigrams, all 3 admitted under the cap of 4, nothing refused.
+    const auto dropped_0{window_with_distinct_templates("v", 4)};
+
+    ASSERT_TRUE(dropped_15.behavior.has_value());
+    ASSERT_TRUE(dropped_5.behavior.has_value());
+    ASSERT_TRUE(dropped_0.behavior.has_value());
+    ASSERT_EQ(dropped_15.behavior->dropped_ngram_observations, std::uint64_t{15});
+    ASSERT_EQ(dropped_5.behavior->dropped_ngram_observations, std::uint64_t{5});
+    ASSERT_FALSE(dropped_0.behavior->dropped_ngram_observations.has_value())
+        << "the zero-drop input must be genuinely absent, or the absent+N arm is an N+N arm";
+
+    // absent + absent -> omitted. compose() carries lhs.metalog_version (0.9.0), where §4 reads an
+    // absent key as an affirmative "nothing was dropped" — which is true here and must stay silent.
+    const auto zero_sum{meta::compose(dropped_0, dropped_0)};
+    ASSERT_TRUE(zero_sum.behavior.has_value());
+    EXPECT_FALSE(zero_sum.behavior->dropped_ngram_observations.has_value())
+        << "0 + 0 is omitted, never written as 0 (SPEC §12.1 + §4). It reported "
+        << *zero_sum.behavior->dropped_ngram_observations;
+
+    // absent + N -> N. The absent side counts as zero; it must not make the whole sum absent.
+    const auto absent_plus_n{meta::compose(dropped_0, dropped_15)};
+    ASSERT_TRUE(absent_plus_n.behavior.has_value());
+    ASSERT_TRUE(absent_plus_n.behavior->dropped_ngram_observations.has_value())
+        << "0 + 15 = 15, and a composed document that stays silent about it declares zero drops "
+           "for a pair that dropped 15";
+    EXPECT_EQ(*absent_plus_n.behavior->dropped_ngram_observations, std::uint64_t{15})
+        << "absent counts as 0, so the sum is the present side's 15";
+
+    // M + N -> M+N. Both sides present: the only arm a carry-one-side implementation passes is
+    // the one where the sides are equal, so the two counts are deliberately different.
+    const auto m_plus_n{meta::compose(dropped_15, dropped_5)};
+    ASSERT_TRUE(m_plus_n.behavior.has_value());
+    ASSERT_TRUE(m_plus_n.behavior->dropped_ngram_observations.has_value());
+    EXPECT_EQ(*m_plus_n.behavior->dropped_ngram_observations, std::uint64_t{20})
+        << "15 + 5 = 20 — neither input's value, so carrying one side reds here";
+
+    // Commutative, which the sum is by construction and the two sibling caps are not (DN-56.D6).
+    const auto n_plus_m{meta::compose(dropped_5, dropped_15)};
+    ASSERT_TRUE(n_plus_m.behavior.has_value());
+    EXPECT_EQ(n_plus_m.behavior->dropped_ngram_observations,
+              m_plus_n.behavior->dropped_ngram_observations)
+        << "compose(A,B) and compose(B,A) must agree on the drop count";
 }
 
 // ── O2 trace-scoped graph: the de-pollution proof ─────────────────────────
