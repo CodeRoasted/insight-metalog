@@ -621,16 +621,30 @@ namespace
     }
 
     // The diff-only latency_shift differential-axis descriptor (cube_differential_axes.md §4): a
-    // SIGNED ordinal band, NONE-centered (down_HIGH … NONE … up_HIGH) — polarity-MUTE (up/down is a
-    // fact, the good/bad reading lives in eidos). A degenerate chain, so monotone-compatible with
-    // the emerging border, and collapse-compatible via the UP_TO band semantic. EMERGENT-AT-DIFF:
-    // no stored-cube domain (never in reference_axes → compare-at-min never compares it
-    // diff-vs-state). Appended to a cube_diff's axes ONLY when a component shifted (either
-    // direction); a stored cube never carries it.
+    // SIGNED ordinal band, NONE-centered (down_high … NONE … up_high) — polarity-MUTE (up/down is a
+    // fact, the good/bad reading lives in eidos). A degenerate chain — degenerate meaning NO
+    // roll-up, i.e. FLAT — so monotone-compatible with the emerging border, and collapse-compatible
+    // via the UP_TO band semantic. EMERGENT-AT-DIFF: no stored-cube domain (never in
+    // reference_axes → compare-at-min never compares it diff-vs-state). Appended to a cube_diff's
+    // axes ONLY when a component shifted (either direction); a stored cube never carries it.
+    //
+    // `categorical` IS THE TRUTHFUL KIND HERE, NOT A DOWNGRADE (DN-42.D17). `kind` is a
+    // value-SHAPE discriminator and SPEC §16.4 says so normatively: "a `categorical` axis value is
+    // a string; a `chain` axis value is an ordered prefix-path array". That is the one question
+    // `kind` exists to answer, and it is the only input a consumer parses a coord with. This
+    // axis's coord value is a flat STRING over the closed band set above, with the NONE centre
+    // carried by the key's ABSENCE (§16.4: an absent axis means aggregated) — a string, so
+    // `categorical`. The axis IS ordinal, and the spec carries that where it carries `level`'s:
+    // §16.2 writes "the ordinal `level` axis" in the same paragraph that declares `level`'s `kind`
+    // as `categorical`, its ordinal collapse riding `band_floor`. So ordinality lives in the axis
+    // identity and the band vocabulary, never in `kind`. Minting a third `kind` value would put a
+    // comparison property into a shape enum and destroy the discrimination — and §16.2's enum is
+    // one of the two vocabularies SPEC.md:186 says this spec MINTS, so widening it is a spec act,
+    // not a producer's.
     [[nodiscard]] CubeAxis latency_shift_axis()
     {
         return CubeAxis{.name = "latency_shift",
-                        .kind = "ordinal",
+                        .kind = "categorical",
                         .chain = std::nullopt,
                         .floor_depth = std::nullopt,
                         .band_floor = std::nullopt};
@@ -821,8 +835,8 @@ cube_diff_of(const CubeBlock& previous, const CubeBlock& current,
     // The CURRENT projection pins LatencyShift to a SIGNED band for a component that shifted in
     // EITHER direction (≥LOW, up or down) — mapped by WHERE label through the shared dictionary.
     // NONE is never pinned (it IS the star baseline), so a shifted component's WHERE-aggregate cell
-    // stays balanced across the diff (no spurious vanishing) while its (…, latency_shift=up_HIGH /
-    // down_HIGH) cell EMERGES against the implicit all-NONE baseline. When the map is empty (no
+    // stays balanced across the diff (no spurious vanishing) while its (…, latency_shift=up_high /
+    // down_high) cell EMERGES against the implicit all-NONE baseline. When the map is empty (no
     // comparable ordinal data, or nothing shifted) this is a no-op → the plain 3-D border.
     BaseMultiset prev_remapped{remap_base(collapsed_base(prev_base, common), prev_dict, labels)};
     BaseMultiset cur_remapped{remap_base(collapsed_base(cur_base, common), cur_dict, labels)};
