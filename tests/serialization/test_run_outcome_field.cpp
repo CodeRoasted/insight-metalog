@@ -7,8 +7,13 @@
 // producer's — NO metalog wire-version bump. Two faces:
 //   1. ABSENCE — a default (Unknown) document emits NO run_outcome key (the additive-block proof's
 //      unit leg; the byte-compare gate is the measure-first INERT run).
-//   2. PRESENCE — a stamped verdict serialises as the canonical UPPERCASE category string, and
-//      UNSTABLE stays UNSTABLE (never folded — the G-OUT-2 property at the wire).
+//   2. PRESENCE — a stamped verdict serialises as the LOWER-CASE token SPEC §2.5 mints, and
+//      `unstable` stays `unstable` (never folded — the G-OUT-2 property at the wire).
+// The case is the assertion, not a detail: §2.5 states the vocabulary is case-sensitive and
+// `schema/metalog.v0.schema.json` pins it as a CLOSED enum, so an upper-case token fails §8
+// clause 1. The Sift change report spells the same four classes UPPER-CASE for its own consumer
+// (`sift-action/src/types.ts`); these two wires are deliberately not aligned, so a token from one
+// is never evidence about the other.
 // A diff here is a wire-contract break — fix the code, never the assertion.
 
 #include <glaze/glaze.hpp>
@@ -47,14 +52,14 @@ TEST(RunOutcomeField, UnknownEmitsNoKey)
         << "Unknown must serialise as ABSENCE (additive field, no wire bump): " << json;
 }
 
-// ── 2. PRESENCE: a stamped verdict rides the wire as its canonical category string ──
+// ── 2. PRESENCE: a stamped verdict rides the wire in SPEC §2.5's minted lower-case vocabulary ──
 TEST(RunOutcomeField, StampedVerdictSerialises)
 {
     const std::array<std::pair<insight::RunOutcome, std::string_view>, 4> cases{{
-        {insight::RunOutcome::Success, "SUCCESS"},
-        {insight::RunOutcome::Failure, "FAILURE"},
-        {insight::RunOutcome::Unstable, "UNSTABLE"},
-        {insight::RunOutcome::Aborted, "ABORTED"},
+        {insight::RunOutcome::Success, "success"},
+        {insight::RunOutcome::Failure, "failure"},
+        {insight::RunOutcome::Unstable, "unstable"},
+        {insight::RunOutcome::Aborted, "aborted"},
     }};
     for (const auto& [outcome, expected] : cases)
     {
@@ -65,7 +70,9 @@ TEST(RunOutcomeField, StampedVerdictSerialises)
         ASSERT_TRUE(parsed.has_value()) << json;
         ASSERT_TRUE((*parsed).contains("run_outcome")) << "expected " << expected << ": " << json;
         EXPECT_EQ((*parsed)["run_outcome"].get<std::string>(), expected)
-            << "the verdict must ride verbatim (UNSTABLE is never folded): " << json;
+            << "the verdict must ride in SPEC §2.5's lower-case vocabulary and unfolded "
+               "(`unstable` is never collapsed into `failure`); got "
+            << (*parsed)["run_outcome"].get<std::string>() << " in: " << json;
     }
 }
 // NOLINTEND

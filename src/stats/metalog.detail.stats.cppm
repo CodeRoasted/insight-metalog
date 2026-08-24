@@ -267,4 +267,11 @@ dominant_component_of(const std::unordered_map<std::string, std::uint64_t, Trans
 // none, rendering an absence as present. nullopt here ⇒ the member is omitted.
 [[nodiscard]] std::optional<std::string> spec_level_of(const std::optional<EventLevel>& level);
 
+// SPEC §2.5 `run_outcome` — the run's terminal verdict in the vocabulary the STANDARD mints, and
+// `nullopt` for `Unknown`, which the wire spells by OMISSION (§2.5 mints no "unknown" value, and a
+// consumer MUST NOT read absence as `success`). Deliberately NOT `insight::to_string(RunOutcome)`;
+// the argument for the divergence is at the definition site, and it is the reason this seam exists
+// at all.
+[[nodiscard]] std::optional<std::string> spec_run_outcome_of(RunOutcome outcome);
+
 } // namespace insight::metalog

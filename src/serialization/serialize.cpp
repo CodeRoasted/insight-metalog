@@ -102,13 +102,19 @@ namespace dto
     //
     // The reverse-DNS key IS the wire key, and a C++ identifier cannot hold a '.', so every
     // container spells its keys in a glaze meta instead of being reflected. One struct per
-    // placement: the document root and `stats.top_k[]` are granted by §7's table; the diff root
-    // is not in that table, but the diff root is open (`additionalProperties: true`), so its
-    // container is schema-legal — and a namespaced container is the nearest form to §7 the wire
-    // admits for vendor data the diff carries, where a bare vendor member is the form §7
-    // forbids outright. A member the spec later describes leaves its container and becomes a
-    // bare member of the standard object, which is the whole point of keeping the two surfaces
-    // apart.
+    // placement, and §7's placement table grants all three this file uses: the MetaLog document
+    // root (v0.1.0), `stats.top_k[]` (v0.8.0), and the `MetaLogDiff` document root (v0.9.0).
+    //
+    // That the table names them is the whole authority. §7 grants the container object by object
+    // and says so deliberately — one granted everywhere in advance could never be withdrawn,
+    // because removing a placement is a BREAKING change. So the openness of a document root
+    // (`additionalProperties: true` on both) is not a licence: it is why a bare vendor member
+    // there validates instead of being rejected, which is exactly the case §7's MUST exists to
+    // cover and the validator reports as legal-but-undescribed. Any FURTHER placement this
+    // producer needs is an issue on `metalog-spec`, never a bare member written here.
+    //
+    // A member the spec later describes leaves its container and becomes a bare member of the
+    // standard object, which is the whole point of keeping the two surfaces apart.
     //
     // Each member is an optional and each container is an optional: a row/document with no
     // vendor data emits no `extensions` key at all, so the omit-when-absent discipline the rest
@@ -447,8 +453,9 @@ namespace dto
         std::optional<std::string> retention_profile;
         std::optional<Coordinate> coordinate; // §15 re-derivation coordinate
         std::optional<CubeBlock> cube;        // §16 intra-window cube; omit when not emitted
-        std::optional<std::string>
-            run_outcome; // ADR-17 — the run's terminal verdict; omit when Unknown
+        // SPEC §2.5 (ADR-17) — the run's terminal verdict, in the standard's own LOWER-CASE
+        // minted vocabulary (spec_run_outcome_of); omitted when no verdict was observed.
+        std::optional<std::string> run_outcome;
         // DECLARED LAST: the standard's members first, then the §7 container that says "everything
         // below this key is ours". Carries the SRC-D-WHERE-4 acquisition self-assessment, the
         // O4b (SRC-D-OTEL-21) service topology, the ADR-23 transport declaration, and the
@@ -481,9 +488,12 @@ namespace dto
         std::optional<CubeBorder> vanishing;
     };
 
-    // Reservoir delta (§5.3). A new/vanished rare-salient template snapshot: why it was
-    // kept (salience) + how loud (count) + its severity/role bands. Field names == JSON
-    // keys (glaze reflection); skip_null_members omits an absent level/role.
+    // Reservoir-delta entry — SPEC §13.7.1, described since v0.9.0 (this member rode the wire
+    // before it had a section; the design that produced it is the streaming chronic-vs-new seam).
+    // A new/vanished rare-salient template snapshot: why it was kept (salience) + how loud
+    // (count) + its severity/role bands. §13.7.1 requires template_id/count/salience and makes
+    // level/structural_role omit-when-absent — field names == JSON keys (glaze reflection);
+    // skip_null_members does the omitting.
     struct ReservoirDeltaEntry
     {
         std::string template_id;
@@ -493,9 +503,11 @@ namespace dto
         std::uint64_t count{0};
     };
 
-    // One ERROR/FATAL failure-frontier crossing. direction is "up" (crossed into failure)
-    // or "down" (crossed out) — SIGNED, polarity-mute (the escalation/recovery reading is
-    // the consumer's).
+    // One failure-frontier crossing — SPEC §13.7.2. The frontier is the level SET {ERROR, FATAL},
+    // decided as a set test and never as an ordinal compare against ERROR. direction is "up"
+    // (crossed into the frontier) or "down" (crossed out), oriented previous→current — SIGNED and
+    // polarity-mute: §13.7.2 states the escalation/recovery reading is the consumer's, because a
+    // template leaving ERROR because its code path stopped running is not a repair.
     struct FrontierCrossing
     {
         std::string template_id;
@@ -504,8 +516,10 @@ namespace dto
         std::optional<std::string> current_level;
     };
 
-    // Each list omitted when empty; the whole block is omitted upstream when all three are
-    // (emptiness-as-absence, §5.3).
+    // SPEC §13.7. Each list omitted when empty; the whole block is omitted upstream when all
+    // three are — §13.7 states the block MUST be omitted when all three are empty and an emitted
+    // block MUST carry at least one non-empty list, which is the same rule as this producer's
+    // emptiness-as-absence.
     struct ReservoirDelta
     {
         std::optional<std::vector<ReservoirDeltaEntry>> new_salient;
@@ -572,12 +586,11 @@ namespace dto
         std::optional<std::vector<ServiceEdgeWeightChange>> weight_changed; // omit when empty
     };
 
-    // The diff-root §7 container (see TopKExtensions for the mechanism, and the file-head note
-    // for this root's legality: §7's placement table does not name it, but the diff root is open,
-    // so a namespaced container is schema-legal where the bare vendor member is what §7 forbids).
-    // `service_edge_delta` is here because the block it diffs is itself vendor data — the
-    // document-root `fr.coderoast.service_edges` topology — and a diff of vendor data is vendor
-    // data.
+    // The diff-root §7 container (see TopKExtensions for the mechanism). §7's placement table
+    // GRANTS the `MetaLogDiff` document root from v0.9.0, so this container is the described
+    // carrier here, not merely a form the open root tolerates. `service_edge_delta` is under it
+    // because the block it diffs is itself vendor data — the document-root
+    // `fr.coderoast.service_edges` topology — and a diff of vendor data is vendor data.
     struct DiffExtensions
     {
         std::optional<ServiceEdgeDelta> service_edge_delta;
@@ -618,7 +631,7 @@ namespace dto
         std::optional<NGramDelta> ngram_delta;
         std::optional<TailDelta> tail_delta;
         std::optional<CubeDiff> cube_diff; // §13.6 emerging-border cube diff; omit when absent
-        std::optional<ReservoirDelta> reservoir_delta; // §5.3 reservoir delta; omit when empty
+        std::optional<ReservoirDelta> reservoir_delta; // §13.7 reservoir delta; omit when empty
         // DECLARED LAST: the standard's members first, then the §7 container (the Document
         // discipline). Carries the O4b (SRC-D-OTEL-21) service-topology delta; omitted when the
         // diff has no vendor data.
@@ -1022,11 +1035,13 @@ namespace
         if (extensions.acquisition || extensions.service_edges || extensions.transport ||
             extensions.ruleset)
             out.extensions = std::move(extensions);
-        // The run verdict (ADR-17): additive, omit-when-Unknown — a verdict-free document's
-        // wire is byte-identical to a pre-outcome producer's (absence = Unknown/legacy, no version
-        // bump).
-        if (doc.run_outcome != insight::RunOutcome::Unknown)
-            out.run_outcome = std::string{insight::to_string(doc.run_outcome)};
+        // The run verdict (ADR-17 / SPEC §2.5): additive, omit-when-Unknown — a verdict-free
+        // document's wire is byte-identical to a pre-outcome producer's (absence = Unknown/legacy,
+        // no version bump). spec_run_outcome_of, never insight::to_string: the standard's minted
+        // vocabulary is lower-case and the schema's enum is closed, while the Sift report keeps the
+        // upper-case spelling its TypeScript consumer already matches. See the argument at
+        // spec_run_outcome_of's definition — the two tokens are NOT interchangeable.
+        out.run_outcome = spec_run_outcome_of(doc.run_outcome);
         return out;
     }
 
