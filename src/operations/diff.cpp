@@ -635,13 +635,15 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
     diff_reservoir_delta(out, previous, current); // §5.3 chronic-vs-new streaming seam
     diff_service_edge_delta(out, previous,
                             current); // O4b (SRC-D-OTEL-21): distilled service topology
-    // SPEC §13.6 cube_diff — the emerging border. Emitted only when both documents
-    // carried a cube and their axes match (the §2.4 gate above already ensures equal
-    // canonicalization_version, under which the axes are frozen identical).
-    // SPEC §13.6 "both carried a cube" gate, on the explicit presence flags. cube_diff_of still
-    // returns optional<CubeDiffBlock> (it omits the diff when the axes mismatch) — but that
-    // optional is a local in metalog's own TU, not a consumer-synthesized member, so the MSVC bug
-    // that drove MetaLogDocument::cube to bool+value does not apply to it.
+    // SPEC §13.6 cube_diff — the emerging border. The ONE gate is "both documents carried a cube",
+    // on the explicit presence flags. There is no axes-equality gate, here or in cube_diff_of
+    // (DN-42.D17 §4): the §2.4 gate above freezes the axis SET per canonicalization_version, but
+    // NOT the per-window collapse STAMPS (band_floor / floor_depth, §16.10) — two windows of the
+    // same contract routinely differ there, and §16.10 mandates diffing that pair at the minimal
+    // common collapse rather than refusing it. cube_diff_of returns optional<CubeDiffBlock> and
+    // that optional is always engaged today; it is a local in metalog's own TU, not a
+    // consumer-synthesized member, so the MSVC bug that drove MetaLogDocument::cube to bool+value
+    // does not apply to it.
     if (previous.has_cube && current.has_cube)
     {
         // The diff-only latency_shift differential axis (§4): a per-component SIGNED latency shift

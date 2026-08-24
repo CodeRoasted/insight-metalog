@@ -954,10 +954,12 @@ struct MetaLogDocument
     std::optional<ReDerivationCoordinate> coordinate;
     // Intra-window cube (SPEC §16) — joint categorical condensation. ALWAYS built for a
     // raw window (has_cube = true), collapse-bounded (§C). has_cube survives as the
-    // representation's presence flag: a COMPOSED document clears it only on an axis
-    // mismatch (!has_cube = "no comparable joint available"). The cube is part of the
-    // §2.4 comparability contract (axes frozen per canonicalization_version /
-    // retention_profile); two cubes diff into a cube_diff only when their axes match.
+    // representation's presence flag: a COMPOSED document clears it when EITHER input
+    // omitted a cube (§16.7), which is the only way it is ever cleared (!has_cube = "no
+    // comparable joint available"). §2.4 freezes the axis SET per canonicalization_version /
+    // retention_profile, but NOT the per-window collapse stamps (§16.10), so compose and diff
+    // both read the pair at its minimal common collapse rather than requiring equal axes
+    // (DN-42.D17 §4).
     //
     // Representation: an explicit presence flag + inline value, NOT std::optional<CubeBlock>.
     // MSVC /O2 /Ob2 miscompiles the SYNTHESIZED optional<CubeBlock> copy in consumer module TUs

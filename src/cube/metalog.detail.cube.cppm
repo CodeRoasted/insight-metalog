@@ -204,12 +204,21 @@ struct BaseRow
 // + where). Empty component → no `where` (the entry's WHERE is unknown).
 [[nodiscard]] CubeCoord cube_location(std::optional<LogLevel> level, std::string_view component);
 
-// Emerging-border diff of two cube blocks (§13.6). nullopt unless their axes are equal
-// (the comparability gate). The upper border is the deterministic headline (minimal
-// generators); the lower border the precise description. `vanishing` is the dual.
-// The "both documents carried a cube" presence-check is the CALLER's job (`metalog::diff`
-// gates on has_cube) — this helper takes CubeBlock by ref and owns only the axes-equality
-// gate. (The cube DTOs are bool+value, not optional<…>, since MSVC miscompiles synthesized
+// Emerging-border diff of two cube blocks (§13.6 + §16.10). The upper border is the
+// deterministic headline (minimal generators); the lower border the precise description.
+// `vanishing` is the dual.
+//
+// THERE IS NO AXES-EQUALITY GATE HERE, and one would be wrong (DN-42.D17 §4). §16.10 requires a
+// diff to read both cubes at their MINIMAL COMMON COLLAPSE — the coarser stamp per axis — which is
+// only meaningful when the two inputs' axes DIFFER, so an equality gate would refuse exactly the
+// case the spec mandates (a cube banded to band_floor=2 vs one that kept its levels). §13.6's four
+// normative bullets do not state equality either: that claim lives only in an unbolded comment
+// inside a JSONC example and in a schema `description`. What this emits is CONTAINMENT — the
+// reference axes stamped at the pair's minimal common collapse, plus the latency_shift
+// differential axis that neither input carried.
+// So `cube_diff_of` has exactly one `return` and it is always engaged; the only gate in the path
+// is the caller's "both documents carried a cube" presence check (`metalog::diff` on has_cube).
+// (The cube DTOs are bool+value, not optional<…>, since MSVC miscompiles synthesized
 // optional copies of the vector-owning cube types.)
 //
 // `current_shift_by_component` is the diff-time latency_shift dimension (cube_differential_axes.md
