@@ -57,8 +57,8 @@ top_k_signature(const meta::MetaLogDocument& doc)
     std::string out{"top_k_size=" + std::to_string(doc.stats.top_k_size) + " top_k[" +
                     std::to_string(doc.stats.top_k.size()) + "]:"};
     for (const auto& entry : doc.stats.top_k)
-        out += "\n      " + insight::render(entry.template_id) + " count=" +
-               std::to_string(entry.count);
+        out += "\n      " + insight::render(entry.template_id) +
+               " count=" + std::to_string(entry.count);
     return out;
 }
 
@@ -120,24 +120,24 @@ TEST(ComposeAlgebraTest, CommutativityHoldsOnTheRequiredCapFields)
 {
     // Two producers over overlapping-but-different template alphabets, differing ONLY in the two
     // cap knobs. Same event budget on both sides so nothing but the caps can explain a divergence.
-    const auto window{[](std::string_view prefix, std::size_t top_k, std::size_t top_ngrams)
-                      {
-                          meta::MetaLogEngine engine{meta::MetaLogConfig{
-                              .top_k_size = top_k,
-                              .reservoir_size = 0,
-                              .top_ngrams_size = top_ngrams,
-                              .max_param_histograms = 0,
-                              .emit_stability = false,
-                          }};
-                          engine.open_window(kT0);
-                          // 12 distinct templates, each at a distinct frequency so the top-K
-                          // ranking is total and carries no ties.
-                          for (int t = 0; t < 12; ++t)
-                              for (int rep = 0; rep <= t; ++rep)
-                                  engine.ingest_event(
-                                      make_event(std::string{prefix} + std::to_string(t)));
-                          return engine.close_window(kT1);
-                      }};
+    const auto window{
+        [](std::string_view prefix, std::size_t top_k, std::size_t top_ngrams)
+        {
+            meta::MetaLogEngine engine{meta::MetaLogConfig{
+                .top_k_size = top_k,
+                .reservoir_size = 0,
+                .top_ngrams_size = top_ngrams,
+                .max_param_histograms = 0,
+                .emit_stability = false,
+            }};
+            engine.open_window(kT0);
+            // 12 distinct templates, each at a distinct frequency so the top-K
+            // ranking is total and carries no ties.
+            for (int t = 0; t < 12; ++t)
+                for (int rep = 0; rep <= t; ++rep)
+                    engine.ingest_event(make_event(std::string{prefix} + std::to_string(t)));
+            return engine.close_window(kT1);
+        }};
 
     const auto wide{window("wide template ", /*top_k=*/8, /*top_ngrams=*/8)};
     const auto narrow{window("narrow template ", /*top_k=*/3, /*top_ngrams=*/2)};
@@ -158,9 +158,8 @@ TEST(ComposeAlgebraTest, CommutativityHoldsOnTheRequiredCapFields)
     // The union must EXCEED the wider cap, or the wide cut never bites and both sides could agree
     // for a reason that has nothing to do with commutativity.
     ASSERT_GT(ab.stats.unique_templates, wide.stats.top_k_size)
-        << "the merged union (" << ab.stats.unique_templates
-        << ") must exceed the wider cap (" << wide.stats.top_k_size
-        << ") so BOTH truncations are live";
+        << "the merged union (" << ab.stats.unique_templates << ") must exceed the wider cap ("
+        << wide.stats.top_k_size << ") so BOTH truncations are live";
 
     // ── Controls: what commutativity already holds today. These must stay green, and they are
     // what proves the reds below are about the CAP and not about a merge that differs wholesale.
@@ -253,7 +252,8 @@ TEST(ComposeAlgebraTest, IdentityPreservesTheDocumentIncludingItsDeclaredReservo
     ASSERT_EQ(doc_a.stats.reservoir.size(), 1U) << render_reservoir(doc_a);
     ASSERT_EQ(doc_a.stats.tail_unique, 0U)
         << "A must have an EMPTY tail, or §12.3 lossiness — not the composer — explains any red "
-           "below. tail_count=" << doc_a.stats.tail_count;
+           "below. tail_count="
+        << doc_a.stats.tail_count;
     ASSERT_TRUE(doc_a.stats.reservoir_size.has_value())
         << "A must DECLARE a reservoir cap or the load-bearing assertion is vacuous";
     ASSERT_EQ(*doc_a.stats.reservoir_size, 8U);
@@ -375,13 +375,11 @@ namespace
     // placed exactly where DN-56.D3's arithmetic puts them, instead of reverse-engineering a hub
     // fan-out that happens to land on a 2.5 % transition probability. Every value seeded here is
     // drawn from the producer's own frozen alphabet (surprise bands 75/90, levels Error/Fatal).
-    [[nodiscard]] meta::MetaLogDocument make_document(std::string_view start_iso,
-                                                      std::string_view end_iso,
-                                                      std::uint64_t lines_observed,
-                                                      std::size_t top_k_size,
-                                                      std::optional<std::size_t> reservoir_size,
-                                                      std::initializer_list<TopKSeed> top_k,
-                                                      std::initializer_list<ReservoirSeed> reservoir)
+    [[nodiscard]] meta::MetaLogDocument
+    make_document(std::string_view start_iso, std::string_view end_iso,
+                  std::uint64_t lines_observed, std::size_t top_k_size,
+                  std::optional<std::size_t> reservoir_size, std::initializer_list<TopKSeed> top_k,
+                  std::initializer_list<ReservoirSeed> reservoir)
     {
         meta::MetaLogDocument doc;
         doc.window.start_iso = start_iso;
@@ -437,14 +435,14 @@ namespace
     [[nodiscard]] meta::MetaLogDocument make_a(const ReservoirSeed& salient)
     {
         return make_document("2026-01-01T00:00:00Z", "2026-01-01T00:01:00Z", 1202, kTopKSize,
-                             kInputReservoirCap,
-                             {{"filler a one", 700}, {"filler a two", 500}}, {salient});
+                             kInputReservoirCap, {{"filler a one", 700}, {"filler a two", 500}},
+                             {salient});
     }
     [[nodiscard]] meta::MetaLogDocument make_b(const ReservoirSeed& salient)
     {
         return make_document("2026-01-01T00:01:00Z", "2026-01-01T00:02:00Z", 1203, kTopKSize,
-                             kInputReservoirCap,
-                             {{"filler b one", 700}, {"filler b two", 500}}, {salient});
+                             kInputReservoirCap, {{"filler b one", 700}, {"filler b two", 500}},
+                             {salient});
     }
     // C carries no salient template of its own — it is pure merge scope, which is exactly the
     // variable under test. It declares no reservoir cap, which is what the producer does for a
@@ -506,8 +504,8 @@ TEST(ComposeAlgebraTest, ComposedReservoirIsAssociativeAcrossTheStrictBandFlip)
     const auto off_path_narrow{salience_at(ab, off_path_id, "the off-path template")};
     const auto error_narrow{salience_at(ab, error_id, "the error template")};
     EXPECT_EQ(off_path_narrow, 7500U)
-        << "kBandOffPath 75 × kRarityRare 100 (2/2405 = 0.083 % < 0.1 %); got "
-        << off_path_narrow << "\n    " << render_reservoir(ab);
+        << "kBandOffPath 75 × kRarityRare 100 (2/2405 = 0.083 % < 0.1 %); got " << off_path_narrow
+        << "\n    " << render_reservoir(ab);
     EXPECT_EQ(error_narrow, 7200U)
         << "kBandError 80 × kRarityUncommon 90 (3/2405 = 0.125 %, below 1 % but not below 0.1 %); "
            "got "
@@ -539,8 +537,8 @@ TEST(ComposeAlgebraTest, ComposedReservoirIsAssociativeAcrossTheStrictBandFlip)
     ASSERT_EQ(doc_a.stats.reservoir_size, kInputReservoirCap);
     ASSERT_EQ(doc_b.stats.reservoir_size, kInputReservoirCap);
     EXPECT_EQ(ab.stats.reservoir.size(), 2U)
-        << "two documents each declaring M=" << kInputReservoirCap
-        << " compose to a reservoir of " << ab.stats.reservoir.size()
+        << "two documents each declaring M=" << kInputReservoirCap << " compose to a reservoir of "
+        << ab.stats.reservoir.size()
         << " — the composed reservoir is bounded by the UNION, never by either input's M.\n    "
         << render_reservoir(ab);
     EXPECT_FALSE(ab.stats.reservoir_size.has_value())

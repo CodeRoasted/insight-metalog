@@ -281,7 +281,8 @@ TEST(MetaLogDocument, NgramCapBindsSoTheDigestCarriesTheDroppedObservationCount)
     // statement about the CAP rather than about a stream that ran short.
     EXPECT_EQ(doc.behavior->top_ngrams.size(), cfg.top_ngrams_size)
         << "every admitted bigram is at count 1, so the top-N select runs entirely on its "
-           "`sequence` tie-break over " << cfg.max_ngram_keys
+           "`sequence` tie-break over "
+        << cfg.max_ngram_keys
         << " candidates — a tie-break that stopped being a total order surfaces as a cross-leg "
            "byte difference and nowhere else in this corpus";
 }
