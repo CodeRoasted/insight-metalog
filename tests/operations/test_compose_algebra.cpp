@@ -4,11 +4,25 @@
 // test_compose_algebra.cpp — SPEC §12.2's three algebraic clauses over `compose()`, which had NO
 // test anywhere in the reference implementation until this file (`rg associativ tests/` returned
 // zero; DN-56.O3). §12.2 states three properties and they carry three different modal strengths,
-// so they are three separate arms rather than one "algebra" test:
+// so they are separate arms rather than one "algebra" test:
 //
 //   * Commutativity — **MUST**, over all required fields.  `compose(A,B)` vs `compose(B,A)`.
 //   * Identity      — **MUST**.                            `compose(A, ZERO)` vs `A`.
 //   * Associativity — **SHOULD** (best-effort).            `(A∘B)∘C` vs `A∘(B∘C)`.
+//
+// WHERE THIS FILE STANDS NOW, because two of its arms were written to be RED and are not any more.
+// The composed-document cap (DN-56.D2: every cap of `C` is the MINIMUM over the caps the inputs
+// actually declared) has LANDED. Commutativity and identity were shipped violations of a §12.2
+// MUST and are now GREEN. Associativity was green and the cap is what broke it — DN-56.D3 prices
+// that in writing and rules that it yields, because §12.2 scopes it as a SHOULD over required
+// fields while the bounded document is the format's headline property.
+//
+// SO THE ASSOCIATIVITY ARMS ARE NO LONGER ASSERTIONS THAT IT HOLDS. They assert the exact,
+// deterministic scope-dependence DN-56.D3 rules, from BOTH sides — the divergence when the cap
+// binds, and the equality when it does not. Every expected magnitude below is DERIVED from the
+// frozen band ladder and written out; none is transcribed from a run. If the implementation
+// diverges differently than the design predicts, these arms FAIL — a boundary asserted from one
+// side only is a golden re-pinned for green.
 //
 // HOMING (Kleio, 2026-08-24). Unit, `insight-metalog/tests/operations/`. `compose()` is a pure
 // function of two `MetaLogDocument` values; every one of these three properties is a statement
@@ -102,30 +116,30 @@ reservoir_signature(const meta::MetaLogDocument& doc)
 //
 // `stats.top_k_size` and `behavior.top_ngrams_size` are both REQUIRED by the published schema
 // (`schema/metalog.v0.schema.json`: stats.required contains `top_k_size`, behavior.required
-// contains `top_ngrams_size`) — and `compose()` takes BOTH from `lhs`
-// (`compose.cpp` `out.stats.top_k_size = lhs.stats.top_k_size`, and `merge_behavior`'s
-// `lhs.behavior ? lhs.behavior->top_ngrams_size : rhs.behavior->top_ngrams_size`). Picking one
-// side is inherently non-commutative, so with mismatched producers the same PAIR yields two
-// documents that disagree on a required field AND carry differently-truncated arrays.
+// contains `top_ngrams_size`). `compose()` used to take BOTH from `lhs`, and picking one side is
+// inherently non-commutative: with mismatched producers the same PAIR yielded two documents that
+// disagreed on a required field AND carried differently-truncated arrays (DN-56.D6, a shipped
+// MUST violation this arm was written red to expose).
 //
-// THIS ARM IS EXPECTED TO FAIL AGAINST THE IMPLEMENTATION AS IT STANDS. It is not a
-// characterization of the current behaviour: it asserts the spec clause, and its red IS the
-// finding (DN-56.D6). It goes green when the composed caps stop being taken from one side.
-// Do not "repair" it by asserting the lhs-bias.
+// IT IS GREEN BECAUSE THE COMPOSED CAP IS NOW `min` OVER THE DECLARED CAPS (DN-56.D2), and `min`
+// is symmetric — the clause holds by construction rather than by coincidence. Do not "repair" a
+// future red here by asserting a side-bias: a red means a cap site went back to picking a side,
+// or a new capped block landed without joining the rule.
 //
-// WHAT THE ARM WOULD BE VACUOUS WITHOUT: the two preconditions below. If the two producers
-// declared the SAME cap, or if the union were small enough that neither cut bit, both sides would
-// agree by construction and the green would say nothing at all.
+// WHAT THE ARM WOULD BE VACUOUS WITHOUT: the preconditions below. If the two producers declared
+// the SAME cap, or if the union were small enough that neither cut bit, both sides would agree by
+// construction and the green would say nothing at all.
 TEST(ComposeAlgebraTest, CommutativityHoldsOnTheRequiredCapFields)
 {
     // Two producers over overlapping-but-different template alphabets, differing ONLY in the two
     // cap knobs. Same event budget on both sides so nothing but the caps can explain a divergence.
     const auto window{
-        [](std::string_view prefix, std::size_t top_k, std::size_t top_ngrams)
+        [](std::string_view prefix, std::size_t top_k, std::size_t reservoir,
+           std::size_t top_ngrams)
         {
             meta::MetaLogEngine engine{meta::MetaLogConfig{
                 .top_k_size = top_k,
-                .reservoir_size = 0,
+                .reservoir_size = reservoir,
                 .top_ngrams_size = top_ngrams,
                 .max_param_histograms = 0,
                 .emit_stability = false,
@@ -139,16 +153,21 @@ TEST(ComposeAlgebraTest, CommutativityHoldsOnTheRequiredCapFields)
             return engine.close_window(kT1);
         }};
 
-    const auto wide{window("wide template ", /*top_k=*/8, /*top_ngrams=*/8)};
-    const auto narrow{window("narrow template ", /*top_k=*/3, /*top_ngrams=*/2)};
+    const auto wide{window("wide template ", /*top_k=*/8, /*reservoir=*/8, /*top_ngrams=*/8)};
+    const auto narrow{window("narrow template ", /*top_k=*/3, /*reservoir=*/2, /*top_ngrams=*/2)};
 
-    // ── Preconditions: the discriminator is live. ──
+    // ── Preconditions: the discriminator is live on ALL THREE cap sites. ──
     ASSERT_NE(wide.stats.top_k_size, narrow.stats.top_k_size)
         << "the two inputs must declare DIFFERENT top_k_size or this arm cannot separate a "
            "commutative composer from an lhs-biased one";
     ASSERT_TRUE(wide.behavior.has_value() && narrow.behavior.has_value());
     ASSERT_NE(wide.behavior->top_ngrams_size, narrow.behavior->top_ngrams_size)
         << "same requirement on the second cap";
+    ASSERT_TRUE(wide.stats.reservoir_size.has_value() && narrow.stats.reservoir_size.has_value())
+        << "both inputs must DECLARE a reservoir cap — an absent one is skipped by the `min`, so "
+           "the third site would be commutative for a reason this arm is not testing";
+    ASSERT_NE(*wide.stats.reservoir_size, *narrow.stats.reservoir_size)
+        << "and they must differ, same requirement as the two above";
     ASSERT_EQ(wide.stats.top_k.size(), 8U) << render_top_k(wide);
     ASSERT_EQ(narrow.stats.top_k.size(), 3U) << render_top_k(narrow);
 
@@ -192,6 +211,30 @@ TEST(ComposeAlgebraTest, CommutativityHoldsOnTheRequiredCapFields)
         << ba.behavior->top_ngrams.size() << " entries)";
     EXPECT_EQ(ab.behavior->top_ngrams.size(), ba.behavior->top_ngrams.size())
         << "the n-gram array is re-truncated to that cap, so it diverges with it";
+
+    // ── The third cap site, and its modal strength is stated rather than borrowed. ──
+    // `stats.reservoir_size` is OPTIONAL, so §12.2's MUST — which is scoped to required fields —
+    // does not reach it. It is asserted here anyway because the field is a §8-clause-4 CLAIM about
+    // how large the array may be, and a claim whose value depends on which argument was written
+    // first is a defect whatever the clause's modal strength. It is also the site whose absence
+    // handling identity pins, so having both arms hold it is deliberate, not duplication.
+    EXPECT_EQ(ab.stats.reservoir_size, ba.stats.reservoir_size)
+        << "the composed reservoir cap must not depend on argument order.\n"
+        << "    compose(wide, narrow): " << render_reservoir(ab) << "\n"
+        << "    compose(narrow, wide): " << render_reservoir(ba);
+    EXPECT_EQ(ab.stats.reservoir_size, std::optional<std::size_t>{2U})
+        << "and it is the MINIMUM over the declared caps (8 and 2), not either input's own — a "
+           "merge is never finer than its coarsest member. Got "
+        << (ab.stats.reservoir_size ? std::to_string(*ab.stats.reservoir_size)
+                                    : std::string{"<absent>"});
+
+    // The composed caps are the min of the two, never lhs's — pinned as VALUES so a composer that
+    // became commutative by taking the MAXIMUM (equally symmetric, and wrong: it would admit an
+    // array wider than the coarsest input's own bound) reds here rather than passing above.
+    EXPECT_EQ(ab.stats.top_k_size, narrow.stats.top_k_size)
+        << "min(8, 3) = 3; got " << ab.stats.top_k_size;
+    EXPECT_EQ(ab.behavior->top_ngrams_size, narrow.behavior->top_ngrams_size)
+        << "min(8, 2) = 2; got " << ab.behavior->top_ngrams_size;
 }
 
 // ── §12.2 IDENTITY (MUST) ─────────────────────────────────────────────────────
@@ -310,49 +353,43 @@ TEST(ComposeAlgebraTest, IdentityPreservesTheDocumentIncludingItsDeclaredReservo
            "composed document at all.\n    A:        "
         << render_reservoir(doc_a) << "\n    composed: " << render_reservoir(composed);
 
-    // ── A SCOPED-OUT GAP, PINNED AS A POSITIVE BOUNDARY RATHER THAN LEFT SILENT. ──
-    // §12.1 also says "C.stats.entropy_bits is recomputed from the merged counts", and `compose()`
-    // never assigns that field — so identity fails on it too, by a DIFFERENT root than the caps
-    // above and with a different owner. It is deliberately NOT asserted as identity here: this
-    // lane was sent to pin §12.2's three clauses ahead of the composed-caps change, and folding an
-    // unrelated unimplemented §12.1 clause into that arm would make a single red ambiguous about
-    // which fix landed. The current state is pinned instead, so the gap cannot be lost and so the
-    // day it IS implemented this site reds and points at the identity assertion it then owes.
-    EXPECT_TRUE(doc_a.stats.entropy_bits.has_value())
-        << "A must carry entropy_bits, or the boundary below is about an absent input";
-    EXPECT_FALSE(composed.stats.entropy_bits.has_value())
-        << "CHARACTERIZATION, not a requirement: §12.1 orders `C.stats.entropy_bits` recomputed "
-           "from the merged counts and compose() does not compute it. If this reds, the clause "
-           "was implemented — replace this boundary with the identity assertion "
-           "`composed.stats.entropy_bits == doc_a.stats.entropy_bits` (A's tail is empty, so the "
-           "merged counts ARE A's counts and the two must agree exactly).";
+    // `stats.entropy_bits` is §12.1's own clause with its own root, and it is asserted — including
+    // its identity leg — in `ComposedEntropyBitsIsRecomputedFromTheMergedCounts` below, NOT here.
+    // The separation is deliberate and it is about diagnosis, not tidiness: this arm owns the
+    // composed-cap fix, that one owns the recomputation clause, and a single red must never be
+    // ambiguous about which of the two moved.
 }
 
-// ── §12.2 ASSOCIATIVITY (SHOULD) — a characterization of a DISCLOSED limitation ───────────────
+// ── §12.2 ASSOCIATIVITY (SHOULD) — a DECLARED BOUNDARY, asserted from both sides ──────────────
 //
-// READ THIS BEFORE CHANGING EITHER ARM BELOW.
+// READ THIS BEFORE CHANGING ANY ARM BELOW.
 //
-// These two arms assert that the composed reservoir is associative TODAY, and they are expected to
-// go RED when the composed-document cap lands (DN-56.D2). That red is the design being applied,
-// not a regression, and the correct response to it is to re-home these arms as the measured proof
-// of §12.2's disclosure — NEVER to restore associativity by removing the cap.
+// The composed reservoir is NOT associative, by design (DN-56.D2 + DN-56.D3). These arms do not
+// characterize whatever the code happens to do: they assert the exact scope-dependence the design
+// RULES, and the equality it rules where no cap binds. An implementation that diverges by a
+// different amount, or at a different rung, FAILS here — that is the whole difference between a
+// declared boundary and a golden re-pinned for green.
 //
 // WHY IT YIELDS. Top-M selection under a FIXED total order is associative. The reservoir's order
 // is not fixed: §12.1 mandates that salience be re-derived over the merged counts precisely
-// because rarity shifts on merge, so the ranking KEY moves with the merge scope. Today nothing is
-// ever dropped — `rederive_reservoir` admits every salience-positive candidate — so membership is
-// the union of unions and is bracket-independent, and the final re-derivation runs at the same
-// total scope either way. Introduce an admission bound and an entry cut at a low rung folds into
-// `tail_count` and can never re-enter at the scale where it would have ranked.
+// because rarity shifts on merge, so the ranking KEY moves with the merge scope. With no bound
+// nothing is ever dropped, membership is the union of unions, and the final re-derivation runs at
+// the same total scope either way — associativity holds, and the arm below proves it does. Under
+// an admission bound an entry cut at a low rung folds into `tail_count` and can never re-enter at
+// the scale where it would have ranked, so the low rung makes a cut the high rung would not have
+// made. §12.2 scopes associativity as a SHOULD and the bounded document is the format's headline
+// property; DN-56.D3 rules that this is the trade, and §12.2's carve-out owes the disclosure.
 //
-// WHAT MAKES THESE ARMS NON-VACUOUS, and it is the first assertion in each: the scope-dependent
-// ranking key is OBSERVED, not assumed. Each arm pins the exact salience both templates carry at a
-// narrow rung and at the full rung, and shows the order between them changes. Without that, "the
-// two bracketings agree" would be equally satisfied by a fixture where merge scope never moved a
-// band — the green would be true and would say nothing about associativity. The exact values are
-// the frozen band ladder written out (`src/stats/salience.cpp`: severity bands kBandOffPath 75,
-// kBandError 80, kBandStrongOffPath 90, kBandFatal 100; rarity kRarityUncommon 90 at < 1 %,
-// kRarityRare 100 at < 0.1 %), multiplied by hand — never a second call into salience_score().
+// AND IT COSTS A REQUIRED FIELD TOO, which DN-056's prose does not say. `stats.unique_templates`
+// is REQUIRED, and it diverges 7 vs 8 in the strict-flip arm below — a cut entry leaves the
+// document entirely, so the next rung's union cannot see it. That is asserted, not narrated: the
+// disclosure §12.2 owes is wider than "an unwritten property of an optional block".
+//
+// THE EXACT VALUES ARE THE FROZEN BAND LADDER, WRITTEN OUT — never a second call into
+// salience_score(), never a number read off a run. `src/stats/salience.cpp`: severity bands
+// kBandOffPath 75, kBandError 80, kBandStrongOffPath 90, kBandFatal 100; rarity kRarityUncommon
+// 90 (count·100 < lines, i.e. < 1 %), kRarityRare 100 (count·1000 < lines, i.e. < 0.1 %).
+// `salience = severity × rarity`, so a flip on widening needs 0.9·sev_Q < sev_P < sev_Q.
 
 namespace
 {
@@ -430,19 +467,22 @@ namespace
     // `top_k_size = 4` keeps both salient entries below the composed top-K at EVERY rung
     // (the widest rung ranks six fillers above them), so they are always reservoir candidates.
     constexpr std::size_t kTopKSize{4};
-    constexpr std::size_t kInputReservoirCap{1};
+    // The cap is the VARIABLE of this section, not a constant of it: the same three documents are
+    // composed at a cap that BINDS (1 — one slot for two salient templates) and at one that cannot
+    // (8 — more slots than there are candidates). The pair of runs is what asserts DN-56.D3's
+    // boundary from both sides instead of merely declaring it.
+    constexpr std::size_t kBindingCap{1};
+    constexpr std::size_t kSlackCap{8};
 
-    [[nodiscard]] meta::MetaLogDocument make_a(const ReservoirSeed& salient)
+    [[nodiscard]] meta::MetaLogDocument make_a(const ReservoirSeed& salient, std::size_t cap)
     {
-        return make_document("2026-01-01T00:00:00Z", "2026-01-01T00:01:00Z", 1202, kTopKSize,
-                             kInputReservoirCap, {{"filler a one", 700}, {"filler a two", 500}},
-                             {salient});
+        return make_document("2026-01-01T00:00:00Z", "2026-01-01T00:01:00Z", 1202, kTopKSize, cap,
+                             {{"filler a one", 700}, {"filler a two", 500}}, {salient});
     }
-    [[nodiscard]] meta::MetaLogDocument make_b(const ReservoirSeed& salient)
+    [[nodiscard]] meta::MetaLogDocument make_b(const ReservoirSeed& salient, std::size_t cap)
     {
-        return make_document("2026-01-01T00:01:00Z", "2026-01-01T00:02:00Z", 1203, kTopKSize,
-                             kInputReservoirCap, {{"filler b one", 700}, {"filler b two", 500}},
-                             {salient});
+        return make_document("2026-01-01T00:01:00Z", "2026-01-01T00:02:00Z", 1203, kTopKSize, cap,
+                             {{"filler b one", 700}, {"filler b two", 500}}, {salient});
     }
     // C carries no salient template of its own — it is pure merge scope, which is exactly the
     // variable under test. It declares no reservoir cap, which is what the producer does for a
@@ -475,11 +515,21 @@ namespace
     }
 } // namespace
 
-// Band pair (kBandOffPath 75, kBandError 80) — DN-56.D3's STRICT flip.
-// A benign off-path Info template outranks a rare error at the two-document scale and is outranked
-// by it at the three-document scale, because widening the merge lifts the error's rarity band and
-// nothing else. 75×100 = 7500 > 80×90 = 7200, then 80×100 = 8000 > 7500.
-TEST(ComposeAlgebraTest, ComposedReservoirIsAssociativeAcrossTheStrictBandFlip)
+// ── THE POSITIVE SIDE OF THE BOUNDARY: no cap binds, so associativity HOLDS. ──────────────────
+//
+// This arm exists so the boundary is asserted from BOTH sides. Without it, "associativity
+// diverges" would be equally satisfied by a composer that diverges for some unrelated reason — a
+// merge that lost an entry, a re-derivation that ran at the wrong scope, a tie-break that became
+// argument-ordered. Here the SAME three documents, differing from the arm below only in the cap
+// they declare, compose to bracket-INDEPENDENT results. So the divergence below is attributable
+// to the admission bound and to nothing else.
+//
+// IT ALSO CARRIES THE MECHANISM, and this is its second job. The scope-dependent ranking key is
+// OBSERVABLE only where both salient templates survive to be read: at the narrow rung the benign
+// off-path template outranks the error (75×100 = 7500 > 80×90 = 7200) and at the full rung the
+// order INVERTS (80×100 = 8000 > 7500). That inversion is why a cap can break associativity at
+// all, and it is measured here rather than assumed by the capped arm below.
+TEST(ComposeAlgebraTest, ComposedReservoirStaysAssociativeWhenNoCapBinds)
 {
     constexpr std::string_view kOffPath{"took alternate cache path"};
     constexpr std::string_view kError{"connection refused to db"};
@@ -490,142 +540,422 @@ TEST(ComposeAlgebraTest, ComposedReservoirIsAssociativeAcrossTheStrictBandFlip)
                                           .count = 2,
                                           .structural_surprise = 75,
                                           .level = std::nullopt,
-                                          .salience = 6750})}; // 75 × 90 at A's own 1202 lines
+                                          .salience = 6750}, // 75 × 90 at A's own 1202 lines
+                            kSlackCap)};
     const auto doc_b{make_b(ReservoirSeed{.tmpl = kError,
                                           .count = 3,
                                           .structural_surprise = 0,
                                           .level = insight::LogLevel::Error,
-                                          .salience = 7200})}; // 80 × 90 at B's own 1203 lines
+                                          .salience = 7200}, // 80 × 90 at B's own 1203 lines
+                            kSlackCap)};
     const auto doc_c{make_c()};
 
-    // ── ① THE MECHANISM IS LIVE: the ranking key moves with merge scope. ──
+    // ── ① THE CAP CANNOT BIND: more slots than candidates, asserted rather than assumed. ──
     const auto ab{meta::compose(doc_a, doc_b)};
     ASSERT_EQ(ab.window.lines_observed, 2405U) << "the narrow rung's line total is the band input";
+    ASSERT_EQ(ab.stats.reservoir_size, std::optional<std::size_t>{kSlackCap})
+        << "min(8, 8) = 8 — the composed document declares its own cap (DN-56.D2)";
+    ASSERT_EQ(ab.stats.reservoir.size(), 2U)
+        << "both salient templates must survive, or this arm proves nothing about a cap that does "
+           "not bind.\n    "
+        << render_reservoir(ab);
+
+    // ── ② THE MECHANISM: the ranking key moves with merge scope, and the order inverts. ──
     const auto off_path_narrow{salience_at(ab, off_path_id, "the off-path template")};
     const auto error_narrow{salience_at(ab, error_id, "the error template")};
     EXPECT_EQ(off_path_narrow, 7500U)
-        << "kBandOffPath 75 × kRarityRare 100 (2/2405 = 0.083 % < 0.1 %); got " << off_path_narrow
-        << "\n    " << render_reservoir(ab);
+        << "kBandOffPath 75 × kRarityRare 100 (2·1000 = 2000 < 2405, so < 0.1 %); got "
+        << off_path_narrow << "\n    " << render_reservoir(ab);
     EXPECT_EQ(error_narrow, 7200U)
-        << "kBandError 80 × kRarityUncommon 90 (3/2405 = 0.125 %, below 1 % but not below 0.1 %); "
-           "got "
+        << "kBandError 80 × kRarityUncommon 90 (3·1000 = 3000 > 2405 but 3·100 = 300 < 2405, so "
+           "below 1 % and not below 0.1 %); got "
         << error_narrow << "\n    " << render_reservoir(ab);
-    // NON-FATAL on purpose, here and at every ordering observation below. These are
-    // preconditions about the RANKING KEY; the property this arm exists for is the associativity
-    // comparison at ③. A fatal assert here would abort before ③ ever ran — which is exactly what
-    // happens under an admission cap, and it would leave the load-bearing assertion unproven in
-    // both directions (measured 2026-08-24: the first cap mutation reported ① only).
     EXPECT_GT(off_path_narrow, error_narrow)
-        << "at the narrow rung the benign off-path template must OUTRANK the error, or the flip "
-           "this arm characterizes never happens";
+        << "at the narrow rung the benign off-path template outranks the error";
+    EXPECT_EQ(leading_reservoir_id(ab), std::optional{off_path_id})
+        << "and it therefore leads the emitted array.\n    " << render_reservoir(ab);
 
     const auto abc{meta::compose(ab, doc_c)};
     ASSERT_EQ(abc.window.lines_observed, 3605U) << "the full rung's line total is the band input";
     const auto off_path_wide{salience_at(abc, off_path_id, "the off-path template")};
     const auto error_wide{salience_at(abc, error_id, "the error template")};
-    EXPECT_EQ(off_path_wide, 7500U) << "unchanged: 2/3605 was already below 0.1 %";
+    EXPECT_EQ(off_path_wide, 7500U) << "unchanged: 2·1000 = 2000 was already below 3605";
     EXPECT_EQ(error_wide, 8000U)
-        << "kBandError 80 × kRarityRare 100 — 3/3605 = 0.083 % crossed the 0.1 % threshold; got "
+        << "kBandError 80 × kRarityRare 100 — 3·1000 = 3000 < 3605 crossed the 0.1 % threshold; "
+           "got "
         << error_wide << "\n    " << render_reservoir(abc);
     EXPECT_GT(error_wide, off_path_wide)
-        << "at the full rung the order must INVERT. This is the whole reason a cap would break "
-           "associativity: the reservoir's ranking key is scope-dependent by design (§12.1 "
-           "re-derives salience over the merged counts), so a low-rung cut is not a cut the high "
-           "rung would have made.";
+        << "at the full rung the order INVERTS. This is the whole reason a cap breaks "
+           "associativity: the ranking key is scope-dependent by design (§12.1 re-derives salience "
+           "over the merged counts), so a low-rung cut is not a cut the high rung would have made.";
 
-    // ── ② THE CAP WOULD BITE HERE — the datum that makes the future red predictable. ──
-    ASSERT_EQ(doc_a.stats.reservoir_size, kInputReservoirCap);
-    ASSERT_EQ(doc_b.stats.reservoir_size, kInputReservoirCap);
-    EXPECT_EQ(ab.stats.reservoir.size(), 2U)
-        << "two documents each declaring M=" << kInputReservoirCap << " compose to a reservoir of "
-        << ab.stats.reservoir.size()
-        << " — the composed reservoir is bounded by the UNION, never by either input's M.\n    "
-        << render_reservoir(ab);
-    EXPECT_FALSE(ab.stats.reservoir_size.has_value())
-        << "and the composed document declares no cap, so SPEC §8 clause 4 makes no claim about "
-           "that array — which is why the conformance validator is vacuous on it.";
-
-    // ── ③ ASSOCIATIVITY, TODAY. Expected RED once ② stops being true. ──
+    // ── ③ ASSOCIATIVITY, and it must HOLD here. ──
     const auto bc{meta::compose(doc_b, doc_c)};
     const auto a_bc{meta::compose(doc_a, bc)};
     EXPECT_EQ(abc.window.lines_observed, a_bc.window.lines_observed);
-    EXPECT_EQ(abc.stats.unique_templates, a_bc.stats.unique_templates);
+    EXPECT_EQ(abc.stats.unique_templates, a_bc.stats.unique_templates)
+        << "with nothing dropped, no template leaves the document, so both bracketings see the "
+           "same union: (A∘B)∘C = "
+        << abc.stats.unique_templates << " vs A∘(B∘C) = " << a_bc.stats.unique_templates;
+    EXPECT_EQ(abc.stats.unique_templates, 8U)
+        << "6 fillers + the off-path + the error, pinned as a VALUE so an equality that held "
+           "because both sides collapsed cannot pass";
+    const std::vector<std::tuple<insight::TemplateId, std::uint64_t, std::uint32_t>> expected{
+        {error_id, 3U, 8000U}, {off_path_id, 2U, 7500U}};
+    EXPECT_EQ(reservoir_signature(abc), expected)
+        << "the full rung ranks the error first (8000 > 7500) and keeps both.\n    (A∘B)∘C: "
+        << render_reservoir(abc);
     EXPECT_EQ(reservoir_signature(abc), reservoir_signature(a_bc))
-        << "SPEC §12.2 associativity (SHOULD) over the composed reservoir. It holds today because "
-           "nothing is ever dropped: membership is the union of unions and the final salience is "
-           "re-derived at a total scope both bracketings share.\n"
+        << "SPEC §12.2 associativity (SHOULD) over the composed reservoir. With no binding cap, "
+           "membership is the union of unions and the final salience is re-derived at a total "
+           "scope both bracketings share.\n"
         << "    (A∘B)∘C: " << render_reservoir(abc) << "\n"
-        << "    A∘(B∘C): " << render_reservoir(a_bc) << "\n"
-        << "  IF THIS RED ARRIVED WITH A COMPOSED-DOCUMENT CAP, IT IS THE DESIGN, NOT A "
-           "REGRESSION (DN-56.D3): the low rung cut an entry the high rung would have kept, and "
-           "a cut entry folds into tail_count and cannot re-enter. Re-home this arm as the "
-           "measured proof of §12.2's disclosure; do not remove the cap.";
+        << "    A∘(B∘C): " << render_reservoir(a_bc);
 }
 
-// Band pair (kBandStrongOffPath 90, kBandFatal 100) — the flip that needs no band coincidence.
-// The flip condition is 0.9·sev_Q < sev_P < sev_Q, and this pair sits exactly ON the lower edge:
-// 0.9 × 100 = 90 is not strictly less than 90. So the narrow rung is an EXACT TIE (90×100 = 9000
-// = 100×90) resolved by the meaning-blind `template_id` order, and the wide rung is a strict win
-// for the fatal (100×100 = 10000). Note this is the opposite side from DN-56.D3's prose, which
-// places the tie at the widened rung; the tie is at the NARROW rung, and the arithmetic is here.
-TEST(ComposeAlgebraTest, ComposedReservoirIsAssociativeAcrossTheTieBreakBandPair)
+// ── THE NEGATIVE SIDE: the cap binds, and the divergence is EXACTLY what DN-56.D3 predicts. ───
+//
+// Band pair (kBandOffPath 75, kBandError 80) — DN-56.D3's STRICT flip (ratio 1.067, inside the
+// 0.9·sev_Q < sev_P < sev_Q window). Same three documents as the arm above; the ONLY change is
+// that A and B declare a reservoir cap of 1, so the composed document declares 1 too and has one
+// slot for two salient templates.
+//
+// THE ARITHMETIC, DERIVED — every number below follows from the band ladder and the line totals,
+// and none is read off a run:
+//
+//   A∘B   (2 405 lines, cap 1): off-path 75×100 = 7500 beats error 80×90 = 7200.
+//                               The cap keeps the OFF-PATH; the error's count 3 folds into
+//                               tail_count and leaves the document (§3.7.3's compose-lossy tail).
+//   (A∘B)∘C (3 605 lines):      only the off-path is still a candidate → 75×100 = 7500.
+//   B∘C   (2 403 lines, cap 1): the error is the only candidate → 80×90 = 7200, kept.
+//   A∘(B∘C) (3 605 lines):      error 80×100 = 8000 now beats off-path 75×100 = 7500, so the cap
+//                               keeps the ERROR.
+//
+// So the two bracketings emit DIFFERENT templates, at different counts, at different saliences —
+// and disagree on the REQUIRED field `stats.unique_templates` (7 vs 8). That is the disclosure
+// §12.2 owes, stated as arithmetic. If the implementation diverges any other way, this arm reds.
+TEST(ComposeAlgebraTest, ComposedReservoirCapBreaksAssociativityExactlyAsDN56D3Rules)
+{
+    constexpr std::string_view kOffPath{"took alternate cache path"};
+    constexpr std::string_view kError{"connection refused to db"};
+    const auto off_path_id{insight::template_id_of(kOffPath)};
+    const auto error_id{insight::template_id_of(kError)};
+
+    const auto doc_a{make_a(ReservoirSeed{.tmpl = kOffPath,
+                                          .count = 2,
+                                          .structural_surprise = 75,
+                                          .level = std::nullopt,
+                                          .salience = 6750},
+                            kBindingCap)};
+    const auto doc_b{make_b(ReservoirSeed{.tmpl = kError,
+                                          .count = 3,
+                                          .structural_surprise = 0,
+                                          .level = insight::LogLevel::Error,
+                                          .salience = 7200},
+                            kBindingCap)};
+    const auto doc_c{make_c()};
+
+    // ── ① THE COMPOSED DOCUMENT DECLARES ITS OWN CAP, and the cap BINDS. ──
+    const auto ab{meta::compose(doc_a, doc_b)};
+    ASSERT_EQ(ab.window.lines_observed, 2405U);
+    EXPECT_EQ(ab.stats.reservoir_size, std::optional<std::size_t>{kBindingCap})
+        << "min(1, 1) = 1 — DN-56.D2: a composed document declares its own cap, so SPEC §8 "
+           "clause 4 now makes a checkable claim about the array (it made none before).\n    "
+        << render_reservoir(ab);
+    ASSERT_EQ(ab.stats.reservoir.size(), 1U)
+        << "two salient candidates, one slot — the cut is what the rest of this arm is about.\n    "
+        << render_reservoir(ab);
+
+    // ── ② WHICH ENTRY THE CUT KEEPS, and where the other one goes. ──
+    EXPECT_EQ(leading_reservoir_id(ab), std::optional{off_path_id})
+        << "at 2 405 lines the off-path scores 75×100 = 7500 and the error 80×90 = 7200, so the "
+           "single slot goes to the off-path.\n    "
+        << render_reservoir(ab);
+    EXPECT_EQ(salience_at(ab, off_path_id, "the off-path template"), 7500U);
+    EXPECT_EQ(reservoir_find(ab, error_id), nullptr)
+        << "and the error is GONE from the reservoir.\n    " << render_reservoir(ab);
+    EXPECT_EQ(ab.stats.tail_count, 3U)
+        << "its whole count is now lumped tail mass — which is precisely why it can never re-enter "
+           "at a wider scope: the composed document no longer carries it as a template. Got "
+        << ab.stats.tail_count << " (expected exactly the error's count of 3).";
+    EXPECT_EQ(ab.stats.tail_unique, 1U) << "one template folded, no others";
+
+    // ── ③ THE DIVERGENCE, both bracketings pinned as VALUES. ──
+    const auto abc{meta::compose(ab, doc_c)};
+    const auto bc{meta::compose(doc_b, doc_c)};
+    const auto a_bc{meta::compose(doc_a, bc)};
+    ASSERT_EQ(abc.window.lines_observed, 3605U);
+    ASSERT_EQ(a_bc.window.lines_observed, 3605U)
+        << "both bracketings must reach the SAME total scope, or the divergence below is about "
+           "line counts rather than about the cap";
+    EXPECT_EQ(bc.stats.reservoir_size, std::optional<std::size_t>{kBindingCap})
+        << "C declares no cap at all, and an absent declaration is skipped rather than read as a "
+           "bound of zero — so B∘C carries B's 1 (DN-56.D2). Got "
+        << (bc.stats.reservoir_size ? std::to_string(*bc.stats.reservoir_size)
+                                    : std::string{"<absent>"});
+
+    const std::vector<std::tuple<insight::TemplateId, std::uint64_t, std::uint32_t>> left_expected{
+        {off_path_id, 2U, 7500U}};
+    const std::vector<std::tuple<insight::TemplateId, std::uint64_t, std::uint32_t>> right_expected{
+        {error_id, 3U, 8000U}};
+    EXPECT_EQ(reservoir_signature(abc), left_expected)
+        << "(A∘B)∘C: the error was already cut at the narrow rung, so the off-path is the only "
+           "candidate left and keeps its 75×100 = 7500.\n    "
+        << render_reservoir(abc);
+    EXPECT_EQ(reservoir_signature(a_bc), right_expected)
+        << "A∘(B∘C): the error survived B∘C at 7200 and, re-derived at 3 605 lines, scores "
+           "80×100 = 8000 — beating the off-path's 7500 and taking the single slot.\n    "
+        << render_reservoir(a_bc);
+    EXPECT_NE(reservoir_signature(abc), reservoir_signature(a_bc))
+        << "SPEC §12.2 associativity (SHOULD) DOES NOT HOLD under a binding cap, and that is "
+           "DN-56.D3's ruled and disclosed trade, not a regression. If this arm ever reds by the "
+           "two sides AGREEING, associativity was restored — check whether the cap was removed "
+           "(the thing DN-56.D2 forbids) before believing it is an improvement.\n"
+        << "    (A∘B)∘C: " << render_reservoir(abc) << "\n"
+        << "    A∘(B∘C): " << render_reservoir(a_bc);
+
+    // ── ④ AND IT REACHES A REQUIRED FIELD, which DN-056's prose does not say. ──
+    // `stats.unique_templates` is REQUIRED by the published schema. DN-56.D3 argues associativity
+    // may yield because what yields is an unwritten property of an OPTIONAL block; measured, the
+    // cut also moves a required one, because a cut entry leaves the document entirely and the next
+    // rung's union cannot see it. The disclosure §12.2 owes is therefore wider than D3 states.
+    EXPECT_EQ(abc.stats.unique_templates, 7U)
+        << "6 fillers + the off-path; the error is not in the union because A∘B dropped it. Got "
+        << abc.stats.unique_templates;
+    EXPECT_EQ(a_bc.stats.unique_templates, 8U)
+        << "6 fillers + the off-path + the error, which B∘C kept. Got "
+        << a_bc.stats.unique_templates;
+    EXPECT_NE(abc.stats.unique_templates, a_bc.stats.unique_templates)
+        << "the SAME three documents, bracketed two ways, disagree on a REQUIRED field";
+}
+
+// ── THE TIE-BREAK PAIR: the cut is decided by a MEANING-BLIND hash. ───────────────────────────
+//
+// Band pair (kBandStrongOffPath 90, kBandFatal 100). The flip condition is 0.9·sev_Q < sev_P <
+// sev_Q and this pair sits exactly ON the lower edge: 0.9 × 100 = 90 is not strictly less than 90.
+// So the narrow rung is an EXACT TIE (90×100 = 9000 = 100×90) and the wide rung is a strict win
+// for the fatal (100×100 = 10000). (DN-56.D3's prose places the tie at the WIDENED rung; the
+// arithmetic puts it at the NARROW one, and the arithmetic is written out here.)
+//
+// WHAT THIS ARM PROVES, and it is not a second copy of the strict-flip arm. Under a cap of 1 an
+// exact tie means the single slot is allocated by `template_id` ascending (§3.7.2.1) — a content
+// hash that is deterministic and MEANING-BLIND. So which of a FATAL and a benign off-path template
+// survives into every wider scope is decided by a hash, and DN-56.D3's "including, half the time,
+// the FATAL" becomes a measured statement rather than a rhetorical one.
+//
+// AND THE HASH ORDER DECIDES WHETHER ASSOCIATIVITY HOLDS AT ALL HERE, which is the sharpest thing
+// this arm has to say. A∘(B∘C) always lands on the fatal (it wins the wide rung outright at
+// 10000). (A∘B)∘C lands on whichever the narrow tie-break kept. With today's ids the tie-break
+// keeps the FATAL, so the two bracketings AGREE — associativity survives this pair by luck, not by
+// property. Were the order reversed, (A∘B)∘C would carry the off-path at 90×100 = 9000 and the
+// fatal would be the entry lost. The order is pinned below precisely so that a future change to
+// canon's template_id hash reds this arm and forces the expectations to be RE-DERIVED rather than
+// silently re-pinned to whichever case became live.
+TEST(ComposeAlgebraTest, ComposedReservoirCapResolvesAnExactTieByTheMeaningBlindTemplateId)
 {
     constexpr std::string_view kStrongOffPath{"took alternate cache path"};
     constexpr std::string_view kFatal{"connection refused to db"};
     const auto off_path_id{insight::template_id_of(kStrongOffPath)};
     const auto fatal_id{insight::template_id_of(kFatal)};
 
-    const auto doc_a{make_a(ReservoirSeed{.tmpl = kStrongOffPath,
-                                          .count = 2,
-                                          .structural_surprise = 90,
-                                          .level = std::nullopt,
-                                          .salience = 8100})}; // 90 × 90 at A's own 1202 lines
-    const auto doc_b{make_b(ReservoirSeed{.tmpl = kFatal,
-                                          .count = 3,
-                                          .structural_surprise = 0,
-                                          .level = insight::LogLevel::Fatal,
-                                          .salience = 9000})}; // 100 × 90 at B's own 1203 lines
+    const ReservoirSeed off_path_seed{.tmpl = kStrongOffPath,
+                                      .count = 2,
+                                      .structural_surprise = 90,
+                                      .level = std::nullopt,
+                                      .salience = 8100}; // 90 × 90 at A's own 1202 lines
+    const ReservoirSeed fatal_seed{.tmpl = kFatal,
+                                   .count = 3,
+                                   .structural_surprise = 0,
+                                   .level = insight::LogLevel::Fatal,
+                                   .salience = 9000}; // 100 × 90 at B's own 1203 lines
     const auto doc_c{make_c()};
 
-    // ── ① The tie at the narrow rung, and the strict win at the wide one. ──
+    // ── ① THE TIE IS REAL, observed where BOTH entries survive. ──
+    // A cap of 1 emits only one of them, so the tie itself cannot be read off the capped document.
+    // The same pair is composed at a slack cap first: that control is what stops this arm from
+    // passing on a fixture where one template simply outranked the other.
+    const auto slack{
+        meta::compose(make_a(off_path_seed, kSlackCap), make_b(fatal_seed, kSlackCap))};
+    ASSERT_EQ(slack.window.lines_observed, 2405U);
+    ASSERT_EQ(slack.stats.reservoir.size(), 2U) << render_reservoir(slack);
+    EXPECT_EQ(salience_at(slack, off_path_id, "the strong-off-path template"), 9000U)
+        << "kBandStrongOffPath 90 × kRarityRare 100 (2·1000 = 2000 < 2405)";
+    EXPECT_EQ(salience_at(slack, fatal_id, "the fatal template"), 9000U)
+        << "kBandFatal 100 × kRarityUncommon 90 (3·1000 = 3000 > 2405, 3·100 = 300 < 2405)";
+
+    // ── ② UNDER THE CAP, THE TIE-BREAK ALLOCATES THE SINGLE SLOT. ──
+    const auto doc_a{make_a(off_path_seed, kBindingCap)};
+    const auto doc_b{make_b(fatal_seed, kBindingCap)};
     const auto ab{meta::compose(doc_a, doc_b)};
-    const auto off_path_narrow{salience_at(ab, off_path_id, "the strong-off-path template")};
-    const auto fatal_narrow{salience_at(ab, fatal_id, "the fatal template")};
-    EXPECT_EQ(off_path_narrow, 9000U) << "kBandStrongOffPath 90 × kRarityRare 100";
-    EXPECT_EQ(fatal_narrow, 9000U) << "kBandFatal 100 × kRarityUncommon 90";
-    EXPECT_EQ(off_path_narrow, fatal_narrow)
-        << "this pair's whole point is that the narrow rung is an EXACT salience tie, so the "
-           "emitted order is decided by the meaning-blind template_id tie-break alone (§3.7.2.1)";
-    // The tie-break is `template_id` ascending — a content hash, so which one leads carries no
-    // meaning. Assert the ORDER the composer actually emits against the ids' own order, so a
-    // tie-break that silently became insertion-ordered (i.e. argument-order-dependent, hence
-    // non-commutative) reds here.
-    EXPECT_EQ(ab.stats.reservoir.size(), 2U) << render_reservoir(ab);
+    ASSERT_EQ(ab.stats.reservoir.size(), 1U)
+        << "an exact tie and one slot — one of the two salient templates is dropped.\n    "
+        << render_reservoir(ab);
     EXPECT_EQ(leading_reservoir_id(ab), std::optional{std::min(off_path_id, fatal_id)})
-        << "a salience tie must resolve to the lower template_id, not to argument order.\n    "
+        << "§3.7.2.1: an exact salience tie resolves to the LOWER template_id, never to argument "
+           "order. A red here means the tie-break became insertion-ordered — which would also make "
+           "compose() non-commutative.\n    "
         << render_reservoir(ab);
 
-    const auto abc{meta::compose(ab, doc_c)};
-    const auto off_path_wide{salience_at(abc, off_path_id, "the strong-off-path template")};
-    const auto fatal_wide{salience_at(abc, fatal_id, "the fatal template")};
-    EXPECT_EQ(off_path_wide, 9000U) << "unchanged: already below 0.1 % at the narrow rung";
-    EXPECT_EQ(fatal_wide, 10000U) << "kBandFatal 100 × kRarityRare 100 — the ceiling of the ladder";
-    EXPECT_GT(fatal_wide, off_path_wide)
-        << "widening the merge must break the tie in the fatal's favour, or this arm is a "
-           "duplicate of the strict-flip arm";
-    EXPECT_EQ(leading_reservoir_id(abc), std::optional{fatal_id})
-        << "and at the wide rung the ranking — not the tie-break — decides the order.\n    "
-        << render_reservoir(abc);
+    // The order of two content hashes, pinned as the FACT the derivation below rests on. It is an
+    // input to the arithmetic, exactly like the band constants — not an expectation about design.
+    ASSERT_LT(fatal_id, off_path_id)
+        << "the fatal's template_id sorts BELOW the off-path's, so today's tie-break keeps the "
+           "fatal and the two bracketings below AGREE. If canon's template_id hash changes this "
+           "order, the survivor becomes the benign off-path at 90×100 = 9000, (A∘B)∘C and "
+           "A∘(B∘C) DIVERGE, and the FATAL is the entry lost — re-derive the expectations below "
+           "from that arithmetic, never re-pin them to whatever the run produced. "
+        << insight::render(fatal_id) << " vs " << insight::render(off_path_id);
+    EXPECT_EQ(reservoir_find(ab, off_path_id), nullptr)
+        << "so the off-path is the entry the meaning-blind hash dropped.\n    "
+        << render_reservoir(ab);
+    EXPECT_EQ(ab.stats.tail_count, 2U) << "its count folds into the tail and leaves the document";
 
-    // ── ② ASSOCIATIVITY, TODAY. Same disclosure as the strict-flip arm above. ──
+    // ── ③ THE CONSEQUENCE FOR ASSOCIATIVITY, derived from ② and NOT a property of the design. ──
+    const auto abc{meta::compose(ab, doc_c)};
     const auto bc{meta::compose(doc_b, doc_c)};
     const auto a_bc{meta::compose(doc_a, bc)};
+    const std::vector<std::tuple<insight::TemplateId, std::uint64_t, std::uint32_t>> fatal_at_wide{
+        {fatal_id, 3U, 10000U}};
+    EXPECT_EQ(reservoir_signature(a_bc), fatal_at_wide)
+        << "A∘(B∘C): the fatal survives B∘C (sole candidate, 100×90 = 9000) and wins the wide rung "
+           "outright — kBandFatal 100 × kRarityRare 100 (3·1000 = 3000 < 3605), the ceiling of the "
+           "ladder.\n    "
+        << render_reservoir(a_bc);
+    EXPECT_EQ(reservoir_signature(abc), fatal_at_wide)
+        << "(A∘B)∘C: the narrow tie-break happened to keep the fatal, so re-deriving it at 3 605 "
+           "lines gives the same 10000 — the bracketings AGREE here, and the agreement is an "
+           "accident of a content hash, not associativity holding.\n    "
+        << render_reservoir(abc);
     EXPECT_EQ(reservoir_signature(abc), reservoir_signature(a_bc))
-        << "SPEC §12.2 associativity over a reservoir whose narrow-rung order is decided by a "
-           "meaning-blind tie-break. A cap of 1 at the narrow rung would keep whichever id sorts "
-           "lower and drop the other — including, half the time, the FATAL.\n"
-        << "    (A∘B)∘C: " << render_reservoir(abc) << "\n"
-        << "    A∘(B∘C): " << render_reservoir(a_bc);
+        << "stated explicitly so the arm's verdict is not left to be inferred from the two "
+           "assertions above.\n    (A∘B)∘C: "
+        << render_reservoir(abc) << "\n    A∘(B∘C): " << render_reservoir(a_bc);
+
+    // And the cost is still paid on a REQUIRED field, exactly as in the strict-flip arm: the
+    // dropped off-path never reaches the wider union, whichever entry the hash kept.
+    EXPECT_EQ(abc.stats.unique_templates, 7U)
+        << "6 fillers + the fatal; the off-path left the document at the narrow rung. Got "
+        << abc.stats.unique_templates;
+    EXPECT_EQ(a_bc.stats.unique_templates, 8U)
+        << "6 fillers + the fatal + the off-path, which never met a binding cut on this side. Got "
+        << a_bc.stats.unique_templates;
+}
+
+// ── SPEC §12.1 — `C.stats.entropy_bits` IS RECOMPUTED FROM THE MERGED COUNTS ──────────────────
+//
+// A §12.1 clause, not one of §12.2's three, and it is deliberately its own arm. §12.1 states
+// "`C.stats.entropy_bits` is recomputed from the merged counts" in the indicative and `compose()`
+// simply never assigned the field, so every composed document omitted it — DN-56.D5's exact shape
+// on a different field, and GOVERNANCE §3 decides it the same way: the rule is derivable from the
+// inputs and correct, so the reference implementation was buggy and the spec text stands.
+//
+// WHY NOT FOLDED INTO THE IDENTITY ARM. Identity would catch it (A's tail is empty, so the merged
+// counts ARE A's counts), but identity owns the composed-CAP fix and a single red must never be
+// ambiguous about which of two independent clauses moved. The identity leg lives here instead, as
+// ③ below.
+//
+// THE ORACLE IS CLOSED-FORM ARITHMETIC, never a second entropy computation. Every count and line
+// total below is a power of two, so `det_log2_fixed` is exact (a power-of-two mantissa normalises
+// to 1.0 and every squaring step emits a zero fraction bit) and the whole reduction is an exact
+// integer divide — the expected values are not approximations.
+TEST(ComposeAlgebraTest, ComposedEntropyBitsIsRecomputedFromTheMergedCounts)
+{
+    // ── ① OVER THE MERGED COUNTS, NOT OVER THE RETAINED top_k. ──
+    // Four templates at 64 each over 256 merged lines is uniform over 4 → exactly log2(4) = 2 bits.
+    // `top_k_size` is 2 on both inputs, so the composed document PUBLISHES only two of them and
+    // lumps the rest; the entropy must still describe all four, exactly as the producer's own
+    // `entropy_bits` describes its full untruncated distribution.
+    const auto left{make_document("2026-02-01T00:00:00Z", "2026-02-01T00:01:00Z", 128, 2,
+                                  std::nullopt, {{"entropy alpha", 64}, {"entropy beta", 64}}, {})};
+    const auto right{make_document("2026-02-01T00:01:00Z", "2026-02-01T00:02:00Z", 128, 2,
+                                   std::nullopt, {{"entropy gamma", 64}, {"entropy delta", 64}},
+                                   {})};
+    const auto merged{meta::compose(left, right)};
+    ASSERT_EQ(merged.window.lines_observed, 256U);
+    ASSERT_EQ(merged.stats.unique_templates, 4U) << "four distinct templates in the union";
+    ASSERT_EQ(merged.stats.top_k.size(), 2U)
+        << "the top_k cut must BITE, or this leg cannot tell 'over the merged counts' from 'over "
+           "the retained top_k'.\n    "
+        << render_top_k(merged);
+    ASSERT_EQ(merged.stats.tail_unique, 2U) << "the other two are lumped into the tail";
+    ASSERT_TRUE(merged.stats.entropy_bits.has_value())
+        << "§12.1 orders the field recomputed; an absent one is the clause unimplemented";
+    EXPECT_DOUBLE_EQ(*merged.stats.entropy_bits, 2.0)
+        << "uniform over 4 templates at 64/256 each → log2(4) = 2 bits exactly. Over the two "
+           "RETAINED entries alone it would be (64·(8−6) + 64·(8−6))/256 = 1.0, so this value is "
+           "what separates the clause from a top_k-only reading. Got "
+        << *merged.stats.entropy_bits;
+
+    // ── ② THE LOST TAIL MASS ENTERS AS ONE RESIDUAL BUCKET. ──
+    // §12.3 makes composition lossy on a tailed input: those lines are counted in `lines_observed`
+    // but no longer attributable to any template. Dropping them normalises over a denominator the
+    // counts never reach (over-stating concentration); attributing them to a template would invent
+    // a fact. One residual bucket is the same convention `tail_summary` already uses.
+    auto heavy_left{make_document("2026-02-01T00:00:00Z", "2026-02-01T00:01:00Z", 256, 4,
+                                  std::nullopt, {{"entropy heavy left", 128}}, {})};
+    heavy_left.stats.tail_count = 128;
+    heavy_left.stats.tail_unique = 2;
+    heavy_left.stats.unique_templates = 3;
+    auto heavy_right{make_document("2026-02-01T00:01:00Z", "2026-02-01T00:02:00Z", 256, 4,
+                                   std::nullopt, {{"entropy heavy right", 128}}, {})};
+    heavy_right.stats.tail_count = 128;
+    heavy_right.stats.tail_unique = 2;
+    heavy_right.stats.unique_templates = 3;
+    const auto tailed{meta::compose(heavy_left, heavy_right)};
+    ASSERT_EQ(tailed.window.lines_observed, 512U);
+    ASSERT_EQ(tailed.stats.tail_count, 256U) << "both inputs' lumped masses carry across";
+    ASSERT_TRUE(tailed.stats.entropy_bits.has_value());
+    EXPECT_DOUBLE_EQ(*tailed.stats.entropy_bits, 1.5)
+        << "counts {128, 128} plus a residual of 256, over 512 lines: (128·(9−7) + 128·(9−7) + "
+           "256·(9−8))/512 = 768/512 = 1.5 bits. WITHOUT the residual bucket it would be "
+           "(128·2 + 128·2)/512 = 1.0, so this value is what pins the residual convention. Got "
+        << *tailed.stats.entropy_bits;
+
+    // ── ③ THE IDENTITY LEG. compose(A, ZERO) must reproduce A's entropy EXACTLY. ──
+    // A has an empty tail, so the merged counts ARE A's counts and the two reductions run over the
+    // same multiset at the same denominator. Exact equality, not a tolerance: the accumulation is
+    // integer and order-independent by construction.
+    const meta::MetaLogConfig cfg{
+        .top_k_size = 3,
+        .reservoir_size = 8,
+        .top_ngrams_size = 0,
+        .max_param_histograms = 0,
+        .emit_stability = false,
+    };
+    meta::MetaLogEngine engine_a{cfg};
+    engine_a.open_window(kT0);
+    for (int rep = 0; rep < 100; ++rep)
+    {
+        engine_a.ingest_event(make_event("alpha steady event"));
+        engine_a.ingest_event(make_event("beta steady event"));
+        engine_a.ingest_event(make_event("gamma steady event"));
+    }
+    engine_a.ingest_event(make_event("connection refused to db", insight::LogLevel::Error));
+    const auto doc_a{engine_a.close_window(kT1)};
+    meta::MetaLogEngine engine_z{cfg};
+    engine_z.open_window(kT0);
+    const auto zero{engine_z.close_window(kT1)};
+
+    ASSERT_EQ(doc_a.stats.tail_unique, 0U)
+        << "A must have an EMPTY tail, or §12.3 lossiness — not the recomputation — explains a red";
+    ASSERT_TRUE(doc_a.stats.entropy_bits.has_value())
+        << "A must carry entropy_bits or this leg is about an absent input";
+    const auto identity{meta::compose(doc_a, zero)};
+    EXPECT_EQ(identity.stats.entropy_bits, doc_a.stats.entropy_bits)
+        << "§12.2 identity over §12.1's recomputed field: A = "
+        << (doc_a.stats.entropy_bits ? std::to_string(*doc_a.stats.entropy_bits)
+                                     : std::string{"<absent>"})
+        << ", compose(A, ZERO) = "
+        << (identity.stats.entropy_bits ? std::to_string(*identity.stats.entropy_bits)
+                                        : std::string{"<absent>"});
+
+    // ── ④ AND AN EVENT-FREE COMPOSITION HAS NO DISTRIBUTION TO DESCRIBE. ──
+    // The producer omits the field when lines_observed is 0; compose() must make the same call
+    // rather than emitting a 0.0 that would read as "perfectly concentrated".
+    const auto empty{meta::compose(zero, zero)};
+    ASSERT_EQ(empty.window.lines_observed, 0U);
+    EXPECT_FALSE(empty.stats.entropy_bits.has_value())
+        << "zero lines is an absent distribution, not an entropy of zero";
 }
 
 } // namespace
