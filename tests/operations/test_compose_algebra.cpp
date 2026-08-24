@@ -958,5 +958,166 @@ TEST(ComposeAlgebraTest, ComposedEntropyBitsIsRecomputedFromTheMergedCounts)
         << "zero lines is an absent distribution, not an entropy of zero";
 }
 
+// ── SPEC §12.2 ASSOCIATIVITY — THE FALSIFIER FOR DN-56.D8 PROBLEM (e) ────────────────────────
+//
+// WHAT THESE TWO ARMS DECIDE, AND WHY THEY ARE NOT A DUPLICATE OF THE CAPPED PAIR ABOVE.
+// The `0.10.0` RFC body asserts to EXTERNAL implementers of a public, vendor-neutral standard
+// that §12.2's associativity clause is violated BY THE FORMAT, not merely by our composed
+// reservoir cap. Problem (e) rests on that sentence. If it were false — if only our own cap broke
+// §12.2 — the claim would have to be retracted to exactly the audience `metalog-spec` exists to
+// serve. So the sentence needs a falsifier that runs, and the falsifier has to reach the property
+// with the reservoir mechanism ENTIRELY OUT OF THE PICTURE.
+//
+// THESE DOCUMENTS DECLARE NO RESERVOIR CAP AND CARRY NO RESERVOIR ENTRY. Not "a cap so slack it
+// cannot bind" — none at all. `min_declared_cap(absent, absent)` is absent, the composed
+// admission bound is `res_cands.size()`, and `res_cands` is built from the union of the inputs'
+// reservoir arrays, which are empty. Every line of `rederive_reservoir` is therefore inert here
+// and cannot be what any divergence below is about. The ONE remaining lossy operator is
+// `top_k_size` truncation, which is §3.5's oldest mechanism and predates DN-56 entirely.
+//
+// THE MECHANISM, IN ONE SENTENCE: a cut entry leaves the document ENTIRELY. `compose()` rebuilds
+// its distribution from the inputs' carried per-template arrays (`aggregate_top_k` +
+// `aggregate_reservoir`), so a template that fell below an EARLIER rung's `top_k_size` is no
+// longer a template at the next rung — only its mass survives, inside `tail_count`. Mass is
+// associative; a SET is not. Bracketing decides which rungs a template must survive, so it
+// decides the membership of the final distribution, and `stats.unique_templates` is REQUIRED.
+//
+// NO TIE-BREAK IS LOAD-BEARING HERE, DELIBERATELY. The four counts are 10 / 9 / 8 / 1, all
+// distinct, so `state.ordered`'s sort never reaches its `template_id` tie-break and no
+// `template_id` hash decides any outcome below. A sibling arm in this file
+// (…ResolvesAnExactTieByThe MeaningBlindTemplateId) exists precisely because ITS pair does turn on
+// a hash; this one must not, or the RFC's claim about the FORMAT would be a claim about our
+// content-hash instead.
+
+// ARM 1 — THE DIVERGENCE. `(A∘B)∘C` and `A∘(B∘C)` disagree on a REQUIRED field with no reservoir
+// anywhere, so DN-56.D8 (e) stands: §12.2's associativity SHOULD is broken by the format's own
+// top_k truncation, independently of anything DN-56 introduced.
+//
+// THE ARITHMETIC, DERIVED — every number written out, none transcribed from a run.
+//   A = {a:10, b:1} over 11 lines · B = {c:9} over 9 · C = {d:8} over 8 · top_k_size 2 everywhere.
+//   A∘B      : ordered a:10, c:9, b:1 → unique 3; the cut at 2 keeps {a, c} and drops b into
+//              tail_count=1, tail_unique=1. b IS NO LONGER A TEMPLATE.
+//   (A∘B)∘C  : ordered a:10, c:9, d:8       → unique 3. b cannot re-enter: AB carries no entry
+//              for it, only the lumped 1. Cut at 2 → tail d:8; tail_count = 8 + 1(AB's) = 9.
+//   B∘C      : ordered c:9, d:8             → unique 2; nothing is cut (2 entries, cut at 2).
+//   A∘(B∘C)  : ordered a:10, c:9, d:8, b:1  → unique 4. b survived A's own cut (A has exactly 2
+//              templates at top_k_size 2), so it reaches the final merge as a TEMPLATE.
+//              Cut at 2 → tail {d:8, b:1}; tail_count = 9, tail_unique = 2.
+//   So unique_templates is 3 vs 4 and tail_unique is 1 vs 2, while lines_observed (28) and
+//   tail_count (9) AGREE. That agreement is the load-bearing half: no mass is lost or invented,
+//   so the divergence cannot be dismissed as a counting bug — it is the loss of IDENTITY, which
+//   is precisely what §12.2's SHOULD is about.
+//
+// Reddens if: `compose()` ever starts carrying a cut template's identity across a rung (which
+// would make (e) wrong and is the outcome the RFC must be re-derived against), or if
+// `unique_templates` stops being `state.ordered.size()`.
+TEST(ComposeAlgebraTest, TopKTruncationAloneBreaksAssociativityWithNoReservoirAnywhere)
+{
+    constexpr std::size_t kCut{2};
+    const auto a{make_document("2026-03-01T00:00:00Z", "2026-03-01T00:01:00Z", 11, kCut,
+                               std::nullopt, {{"assoc alpha", 10}, {"assoc beta", 1}}, {})};
+    const auto b{make_document("2026-03-01T00:01:00Z", "2026-03-01T00:02:00Z", 9, kCut,
+                               std::nullopt, {{"assoc gamma", 9}}, {})};
+    const auto c{make_document("2026-03-01T00:02:00Z", "2026-03-01T00:03:00Z", 8, kCut,
+                               std::nullopt, {{"assoc delta", 8}}, {})};
+
+    // The mechanism assertion FIRST: if the reservoir machinery were live on these inputs, nothing
+    // below would be a statement about top_k truncation.
+    ASSERT_TRUE(a.stats.reservoir.empty() && b.stats.reservoir.empty() && c.stats.reservoir.empty())
+        << "the falsifier requires NO reservoir entries — the reservoir must be out of the picture";
+    ASSERT_FALSE(a.stats.reservoir_size.has_value())
+        << "and NO declared cap: an absent cap is not a claim (§8 clause 4), so `min_declared_cap` "
+           "returns absent and the composed admission bound is the candidate count itself";
+
+    const auto ab{meta::compose(a, b)};
+    ASSERT_EQ(ab.stats.top_k_size, kCut);
+    ASSERT_EQ(ab.stats.unique_templates, 3U)
+        << "a, c and b all merge in:\n    " << render_top_k(ab);
+    ASSERT_EQ(ab.stats.top_k.size(), 2U)
+        << "the cut must BITE at this rung, or the whole arm is vacuous:\n    " << render_top_k(ab);
+    ASSERT_EQ(ab.stats.tail_unique, 1U) << "b is cut here — this is the irreversible step";
+    ASSERT_EQ(ab.stats.tail_count, 1U) << "and its whole mass (1) becomes lumped tail";
+    ASSERT_FALSE(ab.stats.reservoir_size.has_value())
+        << "neither input declared a cap, so the composed document declares none either";
+    ASSERT_TRUE(ab.stats.reservoir.empty()) << "and admits nothing — there were no candidates";
+
+    const auto ab_c{meta::compose(ab, c)};
+    const auto bc{meta::compose(b, c)};
+    ASSERT_EQ(bc.stats.unique_templates, 2U) << "c and d only — nothing is cut on this side";
+    const auto a_bc{meta::compose(a, bc)};
+
+    // ── The two totals AGREE: no mass is lost or invented by either bracketing. ──
+    EXPECT_EQ(ab_c.window.lines_observed, 28U);
+    EXPECT_EQ(a_bc.window.lines_observed, 28U) << "11 + 9 + 8 either way";
+    EXPECT_EQ(ab_c.stats.tail_count, 9U)
+        << "8 (d) + 1 (AB's lumped b). Got " << ab_c.stats.tail_count;
+    EXPECT_EQ(a_bc.stats.tail_count, 9U)
+        << "8 (d) + 1 (b, still a template until this cut). Got " << a_bc.stats.tail_count;
+
+    // ── And the SETS do not. This is DN-56.D8 problem (e), measured. ──
+    EXPECT_EQ(ab_c.stats.unique_templates, 3U)
+        << "(A∘B)∘C sees a, c, d — b left the document at the A∘B rung and cannot re-enter.\n    "
+        << render_top_k(ab_c);
+    EXPECT_EQ(a_bc.stats.unique_templates, 4U)
+        << "A∘(B∘C) sees a, c, d AND b — b never met a binding cut before the final merge.\n    "
+        << render_top_k(a_bc);
+    EXPECT_NE(ab_c.stats.unique_templates, a_bc.stats.unique_templates)
+        << "§12.2's associativity SHOULD, violated on a REQUIRED field with the reservoir "
+           "mechanism entirely inert: (A∘B)∘C = "
+        << ab_c.stats.unique_templates << ", A∘(B∘C) = " << a_bc.stats.unique_templates
+        << ". If these ever agree, DN-56.D8 problem (e) is WRONG and the `0.10.0` RFC body must be "
+           "re-derived before it is posted.";
+    EXPECT_EQ(ab_c.stats.tail_unique, 1U) << "only d is a visible tail template on this side";
+    EXPECT_EQ(a_bc.stats.tail_unique, 2U)
+        << "d and b are both visible tail templates on this side — the cardinality diverges too, "
+           "because an earlier fold destroyed b's identity, not merely its rank";
+}
+
+// ARM 2 — THE CONTROL, and it is what makes ARM 1 attributable. THE SAME THREE DOCUMENTS at a
+// `top_k_size` that cannot cut are perfectly associative: every required field agrees. So the
+// divergence above is caused by the truncation and by nothing else in `compose()` — not by the
+// merge order, not by the line-total denominators, not by any residual of the reservoir path.
+//
+// A boundary asserted from one side only is a golden re-pinned for green; this is the other side.
+//
+//   top_k_size 4 · A = {a:10, b:1} · B = {c:9} · C = {d:8}
+//   A∘B = {a:10, c:9, b:1}, cut at min(4,3)=3 → nothing lumped, tail empty.
+//   Both bracketings therefore end at the full merged distribution {a:10, c:9, d:8, b:1} over 28
+//   lines, with tail_count 0 and tail_unique 0.
+TEST(ComposeAlgebraTest, TheSameDocumentsStayAssociativeWhenTheTopKCutDoesNotBite)
+{
+    constexpr std::size_t kSlack{4};
+    const auto a{make_document("2026-03-01T00:00:00Z", "2026-03-01T00:01:00Z", 11, kSlack,
+                               std::nullopt, {{"assoc alpha", 10}, {"assoc beta", 1}}, {})};
+    const auto b{make_document("2026-03-01T00:01:00Z", "2026-03-01T00:02:00Z", 9, kSlack,
+                               std::nullopt, {{"assoc gamma", 9}}, {})};
+    const auto c{make_document("2026-03-01T00:02:00Z", "2026-03-01T00:03:00Z", 8, kSlack,
+                               std::nullopt, {{"assoc delta", 8}}, {})};
+
+    const auto ab_c{meta::compose(meta::compose(a, b), c)};
+    const auto a_bc{meta::compose(a, meta::compose(b, c))};
+
+    ASSERT_EQ(ab_c.stats.tail_unique, 0U)
+        << "no template may be cut on this arm, or it is not a control:\n    "
+        << render_top_k(ab_c);
+    ASSERT_EQ(a_bc.stats.tail_unique, 0U)
+        << "likewise on the other bracketing:\n    " << render_top_k(a_bc);
+
+    EXPECT_EQ(ab_c.stats.unique_templates, 4U) << render_top_k(ab_c);
+    EXPECT_EQ(a_bc.stats.unique_templates, 4U) << render_top_k(a_bc);
+    EXPECT_EQ(ab_c.stats.unique_templates, a_bc.stats.unique_templates)
+        << "same documents, same reservoir posture (none), only the cut removed — associativity "
+           "returns. That is what attributes ARM 1's divergence to top_k truncation.";
+    EXPECT_EQ(top_k_signature(ab_c), top_k_signature(a_bc))
+        << "the emitted top_k must agree as a SEQUENCE, not merely as a set:\n    left:  "
+        << render_top_k(ab_c) << "\n    right: " << render_top_k(a_bc);
+    EXPECT_EQ(ab_c.window.lines_observed, a_bc.window.lines_observed);
+    EXPECT_EQ(ab_c.stats.tail_count, a_bc.stats.tail_count);
+    EXPECT_EQ(ab_c.stats.tail_count, 0U) << "nothing was ever lumped";
+    EXPECT_EQ(ab_c.stats.entropy_bits, a_bc.stats.entropy_bits)
+        << "§12.1's recomputation runs over the same merged multiset on both sides, so it agrees "
+           "exactly — an integer reduction over an identically ordered distribution";
+}
+
 } // namespace
 // NOLINTEND
