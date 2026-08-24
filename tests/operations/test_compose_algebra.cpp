@@ -1228,5 +1228,171 @@ TEST(ComposeAlgebraTest, MinOverDeclaredCapsSurvivesASameProducerAbsentCapPair)
         << render_reservoir(quiet_busy) << "\n    right: " << render_reservoir(busy_quiet);
 }
 
+// ── WHICH OF THE THREE `min` CAP SITES THE §2.4 GATE LEAVES REACHABLE (DN-56.D2 / P3) ─────────
+//
+// THE ARM ABOVE PROVED A STAMP GATES VALUES AND NOT PRESENCE. This one asks the question that
+// leaves open, and the answer is not the same at all three cap sites: **when the two inputs are
+// both STAMPED, `compose()` never reaches the `min` at two of them.**
+//
+// `retention_profile_name` (metalog.api.cppm) derives the §2.4 stamp from exactly four axes —
+// `salience-1/k<top_k_size>-m<reservoir_size>-c<per_kind_cap>-e<error_reserve>` — and it is
+// INJECTIVE over that tuple, a property its own suite pins. `compose()`'s gate throws when both
+// inputs carry a stamp and the stamps differ. Compose those two facts:
+//
+//   * `stats.top_k_size` IS axis `k`. Two stamped documents whose `top_k_size` differs carry
+//     different stamps, so the gate at compose.cpp:674 throws BEFORE the `min` at :723 runs. That
+//     `min` is a no-op on every stamped pair `compose()` accepts.
+//   * `stats.reservoir_size` IS axis `m`, so the same holds for two DECLARED reservoir caps that
+//     differ. Its absent branch is a different matter and the arm above owns it — absence is not
+//     a value the stamp can gate.
+//   * `behavior.top_ngrams_size` IS NOT IN THE STAMP AT ALL. Neither is `ngram_size` nor
+//     `max_ngram_keys`: the derivation names four axes and none of them is an n-gram parameter.
+//     So two documents from the SAME production configuration line can differ here while carrying
+//     byte-identical stamps, and the `min` at compose.cpp:592 is the ONE declared-cap `min` that
+//     is live between two stamped documents.
+//
+// WHY THIS IS NOT A CURIOSITY. The shipped pipeline stamps: insight-eidos
+// engine/src/pipeline/insight_pipeline.cpp:49 sets `config.retention_profile =
+// metalog::retention_profile_name(config)` on every run. So the reachability measured here is the
+// reachability on the product's own path, not a property of hand-built fixtures. §12.2's
+// commutativity MUST still wants `min` at all three sites — a conformant producer is not obliged
+// to stamp anything, and `MetaLogConfig::retention_profile` DEFAULTS TO UNSET — but an argument
+// that reads "the min protects the ordinary compose of two differently-capped documents" is true
+// only where the stamp is absent, and that is worth stating before it is written into a standard.
+//
+// WHAT REDDENS EACH ARM, and they are four different edits:
+//   A. adding `top_ngrams_size` to the stamp derivation      → arm 2's stamp-equality ASSERT.
+//   B. removing `top_k_size` from the stamp derivation       → arm 1's throw expectation.
+//   C. replacing the `min` at :592 with a pick-a-side        → arm 2's cap and its commutation.
+//   D. replacing the `min` at :723 with a pick-a-side        → arm 3, the unstamped control.
+// Arm 3 is what stops this test from reading as "the top-K min is dead code": it is not dead, it
+// is reachable exactly where the stamp is absent, and that arm holds the positive boundary.
+
+// One window of four distinct templates, driven so the bigram ring holds more than any cap below
+// truncates to — otherwise a `min` could be asserted while no truncation ever bit.
+void drive_ngram_window(meta::MetaLogEngine& engine)
+{
+    for (int rep = 0; rep < 12; ++rep)
+    {
+        engine.ingest_event(make_event("ngram alpha step"));
+        engine.ingest_event(make_event("ngram beta step"));
+        engine.ingest_event(make_event("ngram gamma step"));
+        engine.ingest_event(make_event("ngram delta step"));
+    }
+}
+
+TEST(ComposeAlgebraTest, TheRetentionStampDecidesWhichDeclaredCapMinIsReachable)
+{
+    constexpr std::size_t kNgramsWide{5};
+    constexpr std::size_t kNgramsNarrow{2};
+    constexpr std::size_t kTopKWide{6};
+    constexpr std::size_t kTopKNarrow{3};
+
+    const auto stamped{[](std::size_t top_k, std::size_t top_ngrams)
+                       {
+                           meta::MetaLogConfig cfg{
+                               .top_k_size = top_k,
+                               .reservoir_size = 0,
+                               .top_ngrams_size = top_ngrams,
+                               .max_param_histograms = 0,
+                               .emit_stability = false,
+                           };
+                           cfg.retention_profile = meta::retention_profile_name(cfg);
+                           return cfg;
+                       }};
+
+    const auto close_one{[](const meta::MetaLogConfig& cfg)
+                         {
+                             meta::MetaLogEngine engine{cfg};
+                             engine.open_window(kT0);
+                             drive_ngram_window(engine);
+                             return engine.close_window(kT1);
+                         }};
+
+    // ── ARM 1. `top_k_size` is axis `k`, so two stamped documents that differ in it are REFUSED
+    // at the §2.4 gate and the `min` at compose.cpp:723 never runs.
+    const auto wide_k{stamped(kTopKWide, kNgramsWide)};
+    const auto narrow_k{stamped(kTopKNarrow, kNgramsWide)};
+    ASSERT_NE(wide_k.retention_profile, narrow_k.retention_profile)
+        << "top_k_size must be an axis of the §2.4 stamp, or arm 1 is testing nothing:\n    wide:   "
+        << wide_k.retention_profile.value_or("<unset>")
+        << "\n    narrow: " << narrow_k.retention_profile.value_or("<unset>");
+
+    const auto doc_wide_k{close_one(wide_k)};
+    const auto doc_narrow_k{close_one(narrow_k)};
+    ASSERT_EQ(doc_wide_k.retention_profile, wide_k.retention_profile)
+        << "close_window must stamp the document from the config (engine.cpp:518)";
+
+    EXPECT_THROW((void)meta::compose(doc_wide_k, doc_narrow_k), std::invalid_argument)
+        << "two STAMPED documents differing only in top_k_size must be refused by the §2.4 gate "
+           "BEFORE compose() reaches its top-K min — stamps were "
+        << doc_wide_k.retention_profile.value_or("<unset>") << " vs "
+        << doc_narrow_k.retention_profile.value_or("<unset>");
+    EXPECT_THROW((void)meta::compose(doc_narrow_k, doc_wide_k), std::invalid_argument)
+        << "and the refusal is symmetric — a gate that fires on one bracketing only would make "
+           "§12.2's commutativity MUST depend on argument order";
+
+    // ── ARM 2. `top_ngrams_size` is in NO axis, so the same two stamps compose and the `min` at
+    // compose.cpp:592 is the one declared-cap min that is live between stamped documents.
+    const auto wide_n{stamped(kTopKWide, kNgramsWide)};
+    const auto narrow_n{stamped(kTopKWide, kNgramsNarrow)};
+    ASSERT_EQ(wide_n.retention_profile, narrow_n.retention_profile)
+        << "top_ngrams_size must NOT be an axis of the §2.4 stamp, or arm 2's premise is gone and "
+           "the n-gram min is unreachable too:\n    wide:   "
+        << wide_n.retention_profile.value_or("<unset>")
+        << "\n    narrow: " << narrow_n.retention_profile.value_or("<unset>");
+
+    const auto doc_wide_n{close_one(wide_n)};
+    const auto doc_narrow_n{close_one(narrow_n)};
+    ASSERT_TRUE(doc_wide_n.behavior.has_value() && doc_narrow_n.behavior.has_value())
+        << "both inputs must carry a behavior block, or the third cap site is not on the path";
+    ASSERT_EQ(doc_wide_n.behavior->top_ngrams_size, kNgramsWide);
+    ASSERT_EQ(doc_narrow_n.behavior->top_ngrams_size, kNgramsNarrow);
+    ASSERT_GT(doc_wide_n.behavior->top_ngrams.size(), kNgramsNarrow)
+        << "the wide side must hold more entries than the narrow cap, or the truncation the min "
+           "governs never bites and this arm asserts a number nothing enforces — held "
+        << doc_wide_n.behavior->top_ngrams.size();
+
+    const auto composed{meta::compose(doc_wide_n, doc_narrow_n)};
+    const auto flipped{meta::compose(doc_narrow_n, doc_wide_n)};
+    ASSERT_TRUE(composed.behavior.has_value() && flipped.behavior.has_value());
+    EXPECT_EQ(composed.behavior->top_ngrams_size, kNgramsNarrow)
+        << "the composed n-gram cap is the MINIMUM over what the inputs declared, not a side — "
+           "got " << composed.behavior->top_ngrams_size << " from " << kNgramsWide << " and "
+        << kNgramsNarrow;
+    EXPECT_EQ(flipped.behavior->top_ngrams_size, composed.behavior->top_ngrams_size)
+        << "and it is symmetric (§12.2 commutativity MUST) — picking a side would show up here "
+           "and nowhere else";
+    EXPECT_LE(composed.behavior->top_ngrams.size(), kNgramsNarrow)
+        << "the array is re-truncated to the composed cap it declares (§8 clause 4), or the "
+           "document declares a bound it does not honour — held "
+        << composed.behavior->top_ngrams.size();
+
+    // ── ARM 3. The positive boundary: UNSTAMPED, the top-K min is reachable and it is a min.
+    // Without this arm, arm 1 would read as a claim that compose.cpp:723 is dead code.
+    auto unstamped_wide{wide_k};
+    auto unstamped_narrow{narrow_k};
+    unstamped_wide.retention_profile.reset();
+    unstamped_narrow.retention_profile.reset();
+
+    const auto doc_unstamped_wide{close_one(unstamped_wide)};
+    const auto doc_unstamped_narrow{close_one(unstamped_narrow)};
+    ASSERT_FALSE(doc_unstamped_wide.retention_profile.has_value())
+        << "MetaLogConfig::retention_profile defaults to unset and must stay clearable, or the "
+           "gate has become unconditional and a conformant unstamped producer cannot compose";
+
+    const auto unstamped_composed{meta::compose(doc_unstamped_wide, doc_unstamped_narrow)};
+    EXPECT_EQ(unstamped_composed.stats.top_k_size, kTopKNarrow)
+        << "with no stamp to gate them, two differing top-K caps DO reach the min at "
+           "compose.cpp:723 and it takes the smaller — got "
+        << unstamped_composed.stats.top_k_size << " from " << kTopKWide << " and " << kTopKNarrow;
+    EXPECT_EQ(meta::compose(doc_unstamped_narrow, doc_unstamped_wide).stats.top_k_size,
+              unstamped_composed.stats.top_k_size)
+        << "symmetric on the unstamped path too";
+    EXPECT_FALSE(unstamped_composed.retention_profile.has_value())
+        << "neither input stated a retention contract, so the composed document must not invent "
+           "one (carry_processing_identifier)";
+}
+
 } // namespace
 // NOLINTEND
