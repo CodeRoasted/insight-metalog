@@ -240,8 +240,12 @@ cube_diff_of(const CubeBlock& previous, const CubeBlock& current,
              const std::unordered_map<std::string, OrdinalDrift>& current_shift_by_component = {});
 
 // Compose two cube blocks (§16.7 / §12.1): the distributive counts merge, but the
-// closure does NOT — the merged cube is RE-CLOSED from the recovered base. nullopt
-// unless their axes are equal. As with cube_diff_of, the "both present, else omit"
+// closure does NOT — the merged cube is RE-CLOSED from the recovered base.
+//
+// NO AXES-EQUALITY GATE HERE EITHER (DN-42.D17 §4) — same shape as cube_diff_of above: one
+// `return`, always engaged, rolling the pair to its MINIMAL COMMON COLLAPSE (§C3) rather than
+// refusing unequal stamps. §2.4 freezes the axis SET per canonicalization_version, NOT the
+// per-window collapse stamps (§16.10). As with cube_diff_of, the "both present, else omit"
 // presence-check is the CALLER's job (in `metalog::compose`); takes CubeBlock by ref.
 [[nodiscard]] std::optional<CubeBlock> compose_cubes(const CubeBlock& lhs, const CubeBlock& rhs);
 
