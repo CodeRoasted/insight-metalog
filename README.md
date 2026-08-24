@@ -44,7 +44,7 @@ clauses, and conflating them is how a green gets over-read:
 
 | subject | measured | result |
 |---|---|---|
-| **what this producer emits** — 18 documents regenerated from source at HEAD | `metalog_validate.py --expect-documents 18` | **0 errors · 0 cap-exceeded · 0 legal-but-undescribed · CONFORMANT** |
+| **what this producer emits** — 19 documents regenerated from source at HEAD | `metalog_validate.py --expect-documents 19` | **0 errors · 0 cap-exceeded · 0 legal-but-undescribed · CONFORMANT** |
 | **what we have PUBLISHED** — `coderoast-hub/determinism/metalog.determinism_golden.txt` | same command | **0 errors · 0 legal-but-undescribed · CONFORMANT** (17 documents) |
 
 The published bytes are a **snapshot**, not a live measurement: they can drift from the first
