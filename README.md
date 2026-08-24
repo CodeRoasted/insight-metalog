@@ -23,14 +23,16 @@ Raw logs
 
 ## Determinism
 
-A MetaLog document is a **deterministic** function of its input window — the same canonical events produce a byte-identical fingerprint, and `compose()` / `diff()` are deterministic too, so *same inputs ⇒ same diff* on any machine (bit-identity is a standing golden-hash gate, built on canon's `det_math`). This is the **format** link of the pipeline's end-to-end determinism: content (`insight-canon`) → transport (`coderoast-ipc`) → format (`insight-metalog`).
+A MetaLog document is a **deterministic** function of its input window — the same canonical events produce a byte-identical fingerprint, and `compose()` / `diff()` are deterministic too, so *same inputs ⇒ same diff* on any machine (built on canon's `det_math`). This is the **format** link of the pipeline's end-to-end determinism: content (`insight-canon`) → transport (`coderoast-ipc`) → format (`insight-metalog`).
+
+**What the standing bit-identity gate actually replays, stated exactly**, because that parenthesis used to cover all three verbs and the gate only ever covered one. The cross-leg digest (`scripts/determinism_bitidentity.sh` → `.github/workflows/golden.yaml`) replays **documents** and, since 2026-08-24, the **diffs** taken between them — a diff per corpus section plus the two synthetic pairs. `compose()` has **no section in that digest**: its determinism rests on the unit suite and on the same integer/fixed-point core, and it has never been replayed across a toolchain leg. That is a stated gap, not an implied green.
 
 ## Package
 
 | Field | Value |
 |---|---|
 | Conan name | `insight_metalog` |
-| Spec conformance | MetaLog v0.9.0 — **the producer clears §8 clauses 1 and 4**, and the published determinism evidence validates CONFORMANT, see below |
+| Spec conformance | MetaLog v0.9.0 — **documents clear §8 clauses 1 and 4; diffs do NOT, by one member**, and the published determinism evidence validates CONFORMANT, see below |
 | Visibility | CodeRoast-owned package |
 
 ### Conformance, stated exactly
@@ -40,12 +42,34 @@ validates against `schema/metalog.v0.schema.json`"* — *"the schema is the test
 1**"*. Since v0.9.0, clause 4 is machine-decided too — in the shipped validator rather than the
 schema, because `maxItems` takes a constant while the bound is a sibling field's value — so a
 producer that declares a cap is held to it. Two different things can be measured against those
-clauses, and conflating them is how a green gets over-read:
+clauses, and conflating them is how a green gets over-read.
+
+This producer serializes **two** artifact species and the standard ships a schema for each, so
+there are three measurements here, not two. Until 2026-08-24 there were two: the diff schema had
+never been applied to our output at all, and the row that says NONCONFORMANT below is what
+appeared the moment it was.
 
 | subject | measured | result |
 |---|---|---|
-| **what this producer emits** — 19 documents regenerated from source at HEAD | `metalog_validate.py --expect-documents 19` | **0 errors · 0 cap-exceeded · 0 legal-but-undescribed · CONFORMANT** |
-| **what we have PUBLISHED** — `coderoast-hub/determinism/metalog.determinism_golden.txt` | same command | **0 errors · 0 legal-but-undescribed · CONFORMANT** (17 documents) |
+| **the documents this producer emits** — 23, regenerated from source at HEAD | `metalog_validate.py --kind metalog --expect-documents 23` | **0 errors · 0 cap-exceeded · 0 legal-but-undescribed · CONFORMANT** |
+| **the diffs this producer emits** — 9, regenerated from source at HEAD | `metalog_validate.py --kind diff --expect-documents 9` | **1 error in 1 of 9 · NONCONFORMANT** — `cube_diff.axes[].kind` |
+| **what we have PUBLISHED** — `coderoast-hub/determinism/metalog.determinism_golden.txt` | `--kind metalog --expect-documents 17` | **0 errors · 0 legal-but-undescribed · CONFORMANT** (17 documents; the snapshot carries no diff, so the diff row has no published twin yet) |
+
+**The diff row is a real, open §8 clause-1 failure and is not being waived.** Eight of the nine
+diffs validate; the one that does not is the `--latency-shift` pair, whose `cube_diff` declares
+the diff-only differential axis with `kind: "ordinal"` while the schema closes that enum to
+`["categorical","chain"]`. Which side moves is a spec question under
+`metalog-spec/GOVERNANCE.md` §3, not a local edit. Both commands above are run together by
+`scripts/spec_conformance_gate.sh`, which **exits 1 today** — that is the gate working, and the
+number to watch is the diff row flipping to CONFORMANT, never the gate being taught to look
+away.
+
+The gate also refuses to pass unless its diff corpus witnesses three shapes (`DN-42.D18`): a
+`cube_diff` carrying a **differential axis** with a border cell pinning it, a diff of two cubes
+at **different collapse depths** (§16.10 compare-at-min), and a `cube_diff` with `axes` and **no
+border at all** — this producer's ordinary no-change output. A corpus holding only plain 3-D
+borders would be green and blind on exactly the shape that failed, so the population is a
+precondition rather than a hope.
 
 The published bytes are a **snapshot**, not a live measurement: they can drift from the first
 row whenever the producer moves ahead of the published evidence, which is why both are measured
