@@ -336,8 +336,12 @@ jobs:
           # than `LC_ALL=C sort` gives — a five-leg divergence with no code change behind it, waiting
           # for the first corpus filename that mixes `_`/`.`/`-` or case. The Linux driver pins
           # LC_ALL=C; this pins the ordinal comparer, which is the same order.
+          # -Path wildcard, never -Filter: `-Filter` goes to FindFirstFile, which matches a file's
+          # 8.3 SHORT name too, so `*.log` there also takes `<name>.logfile`. The Linux driver globs
+          # `*.log`. Two legs enumerating different file sets is the same failure as two legs
+          # enumerating different sections, one directory over.
           $corpus = @{}
-          Get-ChildItem "$env:GITHUB_WORKSPACE/scripts/determinism_corpus" -Filter *.log -File |
+          Get-ChildItem -Path "$env:GITHUB_WORKSPACE/scripts/determinism_corpus/*.log" -File |
             ForEach-Object { $corpus[$_.Name] = $_.FullName }
           $names = [string[]]$corpus.Keys
           [Array]::Sort($names, [StringComparer]::Ordinal)
