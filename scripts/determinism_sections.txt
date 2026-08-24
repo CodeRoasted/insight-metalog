@@ -1,0 +1,65 @@
+# The determinism digest's SYNTHETIC section roster — the ONE source every emitter reads, and the
+# one place a section's identity and its reason for existing are written down.
+#
+# The digest is `### <name> ###` headers with the fixture's raw stdout under each, and it has two
+# kinds of section. The committed CORPUS sections are enumerated from scripts/determinism_corpus/
+# on disk by every emitter, so a corpus file added tomorrow is demanded on arrival. The SYNTHETIC
+# scenarios below exist only as a fixture flag — there is nothing on disk to derive them from, so
+# they used to be hand-written TWICE: once in scripts/determinism_bitidentity.sh (the four Linux
+# legs) and once in .github/workflows/golden.yaml's PowerShell (the MSVC leg). On 2026-08-24 the
+# PowerShell copy sat two sections behind for the seven hours between --latency-shift /
+# --collapse-depths landing (1b4f7b4) and this file. The compare demands five byte-identical legs,
+# so the divergence was a guaranteed red on the gate's next run — and for this repo that run is
+# the tag, on the one leg no Linux desk can reproduce.
+#
+# FORMAT — one section per line, in EMISSION ORDER:
+#
+#     <fixture flag> <annotation>
+#
+# The whole line IS the header text: an emitter writes `### <line> ###\n` (LF, ASCII) and then
+# runs the fixture with the line's FIRST FIELD as its single argument. Order is load-bearing —
+# the five digests are compared byte-for-byte, so a reordered roster is a divergence, not a
+# cosmetic edit. Lines starting with `#`, and blank lines, are ignored.
+#
+# Adding a section is a fixture branch plus a line here, and nothing else. Never re-enumerate
+# these anywhere: scripts/determinism_sections_check.sh reds when this roster and the fixture's
+# dispatch disagree in either direction, and when an emitter grows a hand-written `### --… ###`
+# header or stops reading this file.
+#
+# What the -O/-ffp corners buy over these sections: a MetaLogDiff is where this producer's
+# floating point lives (kl/js divergence, frequencies, entropy bits), so the
+# -ffp-contract{off,fast} cells are load-bearing on the diff lines in a way they never are on a
+# pure-integer document.
+
+# The ADR-31.D8 item-reservoir at its admit/evict boundary, at the Sift BATCH tuple (M=128).
+--reservoir-nearfull (ADR-31.D8 synthetic M=128)
+
+# The SECOND ADR-31.D8 arm, at the tuple the streaming surface SHIPS — salience-1/k128-m64-c0-e16,
+# where the error-class reserve is live and the batch arm has no opinion. Without it the five-leg
+# proof never runs at the deployed configuration.
+--reservoir-streaming (ADR-31.D8 shipped streaming tuple k128-m64-c0-e16)
+
+# A window that FIRES a §C3 dimensional collapse, so the collapse guardrail's content-driven
+# axis-selection tie-break is proven cross-leg.
+--cube-collapse (SecC3 dimensional-collapse guardrail)
+
+# The SPEC §4 accounting-bound window — the ONLY section of this digest whose document CARRIES
+# `behavior.dropped_ngram_observations`. Every other section stays under `max_ngram_keys`, and §4
+# reads an absent key as an affirmative zero, so without this one no leg has ever compared bytes
+# for a document that has the key at all.
+--ngram-cap (Sec4 n-gram accounting bound BINDING)
+
+# The O4b service-topology over-cap window: the emitted service_edges block rides the top-K
+# select's canonical-key tie-break, which is what proves that select bit-identical across legs.
+--service-edges (O4b service-topology over-cap top-K tie-break)
+
+# A window PAIR: it emits both documents and the `cube_diff`-bearing MetaLogDiff between them. The
+# §13.6 differential axis is EMERGENT-AT-DIFF — it has no stored-cube domain, so no single-window
+# section can produce one — and a MetaLogDiff is the SECOND artifact species this producer
+# serializes, the one insight-eidos republishes verbatim as `raw[].diff` in every Sift change
+# report.
+--latency-shift (Sec13.6 cube_diff differential axis)
+
+# The §16.10 compare-at-min PAIR, whose two cubes sit at DIFFERENT collapse depths so the diff's
+# axes equal neither input's — the shape §13.6's example text denies and §16.10 mandates.
+--collapse-depths (Sec16.10 compare-at-min, axes equal neither input)

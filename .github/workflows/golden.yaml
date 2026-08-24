@@ -7,14 +7,14 @@ name: Determinism Golden Proof
 #
 #   5 legs — gcc-x86 · clang-x86 · gcc-arm64 · clang-arm64 · msvc — each builds the canon+metalog MODULE
 #   TOWER FROM SOURCE (Approach-B det_harness: add_subdirectory(canon)+add_subdirectory(metalog) + the
-#   determinism_fixture) and EMITS its digest over the committed corpus + the TWO ADR-31.D8 reservoir arms
-#   (--reservoir-nearfull, the Sift BATCH tuple; --reservoir-streaming, the tuple the streaming surface
-#   SHIPS — salience-1/k128-m64-c0-e16, where the error-class reserve is live), the §C3 --cube-collapse,
-#   the §4 --ngram-cap (the only section carrying `behavior.dropped_ngram_observations`)
-#   and the O4b --service-edges scenarios. The compare job asserts all five are
-#   byte-identical: that IS the proof (no committed golden
-#   to go stale). Any divergence FAILS, gating the release. The agreed digest is uploaded as
-#   `determinism-golden` — the Release attaches it (per-release artifact, never committed).
+#   determinism_fixture) and EMITS its digest over the committed corpus (scripts/determinism_corpus/,
+#   off disk) plus every synthetic scenario in scripts/determinism_sections.txt, which owns that
+#   roster and the reason each row is in it. WHAT is replayed is NOT enumerated here or in any
+#   emitter: an enumeration written twice is what put the MSVC leg two sections behind the Linux
+#   legs on 2026-08-24, under a compare that demands five byte-identical digests. The compare job
+#   asserts all five agree: that IS the proof (no committed golden to go stale). Any divergence
+#   FAILS, gating the release. The agreed digest is uploaded as `determinism-golden` — the Release
+#   attaches it (per-release artifact, never committed).
 #
 # WHY canon FROM SOURCE (the difference vs canon's own golden): only the gcc-x86 insight_canon binary is
 # PUBLISHED (the Release tarball). The clang / arm64 / MSVC legs need canon compiled under THEIR
@@ -50,7 +50,26 @@ on:
     - cron: '0 6 * * 1'   # Mondays 06:00 UTC — drift catch
 
 jobs:
+  # THE CHEAP GATE IN FRONT OF THE EXPENSIVE ONE. Every leg emits the same two rosters — the corpus
+  # off disk and scripts/determinism_sections.txt — and the compare demands five byte-identical
+  # digests, so a roster that disagrees with the fixture's dispatch is a red the matrix can only
+  # deliver after four tower builds and a metered MSVC build. This job asks the same question in
+  # seconds, and the proof jobs `needs:` it, so a divergence never buys a Windows minute. It is a
+  # committed script rather than inline YAML for the reason the conformance gate is: a gate nobody
+  # can run at the desk is a gate nobody can prove reds. `bash scripts/determinism_sections_check.sh`
+  # is the same instrument here and there, and it needs no toolchain.
+  roster-guard:
+    name: "section roster ≡ fixture dispatch"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - run: bash scripts/determinism_sections_check.sh
+
   proof-linux:
+    needs: roster-guard
     name: ${{ matrix.label }}
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -178,6 +197,7 @@ jobs:
           if-no-files-found: error
 
   proof-msvc:
+    needs: roster-guard
     name: "msvc-14.52 · O2-fast"
     runs-on: windows-2025
     env:
@@ -283,7 +303,14 @@ jobs:
           if (-not $fixture) { Write-Error "det_fixture.exe not produced — the MSVC det harness build failed"; exit 1 }
           "$fixture" | Out-File -FilePath "$env:GITHUB_WORKSPACE/det_fixture_path.txt" -Encoding ascii -NoNewline
 
-      - name: Emit the MSVC digest (corpus + both reservoir arms + cube-collapse + ngram-cap + service-edges — the EXACT bytes the Linux legs emit)
+      # WHY this leg emits in PowerShell and not by calling the Linux legs' driver: the obvious
+      # de-duplication — run scripts/determinism_bitidentity.sh's emit loop here under `shell: bash` —
+      # is a trap on a Windows leg. `bash` on a Windows runner is Git Bash only by accident of PATH:
+      # insight-eidos' own MSVC leg documents its self-hosted Windows host resolving `bash` to WSL
+      # (and Git's `link` shadowing MSVC's link.exe), and these three golden.yaml files are copies of
+      # each other, so a bash step written here lands there next. The list is what was duplicated and
+      # the list is what got shared; the loop stays native to each side.
+      - name: Emit the MSVC digest (corpus off disk + every determinism_sections.txt row — the EXACT bytes the Linux legs emit)
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -291,69 +318,57 @@ jobs:
           $work = "$env:RUNNER_TEMP/det-emit"
           New-Item -ItemType Directory -Force -Path $work | Out-Null
           $outPath = "$work/msvc.out"
+
+          # THE SYNTHETIC SECTION ROSTER, READ — never enumerated here. Until 2026-08-24 this step
+          # carried its own copy of the list, and when --latency-shift and --collapse-depths landed
+          # in the fixture and the bash driver (1b4f7b4) the copy was not touched: this leg emitted
+          # 6 section kinds against the Linux legs' 8, under a compare that demands five
+          # byte-identical digests. Same parse as the driver: strip trailing space, drop `#` and
+          # blanks, keep file order — the row IS the header text and its first field IS the flag.
+          $rows = @(Get-Content "$env:GITHUB_WORKSPACE/scripts/determinism_sections.txt" |
+                    ForEach-Object { $_.TrimEnd() } |
+                    Where-Object { $_ -ne '' -and -not $_.StartsWith('#') })
+          if ($rows.Count -eq 0) { throw "scripts/determinism_sections.txt lists no section — this digest would carry the corpus only, and the compare would call that agreement" }
+
+          # Corpus order IS digest order, so it must be BYTE order. `Sort-Object Name` collates
+          # culture-aware, where punctuation is ignorable at the primary level: measured on pwsh
+          # 7.4.6, `service.log` / `service_a.log` / `service-b.log` come back in a different order
+          # than `LC_ALL=C sort` gives — a five-leg divergence with no code change behind it, waiting
+          # for the first corpus filename that mixes `_`/`.`/`-` or case. The Linux driver pins
+          # LC_ALL=C; this pins the ordinal comparer, which is the same order.
+          $corpus = @{}
+          Get-ChildItem "$env:GITHUB_WORKSPACE/scripts/determinism_corpus" -Filter *.log -File |
+            ForEach-Object { $corpus[$_.Name] = $_.FullName }
+          $names = [string[]]$corpus.Keys
+          [Array]::Sort($names, [StringComparer]::Ordinal)
+          if ($names.Count -eq 0) { throw "no *.log under scripts/determinism_corpus" }
+
+          # One section = ASCII "### <name> ###`n" (LF, matching bash `echo`) + the fixture's RAW
+          # stdout (binary — the fixture _setmode's stdout, so the bytes are exactly what the engine
+          # wrote). Both loops below are the same emitter over the two sources the Linux driver uses.
+          function Add-Section {
+            param([System.IO.Stream] $Stream, [string] $Header, [string] $Fixture,
+                  [string] $ArgumentLine, [string] $TempOut)
+            $hdr = [System.Text.Encoding]::ASCII.GetBytes("### $Header ###`n")
+            $Stream.Write($hdr, 0, $hdr.Length)
+            $p = Start-Process -FilePath $Fixture -ArgumentList $ArgumentLine -NoNewWindow -Wait -PassThru -RedirectStandardOutput $TempOut
+            if ($p.ExitCode -ne 0) { throw "det_fixture failed (exit $($p.ExitCode)) on section '$Header'" }
+            $b = [System.IO.File]::ReadAllBytes($TempOut)
+            $Stream.Write($b, 0, $b.Length)
+          }
+
           $fs = [System.IO.File]::Create($outPath)
           try {
-            # Per sorted corpus file: ASCII "### <name> ###`n" (LF, matching bash `echo`) + the fixture's
-            # RAW stdout (binary — the fixture _setmode's stdout so bytes are exactly what the engine wrote).
-            Get-ChildItem "scripts/determinism_corpus/*.log" | Sort-Object Name | ForEach-Object {
-              $hdr = [System.Text.Encoding]::ASCII.GetBytes("### $($_.Name) ###`n")
-              $fs.Write($hdr, 0, $hdr.Length)
-              $tmp = "$work/fixture.out"
-              $p = Start-Process -FilePath $fixture -ArgumentList "`"$($_.FullName)`"" -NoNewWindow -Wait -PassThru -RedirectStandardOutput $tmp
-              if ($p.ExitCode -ne 0) { throw "det_fixture failed (exit $($p.ExitCode)) on $($_.Name)" }
-              $b = [System.IO.File]::ReadAllBytes($tmp)
-              $fs.Write($b, 0, $b.Length)
+            foreach ($name in $names) {
+              Add-Section -Stream $fs -Header $name -Fixture $fixture `
+                          -ArgumentLine "`"$($corpus[$name])`"" -TempOut "$work/corpus.out"
             }
-            # The ADR-31.D8 --reservoir-nearfull section, with the exact header the Linux legs emit.
-            $rhdr = [System.Text.Encoding]::ASCII.GetBytes("### --reservoir-nearfull (ADR-31.D8 synthetic M=128) ###`n")
-            $fs.Write($rhdr, 0, $rhdr.Length)
-            $tmp = "$work/reservoir.out"
-            $p = Start-Process -FilePath $fixture -ArgumentList "--reservoir-nearfull" -NoNewWindow -Wait -PassThru -RedirectStandardOutput $tmp
-            if ($p.ExitCode -ne 0) { throw "det_fixture --reservoir-nearfull failed (exit $($p.ExitCode))" }
-            $b = [System.IO.File]::ReadAllBytes($tmp)
-            $fs.Write($b, 0, $b.Length)
-            # The SECOND ADR-31.D8 arm: --reservoir-streaming, at the tuple the streaming surface SHIPS
-            # (salience-1/k128-m64-c0-e16). The batch arm above is silent about both the shipped candidate
-            # population and the error-class reserve, so without this section the five-leg proof never runs
-            # at the deployed configuration. Same header + order as the Linux legs — must match.
-            $sthdr = [System.Text.Encoding]::ASCII.GetBytes("### --reservoir-streaming (ADR-31.D8 shipped streaming tuple k128-m64-c0-e16) ###`n")
-            $fs.Write($sthdr, 0, $sthdr.Length)
-            $tmp = "$work/reservoir_streaming.out"
-            $p = Start-Process -FilePath $fixture -ArgumentList "--reservoir-streaming" -NoNewWindow -Wait -PassThru -RedirectStandardOutput $tmp
-            if ($p.ExitCode -ne 0) { throw "det_fixture --reservoir-streaming failed (exit $($p.ExitCode))" }
-            $b = [System.IO.File]::ReadAllBytes($tmp)
-            $fs.Write($b, 0, $b.Length)
-            # The §C3 --cube-collapse section (same header + order as the Linux legs — must match).
-            $chdr = [System.Text.Encoding]::ASCII.GetBytes("### --cube-collapse (SecC3 dimensional-collapse guardrail) ###`n")
-            $fs.Write($chdr, 0, $chdr.Length)
-            $tmp = "$work/cube_collapse.out"
-            $p = Start-Process -FilePath $fixture -ArgumentList "--cube-collapse" -NoNewWindow -Wait -PassThru -RedirectStandardOutput $tmp
-            if ($p.ExitCode -ne 0) { throw "det_fixture --cube-collapse failed (exit $($p.ExitCode))" }
-            $b = [System.IO.File]::ReadAllBytes($tmp)
-            $fs.Write($b, 0, $b.Length)
-            # The SPEC Sec4 --ngram-cap section (same header + order as the Linux legs — must match).
-            # This is the ONLY section of the digest whose document CARRIES
-            # `behavior.dropped_ngram_observations`: every other one stays under `max_ngram_keys`, and
-            # Sec4 reads an absent key as an affirmative zero, so without this section no leg has ever
-            # compared bytes for a document that has the key at all.
-            $nhdr = [System.Text.Encoding]::ASCII.GetBytes("### --ngram-cap (Sec4 n-gram accounting bound BINDING) ###`n")
-            $fs.Write($nhdr, 0, $nhdr.Length)
-            $tmp = "$work/ngram_cap.out"
-            $p = Start-Process -FilePath $fixture -ArgumentList "--ngram-cap" -NoNewWindow -Wait -PassThru -RedirectStandardOutput $tmp
-            if ($p.ExitCode -ne 0) { throw "det_fixture --ngram-cap failed (exit $($p.ExitCode))" }
-            $b = [System.IO.File]::ReadAllBytes($tmp)
-            $fs.Write($b, 0, $b.Length)
-            # The O4b --service-edges section (same header + order as the Linux legs — must match). The
-            # emitted service_edges block rides the over-cap top-K select's canonical-key tie-break; this
-            # is what proves that select bit-identical MSVC≡libstdc++≡libc++.
-            $shdr = [System.Text.Encoding]::ASCII.GetBytes("### --service-edges (O4b service-topology over-cap top-K tie-break) ###`n")
-            $fs.Write($shdr, 0, $shdr.Length)
-            $tmp = "$work/service_edges.out"
-            $p = Start-Process -FilePath $fixture -ArgumentList "--service-edges" -NoNewWindow -Wait -PassThru -RedirectStandardOutput $tmp
-            if ($p.ExitCode -ne 0) { throw "det_fixture --service-edges failed (exit $($p.ExitCode))" }
-            $b = [System.IO.File]::ReadAllBytes($tmp)
-            $fs.Write($b, 0, $b.Length)
+            foreach ($row in $rows) {
+              Add-Section -Stream $fs -Header $row -Fixture $fixture `
+                          -ArgumentLine (($row -split '\s+')[0]) -TempOut "$work/section.out"
+            }
           } finally { $fs.Close() }
+          Write-Host "MSVC digest: $($names.Count) corpus section(s) + $($rows.Count) synthetic — $(($rows | ForEach-Object { ($_ -split '\s+')[0] }) -join ' ')"
           Copy-Item $outPath "$env:GITHUB_WORKSPACE/digest-msvc.txt"
           Write-Host "MSVC digest sha256: $((Get-FileHash -Algorithm SHA256 -Path digest-msvc.txt).Hash.ToLower())"
 

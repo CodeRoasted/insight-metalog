@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Determinism golden driver — the metalog leg of the Determinism-Golden-Proof (golden.yaml). Builds the
 # canon+metalog MODULE-LIB TOWER from source for ONE toolchain leg across the -O{0,3}×-ffp-contract
-# {off,fast} corners, asserts the serialized MetaLog document (corpus + the ADR-31.D8 --reservoir-nearfull
-# and --reservoir-streaming arms — the Sift BATCH tuple and the SHIPPED streaming tuple — plus the §C3
-# --cube-collapse, the §4 --ngram-cap and the O4b --service-edges scenarios) is byte-identical across that leg's corners,
-# ALONG WITH the serialized MetaLogDiff — the producer's second artifact species — for every corpus
-# section and for the §13.6 --latency-shift pair, and EMITS the leg's digest (DETERMINISM_OUT).
+# {off,fast} corners, asserts the serialized MetaLog document AND the serialized MetaLogDiff — the
+# producer's second artifact species — are byte-identical across that leg's corners, and EMITS the
+# leg's digest (DETERMINISM_OUT). WHAT it replays is not written here: the committed corpus comes off
+# disk, and the synthetic scenarios come from scripts/determinism_sections.txt, which owns their
+# identity, their order and their reason for existing (this driver and golden.yaml's MSVC leg both
+# read it; neither enumerates them).
 #
 # There is NO committed golden (retired — no more committed-golden apparatus). Cross-toolchain / cross-
 # stdlib / cross-ISA / cross-OS bit-identity is asserted by golden.yaml's `compare` job, which byte-
@@ -46,8 +47,20 @@ command -v conan >/dev/null || { echo "conan not found — the module tower buil
 command -v cmake >/dev/null || { echo "cmake not found"; exit 1; }
 export CONAN_HOME="${CONAN_HOME:-$(cd "$META/.." && pwd)/.conan2}"
 
-CORPUS="$(ls "$META"/scripts/determinism_corpus/*.log 2>/dev/null | sort)"
+# LC_ALL=C: the corpus order IS digest order, and the MSVC leg sorts the same names with .NET's
+# ordinal comparer. A locale-aware collation treats punctuation as ignorable, so `service.log` vs
+# `service_a.log` orders differently under en_US.UTF-8 than under C — a cross-leg divergence with no
+# code change behind it. Both emitters pin byte order. (Today's seven names agree under either;
+# this keeps that from being luck.)
+CORPUS="$(ls "$META"/scripts/determinism_corpus/*.log 2>/dev/null | LC_ALL=C sort)"
 [ -n "$CORPUS" ] || { echo "no corpus under $META/scripts/determinism_corpus"; exit 1; }
+
+# The synthetic section roster — read, never enumerated here. See the file's own header for the
+# format and for what it cost to learn that a twice-written list is not a list.
+SECTIONS_FILE="$META/scripts/determinism_sections.txt"
+[ -f "$SECTIONS_FILE" ] || { echo "no $SECTIONS_FILE (the synthetic section roster)"; exit 1; }
+mapfile -t SECTIONS < <(sed -E 's/[[:space:]]+$//' "$SECTIONS_FILE" | grep -vE '^([[:space:]]*#|[[:space:]]*$)')
+[ "${#SECTIONS[@]}" -gt 0 ] || { echo "$SECTIONS_FILE lists no section — the digest would carry the corpus only"; exit 1; }
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 echo "canon=$CANON  conan_home=$CONAN_HOME  corpus=$(echo "$CORPUS" | wc -l) files"
 
@@ -187,45 +200,22 @@ if [ "${#builds[@]}" -eq 0 ] || [ "${#builds[@]}" -ne "$expected" ]; then
   exit 3
 fi
 
-# Each cell emits the committed corpus (7 files, enumerated from disk — never a hand-kept count;
-# each section is doc1 + doc2 + the MetaLogDiff BETWEEN them) THEN --reservoir-nearfull (the ADR-31.D8 synthetic M=128
-# scenario, the Sift BATCH tuple) THEN --reservoir-streaming (the SECOND ADR-31.D8 arm, at the tuple the
-# streaming surface ships — salience-1/k128-m64-c0-e16, where the error-class reserve is live and the
-# batch arm has no opinion) THEN --cube-collapse (the §C3 cube dimensional-collapse guardrail — a window
-# that FIRES a collapse, so its content-driven axis-selection tie-break is proven cross-leg) THEN
-# --ngram-cap (the SPEC §4 accounting-bound window — the ONLY section of this digest that CARRIES
-# `behavior.dropped_ngram_observations`; every other one stays under the bound, so §4's
-# absence-means-zero encoding leaves the key absent and no leg has ever judged a document that has
-# it) THEN --service-edges (the O4b service-topology over-cap window — the emitted block rides the top-K select's
-# canonical-key tie-break, proven cross-leg) THEN --latency-shift (the ONLY section that is a window
-# PAIR: it emits both documents and the `cube_diff`-bearing MetaLogDiff between them. The §13.6
-# differential axis is EMERGENT-AT-DIFF — it has no stored-cube domain, so no single-window section
-# can produce one — and a MetaLogDiff is the SECOND artifact species this producer serializes, the
-# one insight-eidos re-publishes verbatim as `raw[].diff` in every Sift change report. Before it,
-# every diff this producer emits sat outside this sweep, and the diff schema sat outside the
-# conformance gate that reads this digest) THEN --collapse-depths (the §16.10 compare-at-min pair,
-# whose two cubes sit at DIFFERENT collapse depths so the diff's axes equal neither input's —
-# the shape §13.6's example text denies and §16.10 mandates). Compare every built cell to the reference — byte-identity
-# across the leg's -O/-ffp sweep. A diff is where this producer's floating point lives (kl/js
-# divergence, frequencies, entropy bits), so the -ffp-contract{off,fast} corners are load-bearing on
-# the diff lines in a way they are not on a pure-integer document.
+# THE EMIT — the shape of the digest, not its contents. Each cell writes the committed corpus first
+# (enumerated from disk, never a hand-kept count; each section is doc1 + doc2 + the MetaLogDiff
+# BETWEEN them), then one section per roster row, in roster order. A section is the ASCII header
+# `### <name> ###\n` followed by the fixture's raw stdout. golden.yaml's MSVC leg writes the same
+# two loops over the same two sources — that is the whole point of them being sources.
+#
+# The per-section WHY lives beside its row in scripts/determinism_sections.txt. It is deliberately
+# NOT restated here: an enumeration written in two places is what put the MSVC leg two sections
+# behind on 2026-08-24, and a prose copy of a list rots exactly the same way the code copy did.
 for ctag in "${builds[@]}"; do
   : >"$WORK/$ctag.out"
   for f in $CORPUS; do echo "### $(basename "$f") ###" >>"$WORK/$ctag.out"; "${BIN[$ctag]}" "$f" >>"$WORK/$ctag.out" 2>/dev/null; done
-  echo "### --reservoir-nearfull (ADR-31.D8 synthetic M=128) ###" >>"$WORK/$ctag.out"
-  "${BIN[$ctag]}" --reservoir-nearfull >>"$WORK/$ctag.out" 2>/dev/null
-  echo "### --reservoir-streaming (ADR-31.D8 shipped streaming tuple k128-m64-c0-e16) ###" >>"$WORK/$ctag.out"
-  "${BIN[$ctag]}" --reservoir-streaming >>"$WORK/$ctag.out" 2>/dev/null
-  echo "### --cube-collapse (SecC3 dimensional-collapse guardrail) ###" >>"$WORK/$ctag.out"
-  "${BIN[$ctag]}" --cube-collapse >>"$WORK/$ctag.out" 2>/dev/null
-  echo "### --ngram-cap (Sec4 n-gram accounting bound BINDING) ###" >>"$WORK/$ctag.out"
-  "${BIN[$ctag]}" --ngram-cap >>"$WORK/$ctag.out" 2>/dev/null
-  echo "### --service-edges (O4b service-topology over-cap top-K tie-break) ###" >>"$WORK/$ctag.out"
-  "${BIN[$ctag]}" --service-edges >>"$WORK/$ctag.out" 2>/dev/null
-  echo "### --latency-shift (Sec13.6 cube_diff differential axis) ###" >>"$WORK/$ctag.out"
-  "${BIN[$ctag]}" --latency-shift >>"$WORK/$ctag.out" 2>/dev/null
-  echo "### --collapse-depths (Sec16.10 compare-at-min, axes equal neither input) ###" >>"$WORK/$ctag.out"
-  "${BIN[$ctag]}" --collapse-depths >>"$WORK/$ctag.out" 2>/dev/null
+  for section in "${SECTIONS[@]}"; do
+    echo "### $section ###" >>"$WORK/$ctag.out"
+    "${BIN[$ctag]}" "${section%% *}" >>"$WORK/$ctag.out" 2>/dev/null
+  done
 done
 rc=0; ref="${builds[0]}"
 echo "reference: $ref  sha=$(sha256sum "$WORK/$ref.out" | cut -c1-16)"
@@ -236,10 +226,11 @@ for ctag in "${builds[@]}"; do
 done
 
 if [ $rc -eq 0 ]; then
-  echo "PASS: byte-identical across ${#builds[@]} built cell(s) — corpus (documents + the diff between"
-  echo "  them) + --reservoir-nearfull + --reservoir-streaming + --cube-collapse + --ngram-cap +"
-  echo "  --service-edges + --latency-shift + --collapse-depths, over the '${LINUX_LEGS[*]}' leg's"
-  echo "  -O{0,3}×-ffp{off,fast} sweep."
+  # The section list in this message is DERIVED, not typed: a PASS line that names a roster it did
+  # not read is how a green comes to describe a digest smaller than the one it judged.
+  echo "PASS: byte-identical across ${#builds[@]} built cell(s) — $(echo "$CORPUS" | wc -l) corpus section(s)"
+  echo "  (documents + the diff between them) + ${#SECTIONS[@]} synthetic:$(printf ' %s' "${SECTIONS[@]%% *}")"
+  echo "  over the '${LINUX_LEGS[*]}' leg's -O{0,3}×-ffp{off,fast} sweep."
   # Cross-leg-agreement mode (the ONLY mode now — no committed golden): emit this leg's full digest
   # (corpus + reservoir, byte-identical across its own -O×-ffp cells above) for the golden.yaml compare
   # job to byte-compare against every other leg (gcc/clang × x86/arm64 + msvc). One leg per job → the
