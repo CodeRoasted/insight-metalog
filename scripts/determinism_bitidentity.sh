@@ -186,7 +186,7 @@ if [ "${#builds[@]}" -eq 0 ] || [ "${#builds[@]}" -ne "$expected" ]; then
   exit 3
 fi
 
-# Each cell emits the committed corpus (5 files) THEN --reservoir-nearfull (the ADR-31.D8 synthetic M=128
+# Each cell emits the committed corpus (7 files, enumerated from disk — never a hand-kept count) THEN --reservoir-nearfull (the ADR-31.D8 synthetic M=128
 # scenario, the Sift BATCH tuple) THEN --reservoir-streaming (the SECOND ADR-31.D8 arm, at the tuple the
 # streaming surface ships — salience-1/k128-m64-c0-e16, where the error-class reserve is live and the
 # batch arm has no opinion) THEN --cube-collapse (the §C3 cube dimensional-collapse guardrail — a window
