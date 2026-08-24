@@ -40,6 +40,31 @@ namespace
         return lhs > rhs ? lhs : rhs;
     }
 
+    // SPEC §12.1 composed-document caps (DN-56.D2). Composition is a PRODUCTION step: `C` is a
+    // MetaLog, so every capped block of `C` is admitted under a cap `C` itself declares. This
+    // `compose()` takes no config, so it is the spec's *pure merge utility* — it holds no cap of
+    // its own and takes the MINIMUM over the inputs' declared caps, because a merge is never
+    // finer than its coarsest member (§16.10's minimal-common-collapse precedent). `min` is also
+    // what makes §12.2's commutativity MUST hold on the two REQUIRED cap fields: picking a side
+    // is inherently non-commutative, `min` is symmetric by construction (DN-56.D6).
+    //
+    // ABSENT IS NOT A CAP OF ZERO, and that distinction is what §12.2's identity MUST turns on.
+    // An input that declares nothing makes no claim at all (§8 clause 4), so it is SKIPPED rather
+    // than folded in — `min(declared(A), absent) == declared(A)`. A ZERO document declares no
+    // reservoir cap (the producer declares it at the admission site, which an event-free window
+    // never reaches), so folding absence in as a bound would cost `compose(A, ZERO)` the cap `A`
+    // declared. Where NEITHER declares, the output omits the field: the block is then legal,
+    // unbounded, and §8 clause 4 makes no claim about it.
+    [[nodiscard]] std::optional<std::size_t> min_declared_cap(std::optional<std::size_t> lhs,
+                                                              std::optional<std::size_t> rhs)
+    {
+        if (!lhs)
+            return rhs;
+        if (!rhs)
+            return lhs;
+        return std::min(*lhs, *rhs);
+    }
+
     SourceBlock common_source(const SourceBlock& lhs, const SourceBlock& rhs)
     {
         if (lhs == rhs)
@@ -350,8 +375,23 @@ namespace
     // Salience reservoir re-derivation (SPEC §3.7.3 / §12.1). Carry the rare-salient
     // templates through composition instead of dropping them into the tail (the
     // multi-scale gap: composed/pyramid baselines were blind to a lone fatal / off-path
-    // branch). Bounded by the inputs' (already diversity-capped) reservoirs; admitted in
-    // salience order with a deterministic template_id tie-break.
+    // branch). Admitted in salience order with a deterministic template_id tie-break, and
+    // BOUNDED BY THE CAP THE COMPOSED DOCUMENT DECLARES (DN-56.D2) — see `min_declared_cap`.
+    //
+    // The cap is declared HERE, at the site that enforces it (§11's own rule, and the shape
+    // the producer already holds at `engine.cpp`'s `stats.reservoir_size = config_.reservoir_size`
+    // beside its own admission loops): the loop below stops at the same value that is written
+    // to the document, so the declaration and the bound cannot drift apart. There is exactly one
+    // declaration site per cap, never a second.
+    //
+    // THE PRICE, DISCLOSED (DN-56.D3): this makes the composed reservoir NON-ASSOCIATIVE, and
+    // that is ruled, not accidental. §12.1 re-derives salience over the MERGED counts because
+    // rarity is scale-relative, so the ranking key itself moves with the merge scope; an entry
+    // cut at a low rung folds into `tail_count` and cannot re-enter at the scale where it would
+    // have ranked. §12.2 scopes associativity as a SHOULD and the bounded document is the
+    // format's headline property. `tests/operations/test_compose_algebra.cpp` asserts the exact
+    // scope-dependence from both sides — the divergence under a binding cap and the equality
+    // when none binds.
     void rederive_reservoir(MetaLogDocument& out, ComposeState& state, const MetaLogDocument& lhs,
                             const MetaLogDocument& rhs)
     {
@@ -372,9 +412,16 @@ namespace
                     return lhs.salience > rhs.salience;
                 return lhs.template_id < rhs.template_id;
             });
-        out.stats.reservoir.reserve(res_cands.size());
+        out.stats.reservoir_size =
+            min_declared_cap(lhs.stats.reservoir_size, rhs.stats.reservoir_size);
+        // Absent = neither input declared a bound, so `C` declares none either and admits every
+        // salience-positive candidate (§8 clause 4 then makes no claim about the array).
+        const std::size_t admission_bound{out.stats.reservoir_size.value_or(res_cands.size())};
+        out.stats.reservoir.reserve(std::min(admission_bound, res_cands.size()));
         for (const auto& cand : res_cands)
         {
+            if (out.stats.reservoir.size() >= admission_bound)
+                break;
             ReservoirEntry entry;
             entry.template_id = cand.template_id;
             const auto cit{counts.find(cand.template_id)};
@@ -448,6 +495,37 @@ namespace
         }
     }
 
+    // SPEC §12.1: "`C.stats.entropy_bits` is recomputed from the merged counts." Entropy is not
+    // additive, so there is nothing to carry or average from the inputs — it is recomputed or it
+    // is wrong. Until DN-56.D7's sibling finding it was neither: `compose()` never assigned the
+    // field, so every composed document silently omitted a clause the spec states in the
+    // indicative. GOVERNANCE §3 decides that shape without argument — the rule is derivable from
+    // the inputs and correct, so the reference implementation was buggy.
+    //
+    // THE DISTRIBUTION, and the one judgement it needs. `state.ordered` is the composed
+    // document's full untruncated per-template distribution — exactly what the producer's own
+    // `ordered` is on a raw window, which is what makes the two comparable across a rung. But a
+    // composed document's counts do NOT sum to its `lines_observed`: §12.3 makes composition
+    // lossy on a tailed input, so each input's own `tail_count` is mass that was observed and is
+    // counted in the merged line total while no longer being attributable to any template.
+    // Dropping it would normalise over a denominator the counts do not reach (over-stating
+    // concentration); folding it into a template would invent an attribution. It goes in as ONE
+    // residual bucket — the same convention `build_composed_tail` above already uses for
+    // `tail_summary`, and the denominator stays `lines_observed` as on the producer.
+    void recompute_composed_entropy(MetaLogDocument& out, const ComposeState& state,
+                                    const MetaLogDocument& lhs, const MetaLogDocument& rhs)
+    {
+        if (out.window.lines_observed == 0)
+            return; // no lines, no distribution — the producer omits the field on the same test
+        std::vector<std::uint64_t> counts;
+        counts.reserve(state.ordered.size() + 1);
+        for (const auto& entry : state.ordered)
+            counts.push_back(entry.second);
+        if (const std::uint64_t residual{lhs.stats.tail_count + rhs.stats.tail_count}; residual > 0)
+            counts.push_back(residual);
+        out.stats.entropy_bits = shannon_entropy_bits(counts, out.window.lines_observed);
+    }
+
     // Provenance: a composed document always carries it (SPEC §12.4). Extend with the
     // inputs' own provenance when present; otherwise record both inputs directly.
     std::vector<ProvenanceEntry> merge_provenance(const MetaLogDocument& lhs,
@@ -511,15 +589,22 @@ namespace
             return std::nullopt;
         BehaviorBlock behavior;
         behavior.ngram_size = lhs.behavior ? lhs.behavior->ngram_size : rhs.behavior->ngram_size;
+        // §12.1 composed cap (DN-56.D2), the third and last cap site — `min` over what the
+        // inputs declare, taken from the ONE side that has a behavior block when only one does.
+        // `top_ngrams_size` is REQUIRED inside the block it lives in, so a present block always
+        // carries it; the optionality here is the BLOCK's, not the field's. The array is
+        // re-truncated to this value at the bottom of the function, which is the site that
+        // enforces it.
         behavior.top_ngrams_size =
-            lhs.behavior ? lhs.behavior->top_ngrams_size : rhs.behavior->top_ngrams_size;
+            (lhs.behavior && rhs.behavior)
+                ? std::min(lhs.behavior->top_ngrams_size, rhs.behavior->top_ngrams_size)
+                : (lhs.behavior ? lhs.behavior->top_ngrams_size : rhs.behavior->top_ngrams_size);
         // SPEC §12.1: `C.behavior.dropped_ngram_observations` is the SUM of both inputs' values,
         // an absent input counting as zero, and it is OMITTED when that sum is zero. The omission
         // is not cosmetic — compose() carries `lhs.metalog_version` (0.9.0), and §4 makes an
         // absent key in a 0.7.0+ document AFFIRM that nothing was dropped. So a sum written as 0
         // would be a wrong claim, and a sum silently not written at all is the same wrong claim
-        // about inputs that DID drop. Commutative by construction, unlike the two caps above
-        // (DN-56.D6, not this lane's fix).
+        // about inputs that DID drop. Commutative by construction, like the `min` caps.
         if (const std::uint64_t dropped{
                 (lhs.behavior ? lhs.behavior->dropped_ngram_observations.value_or(0) : 0) +
                 (rhs.behavior ? rhs.behavior->dropped_ngram_observations.value_or(0) : 0)};
@@ -631,18 +716,17 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
 
     ComposeState state;
     aggregate_and_order(state, lhs, rhs);
-    out.stats.top_k_size = lhs.stats.top_k_size;
-    // `stats.reservoir_size` is deliberately NOT carried. It is a §8-clause-4 CLAIM — "this
-    // array is bounded by this number" — and the composed reservoir is bounded by the UNION of
-    // the inputs' reservoirs, never by either input's M (rederive_reservoir admits every
-    // salience-positive candidate). Measured: two documents at M=4 with disjoint salient sets
-    // compose to 8 entries. Declaring M here would ship exactly the false-cap statement this
-    // producer emits the field to avoid; an undeclared cap is not a claim (SPEC §8 clause 4).
+    // §12.1 composed cap (DN-56.D2), declared here because `build_composed_top_k` and
+    // `build_composed_tail` below both cut at it — `top_k_size` is REQUIRED on both inputs, so
+    // there is no absent case and the fallback is a plain `min`. `stats.reservoir_size` is
+    // declared inside `rederive_reservoir`, at ITS admission site.
+    out.stats.top_k_size = std::min(lhs.stats.top_k_size, rhs.stats.top_k_size);
     out.stats.unique_templates = state.ordered.size();
 
     build_composed_top_k(out, state, lhs, rhs);
     rederive_reservoir(out, state, lhs, rhs);
     build_composed_tail(out, state, lhs, rhs);
+    recompute_composed_entropy(out, state, lhs, rhs);
 
     // Display template strings are no longer carried on a composed document (SRC-D-TIR-5): they
     // resolve by id from the engine registry at serialise.

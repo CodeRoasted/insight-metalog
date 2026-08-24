@@ -414,8 +414,15 @@ class MetaLogEngine
 // non-empty tail; required fields are preserved (lines_observed,
 // unique_templates union, time-axis envelope). See SPEC §12.
 //
-// `top_k_size` and `top_ngrams_size` come from `lhs`; the result is
-// truncated to those sizes.
+// THE COMPOSED DOCUMENT DECLARES ITS OWN CAPS (SPEC §12.1 / DN-56.D2): `top_k_size`,
+// `top_ngrams_size` and `reservoir_size` are the MINIMUM over the caps the inputs actually
+// declared, and each block is re-admitted under the result. This overload takes no config, so it
+// is the spec's pure merge utility — a merge is never finer than its coarsest member. An input
+// that declares no cap is skipped rather than read as a bound of zero, and where NEITHER declares
+// one the field is omitted (the block is then unbounded and §8 clause 4 makes no claim about it).
+// `min` is symmetric, which is what makes §12.2's commutativity MUST hold on the two REQUIRED cap
+// fields; it costs §12.2's associativity SHOULD on the reservoir, which is DN-56.D3's ruled and
+// disclosed trade — see `tests/operations/test_compose_algebra.cpp`.
 //
 // Stability is dropped (meaningless across composed inputs). A composed document carries no display
 // template_str — it is id-only; the display string resolves by id from the engine registry at the

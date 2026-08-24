@@ -740,8 +740,9 @@ struct StatsBlock
     // "the producer declares no cap" (§8 clause 4: an undeclared cap is not a claim), which
     // is why this is optional rather than a sentinel. A producer that declares it owes the
     // clause: the array MUST be bounded by the value. Set by the engine from
-    // MetaLogConfig::reservoir_size; left ABSENT by compose(), whose re-derived reservoir is
-    // bounded by the union of its inputs' reservoirs, not by any single configured cap.
+    // MetaLogConfig::reservoir_size, and by compose() to the MINIMUM over the caps its inputs
+    // actually DECLARED (SPEC §12.1 / DN-56.D2) — absent on an input is no claim, not a bound of
+    // zero, so it is skipped; absent on BOTH is the only case where compose() omits the field.
     std::optional<std::size_t> reservoir_size;
 };
 
