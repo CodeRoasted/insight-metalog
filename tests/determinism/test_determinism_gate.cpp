@@ -29,6 +29,11 @@ import insight.metalog.test;
 // The SPEC §4 accounting-bound scenario — the ONE window in the whole determinism digest whose
 // emitted document CARRIES `behavior.dropped_ngram_observations`. Same sharing contract as above.
 #include "ngram_cap_scenario.hpp"
+// The §13.6 latency-drift window PAIR — the only scenario here whose replayed artifact is a
+// MetaLogDiff rather than a MetaLogDocument. Same sharing contract as above.
+#include "latency_shift_scenario.hpp"
+// The §16.10 compare-at-min PAIR — two cubes at different collapse depths. Same contract.
+#include "collapse_depths_scenario.hpp"
 
 namespace
 {
@@ -398,6 +403,320 @@ TEST(MetaLogDocument, OrdinalCarrierPopulated)
     EXPECT_EQ(entry.ordinal_histograms.front().field_name, "latency_ms");
     EXPECT_EQ(entry.ordinal_histograms.front().schedule_id, "dur-log2-ns-v1");
     EXPECT_EQ(entry.ordinal_histograms.front().total, 120U);
+}
+
+// ── --latency-shift: the digest's SECOND artifact species ──────────────────────────────
+//
+// The other scenarios here guard a window; this one guards a PAIR, because the artifact the
+// cross-leg gate replays for it is a MetaLogDiff. Two things can go hollow independently and
+// each would leave the digest section looking exactly as healthy as a working one:
+//
+//   1. The DRIFT stops being admissible. `component_latency_shifts` skips a component whose
+//      paired sample is under kShiftSampleFloor (32) — correctly, and SILENTLY: the axis is
+//      projected away and the section emits a plain 3-D border. So the "did the mechanism
+//      run" assertion comes first, on the ordinal carrier both sides must carry.
+//   2. The SERIALIZER stops emitting the block. A domain object that holds `cube_diff` is not
+//      a digest that carries it, and the two are checked in different places. This producer
+//      already has one member that is computed every diff and reaches no wire at all
+//      (`field_histogram_deltas`, SPEC §3.5.2's declared wire-emission status), so "computed
+//      but dropped at the DTO" is a live failure mode here, not a hypothetical one — which is
+//      why the last assertion reads the JSON and not the struct.
+//
+// What this deliberately does NOT assert: `axes[].kind`. The scenario's job is to PRODUCE the
+// differential axis; how the standard spells its kind is metalog-spec's to decide, and
+// pinning today's spelling here would make this guard red at the moment that decision lands.
+// The conformance gate (scripts/spec_conformance_gate.sh) is what judges the spelling, against
+// the published schema rather than against our own belief about it.
+TEST(MetaLogDocument, LatencyShiftPairEmitsTheDifferentialAxisOnTheWire)
+{
+    meta::MetaLogConfig cfg;
+    meta::latency_shift::configure(cfg);
+    meta::MetaLogEngine engine{cfg};
+
+    using Clock = std::chrono::system_clock;
+    const Clock::time_point t0{std::chrono::seconds{1700000000}};
+    const Clock::time_point t1{std::chrono::seconds{1700000060}};
+    const Clock::time_point t2{std::chrono::seconds{1700000120}};
+    engine.open_window(t0);
+    meta::latency_shift::emit_window(engine, meta::latency_shift::kPreviousLatencyMs);
+    const auto previous{engine.close_window(t1)};
+    engine.open_window(t1);
+    meta::latency_shift::emit_window(engine, meta::latency_shift::kCurrentLatencyMs);
+    const auto current{engine.close_window(t2)};
+
+    // (1) Did the mechanism run? Both sides must carry a duration ladder on `payments` with at
+    // least kShiftSampleFloor paired observations, or every assertion below is about a window
+    // where the axis was correctly, invisibly, projected away.
+    const auto duration_total{[](const meta::MetaLogDocument& doc)
+                              {
+                                  std::uint64_t total{0};
+                                  for (const auto& entry : doc.stats.top_k)
+                                      if (entry.dominant_component == "payments")
+                                          for (const auto& hist : entry.ordinal_histograms)
+                                              if (hist.schedule_id == "dur-log2-ns-v1")
+                                                  total += hist.total;
+                                  return total;
+                              }};
+    const std::uint64_t previous_total{duration_total(previous)};
+    const std::uint64_t current_total{duration_total(current)};
+    constexpr std::uint64_t kShiftSampleFloor{32}; // diff.cpp ComponentOrdinal, studies/003
+    ASSERT_GE(std::min(previous_total, current_total), kShiftSampleFloor)
+        << "the shift is INADMISSIBLE below the floor and the axis is silently projected away, "
+           "so this scenario would emit a plain 3-D border while still looking healthy.\n"
+           "  payments duration observations: previous="
+        << previous_total << " current=" << current_total << " floor=" << kShiftSampleFloor;
+
+    const meta::MetaLogDiff delta{meta::diff(previous, current)};
+    ASSERT_TRUE(delta.has_cube_diff)
+        << "both windows carry a cube, so the pair must produce a cube_diff — without one the "
+           "digest's --latency-shift section carries no differential axis at all";
+
+    // (2) The differential axis is declared, by NAME. It is emergent-at-diff: no stored cube
+    // ever carries it, so its presence here is the whole reason this section exists.
+    std::vector<std::string> axis_names;
+    for (const auto& axis : delta.cube_diff.axes)
+        axis_names.push_back(axis.name);
+    EXPECT_NE(std::ranges::find(axis_names, "latency_shift"), axis_names.end())
+        << "a component shifted, so the diff-only latency_shift axis must be declared.\n"
+           "  axes declared: "
+        << [&axis_names]
+    {
+        std::string out;
+        for (const auto& name : axis_names)
+            out += (out.empty() ? "" : ", ") + name;
+        return out;
+    }();
+
+    // (3) The band, pinned by VALUE. 100 ms → 100 s is 10 octaves on the frozen log2-ns ladder,
+    // deep inside HIGH; a ladder or threshold retune that moved this scenario onto a different
+    // band would otherwise change the digest's bytes with nothing here to say why.
+    const meta::CubeBorderCell* shifted{nullptr};
+    if (delta.cube_diff.has_emerging)
+        for (const auto* region :
+             {&delta.cube_diff.emerging.lower, &delta.cube_diff.emerging.upper})
+            for (const auto& cell : *region)
+                if (cell.coord.latency_shift && cell.coord.where && !cell.coord.where->empty() &&
+                    cell.coord.where->back() == "payments")
+                    shifted = &cell;
+    ASSERT_NE(shifted, nullptr)
+        << "expected an EMERGING (where=payments, latency_shift=…) border cell — the shift only "
+           "ever pins on the current side, so it participates in emergence alone";
+    EXPECT_EQ(*shifted->coord.latency_shift, "up_high")
+        << "a 10-octave UP move must land in the HIGH band; got " << *shifted->coord.latency_shift;
+
+    // (4) The WIRE, not the struct. This is the assertion that separates "the engine computed a
+    // cube_diff" from "the digest carries one".
+    const std::string wire{meta::to_json(delta)};
+    EXPECT_NE(wire.find("\"cube_diff\""), std::string::npos)
+        << "to_json(MetaLogDiff) dropped the cube_diff block — the domain object has it and the "
+           "serialized artifact the gate judges does not.\n  wire: "
+        << wire;
+    EXPECT_NE(wire.find("\"latency_shift\""), std::string::npos)
+        << "the differential axis reached no wire, so the digest section is decoration.\n  wire: "
+        << wire;
+}
+
+// ── --collapse-depths: the pair whose diff axes equal NEITHER input's ──────────────────
+//
+// §16.10 mandates that a diff of two cubes be read at the COARSER of the two on each axis.
+// §13.6's example text carries an unbolded comment saying `cube_diff.axes` equals both inputs'
+// `cube.axes` — which is not normative in any of §13.6's bullets, and which this pair refutes by
+// construction. So this guard asserts CONTAINMENT and the collapse arithmetic, and deliberately
+// asserts no equality: writing the equality arm would pin a claim the standard does not make and
+// would red the day §16.10 is exercised, which is here.
+//
+// It goes hollow the moment the previous window stops firing the banding guardrail — the two
+// cubes would then share a collapse state, `min_common_collapse` would be a no-op, and the pair
+// would silently become an ordinary same-depth diff that still emits a healthy-looking cube_diff.
+// That is why the collapse states are read off the two documents FIRST.
+TEST(MetaLogDocument, CollapseDepthsPairIsReadAtTheMinimalCommonCollapse)
+{
+    meta::MetaLogConfig cfg;
+    meta::collapse_depths::configure(cfg);
+    meta::MetaLogEngine engine{cfg};
+
+    using Clock = std::chrono::system_clock;
+    const Clock::time_point t0{std::chrono::seconds{1700000000}};
+    const Clock::time_point t1{std::chrono::seconds{1700000060}};
+    const Clock::time_point t2{std::chrono::seconds{1700000120}};
+    engine.open_window(t0);
+    meta::collapse_depths::emit_previous(engine);
+    const auto previous{engine.close_window(t1)};
+    engine.open_window(t1);
+    meta::collapse_depths::emit_current(engine);
+    const auto current{engine.close_window(t2)};
+
+    const auto band_floor_of{[](const meta::CubeBlock& cube) -> std::optional<std::uint64_t>
+                             {
+                                 for (const auto& axis : cube.axes)
+                                     if (axis.name == "level")
+                                         return axis.band_floor;
+                                 return std::nullopt;
+                             }};
+
+    // (1) Did the mechanism run? The two windows must sit at DIFFERENT collapse depths, or this
+    // pair is an ordinary same-depth diff wearing the name of a compare-at-min.
+    ASSERT_TRUE(previous.has_cube);
+    ASSERT_TRUE(current.has_cube);
+    const auto previous_floor{band_floor_of(previous.cube)};
+    const auto current_floor{band_floor_of(current.cube)};
+    ASSERT_TRUE(previous_floor.has_value())
+        << "the previous window must OVERRUN the cell budget so the level banding fires; it did "
+           "not, so the two cubes share a collapse state and this pair proves nothing.\n"
+           "  previous cell_count="
+        << previous.cube.cell_count << " budget=" << previous.cube.cell_budget.value_or(0);
+    EXPECT_FALSE(current_floor.has_value())
+        << "the current window must stay UNDER the budget so its own axes carry no band_floor; it "
+           "collapsed too (band_floor="
+        << current_floor.value_or(0)
+        << "), which makes both sides equal again.\n  current cell_count="
+        << current.cube.cell_count << " budget=" << current.cube.cell_budget.value_or(0);
+
+    const meta::MetaLogDiff delta{meta::diff(previous, current)};
+    ASSERT_TRUE(delta.has_cube_diff);
+
+    // (2) The diff is read at the COARSER of the two — the max band floor — so its axes equal the
+    // COLLAPSED input's and not the un-collapsed one's. This is the §16.10 arithmetic, pinned by
+    // value; it is also the whole falsifier for §13.6's unbolded equality comment.
+    const auto diff_floor{[&delta]() -> std::optional<std::uint64_t>
+                          {
+                              for (const auto& axis : delta.cube_diff.axes)
+                                  if (axis.name == "level")
+                                      return axis.band_floor;
+                              return std::nullopt;
+                          }()};
+    ASSERT_TRUE(diff_floor.has_value())
+        << "compare-at-min takes the MAX band floor, so the diff must carry the collapsed input's "
+           "stamp; it carried none, which reads the pair at a granularity one input never had";
+    EXPECT_EQ(*diff_floor, *previous_floor) << "the diff must be read at the coarser side's floor ("
+                                            << *previous_floor << "); got " << *diff_floor;
+    EXPECT_NE(delta.cube_diff.axes, current.cube.axes)
+        << "this pair exists precisely because the diff's axes CANNOT equal both inputs'; if they "
+           "now equal the un-collapsed input's, the collapse stamp was lost";
+
+    // (3) CONTAINMENT, which is the obligation that survives §13.6's non-normative equality
+    // comment: every axis either input's cube declares must still be present in the diff, by name.
+    // A diff that silently dropped an axis would describe a different space than its inputs.
+    const auto names_of{[](const std::vector<meta::CubeAxis>& axes)
+                        {
+                            std::set<std::string> out;
+                            for (const auto& axis : axes)
+                                out.insert(axis.name);
+                            return out;
+                        }};
+    const std::set<std::string> diff_names{names_of(delta.cube_diff.axes)};
+    for (const auto& stored : {previous.cube.axes, current.cube.axes})
+        for (const auto& name : names_of(stored))
+            EXPECT_TRUE(diff_names.contains(name))
+                << "an axis an input cube declares (" << name << ") is absent from cube_diff.axes";
+}
+
+// ── The differential-axis falsifier, held over BOTH pairs ─────────────────────────────
+//
+// A differential axis is EMERGENT-AT-DIFF: it has no stored-cube domain, its baseline projection
+// is uniformly the mute star, and it is only ever pinned on the CURRENT side. Two consequences are
+// document-local and therefore checkable without any cross-document oracle: a border cell pinning
+// one MUST carry previous_count == 0, and it MUST appear under `emerging` — never `vanishing`.
+// This is the falsifiable obligation that replaces §13.6's non-normative axes-equality comment.
+//
+// It is written as a predicate over the whole cube_diff rather than a lookup of the one cell the
+// latency_shift scenario produces, so a SECOND differential axis added later is judged the day it
+// appears rather than the day someone remembers to extend this. The identification predicate is
+// CONTAINMENT — an axis in cube_diff.axes whose name neither input's cube declares — and not the
+// axis's `kind`: `kind` is a value-shape discriminator the standard owns, and keying on it would
+// make this arm decay silently the moment that spelling changes.
+TEST(MetaLogDocument, ADifferentialAxisOnlyEverPinsAnEmergingCellFromZero)
+{
+    const auto check{[](std::string_view what, const meta::MetaLogDocument& previous,
+                        const meta::MetaLogDocument& current, const meta::MetaLogDiff& delta)
+                     {
+                         std::set<std::string> stored;
+                         for (const auto& axes : {previous.cube.axes, current.cube.axes})
+                             for (const auto& axis : axes)
+                                 stored.insert(axis.name);
+                         std::set<std::string> differential;
+                         for (const auto& axis : delta.cube_diff.axes)
+                             if (!stored.contains(axis.name))
+                                 differential.insert(axis.name);
+
+                         std::size_t pinned{0};
+                         const auto scan{
+                             [&](const meta::CubeBorder& border, bool is_emerging)
+                             {
+                                 for (const auto* region : {&border.lower, &border.upper})
+                                     for (const auto& cell : *region)
+                                     {
+                                         if (!cell.coord.latency_shift)
+                                             continue;
+                                         ++pinned;
+                                         EXPECT_TRUE(is_emerging)
+                                             << what
+                                             << ": a cell pinning a differential axis "
+                                                "appeared under `vanishing`; the "
+                                                "baseline projection is uniformly mute, "
+                                                "so it can only ever emerge";
+                                         EXPECT_EQ(cell.previous_count, 0U)
+                                             << what
+                                             << ": a cell pinning a differential axis "
+                                                "carries previous_count="
+                                             << cell.previous_count
+                                             << "; the axis has no stored-cube domain, "
+                                                "so its baseline count is 0 by "
+                                                "construction";
+                                     }
+                             }};
+                         if (delta.has_cube_diff && delta.cube_diff.has_emerging)
+                             scan(delta.cube_diff.emerging, true);
+                         if (delta.has_cube_diff && delta.cube_diff.has_vanishing)
+                             scan(delta.cube_diff.vanishing, false);
+                         return std::pair{differential.size(), pinned};
+                     }};
+
+    using Clock = std::chrono::system_clock;
+    const Clock::time_point t0{std::chrono::seconds{1700000000}};
+    const Clock::time_point t1{std::chrono::seconds{1700000060}};
+    const Clock::time_point t2{std::chrono::seconds{1700000120}};
+
+    // The pair that HAS a differential axis. Its counts are the positive population.
+    meta::MetaLogConfig shift_cfg;
+    meta::latency_shift::configure(shift_cfg);
+    meta::MetaLogEngine shift_engine{shift_cfg};
+    shift_engine.open_window(t0);
+    meta::latency_shift::emit_window(shift_engine, meta::latency_shift::kPreviousLatencyMs);
+    const auto shift_previous{shift_engine.close_window(t1)};
+    shift_engine.open_window(t1);
+    meta::latency_shift::emit_window(shift_engine, meta::latency_shift::kCurrentLatencyMs);
+    const auto shift_current{shift_engine.close_window(t2)};
+    const auto [shift_axes, shift_cells]{check("latency_shift pair", shift_previous, shift_current,
+                                               meta::diff(shift_previous, shift_current))};
+    EXPECT_EQ(shift_axes, 1U)
+        << "exactly one axis in this diff should be declared by neither input's cube; got "
+        << shift_axes << ". A zero here means the arms above assert over an empty set.";
+    EXPECT_GT(shift_cells, 0U)
+        << "the population is EMPTY: no border cell pins the differential axis, so both assertions "
+           "above passed for free. That is the shape this test exists to refuse.";
+
+    // The CONTROL: a pair with no differential axis at all. Its differential set must be empty —
+    // without it, "the predicate found nothing" and "the predicate cannot find anything" are the
+    // same green.
+    meta::MetaLogConfig depth_cfg;
+    meta::collapse_depths::configure(depth_cfg);
+    meta::MetaLogEngine depth_engine{depth_cfg};
+    depth_engine.open_window(t0);
+    meta::collapse_depths::emit_previous(depth_engine);
+    const auto depth_previous{depth_engine.close_window(t1)};
+    depth_engine.open_window(t1);
+    meta::collapse_depths::emit_current(depth_engine);
+    const auto depth_current{depth_engine.close_window(t2)};
+    const auto [depth_axes,
+                depth_cells]{check("collapse_depths pair", depth_previous, depth_current,
+                                   meta::diff(depth_previous, depth_current))};
+    EXPECT_EQ(depth_axes, 0U)
+        << "a pair with no latency drift must declare no axis its inputs do not; got "
+        << depth_axes;
+    EXPECT_EQ(depth_cells, 0U)
+        << "a pair with no differential axis must pin no differential coordinate; got "
+        << depth_cells;
 }
 
 } // namespace

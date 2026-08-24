@@ -4,7 +4,8 @@
 # {off,fast} corners, asserts the serialized MetaLog document (corpus + the ADR-31.D8 --reservoir-nearfull
 # and --reservoir-streaming arms — the Sift BATCH tuple and the SHIPPED streaming tuple — plus the §C3
 # --cube-collapse, the §4 --ngram-cap and the O4b --service-edges scenarios) is byte-identical across that leg's corners,
-# and EMITS the leg's digest (DETERMINISM_OUT).
+# ALONG WITH the serialized MetaLogDiff — the producer's second artifact species — for every corpus
+# section and for the §13.6 --latency-shift pair, and EMITS the leg's digest (DETERMINISM_OUT).
 #
 # There is NO committed golden (retired — no more committed-golden apparatus). Cross-toolchain / cross-
 # stdlib / cross-ISA / cross-OS bit-identity is asserted by golden.yaml's `compare` job, which byte-
@@ -186,7 +187,8 @@ if [ "${#builds[@]}" -eq 0 ] || [ "${#builds[@]}" -ne "$expected" ]; then
   exit 3
 fi
 
-# Each cell emits the committed corpus (7 files, enumerated from disk — never a hand-kept count) THEN --reservoir-nearfull (the ADR-31.D8 synthetic M=128
+# Each cell emits the committed corpus (7 files, enumerated from disk — never a hand-kept count;
+# each section is doc1 + doc2 + the MetaLogDiff BETWEEN them) THEN --reservoir-nearfull (the ADR-31.D8 synthetic M=128
 # scenario, the Sift BATCH tuple) THEN --reservoir-streaming (the SECOND ADR-31.D8 arm, at the tuple the
 # streaming surface ships — salience-1/k128-m64-c0-e16, where the error-class reserve is live and the
 # batch arm has no opinion) THEN --cube-collapse (the §C3 cube dimensional-collapse guardrail — a window
@@ -195,8 +197,18 @@ fi
 # `behavior.dropped_ngram_observations`; every other one stays under the bound, so §4's
 # absence-means-zero encoding leaves the key absent and no leg has ever judged a document that has
 # it) THEN --service-edges (the O4b service-topology over-cap window — the emitted block rides the top-K select's
-# canonical-key tie-break, proven cross-leg). Compare every built cell to the reference — byte-identity
-# across the leg's -O/-ffp sweep.
+# canonical-key tie-break, proven cross-leg) THEN --latency-shift (the ONLY section that is a window
+# PAIR: it emits both documents and the `cube_diff`-bearing MetaLogDiff between them. The §13.6
+# differential axis is EMERGENT-AT-DIFF — it has no stored-cube domain, so no single-window section
+# can produce one — and a MetaLogDiff is the SECOND artifact species this producer serializes, the
+# one insight-eidos re-publishes verbatim as `raw[].diff` in every Sift change report. Before it,
+# every diff this producer emits sat outside this sweep, and the diff schema sat outside the
+# conformance gate that reads this digest) THEN --collapse-depths (the §16.10 compare-at-min pair,
+# whose two cubes sit at DIFFERENT collapse depths so the diff's axes equal neither input's —
+# the shape §13.6's example text denies and §16.10 mandates). Compare every built cell to the reference — byte-identity
+# across the leg's -O/-ffp sweep. A diff is where this producer's floating point lives (kl/js
+# divergence, frequencies, entropy bits), so the -ffp-contract{off,fast} corners are load-bearing on
+# the diff lines in a way they are not on a pure-integer document.
 for ctag in "${builds[@]}"; do
   : >"$WORK/$ctag.out"
   for f in $CORPUS; do echo "### $(basename "$f") ###" >>"$WORK/$ctag.out"; "${BIN[$ctag]}" "$f" >>"$WORK/$ctag.out" 2>/dev/null; done
@@ -210,6 +222,10 @@ for ctag in "${builds[@]}"; do
   "${BIN[$ctag]}" --ngram-cap >>"$WORK/$ctag.out" 2>/dev/null
   echo "### --service-edges (O4b service-topology over-cap top-K tie-break) ###" >>"$WORK/$ctag.out"
   "${BIN[$ctag]}" --service-edges >>"$WORK/$ctag.out" 2>/dev/null
+  echo "### --latency-shift (Sec13.6 cube_diff differential axis) ###" >>"$WORK/$ctag.out"
+  "${BIN[$ctag]}" --latency-shift >>"$WORK/$ctag.out" 2>/dev/null
+  echo "### --collapse-depths (Sec16.10 compare-at-min, axes equal neither input) ###" >>"$WORK/$ctag.out"
+  "${BIN[$ctag]}" --collapse-depths >>"$WORK/$ctag.out" 2>/dev/null
 done
 rc=0; ref="${builds[0]}"
 echo "reference: $ref  sha=$(sha256sum "$WORK/$ref.out" | cut -c1-16)"
@@ -220,8 +236,9 @@ for ctag in "${builds[@]}"; do
 done
 
 if [ $rc -eq 0 ]; then
-  echo "PASS: byte-identical across ${#builds[@]} built cell(s) — corpus + --reservoir-nearfull +"
-  echo "  --reservoir-streaming + --cube-collapse + --ngram-cap + --service-edges, over the '${LINUX_LEGS[*]}' leg's"
+  echo "PASS: byte-identical across ${#builds[@]} built cell(s) — corpus (documents + the diff between"
+  echo "  them) + --reservoir-nearfull + --reservoir-streaming + --cube-collapse + --ngram-cap +"
+  echo "  --service-edges + --latency-shift + --collapse-depths, over the '${LINUX_LEGS[*]}' leg's"
   echo "  -O{0,3}×-ffp{off,fast} sweep."
   # Cross-leg-agreement mode (the ONLY mode now — no committed golden): emit this leg's full digest
   # (corpus + reservoir, byte-identical across its own -O×-ffp cells above) for the golden.yaml compare
@@ -235,6 +252,9 @@ else
   echo "FAIL: determinism divergence within the '${LINUX_LEGS[*]}' leg's -O/-ffp sweep — a det_math"
   echo "  -ffp-contraction leak, an -O-sensitive ordering leak, OR (on either --reservoir-* marker)"
   echo "  the ADR-31.D8 item-reservoir admit/evict leak — the streaming marker is the one that speaks"
-  echo "  about the DEPLOYED tuple. Localize: diff \$WORK/<ctag>.out vs \$WORK/$ref.out."
+  echo "  about the DEPLOYED tuple. On a DIFF line it is neither: a diff carries this producer's"
+  echo "  floating point (kl/js divergence, frequencies, entropy bits), so an -ffp cell that diverges"
+  echo "  there is a det_math gap in the diff path, which no document section can exhibit."
+  echo "  Localize: diff \$WORK/<ctag>.out vs \$WORK/$ref.out."
 fi
 exit $rc
