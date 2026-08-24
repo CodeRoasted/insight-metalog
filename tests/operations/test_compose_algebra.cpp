@@ -1119,5 +1119,114 @@ TEST(ComposeAlgebraTest, TheSameDocumentsStayAssociativeWhenTheTopKCutDoesNotBit
            "exactly — an integer reduction over an identically ordered distribution";
 }
 
+// ── §12.1 `min` OVER *DECLARED* CAPS, ON THE ORDINARY PATH (DN-56.O3 / DN-56.D2) ──────────────
+//
+// THE PREMISE DN-56.D2 GOT WRONG, RE-DERIVED HERE AT SOURCE. D2 argued that `retention_profile`
+// gating makes `M_A == M_B` "in every normal case, so the question does not even arise", which
+// would leave `min_declared_cap`'s absent branch reachable only by the synthetic ZERO document.
+// It is false, and the reason is structural rather than exotic: `MetaLogEngine::build_reservoir`
+// returns BEFORE its declaration site when `reservoir_size == 0` **OR**
+// `analysis.ordered.size() <= analysis.top_k_cut`, and `top_k_cut` is
+// `min(top_k_size, ordered.size())` — so that second disjunct is simply "every template fit in
+// top-K". A window like that declares NO `reservoir_size` even though the producer was configured
+// with one. Same producer, same config, same `retention_profile` stamp: A STAMP GATES VALUES,
+// NEVER PRESENCE.
+//
+// So a real Sift or server run mixes declared-cap and absent-cap documents CONSTANTLY — a quiet
+// window folds against a busy one all day long. That pair is the ordinary path, and until this
+// arm the only thing exercising the absent branch was `compose(A, ZERO)`, an edge by construction
+// whose green can coexist with an ordinary path that is broken.
+//
+// WHAT REDDENS IT: a `min` that folds absence in as a bound of zero. `min(0, 8) == 0`, the
+// composed document would declare a cap of zero, `admission_bound` would be zero, and EVERY
+// salient template of the busy window would be silently dropped into the tail on contact with a
+// quiet neighbour — the exact multi-scale blindness the reservoir exists to prevent, reachable
+// from a completely ordinary pair of windows. The identity arm above would not catch it: ZERO has
+// no salient entries to lose.
+//
+// BOTH INPUTS COME OUT OF ONE REAL `MetaLogEngine` AT ONE CONFIG. Hand-built documents could
+// assert the same `min`, but they could not assert the premise — that this producer, so
+// configured, really does emit an absent cap on an ordinary window. That premise is the finding,
+// so the arm asserts it first and from the producer itself.
+TEST(ComposeAlgebraTest, MinOverDeclaredCapsSurvivesASameProducerAbsentCapPair)
+{
+    constexpr std::size_t kTopK{4};
+    constexpr std::size_t kCap{8};
+    const meta::MetaLogConfig cfg{
+        .top_k_size = kTopK,
+        .reservoir_size = kCap,
+        .top_ngrams_size = 0,
+        .max_param_histograms = 0,
+        .emit_stability = false,
+    };
+
+    // ── The QUIET window: 3 templates, all of which fit in top-K (cut = min(4,3) = 3), so
+    // `build_reservoir` takes its early return and never reaches the declaration site.
+    meta::MetaLogEngine quiet_engine{cfg};
+    quiet_engine.open_window(kT0);
+    for (int rep = 0; rep < 20; ++rep)
+    {
+        quiet_engine.ingest_event(make_event("quiet alpha steady"));
+        quiet_engine.ingest_event(make_event("quiet beta steady"));
+        quiet_engine.ingest_event(make_event("quiet gamma steady"));
+    }
+    const auto quiet{quiet_engine.close_window(kT1)};
+
+    // ── The BUSY window: 4 frequent templates fill top-K and two rare ERRORs fall below it, so
+    // the reservoir is built and the cap IS declared. Same engine config, same stamp.
+    meta::MetaLogEngine busy_engine{cfg};
+    busy_engine.open_window(kT0);
+    for (int rep = 0; rep < 20; ++rep)
+    {
+        busy_engine.ingest_event(make_event("busy alpha steady"));
+        busy_engine.ingest_event(make_event("busy beta steady"));
+        busy_engine.ingest_event(make_event("busy gamma steady"));
+        busy_engine.ingest_event(make_event("busy delta steady"));
+    }
+    busy_engine.ingest_event(make_event("busy ledger checksum mismatch", insight::LogLevel::Error));
+    busy_engine.ingest_event(
+        make_event("busy settlement batch rejected", insight::LogLevel::Error));
+    const auto busy{busy_engine.close_window(kT1)};
+
+    // ── THE PREMISE, ASSERTED AT THE PRODUCER. If either of these moves, DN-56.O3's finding has
+    // changed and this arm's whole reason to exist must be re-derived rather than re-pinned.
+    ASSERT_FALSE(quiet.stats.reservoir_size.has_value())
+        << "a window whose templates ALL fit in top-K must declare no reservoir cap — that early "
+           "return is what makes the absent branch ordinary rather than exotic:\n    "
+        << render_reservoir(quiet);
+    ASSERT_TRUE(quiet.stats.reservoir.empty()) << render_reservoir(quiet);
+    ASSERT_EQ(busy.stats.reservoir_size, kCap)
+        << "the SAME producer at the SAME config declares its cap on a window that overflows "
+           "top-K — a stamp gates values, never presence:\n    "
+        << render_reservoir(busy);
+    ASSERT_EQ(busy.stats.reservoir.size(), 2U)
+        << "both rare errors must be admitted, or the fold below has nothing to lose:\n    "
+        << render_reservoir(busy);
+
+    // ── ABSENT IS SKIPPED, NOT READ AS ZERO — in both bracketings (§12.2 commutativity MUST).
+    const auto quiet_busy{meta::compose(quiet, busy)};
+    const auto busy_quiet{meta::compose(busy, quiet)};
+
+    EXPECT_EQ(quiet_busy.stats.reservoir_size, kCap)
+        << "min(absent, 8) is 8: an input that declares nothing makes no claim (§8 clause 4). A 0 "
+           "here is the failure this arm exists for — it would be a document declaring itself "
+           "bounded by zero:\n    "
+        << render_reservoir(quiet_busy);
+    EXPECT_EQ(busy_quiet.stats.reservoir_size, kCap)
+        << "and the same from the other side — `min` is symmetric, which is what makes §12.2's "
+           "commutativity MUST hold on this field:\n    "
+        << render_reservoir(busy_quiet);
+
+    EXPECT_EQ(quiet_busy.stats.reservoir.size(), 2U)
+        << "both of the busy window's salient templates SURVIVE the fold with a quiet neighbour. "
+           "Under an absent-as-zero `min` this is 0 and every one of them is silently lumped into "
+           "the tail — on a pair of windows a real run produces constantly:\n    "
+        << render_reservoir(quiet_busy);
+    EXPECT_EQ(reservoir_signature(quiet_busy), reservoir_signature(busy_quiet))
+        << "membership, merged count and re-derived salience must agree as a SEQUENCE across the "
+           "two bracketings:\n    left:  "
+        << render_reservoir(quiet_busy) << "\n    right: " << render_reservoir(busy_quiet);
+}
+
 } // namespace
 // NOLINTEND
