@@ -32,7 +32,7 @@ A MetaLog document is a **deterministic** function of its input window — the s
 | Field | Value |
 |---|---|
 | Conan name | `insight_metalog` |
-| Spec conformance | MetaLog v0.9.0 — **documents clear §8 clauses 1 and 4; diffs do NOT, by one member**, and the published determinism evidence validates CONFORMANT, see below |
+| Spec conformance | MetaLog v0.9.0 — **both artifact species (documents and diffs) clear §8 clauses 1 and 4**, and the published determinism evidence validates CONFORMANT, see below |
 | Visibility | CodeRoast-owned package |
 
 ### Conformance, stated exactly
@@ -46,23 +46,28 @@ clauses, and conflating them is how a green gets over-read.
 
 This producer serializes **two** artifact species and the standard ships a schema for each, so
 there are three measurements here, not two. Until 2026-08-24 there were two: the diff schema had
-never been applied to our output at all, and the row that says NONCONFORMANT below is what
-appeared the moment it was.
+never been applied to our output at all, and the first run that applied it reported a
+NONCONFORMANT diff row on its very first pass — a live §8 clause-1 violation that had been
+sitting under a truthful green for as long as the gate had a subject that excluded it.
 
 | subject | measured | result |
 |---|---|---|
 | **the documents this producer emits** — 23, regenerated from source at HEAD | `metalog_validate.py --kind metalog --expect-documents 23` | **0 errors · 0 cap-exceeded · 0 legal-but-undescribed · CONFORMANT** |
-| **the diffs this producer emits** — 9, regenerated from source at HEAD | `metalog_validate.py --kind diff --expect-documents 9` | **1 error in 1 of 9 · NONCONFORMANT** — `cube_diff.axes[].kind` |
+| **the diffs this producer emits** — 9, regenerated from source at HEAD | `metalog_validate.py --kind diff --expect-documents 9` | **0 errors · 0 cap-exceeded · 0 legal-but-undescribed · CONFORMANT** |
 | **what we have PUBLISHED** — `coderoast-hub/determinism/metalog.determinism_golden.txt` | `--kind metalog --expect-documents 17` | **0 errors · 0 legal-but-undescribed · CONFORMANT** (17 documents; the snapshot carries no diff, so the diff row has no published twin yet) |
 
-**The diff row is a real, open §8 clause-1 failure and is not being waived.** Eight of the nine
-diffs validate; the one that does not is the `--latency-shift` pair, whose `cube_diff` declares
-the diff-only differential axis with `kind: "ordinal"` while the schema closes that enum to
-`["categorical","chain"]`. Which side moves is a spec question under
-`metalog-spec/GOVERNANCE.md` §3, not a local edit. Both commands above are run together by
-`scripts/spec_conformance_gate.sh`, which **exits 1 today** — that is the gate working, and the
-number to watch is the diff row flipping to CONFORMANT, never the gate being taught to look
-away.
+**What the diff row cost, since a green that was once red is worth its history.** The failing
+document was the `--latency-shift` pair, whose `cube_diff` declared the diff-only differential
+axis with `kind: "ordinal"` while both schemas close that enum to `["categorical","chain"]`. It
+was ruled at the producer and not at the standard (`DN-42.D17`): `kind` is a value-SHAPE
+discriminator — SPEC §16.4 states normatively that a `categorical` axis value is a string and a
+`chain` axis value is a prefix-path array — while `ordinal` is a comparison property, so minting
+a third value would have destroyed the one question `kind` answers. The axis's coord value is a
+flat string over a closed band set, so `categorical` is the truthful `kind`; its ordinality rides
+the axis identity and the band vocabulary, exactly where §16.2 carries the ordinal `level` axis's
+while declaring `level`'s `kind` `categorical`. Both commands above are run together by
+`scripts/spec_conformance_gate.sh`, which **exits 0**. The number to watch is that diff row: it
+must never be taught to look away, and it must never go back to reporting a smaller corpus.
 
 The gate also refuses to pass unless its diff corpus witnesses three shapes (`DN-42.D18`): a
 `cube_diff` carrying a **differential axis** with a border cell pinning it, a diff of two cubes
