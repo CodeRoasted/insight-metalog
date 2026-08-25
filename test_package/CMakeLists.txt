@@ -30,6 +30,16 @@ target_link_libraries(insight_metalog_test_package PRIVATE
     GTest::gtest
     GTest::gtest_main
 )
+# Fed by the test_package recipe from the tested reference. A configure-time refusal rather
+# than a default: an empty definition would turn the version assertion into a comparison
+# against "" — still red, but red for a reason nobody could attribute from the failure text.
+if(NOT INSIGHT_METALOG_TESTED_VERSION)
+    message(FATAL_ERROR
+        "INSIGHT_METALOG_TESTED_VERSION was not passed by the test_package recipe. "
+        "The producer.version assertion has no oracle without it.")
+endif()
+target_compile_definitions(insight_metalog_test_package PRIVATE
+    INSIGHT_METALOG_TESTED_VERSION="${INSIGHT_METALOG_TESTED_VERSION}")
 target_compile_features(insight_metalog_test_package PRIVATE cxx_std_23)
 set_target_properties(insight_metalog_test_package PROPERTIES
     CXX_SCAN_FOR_MODULES ON CXX_MODULE_STD ON)

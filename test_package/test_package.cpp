@@ -37,9 +37,11 @@ TEST(InsightMetaLogPackage, ProducesSpecConformantDocument)
     auto doc{engine.close_window(start + std::chrono::minutes(5))};
     EXPECT_EQ(doc.metalog_version, "0.9.0");
     // The package version, not the spec version (SPEC §2.1) — the two moved apart when producer
-    // 0.6.0 stayed frozen through the whole 1.x line. This assertion is the only gate outside the
-    // cut checklist that reads the emitted value, so it moves with every bump (OPS-1.S15).
-    EXPECT_EQ(doc.producer.version, "1.9.6");
+    // 0.6.0 stayed frozen through the whole 1.x line. This is the only gate outside the cut
+    // checklist that reads the emitted value, and it is the reason `kProducerVersion` cannot sit
+    // stale: the expectation is the RELEASED REFERENCE's version, handed in by the test_package
+    // recipe, so the two authorities are independent and the check follows every bump on its own.
+    EXPECT_EQ(doc.producer.version, INSIGHT_METALOG_TESTED_VERSION);
     EXPECT_EQ(doc.window.lines_observed, 3U);
     EXPECT_EQ(doc.stats.unique_templates, 2U);
     EXPECT_EQ(doc.stats.top_k.size(), 2U);

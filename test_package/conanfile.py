@@ -27,6 +27,14 @@ class InsightMetalogTestPackageConan(ConanFile):
     def generate(self):
         tc = CMakeToolchain(self)
         tc.generator = "Ninja"
+        # The oracle for `producer.version` is the RELEASED PACKAGE's version, taken from the
+        # reference under test — never a literal re-typed here. Two authorities have to agree for
+        # the assertion to mean anything: the recipe version (this value) and the C++ constant
+        # `kProducerVersion` that the engine stamps into every document. Re-typing the number in
+        # the test would collapse them into one and measure nothing but the typist.
+        tc.cache_variables["INSIGHT_METALOG_TESTED_VERSION"] = str(
+            self.dependencies["insight_metalog"].ref.version
+        )
         tc.generate()
 
         deps = CMakeDeps(self)
