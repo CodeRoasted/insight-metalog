@@ -445,8 +445,9 @@ struct RulesetIdentity
 //
 // WHICH delivery layers the declarer said wrap this run's lines. DISCLOSURE, never evidence: canon
 // knows transports and deduces nothing, so a reader learns what was DECLARED — a wrong declaration
-// stays wrong, loudly, and the declarer owns it (ADR-23.D2). Nothing here licenses a comparability
-// statement across transport; ADR-23.D6 owns that claim and keeps it closed.
+// stays wrong and the declarer owns it, with nothing announcing it (ADR-23.D2). Nothing here
+// licenses a comparability statement across transport; ADR-23.D6 owns that claim and keeps it
+// closed.
 //
 // It is NOT identity and NOT a comparability gate: the transform GRAMMAR (the catalogue) enters
 // `semantic_identity`, the per-run declaration does not, and two runs ± a declared transform MUST
