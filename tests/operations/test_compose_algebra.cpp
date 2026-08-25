@@ -1314,7 +1314,8 @@ TEST(ComposeAlgebraTest, TheRetentionStampDecidesWhichDeclaredCapMinIsReachable)
     const auto wide_k{stamped(kTopKWide, kNgramsWide)};
     const auto narrow_k{stamped(kTopKNarrow, kNgramsWide)};
     ASSERT_NE(wide_k.retention_profile, narrow_k.retention_profile)
-        << "top_k_size must be an axis of the §2.4 stamp, or arm 1 is testing nothing:\n    wide:   "
+        << "top_k_size must be an axis of the §2.4 stamp, or arm 1 is testing nothing:\n    wide:  "
+           " "
         << wide_k.retention_profile.value_or("<unset>")
         << "\n    narrow: " << narrow_k.retention_profile.value_or("<unset>");
 
@@ -1358,7 +1359,8 @@ TEST(ComposeAlgebraTest, TheRetentionStampDecidesWhichDeclaredCapMinIsReachable)
     ASSERT_TRUE(composed.behavior.has_value() && flipped.behavior.has_value());
     EXPECT_EQ(composed.behavior->top_ngrams_size, kNgramsNarrow)
         << "the composed n-gram cap is the MINIMUM over what the inputs declared, not a side — "
-           "got " << composed.behavior->top_ngrams_size << " from " << kNgramsWide << " and "
+           "got "
+        << composed.behavior->top_ngrams_size << " from " << kNgramsWide << " and "
         << kNgramsNarrow;
     EXPECT_EQ(flipped.behavior->top_ngrams_size, composed.behavior->top_ngrams_size)
         << "and it is symmetric (§12.2 commutativity MUST) — picking a side would show up here "
