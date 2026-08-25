@@ -141,8 +141,8 @@ TEST(ComposeAlgebraTest, CommutativityHoldsOnTheRequiredCapFields)
                 .top_k_size = top_k,
                 .reservoir_size = reservoir,
                 .top_ngrams_size = top_ngrams,
-                .max_param_histograms = 0,
                 .emit_stability = false,
+                .max_param_histograms = 0,
             }};
             engine.open_window(kT0);
             // 12 distinct templates, each at a distinct frequency so the top-K
@@ -268,8 +268,8 @@ TEST(ComposeAlgebraTest, IdentityPreservesTheDocumentIncludingItsDeclaredReservo
         .top_k_size = 3,
         .reservoir_size = 8,
         .top_ngrams_size = 0, // no behavior block: this arm is about `stats`
-        .max_param_histograms = 0,
         .emit_stability = false,
+        .max_param_histograms = 0,
     };
 
     meta::MetaLogEngine engine_a{cfg};
@@ -919,8 +919,8 @@ TEST(ComposeAlgebraTest, ComposedEntropyBitsIsRecomputedFromTheMergedCounts)
         .top_k_size = 3,
         .reservoir_size = 8,
         .top_ngrams_size = 0,
-        .max_param_histograms = 0,
         .emit_stability = false,
+        .max_param_histograms = 0,
     };
     meta::MetaLogEngine engine_a{cfg};
     engine_a.open_window(kT0);
@@ -1156,8 +1156,8 @@ TEST(ComposeAlgebraTest, MinOverDeclaredCapsSurvivesASameProducerAbsentCapPair)
         .top_k_size = kTopK,
         .reservoir_size = kCap,
         .top_ngrams_size = 0,
-        .max_param_histograms = 0,
         .emit_stability = false,
+        .max_param_histograms = 0,
     };
 
     // ── The QUIET window: 3 templates, all of which fit in top-K (cut = min(4,3) = 3), so
@@ -1294,8 +1294,8 @@ TEST(ComposeAlgebraTest, TheRetentionStampDecidesWhichDeclaredCapMinIsReachable)
                                .top_k_size = top_k,
                                .reservoir_size = 0,
                                .top_ngrams_size = top_ngrams,
-                               .max_param_histograms = 0,
                                .emit_stability = false,
+                               .max_param_histograms = 0,
                            };
                            cfg.retention_profile = meta::retention_profile_name(cfg);
                            return cfg;
