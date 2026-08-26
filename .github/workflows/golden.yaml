@@ -99,6 +99,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: CodeRoasted/malf-toolchain
+          ref: 9a410d4096a7952a93dea3e32c4bd055b793cc59
           path: malf
           fetch-depth: 1
           persist-credentials: false
@@ -114,11 +115,11 @@ jobs:
 
       - name: Provision gcc-16.2 toolchain (OUR OWN published asset; arm64 auto-picked by uname -m)
         if: matrix.leg == 'gcc'
-        uses: CodeRoasted/malf-toolchain/.github/actions/setup-gcc@d0627449148015760e56caacd0aa1ea772e42af8
+        uses: CodeRoasted/malf-toolchain/.github/actions/setup-gcc@9a410d4096a7952a93dea3e32c4bd055b793cc59
 
       - name: Provision clang-21 + libc++-21
         if: matrix.leg == 'clang'
-        uses: CodeRoasted/malf-toolchain/.github/actions/setup-clang21-libcxx@d0627449148015760e56caacd0aa1ea772e42af8
+        uses: CodeRoasted/malf-toolchain/.github/actions/setup-clang21-libcxx@9a410d4096a7952a93dea3e32c4bd055b793cc59
 
       - name: Base — ninja + CMake 4.3.x (+ gcc-16.2 /opt wiring on the gcc leg)
         run: |
@@ -209,6 +210,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: CodeRoasted/malf-toolchain
+          ref: 9a410d4096a7952a93dea3e32c4bd055b793cc59
           path: malf
           fetch-depth: 1
           persist-credentials: false
@@ -222,7 +224,7 @@ jobs:
           persist-credentials: false
 
       - name: Install + activate MSVC 14.52 (the C++23-modules fix floor; not pre-installed)
-        uses: CodeRoasted/malf-toolchain/.github/actions/setup-msvc1452@d0627449148015760e56caacd0aa1ea772e42af8
+        uses: CodeRoasted/malf-toolchain/.github/actions/setup-msvc1452@9a410d4096a7952a93dea3e32c4bd055b793cc59
 
       - name: Verify the active toolset is MSVC 14.52, not a fallback
         shell: pwsh
@@ -419,7 +421,7 @@ jobs:
           pattern: golden-digest-*
 
       - name: Compare + validate the golden (all 5 legs must be byte-identical)
-        uses: CodeRoasted/malf-toolchain/.github/actions/coderoast-golden-compare@d0627449148015760e56caacd0aa1ea772e42af8
+        uses: CodeRoasted/malf-toolchain/.github/actions/coderoast-golden-compare@9a410d4096a7952a93dea3e32c4bd055b793cc59
         with:
           digests-dir: digests
           min-legs: '5'
