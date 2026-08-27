@@ -92,6 +92,24 @@ jobs:
       # determinism_bitidentity.sh picks the profile matching DETERMINISM_LEG; x86↔arm64 differ only by arch.
       DETERMINISM_GCC_PROFILE: ${{ matrix.gcc_profile }}
       DETERMINISM_CLANG_PROFILE: ${{ matrix.clang_profile }}
+      # MALF_TOOLCHAIN_DIR is the generator's RESOLUTION MECHANISM, not a convenience
+      # (DN-17.D31/D32) — `insight-canon/semantic/github/CMakeLists.txt` owns the rule and the
+      # FATAL that enforces it; insight-eidos's golden.yaml carries the long-form argument for
+      # why a raw determinism leg declares it a second time instead of inheriting it.
+      #
+      # ABSENT FROM BOTH JOBS OF THIS FILE UNTIL THE `v1.10.1` TAG, and the two leg families hid
+      # it differently, which is why reading the file could not find it. `proof-linux` seeds the
+      # graph with `conan editable add _canon/semantic/github`, so the package builds IN its
+      # source tree and the one-candidate desk-layout fallback (`<pkg>/../../../malf`) happens to
+      # resolve — a green resting on the fallback, not on the mechanism. `proof-msvc` seeds with
+      # `conan export` instead (INV-13, deliberate), so it builds from sources exported into the
+      # conan cache, where — the CMakeLists comment says it in as many words — no relative path
+      # can reach the toolchain at all. Measured on `insight-metalog` run 33070065532:
+      # four Linux legs success, MSVC `dialect_package_codegen.py NOT FOUND`, `compare` skipped.
+      #
+      # TRUE BY CONSTRUCTION: this job checks malf-toolchain out at `path: malf`, which is
+      # `github.workspace`/malf by definition of actions/checkout.
+      MALF_TOOLCHAIN_DIR: ${{ github.workspace }}/malf
     steps:
       - uses: actions/checkout@v5
 
@@ -203,6 +221,24 @@ jobs:
     runs-on: windows-2025
     env:
       CONAN_HOME: ${{ github.workspace }}/.conan2
+      # MALF_TOOLCHAIN_DIR is the generator's RESOLUTION MECHANISM, not a convenience
+      # (DN-17.D31/D32) — `insight-canon/semantic/github/CMakeLists.txt` owns the rule and the
+      # FATAL that enforces it; insight-eidos's golden.yaml carries the long-form argument for
+      # why a raw determinism leg declares it a second time instead of inheriting it.
+      #
+      # ABSENT FROM BOTH JOBS OF THIS FILE UNTIL THE `v1.10.1` TAG, and the two leg families hid
+      # it differently, which is why reading the file could not find it. `proof-linux` seeds the
+      # graph with `conan editable add _canon/semantic/github`, so the package builds IN its
+      # source tree and the one-candidate desk-layout fallback (`<pkg>/../../../malf`) happens to
+      # resolve — a green resting on the fallback, not on the mechanism. `proof-msvc` seeds with
+      # `conan export` instead (INV-13, deliberate), so it builds from sources exported into the
+      # conan cache, where — the CMakeLists comment says it in as many words — no relative path
+      # can reach the toolchain at all. Measured on `insight-metalog` run 33070065532:
+      # four Linux legs success, MSVC `dialect_package_codegen.py NOT FOUND`, `compare` skipped.
+      #
+      # TRUE BY CONSTRUCTION: this job checks malf-toolchain out at `path: malf`, which is
+      # `github.workspace`/malf by definition of actions/checkout.
+      MALF_TOOLCHAIN_DIR: ${{ github.workspace }}/malf
     steps:
       - uses: actions/checkout@v5
 
