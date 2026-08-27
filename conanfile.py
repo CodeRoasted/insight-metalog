@@ -8,7 +8,7 @@ required_conan_version = ">=2.28"
 
 class InsightMetalogConan(ConanFile):
     name = "insight_metalog"
-    version = "1.10.1"
+    version = "1.10.2"
     license = "BUSL-1.1"
     package_type = "library"
     description = "MetaLog spec v0.9.0 producer: bounded statistical fingerprint of a window of log behaviour, with behavior, stability, diff/compose, and HLL cardinality blocks (https://github.com/CodeRoasted/metalog-spec)."
@@ -52,7 +52,7 @@ class InsightMetalogConan(ConanFile):
     def requirements(self):
         # insight_canon provides logging and types; transitive headers needed.
         # Don't use transitive_libs since it pulls in spdlog which is header-only.
-        self.requires("insight_canon/1.10.1", transitive_headers=True)
+        self.requires("insight_canon/1.10.2", transitive_headers=True)
         # glaze is the JSON serializer, used only in metalog_serialize.cpp and never
         # in a public header — a private, non-propagated build dependency.
         self.requires("glaze/7.4.0", visible=False)
@@ -63,7 +63,7 @@ class InsightMetalogConan(ConanFile):
         # emerging-border oracle cannot exercise `role: Terminator` without composing a
         # package that supplies one — measured, not assumed: under an EMPTY composition that
         # class recovers 1 of 2 antichain members. metalog itself stays dialect-free.
-        self.test_requires("insight_semantic_github/1.10.1")
+        self.test_requires("insight_semantic_github/1.10.2")
         self.test_requires("gtest/1.17.0")
         self.test_requires("benchmark/1.9.5")
         # picosha2 — TEST-ONLY now: the lib's template_id SHA-256 moved to canon (SRC-D-TIR-1),

@@ -829,7 +829,7 @@ struct ReportedWindowBounds
 // the cut ceremony (operations/001 OPS-1.S15), and the release test_package pins what is emitted.
 //
 // pin-coherence: mirrors insight_metalog
-inline constexpr std::string_view kProducerVersion{"1.10.1"};
+inline constexpr std::string_view kProducerVersion{"1.10.2"};
 
 // The SPEC edition this producer writes against, stamped into `metalog_version` (SPEC §9). ONE
 // spelling, for the reason stated directly above: the DTO default and the engine's own
