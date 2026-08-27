@@ -617,6 +617,44 @@ struct CubeCardinalityStat
     std::array<std::uint32_t, kAxisCount> per_axis{}; // distinct [level, component, role]
 };
 
+// ── The failure frontier — ONE spelling, and it is this one ─────────────────────────────────
+// A level is "in failure" iff it is Error or Fatal. `Unknown` sorts ABOVE `Fatal` numerically but
+// is NOT a failure, so this is an explicit membership test, never a `>= Error` compare — the trap
+// the two former copies both wrote out in prose and would both have had to keep writing.
+//
+// EXPORTED rather than TU-local (DN-64.D3 row 6): the predicate was spelled twice, once here in
+// `diff.cpp`'s anonymous namespace and once as `is_error_class` in eidos' Sift, and the two halves
+// of ONE report deciding "failure" differently would split a single crossing between "escalation"
+// and "no crossing". They agreed at the moment they were found; that is what made it the row to
+// rip rather than the row to panic about.
+[[nodiscard]] constexpr bool is_failure_level(LogLevel level) noexcept
+{
+    return level == LogLevel::Error || level == LogLevel::Fatal;
+}
+[[nodiscard]] constexpr bool is_failure_level(const std::optional<EventLevel>& level) noexcept
+{
+    return level.has_value() && is_failure_level(level->value());
+}
+
+// WHICH axis retained a template — the argmax of the soft max `salience_score` takes over its five
+// peer axes. The score is `severity ⊗ rarity` and severity is `max(level-band, terminator-band,
+// failure-cue-band, structural_surprise, novelty)`; before DN-64.D3 row 3 the argmax was computed
+// at that max and thrown away, so every consumer re-derived it from the two ORDINALS a document
+// publishes (`structural_surprise`, `novelty`) — two of the three inputs. That re-derivation is
+// structurally unable to name the level, terminator or failure-cue arms, so a success message
+// retained by ONE lexicon word reported itself as "retained by salience", with no axis.
+//
+// THE VERDICT CROSSES, NOT THE INPUTS. Publishing the third ordinal instead would reproduce the
+// same truncated argmax one hop later, in every consumer, forever.
+enum class RetentionAxis : std::uint8_t
+{
+    Level,              // the dominant_level's severity band (Warn / Error / Fatal)
+    FailureCue,         // the LEVEL-BLIND token-lexicon tier (§3.1 SRC-D-PROV-1)
+    Terminator,         // the declared structural failure marker (e.g. `##[error]`)
+    StructuralSurprise, // the STRUCTURE axis: reached only via a rare incoming transition
+    Novelty             // the TIME axis: first seen late within the window
+};
+
 // Salience Reservoir entry (Tier 2). A template
 // retained by intrinsic SALIENCE rather than frequency — where a rare-but-severe
 // event (a lone fatal) survives the bounded fingerprint instead of collapsing
@@ -669,6 +707,20 @@ struct ReservoirEntry
     // salient. (severity ⊕ structural_surprise ⊕ novelty) ⊗ rarity, where severity
     // folds level · failure-lexicon · structural_role.
     std::uint32_t salience{0};
+    // WHICH of the five peer axes won that max (DN-64.D3 row 3) — stamped where the max is taken
+    // (`salience_score`), never re-derived downstream.
+    //
+    // DOMAIN-ONLY, NEVER SERIALISED, on the DN-32.D3 precedent above: the wire row carries the
+    // salience number alone, so the MetaLog spec and every document byte are untouched. Nothing
+    // deserialises a MetaLogDocument (this package exposes `to_json` and no inverse), so a document
+    // only ever reaches a consumer in-process with the verdict intact.
+    //
+    // OPTIONAL, and the absence is a real third state rather than a defensive default: an entry
+    // that no salience computation produced (a hand-built document, a fixture) has no argmax to
+    // report, and the honest reading is "this entry does not say", not a fabricated `Level`. It
+    // fails SAFE — a consumer with no axis falls back to the un-attributed narrative it already
+    // had, which is the under-claiming direction.
+    std::optional<RetentionAxis> retention_axis;
     // §15.4 sub-coordinate (guarantee-2 aid): the reconciled first-seen ordinal of
     // this template within the window (== Bucket::first_seen_index), bounded by the
     // reservoir size. Populated only when a re-derivation coordinate is configured;
@@ -1472,6 +1524,10 @@ struct ReservoirDeltaEntry
     StructuralRole structural_role{StructuralRole::None};
     std::uint32_t salience{0};
     std::uint64_t count{0};
+    // The snapshot's retention argmax, carried from the owning side's ReservoirEntry (see the
+    // field there for why it is the VERDICT and not the ordinals, and why it is optional).
+    // Domain-only — `dto::ReservoirDeltaEntry` (serialize.cpp) does not carry it.
+    std::optional<RetentionAxis> retention_axis;
     [[nodiscard]] bool operator==(const ReservoirDeltaEntry&) const noexcept = default;
 };
 
@@ -1487,6 +1543,16 @@ struct FrontierCrossing
     // be able to see whether the levels that define the crossing were declared or inferred.
     std::optional<EventLevel> previous_level;
     std::optional<EventLevel> current_level;
+    // The two sides' occurrence counts and shares, from the salience-memory entry each side owns
+    // (top_k or reservoir — both carry `count` and `frequency`). Here for the same reason the two
+    // levels are: "so the consumer can attribute the crossing WITHOUT RE-READING THE DOCUMENTS".
+    // A consumer that had to re-read them to render "2x on baseline, 2x on changed" would be back
+    // to owning a membership domain of its own, which is exactly what DN-64.D4 forbids.
+    // Domain-only — `dto::FrontierCrossing` (serialize.cpp) carries the ids and levels alone.
+    std::uint64_t previous_count{0};
+    std::uint64_t current_count{0};
+    double previous_frequency{0.0};
+    double current_frequency{0.0};
     [[nodiscard]] bool operator==(const FrontierCrossing&) const noexcept = default;
 };
 

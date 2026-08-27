@@ -227,16 +227,29 @@ dominant_component_of(const std::unordered_map<std::string, std::uint64_t, Trans
 [[nodiscard]] std::uint32_t novelty_band(std::uint64_t first_seen_index, std::uint64_t lines,
                                          std::uint64_t count) noexcept;
 
+// A salience computation's TWO results: the score, and WHICH axis produced it.
+//
+// The argmax was always computed — `max({severity, structural_surprise, novelty})` picks a winner
+// — and was discarded at the `return`, so every consumer re-derived it from the two ordinals a
+// document publishes and got the truncated answer (DN-64.D3 row 3). Returning the pair makes the
+// verdict a fact the producer states once. `axis` is engaged iff `score > 0`: a template with no
+// salient axis has no argmax, and saying so is not the same as naming one.
+struct SalienceVerdict
+{
+    std::uint32_t score{0};
+    std::optional<RetentionAxis> axis;
+};
+
 // Deterministic, quantized salience: (severity ⊕ structural_surprise ⊕ novelty) ⊗
-// rarity. Returns 0 for a non-salient template (so rare-benign noise never enters
+// rarity. Returns score 0 for a non-salient template (so rare-benign noise never enters
 // the reservoir). Integer math only — no float (I5). `echoed_source` (SRC-D-PROV-1 §3.1):
 // when true the LEVEL-BLIND failure-cue tier is skipped (an all-echoed `…failed…`
 // template must not be re-promoted after A1 demoted its level to Unknown).
-[[nodiscard]] std::uint32_t salience_score(std::optional<LogLevel> level, StructuralRole role,
-                                           std::string_view tmpl, bool echoed_source,
-                                           std::uint64_t count, std::uint64_t lines,
-                                           std::uint32_t structural_surprise,
-                                           std::uint32_t novelty) noexcept;
+[[nodiscard]] SalienceVerdict salience_score(std::optional<LogLevel> level, StructuralRole role,
+                                             std::string_view tmpl, bool echoed_source,
+                                             std::uint64_t count, std::uint64_t lines,
+                                             std::uint32_t structural_surprise,
+                                             std::uint32_t novelty) noexcept;
 
 // ── Wire-format helpers ───────────────────────────────────────────────────────
 // MetaLog wire-format helpers (spec §2/§3): rendering domain values into the

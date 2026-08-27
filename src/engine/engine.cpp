@@ -764,9 +764,12 @@ MetaLogEngine::collect_reservoir_candidates(const WindowAnalysis& analysis) cons
                                       dominant_role_of(bucket.role_counts), bucket.template_str,
                                       bucket.all_echoed_source, bucket.count, lines_observed_,
                                       surprise, novelty)};
-        if (sal > 0U)
-            candidates.push_back(ReservoirCandidate{
-                .index = i, .salience = sal, .structural_surprise = surprise, .novelty = novelty});
+        if (sal.score > 0U)
+            candidates.push_back(ReservoirCandidate{.index = i,
+                                                    .salience = sal.score,
+                                                    .structural_surprise = surprise,
+                                                    .novelty = novelty,
+                                                    .retention_axis = sal.axis});
     }
     return candidates;
 }
@@ -833,6 +836,7 @@ void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& ana
             entry.structural_surprise = candidate.structural_surprise;
             entry.novelty = candidate.novelty;
             entry.salience = candidate.salience;
+            entry.retention_axis = candidate.retention_axis;
             // §15.4 sub-coordinate: re-express the reconciled first-seen ordinal, bounded by M.
             // Only when a coordinate is configured (a sub-part of the document coordinate).
             if (config_.source_ref)

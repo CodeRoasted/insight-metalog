@@ -228,6 +228,10 @@ class MetaLogEngine
         std::uint32_t salience;
         std::uint32_t structural_surprise;
         std::uint32_t novelty;
+        // The argmax `salience_score` stamped alongside `salience` — carried to `admit_one` so the
+        // admitted entry states WHICH axis retained it (DN-64.D3 row 3), rather than leaving every
+        // consumer to re-derive it from the two ordinals above.
+        std::optional<RetentionAxis> retention_axis;
     };
 
     // close_window is an orchestrator over these single-responsibility steps; each

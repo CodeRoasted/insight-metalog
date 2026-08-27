@@ -295,6 +295,10 @@ namespace
         std::uint32_t structural_surprise;
         std::uint32_t novelty;
         StructuralRole role;
+        // The argmax of the RE-DERIVED salience below — the composed document's own verdict, not
+        // either input's, because §12.1 re-derives the score over the merged counts and the winning
+        // axis can move with it (rarity is scale-relative; a level band is not).
+        std::optional<RetentionAxis> retention_axis;
         std::string where_leaf; // §16.6 cube_coord WHERE leaf
     };
 
@@ -360,13 +364,14 @@ namespace
                                info.role, std::string_view{},
                                /*echoed_source=*/false, cnt, out.window.lines_observed,
                                info.structural_surprise, info.novelty)};
-            if (sal > 0U)
+            if (sal.score > 0U)
                 res_cands.push_back(
                     ComposeReservoirCandidate{.template_id = tid,
-                                              .salience = sal,
+                                              .salience = sal.score,
                                               .structural_surprise = info.structural_surprise,
                                               .novelty = info.novelty,
                                               .role = info.role,
+                                              .retention_axis = sal.axis,
                                               .where_leaf = info.where_leaf});
         }
         return res_cands;
@@ -434,6 +439,7 @@ namespace
             entry.structural_surprise = cand.structural_surprise;
             entry.novelty = cand.novelty;
             entry.salience = cand.salience;
+            entry.retention_axis = cand.retention_axis;
             if (inputs_have_cube)
                 entry.cube_coord = cube::cube_location(
                     entry.dominant_level ? std::optional<LogLevel>{entry.dominant_level->value()}

@@ -192,27 +192,44 @@ std::uint32_t novelty_band(std::uint64_t first_seen_index, std::uint64_t lines,
     return 0U;                    // present from the first half — not an emergence
 }
 
-std::uint32_t salience_score(std::optional<LogLevel> level, StructuralRole role,
-                             std::string_view tmpl, bool echoed_source, std::uint64_t count,
-                             std::uint64_t lines, std::uint32_t structural_surprise,
-                             std::uint32_t novelty) noexcept
+SalienceVerdict salience_score(std::optional<LogLevel> level, StructuralRole role,
+                               std::string_view tmpl, bool echoed_source, std::uint64_t count,
+                               std::uint64_t lines, std::uint32_t structural_surprise,
+                               std::uint32_t novelty) noexcept
 {
-    // severity 0..100, multi-signal max (robust to any single signal missing).
-    std::uint32_t severity{0};
+    // severity 0..100, multi-signal max (robust to any single signal missing) — TAKEN ONCE, and
+    // the winner STAMPED at the same site (DN-64.D3 row 3). `consider` keeps the score identical
+    // to the former chain of `std::max` calls; what it adds is the argmax, which used to die here.
+    //
+    // THE TIE-BREAK IS THE CALL ORDER, and it is strict `>` so the FIRST axis offering a band wins
+    // it. The order is not a new ruling: it is the severity-confidence order this function already
+    // states below (declared > level-keyword > token-lexicon), with the two benign peer axes after
+    // the severity ones and STRUCTURE before TIME — the same precedence the consumers' own
+    // `structural_surprise >= novelty` arm already applied. It is load-bearing, because the ladder
+    // has genuine ties: `kBandTerminator` and `kBandStrongOffPath` are both 90.
+    SalienceVerdict verdict;
+    const auto consider{[&verdict](std::uint32_t band, RetentionAxis axis) noexcept
+                        {
+                            if (band > verdict.score)
+                            {
+                                verdict.score = band;
+                                verdict.axis = axis;
+                            }
+                        }};
     if (role == StructuralRole::Terminator)
-        severity = std::max(severity, kBandTerminator);
+        consider(kBandTerminator, RetentionAxis::Terminator);
     if (level)
     {
         switch (*level)
         {
         case LogLevel::Fatal:
-            severity = std::max(severity, kBandFatal);
+            consider(kBandFatal, RetentionAxis::Level);
             break;
         case LogLevel::Error:
-            severity = std::max(severity, kBandError);
+            consider(kBandError, RetentionAxis::Level);
             break;
         case LogLevel::Warn:
-            severity = std::max(severity, kBandWarn);
+            consider(kBandWarn, RetentionAxis::Level);
             break;
         default:
             break;
@@ -224,7 +241,7 @@ std::uint32_t salience_score(std::optional<LogLevel> level, StructuralRole role,
     // re-promotes the echoed `…failed…` template above the real failure. A template seen even once
     // as a runtime event is not all-echoed → the tier (and its genuine level salience) stands.
     if (!echoed_source && looks_like_failure(tmpl))
-        severity = std::max(severity, kBandFailureCue);
+        consider(kBandFailureCue, RetentionAxis::FailureCue);
     // Severity-confidence tiers run declared > level-keyword > token-lexicon. A
     // DECLARED failure marker (StructuralRole::Terminator, e.g. `##[error]`) would
     // be the highest tier, but it is intentionally NOT gated here: canon already
@@ -235,10 +252,13 @@ std::uint32_t salience_score(std::optional<LogLevel> level, StructuralRole role,
     // structural_surprise and novelty are peer severity axes: a benign Info line is
     // salient if it is reached only via a rare off-path transition (STRUCTURE) or if
     // it just EMERGED late in the window (TIME), even when its level/lexicon
-    // severity is 0. Soft max — robust to any single axis being absent.
-    severity = std::max({severity, structural_surprise, novelty});
-    if (severity == 0U)
-        return 0U; // not salient — rarity must never gate a benign template in (SPEC §3.7.2)
+    // severity is 0. Soft max — robust to any single axis being absent. A zero band
+    // never wins (strict `>`), so a template with no structure/novelty signal keeps
+    // whichever severity axis it had.
+    consider(structural_surprise, RetentionAxis::StructuralSurprise);
+    consider(novelty, RetentionAxis::Novelty);
+    if (verdict.score == 0U)
+        return {}; // not salient — rarity must never gate a benign template in (SPEC §3.7.2)
 
     // rarity modulation (a modulator, never a gate): rare → amplify, frequent →
     // damp toward baseline. Integer thresholds on count·N vs lines (no float).
@@ -254,7 +274,8 @@ std::uint32_t salience_score(std::optional<LogLevel> level, StructuralRole role,
         else
             rarity = kRarityFrequent;
     }
-    return severity * rarity; // 0..10000
+    verdict.score *= rarity; // 0..10000 — the axis that won severity owns the modulated score too
+    return verdict;
 }
 
 } // namespace insight::metalog

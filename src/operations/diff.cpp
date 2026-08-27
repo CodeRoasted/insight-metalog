@@ -497,29 +497,39 @@ namespace
     }
 
     // ── reservoir delta (§5.3) ─────────────────────────────────────
-    // The ERROR/FATAL failure frontier. A template is "in failure" iff its dominant_level is
-    // Error or Fatal — Unknown sorts above Fatal numerically but is NOT a failure, so this is
-    // an explicit membership test, never a `>= Error` compare.
-    [[nodiscard]] constexpr bool is_failure_level(std::optional<EventLevel> level) noexcept
+    // The ERROR/FATAL failure frontier is `is_failure_level`, EXPORTED from metalog.api.cppm —
+    // this TU held the second of two copies of it (DN-64.D3 row 6) and no longer spells its own.
+
+    // One side's salience-memory record for a template: everything the frontier compare and the
+    // crossing row need, so a consumer never re-reads the documents to render one.
+    struct SalienceMemoryEntry
     {
-        return level == LogLevel::Error || level == LogLevel::Fatal;
-    }
+        std::optional<EventLevel> level;
+        std::uint64_t count{0};
+        double frequency{0.0};
+    };
 
     // A document's salience memory = the template_ids of top_k ∪ reservoir with the
-    // dominant_level each carries. Disjoint by construction (a reservoir template did not make
-    // top_k), so no key collision. POINT-LOOKUP map only (membership + frontier level compare);
-    // never iterated into output, so the unordered_map is not a determinism surface (ADR-31.D8),
-    // exactly like component_latency_shifts above.
-    [[nodiscard]] std::unordered_map<TemplateId, std::optional<EventLevel>>
-    salience_memory_levels(const MetaLogDocument& doc)
+    // dominant_level, count and share each carries. Disjoint by construction (a reservoir template
+    // did not make top_k), so no key collision. POINT-LOOKUP map only (membership + frontier level
+    // compare); never iterated into output, so the unordered_map is not a determinism surface
+    // (ADR-31.D8), exactly like component_latency_shifts above.
+    [[nodiscard]] std::unordered_map<TemplateId, SalienceMemoryEntry>
+    salience_memory(const MetaLogDocument& doc)
     {
-        std::unordered_map<TemplateId, std::optional<EventLevel>> level_of;
-        level_of.reserve(doc.stats.top_k.size() + doc.stats.reservoir.size());
-        for (const auto& entry : doc.stats.top_k)
-            level_of.emplace(entry.template_id, entry.dominant_level);
-        for (const auto& entry : doc.stats.reservoir)
-            level_of.emplace(entry.template_id, entry.dominant_level);
-        return level_of;
+        std::unordered_map<TemplateId, SalienceMemoryEntry> memory;
+        memory.reserve(doc.stats.top_k.size() + doc.stats.reservoir.size());
+        const auto add{[&memory](const auto& entries)
+                       {
+                           for (const auto& entry : entries)
+                               memory.emplace(entry.template_id,
+                                              SalienceMemoryEntry{.level = entry.dominant_level,
+                                                                  .count = entry.count,
+                                                                  .frequency = entry.frequency});
+                       }};
+        add(doc.stats.top_k);
+        add(doc.stats.reservoir);
+        return memory;
     }
 
     [[nodiscard]] ReservoirDeltaEntry reservoir_snapshot(const ReservoirEntry& entry)
@@ -528,7 +538,8 @@ namespace
                                    .dominant_level = entry.dominant_level,
                                    .structural_role = entry.structural_role,
                                    .salience = entry.salience,
-                                   .count = entry.count};
+                                   .count = entry.count,
+                                   .retention_axis = entry.retention_axis};
     }
 
     // The §5.3 reservoir delta: new/vanished rare-salient templates over the two documents'
@@ -538,39 +549,44 @@ namespace
     void diff_reservoir_delta(MetaLogDiff& out, const MetaLogDocument& previous,
                               const MetaLogDocument& current)
     {
-        const std::unordered_map<TemplateId, std::optional<EventLevel>> prev_levels{
-            salience_memory_levels(previous)};
-        const std::unordered_map<TemplateId, std::optional<EventLevel>> cur_levels{
-            salience_memory_levels(current)};
+        const std::unordered_map<TemplateId, SalienceMemoryEntry> prev_memory{
+            salience_memory(previous)};
+        const std::unordered_map<TemplateId, SalienceMemoryEntry> cur_memory{
+            salience_memory(current)};
         ReservoirDelta& delta{out.reservoir_delta};
 
         // new_salient: current.reservoir entries absent from previous.(top_k ∪ reservoir).
         for (const auto& entry : current.stats.reservoir)
-            if (!prev_levels.contains(entry.template_id))
+            if (!prev_memory.contains(entry.template_id))
                 delta.new_salient.push_back(reservoir_snapshot(entry));
 
         // vanished_salient: previous.reservoir entries absent from current.(top_k ∪ reservoir).
         for (const auto& entry : previous.stats.reservoir)
-            if (!cur_levels.contains(entry.template_id))
+            if (!cur_memory.contains(entry.template_id))
                 delta.vanished_salient.push_back(reservoir_snapshot(entry));
 
         // frontier_crossings: templates in BOTH memories whose dominant_level crosses the
         // failure frontier (a change in failure-membership). Direction is oriented
-        // previous→current: Up = crossed INTO failure, Down = crossed OUT.
-        for (const auto& [template_id, cur_level] : cur_levels)
+        // previous→current: Up = crossed INTO failure, Down = crossed OUT. Both sides' counts and
+        // shares ride along, from the memory record each side owns.
+        for (const auto& [template_id, cur_side] : cur_memory)
         {
-            const auto prev_it{prev_levels.find(template_id)};
-            if (prev_it == prev_levels.end())
+            const auto prev_it{prev_memory.find(template_id)};
+            if (prev_it == prev_memory.end())
                 continue; // not on both sides → not a crossing (it is a new/vanished member)
-            const std::optional<EventLevel> prev_level{prev_it->second};
-            if (is_failure_level(prev_level) == is_failure_level(cur_level))
+            const SalienceMemoryEntry& prev_side{prev_it->second};
+            if (is_failure_level(prev_side.level) == is_failure_level(cur_side.level))
                 continue; // failure-membership unchanged → no crossing
-            delta.frontier_crossings.push_back(
-                FrontierCrossing{.template_id = template_id,
-                                 .direction = is_failure_level(cur_level) ? FrontierDirection::Up
-                                                                          : FrontierDirection::Down,
-                                 .previous_level = prev_level,
-                                 .current_level = cur_level});
+            delta.frontier_crossings.push_back(FrontierCrossing{
+                .template_id = template_id,
+                .direction = is_failure_level(cur_side.level) ? FrontierDirection::Up
+                                                              : FrontierDirection::Down,
+                .previous_level = prev_side.level,
+                .current_level = cur_side.level,
+                .previous_count = prev_side.count,
+                .current_count = cur_side.count,
+                .previous_frequency = prev_side.frequency,
+                .current_frequency = cur_side.frequency});
         }
 
         const auto by_entry_id{[](const ReservoirDeltaEntry& lhs, const ReservoirDeltaEntry& rhs)

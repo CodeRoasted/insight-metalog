@@ -332,27 +332,33 @@ TEST(NoveltyBand, LastTenPctScoresLate)
 TEST(SalienceScore, ZeroSeverityReturnsZero)
 {
     // Info level, no failure cue, no surprise, no novelty → 0.
-    EXPECT_EQ(meta::salience_score(LogLevel::Info, StructuralRole::None, "conn accepted",
-                                   /*echoed_source=*/false, 50, 100, 0, 0),
-              0u);
+    const auto verdict{meta::salience_score(LogLevel::Info, StructuralRole::None, "conn accepted",
+                                            /*echoed_source=*/false, 50, 100, 0, 0)};
+    EXPECT_EQ(verdict.score, 0u);
+    // A template with no salient axis has no argmax to report — the absence IS the answer.
+    EXPECT_FALSE(verdict.axis.has_value());
 }
 
 TEST(SalienceScore, FatalLevelScoresHigh)
 {
-    const std::uint32_t score =
-        meta::salience_score(LogLevel::Fatal, StructuralRole::None, "process died",
-                             /*echoed_source=*/false, 1, 1000, 0, 0);
-    EXPECT_GT(score, 0u);
+    const auto verdict{meta::salience_score(LogLevel::Fatal, StructuralRole::None, "process died",
+                                            /*echoed_source=*/false, 1, 1000, 0, 0)};
+    EXPECT_GT(verdict.score, 0u);
     // fatal band (100) × uncommon (90, count·100 < lines) = 9000.
-    EXPECT_EQ(score, 9000u);
+    EXPECT_EQ(verdict.score, 9000u);
+    EXPECT_EQ(verdict.axis, meta::RetentionAxis::Level);
 }
 
 TEST(SalienceScore, ErrorLevelScoresLowerThanFatal)
 {
-    const std::uint32_t fatal_score = meta::salience_score(
-        LogLevel::Fatal, StructuralRole::None, "died", /*echoed_source=*/false, 1, 1000, 0, 0);
-    const std::uint32_t error_score = meta::salience_score(
-        LogLevel::Error, StructuralRole::None, "failed", /*echoed_source=*/false, 1, 1000, 0, 0);
+    const std::uint32_t fatal_score =
+        meta::salience_score(LogLevel::Fatal, StructuralRole::None, "died", /*echoed_source=*/false,
+                             1, 1000, 0, 0)
+            .score;
+    const std::uint32_t error_score =
+        meta::salience_score(LogLevel::Error, StructuralRole::None, "failed",
+                             /*echoed_source=*/false, 1, 1000, 0, 0)
+            .score;
     EXPECT_GT(fatal_score, error_score);
     EXPECT_GT(error_score, 0u);
 }
@@ -360,27 +366,32 @@ TEST(SalienceScore, ErrorLevelScoresLowerThanFatal)
 TEST(SalienceScore, FrequentTemplateIsDamped)
 {
     // Same level but frequent (count >= 10% of lines) → lower rarity modulator.
-    const std::uint32_t rare_score = meta::salience_score(
-        LogLevel::Error, StructuralRole::None, "err", /*echoed_source=*/false, 1, 10000, 0, 0);
-    const std::uint32_t frequent_score = meta::salience_score(
-        LogLevel::Error, StructuralRole::None, "err", /*echoed_source=*/false, 5000, 10000, 0, 0);
+    const std::uint32_t rare_score =
+        meta::salience_score(LogLevel::Error, StructuralRole::None, "err", /*echoed_source=*/false,
+                             1, 10000, 0, 0)
+            .score;
+    const std::uint32_t frequent_score =
+        meta::salience_score(LogLevel::Error, StructuralRole::None, "err", /*echoed_source=*/false,
+                             5000, 10000, 0, 0)
+            .score;
     EXPECT_GT(rare_score, frequent_score);
 }
 
 TEST(SalienceScore, StructuralSurpriseAloneCanMakeNonZero)
 {
     // Info template, no failure cue — but strong surprise lifts it.
-    const std::uint32_t score = meta::salience_score(
-        LogLevel::Info, StructuralRole::None, "query ok", /*echoed_source=*/false, 1, 1000, 90, 0);
-    EXPECT_GT(score, 0u);
+    const auto verdict{meta::salience_score(LogLevel::Info, StructuralRole::None, "query ok",
+                                            /*echoed_source=*/false, 1, 1000, 90, 0)};
+    EXPECT_GT(verdict.score, 0u);
+    EXPECT_EQ(verdict.axis, meta::RetentionAxis::StructuralSurprise);
 }
 
 TEST(SalienceScore, NoveltyAloneCanMakeNonZero)
 {
-    const std::uint32_t score =
-        meta::salience_score(LogLevel::Info, StructuralRole::None, "session start",
-                             /*echoed_source=*/false, 2, 100, 0, 60);
-    EXPECT_GT(score, 0u);
+    const auto verdict{meta::salience_score(LogLevel::Info, StructuralRole::None, "session start",
+                                            /*echoed_source=*/false, 2, 100, 0, 60)};
+    EXPECT_GT(verdict.score, 0u);
+    EXPECT_EQ(verdict.axis, meta::RetentionAxis::Novelty);
 }
 
 TEST(SalienceScore, EchoedSourceSkipsFailureCueTier)
@@ -389,14 +400,17 @@ TEST(SalienceScore, EchoedSourceSkipsFailureCueTier)
     // A1) must NOT be re-promoted by the LEVEL-BLIND failure-cue tier. With echoed_source=true and
     // no other axis, the template scores 0 (not salient); a non-echoed peer keeps the failure-cue
     // band. (The Unknown level contributes no severity itself — only the cue tier could fire.)
-    const std::uint32_t echoed =
-        meta::salience_score(std::nullopt, StructuralRole::None, "Download failed after 3 attempts",
-                             /*echoed_source=*/true, 1, 1000, 0, 0);
-    EXPECT_EQ(echoed, 0u) << "echoed-source failure template must not enter the reservoir";
-    const std::uint32_t runtime =
-        meta::salience_score(std::nullopt, StructuralRole::None, "Download failed after 3 attempts",
-                             /*echoed_source=*/false, 1, 1000, 0, 0);
-    EXPECT_GT(runtime, 0u) << "a real runtime failure template keeps the failure-cue tier";
+    const auto echoed{meta::salience_score(std::nullopt, StructuralRole::None,
+                                           "Download failed after 3 attempts",
+                                           /*echoed_source=*/true, 1, 1000, 0, 0)};
+    EXPECT_EQ(echoed.score, 0u) << "echoed-source failure template must not enter the reservoir";
+    const auto runtime{meta::salience_score(std::nullopt, StructuralRole::None,
+                                            "Download failed after 3 attempts",
+                                            /*echoed_source=*/false, 1, 1000, 0, 0)};
+    EXPECT_GT(runtime.score, 0u) << "a real runtime failure template keeps the failure-cue tier";
+    // The arm the two published ordinals could never name: this template's only severity is the
+    // token lexicon, and the verdict says so (DN-64.D3 row 3).
+    EXPECT_EQ(runtime.axis, meta::RetentionAxis::FailureCue);
 }
 
 // ── format_rfc3339_utc ────────────────────────────────────────────────────────
