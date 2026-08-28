@@ -636,6 +636,15 @@ struct CubeCardinalityStat
     return level.has_value() && is_failure_level(level->value());
 }
 
+// The full scale of `ReservoirEntry::salience` — the PRODUCER'S bound, exported because it is the
+// producer's fact and two consumers were each spelling their own `10000.0` literal to divide by
+// (DN-64.D3: "a stale copy waiting" — move a rung on either ladder and both copies keep dividing
+// by the old scale, silently, in the direction nobody checks). It is the product of the two
+// ladders `salience_score` multiplies, max severity band ⊗ max rarity modulation, and salience.cpp
+// static_asserts it against those two rungs — so the number here cannot drift from the ladder that
+// defines it.
+inline constexpr std::uint32_t kSalienceFullScale{10000U};
+
 // WHICH axis retained a template — the argmax of the soft max `salience_score` takes over its five
 // peer axes. The score is `severity ⊗ rarity` and severity is `max(level-band, terminator-band,
 // failure-cue-band, structural_surprise, novelty)`; before DN-64.D3 row 3 the argmax was computed
@@ -1524,6 +1533,13 @@ struct ReservoirDeltaEntry
     StructuralRole structural_role{StructuralRole::None};
     std::uint32_t salience{0};
     std::uint64_t count{0};
+    // The template's SHARE of the window that owns this snapshot, carried from that side's
+    // ReservoirEntry for the same reason FrontierCrossing below carries both sides' counts and
+    // shares: so a consumer can rank the row WITHOUT RE-READING THE DOCUMENTS. A consumer that had
+    // to divide `count` by a `lines_observed` it fetched itself would own a membership domain of
+    // its own again, which is what DN-64.D4 forbids. Domain-only —
+    // `dto::ReservoirDeltaEntry` (serialize.cpp) does not carry it.
+    double frequency{0.0};
     // The snapshot's retention argmax, carried from the owning side's ReservoirEntry (see the
     // field there for why it is the VERDICT and not the ordinals, and why it is optional).
     // Domain-only — `dto::ReservoirDeltaEntry` (serialize.cpp) does not carry it.

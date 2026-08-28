@@ -539,6 +539,7 @@ namespace
                                    .structural_role = entry.structural_role,
                                    .salience = entry.salience,
                                    .count = entry.count,
+                                   .frequency = entry.frequency,
                                    .retention_axis = entry.retention_axis};
     }
 

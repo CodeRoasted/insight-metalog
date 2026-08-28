@@ -62,6 +62,13 @@ namespace
     constexpr std::uint64_t kRarityTenthPct{1000U};
     constexpr std::uint64_t kRarityOnePct{100U};
     constexpr std::uint64_t kRarityTenPct{10U};
+
+    // `kSalienceFullScale` (metalog.api.cppm) is what every consumer normalises a salience by, and
+    // this is the ONE site that knows both ladders it is the product of. Checked here rather than
+    // restated there: move a rung and the export goes red at compile time instead of leaving two
+    // consumers dividing by a scale the producer no longer emits.
+    static_assert(kBandFatal * kRarityRare == kSalienceFullScale,
+                  "the exported salience full scale must be this ladder's own maximum");
 } // namespace
 
 std::optional<LogLevel> dominant_level_of(const std::unordered_map<LogLevel, std::uint64_t>& levels)
