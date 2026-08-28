@@ -110,7 +110,10 @@ class ConformanceScanner
             violation_ = Violation{.offset = position_, .reason = std::move(reason)};
     }
 
-    [[nodiscard]] bool at_end() const noexcept { return position_ >= text_.size(); }
+    [[nodiscard]] bool at_end() const noexcept
+    {
+        return position_ >= text_.size();
+    }
     [[nodiscard]] std::uint8_t peek() const noexcept
     {
         return static_cast<std::uint8_t>(text_[position_]);
@@ -119,8 +122,7 @@ class ConformanceScanner
     // RFC 8259 §2: these four bytes are the ONLY insignificant whitespace between tokens.
     void skip_whitespace() noexcept
     {
-        while (!at_end() &&
-               (peek() == ' ' || peek() == '\t' || peek() == '\n' || peek() == '\r'))
+        while (!at_end() && (peek() == ' ' || peek() == '\t' || peek() == '\n' || peek() == '\r'))
             ++position_;
     }
 
@@ -265,7 +267,7 @@ class ConformanceScanner
                 return true;
             }
             if (byte == '\\')
-                {
+            {
                 if (!parse_escape())
                     return false;
                 continue;
@@ -493,8 +495,8 @@ TEST(EgressEncodingConformance, TheScannerAcceptsLegalJsonAndRejectsARawControlB
         R"({"where":["auth\u0001tail"],"count":3,"ratio":-1.5e2,"ok":true,"none":null,"list":[]})"};
     const auto clean{ConformanceScanner{kLegal}.scan()};
     ASSERT_FALSE(clean.has_value())
-        << "the scanner rejected conformant JSON at offset " << (clean ? clean->offset : 0U)
-        << ": " << (clean ? clean->reason : std::string{}) << "\n"
+        << "the scanner rejected conformant JSON at offset " << (clean ? clean->offset : 0U) << ": "
+        << (clean ? clean->reason : std::string{}) << "\n"
         << kLegal;
 
     // The same document with that escape replaced by the raw byte it denotes.
@@ -506,9 +508,8 @@ TEST(EgressEncodingConformance, TheScannerAcceptsLegalJsonAndRejectsARawControlB
         << "the scanner accepted a raw 0x01 inside a string — the oracle is blind, so every other "
            "row in this file is vacuous.\n"
         << hex_window(illegal, 0);
-    EXPECT_EQ(dirty->offset, 15U)
-        << "expected the violation at the injected byte.\n"
-        << hex_window(illegal, dirty->offset);
+    EXPECT_EQ(dirty->offset, 15U) << "expected the violation at the injected byte.\n"
+                                  << hex_window(illegal, dirty->offset);
 }
 
 // ── The two arms ──────────────────────────────────────────────────────────────────────────────
@@ -552,8 +553,8 @@ TEST(EgressEncodingConformance, MetaLogDocumentEmitsConformantJsonForEveryC0Byte
     for (const auto& line : failures)
         report += "  " + line + "\n";
     EXPECT_TRUE(failures.empty())
-        << "metalog::to_json(MetaLogDocument) emitted non-conformant JSON for "
-        << failures.size() << " of 32 C0 bytes driven into a `where` coordinate:\n"
+        << "metalog::to_json(MetaLogDocument) emitted non-conformant JSON for " << failures.size()
+        << " of 32 C0 bytes driven into a `where` coordinate:\n"
         << report;
 }
 
