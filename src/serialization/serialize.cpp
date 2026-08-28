@@ -1,6 +1,8 @@
 module;
 #include <glaze/glaze.hpp>
 
+#include "json_egress.hpp" // the package's ONE Glaze write entry point (DN-65.D2)
+
 module insight.metalog;
 import insight.metalog.internal;
 import insight.metalog.api;
@@ -643,6 +645,8 @@ namespace dto
 namespace
 {
 
+    // Presentational only. RFC 8259 conformance is NOT settled here: `json_egress::to_string`
+    // forces the escape member, so this option set cannot turn it off (DN-65.D2).
     constexpr glz::opts kWriteOpts{.skip_null_members = true};
 
     // Build the serialization Source DTO from the domain SourceBlock.
@@ -1232,19 +1236,12 @@ namespace
 
 std::string to_json(const MetaLogDocument& doc, const TemplateRegistry& registry)
 {
-    const dto::Document out{make_document(doc, registry)};
-    std::string buf;
-    // Serialising a fully-formed value to a growable string cannot fail.
-    (void)glz::write<kWriteOpts>(out, buf);
-    return buf;
+    return json_egress::to_string<kWriteOpts>(make_document(doc, registry));
 }
 
 std::string to_json(const MetaLogDiff& diff)
 {
-    const dto::Diff out{make_diff(diff)};
-    std::string buf;
-    (void)glz::write<kWriteOpts>(out, buf);
-    return buf;
+    return json_egress::to_string<kWriteOpts>(make_diff(diff));
 }
 
 } // namespace insight::metalog

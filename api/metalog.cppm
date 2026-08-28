@@ -397,6 +397,15 @@ class MetaLogEngine
 // Free serialiser. Produces a serialised JSON document conforming to the MetaLog
 // envelope at `kMetaLogSpecVersion`.
 //
+// POSTCONDITION — RFC 8259 CONFORMANCE, unconditional and quantified over ALL string inputs. The
+// returned bytes are legal JSON whatever the log carried: a value holding U+0000..U+001F is emitted
+// ESCAPED, never raw (SPEC §2 Encoding, §8 clause 5). This is a property of the emitting surface,
+// never a precondition on an upstream producer (DN-65.D1), and it is what makes Sift's embedding of
+// this document as `glz::raw_json` sound by COMPOSITION rather than by luck: the embedder performs
+// no parse round-trip (DN-65.D5), so the embedded document's validity IS this postcondition.
+// Discharged by `src/serialization/json_egress.hpp` and gated by
+// `tests/serialization/test_egress_encoding_conformance.cpp` against an independent validator.
+//
 // Output is canonical and restrictive: empty/default optional fields are
 // OMITTED, never emitted as empty/zero/false (one document -> one byte
 // sequence). Consumers MUST treat an absent field as equivalent to its
@@ -409,7 +418,8 @@ class MetaLogEngine
 [[nodiscard]] std::string to_json(const MetaLogDocument& doc, const TemplateRegistry& registry);
 
 // Free serialiser for the diff document (SPEC §13). Same restrictive,
-// omit-empty discipline as the document serialiser above.
+// omit-empty discipline as the document serialiser above, and the same RFC 8259 postcondition —
+// both overloads write through the one entry point that forces the escape.
 [[nodiscard]] std::string to_json(const MetaLogDiff& diff);
 
 // ── Composition and diff (SPEC §12, §13) ───────────────────────
