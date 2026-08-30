@@ -801,12 +801,12 @@ void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& ana
                       });
 
     // The error class (SRC-D-RNK-2 §5.2) — mirrors eidos `reservoir_is_error_class`: the
-    // verdict-anchored-failure signal at the metalog layer (after SRC-D-OUT-4).
-    const auto error_class{[](StructuralRole role, std::optional<EventLevel> level) noexcept
-                           {
-                               return role == StructuralRole::Terminator ||
-                                      level == LogLevel::Error || level == LogLevel::Fatal;
-                           }};
+    // verdict-anchored-failure signal at the metalog layer (after SRC-D-OUT-4). The LEVEL half is
+    // `is_failure_level`, the exported one spelling (DN-64.D3 row 6) rather than a fourth copy of
+    // the `Unknown sorts above Fatal` membership test; the Terminator disjunct is this class's own.
+    const auto error_class{
+        [](StructuralRole role, const std::optional<EventLevel>& level) noexcept
+        { return role == StructuralRole::Terminator || is_failure_level(level); }};
     // Per-kind diversity key for the general pool: packs the two small enums into one
     // integer counter so M optimises COVERAGE of distinct salient kinds over depth.
     constexpr unsigned kKindRoleShift{8U};
