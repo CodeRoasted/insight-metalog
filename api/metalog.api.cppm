@@ -763,6 +763,22 @@ struct ReservoirEntry
     // report, and the honest reading is "this entry does not say", not a fabricated `Level`. It
     // fails SAFE — a consumer with no axis falls back to the un-attributed narrative it already
     // had, which is the under-claiming direction.
+    //
+    // NO PRODUCED DOCUMENT REACHES THE DISENGAGED STATE, and that is a fact about a CLOSED
+    // PRODUCER SET, not a property of the type. Exactly two sites in this package fill a reservoir
+    // entry — `close_window`'s candidate collection (engine.cpp) and compose's reservoir
+    // re-derivation (compose.cpp) — and each admits a candidate only under
+    // `salience_score(...).score > 0`, which is the same predicate under which
+    // `SalienceVerdict::axis` is engaged. So the axis is present on every entry either one emits,
+    // and a consumer that meets an absent one today is reading a document nobody in this package
+    // built.
+    //
+    // The state is nevertheless the field's, not a placeholder, because that set is closed only
+    // over the paths that exist NOW. The field is DOMAIN-ONLY (above): nothing deserialises a
+    // document, so the first inbound path — a reader, a replayed fixture, a cross-process
+    // document — mints entries no salience computation produced, and needs somewhere to put them.
+    // A non-optional field would have that path stamp `Level` on an entry it knows nothing about,
+    // which is the fabrication this whole verdict exists to stop.
     std::optional<RetentionAxis> retention_axis;
     // §15.4 sub-coordinate (guarantee-2 aid): the reconciled first-seen ordinal of
     // this template within the window (== Bucket::first_seen_index), bounded by the
