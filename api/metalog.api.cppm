@@ -664,6 +664,40 @@ enum class RetentionAxis : std::uint8_t
     Novelty             // the TIME axis: first seen late within the window
 };
 
+// The axis NAMES, owned here beside the enumerators they name — the same reason `to_string`
+// exists for OrdinalShift above. Sift spelled this table itself, in another repo, for its
+// salience-memory trace: a rename here would have left that copy naming an axis that no longer
+// exists, and nothing would have said so (the build carries no -Wall, so the second switch's
+// missing case is not even a warning on the gcc leg).
+//
+// THE ABSENT AXIS IS NOT THIS FUNCTION'S BUSINESS. `retention_axis` is a `std::optional`, and a
+// disengaged one is a CONTRACT — an entry no salience computation produced has no argmax
+// (DN-64.D6) — so the word a consumer prints for it belongs to that consumer's own absence
+// vocabulary, not to the enum. Hence the parameter is the plain enum: a caller holding the
+// optional decides what absence reads as.
+//
+// The tail below is reachable only for a value that is no enumerator at all, which the fixed
+// `std::uint8_t` underlying type makes representable. No first-party path can mint one — the
+// field is off the wire (nothing deserialises it) and `salience_score` is its only producer — so
+// the tail names the state instead of guessing an axis, and stays distinct from any absence word.
+[[nodiscard]] inline std::string_view to_string(RetentionAxis axis) noexcept
+{
+    switch (axis)
+    {
+    case RetentionAxis::Level:
+        return "level";
+    case RetentionAxis::FailureCue:
+        return "failure_cue";
+    case RetentionAxis::Terminator:
+        return "terminator";
+    case RetentionAxis::StructuralSurprise:
+        return "structural_surprise";
+    case RetentionAxis::Novelty:
+        return "novelty";
+    }
+    return "<not-an-axis>";
+}
+
 // Salience Reservoir entry (Tier 2). A template
 // retained by intrinsic SALIENCE rather than frequency — where a rare-but-severe
 // event (a lone fatal) survives the bounded fingerprint instead of collapsing
