@@ -123,8 +123,9 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/insight_metalog-config.cmake
 #  Tests
 ###########################################################
 if(INSIGHT_METALOG_BUILD_TESTS)
-    # Per-domain test mirror (§11.9.11): tests/<domain>/*.cpp — engine (window/stats/behavior/
-    # stability/histograms/HLL), serialize, diff, compose, reservoir, determinism.
+    # Per-domain test mirror (§11.9.11): tests/<domain>/*.cpp, one directory per concern. The glob
+    # below is the ONLY reader of that set and no comment restates it — the list that stood here
+    # had three of its six names wrong and omitted two further directories.
     file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp"
     )
