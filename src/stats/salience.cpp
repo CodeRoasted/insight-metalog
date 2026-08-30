@@ -223,6 +223,30 @@ SalienceVerdict salience_score(std::optional<LogLevel> level, StructuralRole rol
                                 verdict.axis = axis;
                             }
                         }};
+    // Severity-confidence tiers run declared > level-keyword > token-lexicon, and this is the
+    // DECLARED one: a structural failure marker the producer announced (`##[error]`, `::error::`),
+    // which is why it outranks `kBandError` and carries its own axis rather than folding into
+    // `RetentionAxis::Level`.
+    //
+    // IT READS REDUNDANT WITH THE LEVEL INPUT BELOW AND IT IS NOT, on two independent escapes,
+    // both structural rather than anecdotal:
+    //   * THE TWO GATES DIFFER. In canon's github package the `##[error]`/`::error::` role rows are
+    //     `dialect_gate: any` while the LEVEL-LIFT rows for those same two prefixes are
+    //     `dialect_gate: self` (`github.dialect.yaml`). On a stream that does not declare the
+    //     `github` dialect the role fires and the DECLARED lift does not, leaving only
+    //     `infer_leading_log_level`'s content guess — so the two arms disagree about PROVENANCE
+    //     even where they agree about severity, and the axis stamped here is what lets a consumer
+    //     tell a declaration from a guess (DN-32.D3).
+    //   * SRC-D-PROV-1 TAKES THE LEVEL AND LEAVES THE ROLE. An echoed-source line's level is driven
+    //     to absence after the lift (`log_parser.cpp`), and the failure-cue tier below is skipped
+    //     for those same lines — so an echoed `##[error]` template reaches this function with no
+    //     band available on any other axis. Here the tier is not a rung, it is the only reason the
+    //     template is retained at all.
+    //
+    // Measured through the shipped `sift` CLI on a plain-text stream with no dialect declared: a
+    // bare `##[error]` line is retained `kind=Terminator/Error axis=terminator salience=8100` —
+    // 90x90, where the level band alone would have given 80x90 = 7200; the same line SGR-wrapped as
+    // echoed source is retained `kind=Terminator/Unknown`, which every other axis scored 0.
     if (role == StructuralRole::Terminator)
         consider(kBandTerminator, RetentionAxis::Terminator);
     if (level)
@@ -249,13 +273,6 @@ SalienceVerdict salience_score(std::optional<LogLevel> level, StructuralRole rol
     // as a runtime event is not all-echoed → the tier (and its genuine level salience) stands.
     if (!echoed_source && looks_like_failure(tmpl))
         consider(kBandFailureCue, RetentionAxis::FailureCue);
-    // Severity-confidence tiers run declared > level-keyword > token-lexicon. A
-    // DECLARED failure marker (StructuralRole::Terminator, e.g. `##[error]`) would
-    // be the highest tier, but it is intentionally NOT gated here: canon already
-    // lifts such announced markers to LogLevel::Error, so the level input above
-    // captures them. Promote Terminator to its own tier only if a level-escaping
-    // marker surfaces in real logs (a non-zero-exit Terminator with no level
-    // keyword); until then it is redundant. (Daidalos, 2026-05-31.)
     // structural_surprise and novelty are peer severity axes: a benign Info line is
     // salient if it is reached only via a rare off-path transition (STRUCTURE) or if
     // it just EMERGED late in the window (TIME), even when its level/lexicon
