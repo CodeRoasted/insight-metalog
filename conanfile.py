@@ -59,7 +59,7 @@ class InsightMetalogConan(ConanFile):
 
     def build_requirements(self):
         # Test-only dialect package. The cube's ROLE dimension is fed by package-supplied
-        # StructuralRole rows (ADR 0024 §3: canon ships no default composition), so the
+        # StructuralRole rows (ADR-17.D2: canon ships no default composition), so the
         # emerging-border oracle cannot exercise `role: Terminator` without composing a
         # package that supplies one — measured, not assumed: under an EMPTY composition that
         # class recovers 1 of 2 antichain members. metalog itself stays dialect-free.

@@ -5,7 +5,7 @@ packages:
     public: true
     release: true
     # insight_semantic_github is test_required (gtest suite + test_package); it must be in `depends` so
-    # the released_packages DFS builds it BEFORE insight_metalog at the cut. ADR 0024 split it out of
+    # the released_packages DFS builds it BEFORE insight_metalog at the cut. ADR-17.D8 split it out of
     # insight_canon and this entry was never resynced.
     depends: [insight_canon, insight_semantic_github]
 
