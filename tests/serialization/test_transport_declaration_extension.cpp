@@ -7,9 +7,10 @@
 // THE PROPERTY, and why it is the existence leg and not a round trip. A key emitted only when the
 // declared stack is non-empty is INDISTINGUISHABLE, to any consumer, from a key this producer does
 // not know how to emit — "no transport was declared" and "this producer does not carry the field"
-// collapse into the same absence. Two ADR-23 clauses meet here and must not be conflated: an absent
-// declaration IS the empty stack (a fact about the run), while a missing transport ENRICHMENT stays
-// absent rather than defaulted (a fact about the extracts). They govern different objects, and a
+// collapse into the same absence. Two ADR-23 slots meet here and must not be conflated:
+// `ADR-23.D4` — an absent declaration IS the empty stack (a fact about the run) — and
+// `ADR-23.D6` — a missing transport ENRICHMENT stays absent rather than defaulted (a fact about
+// the extracts). They govern different objects, and a
 // conditionally-emitted key merges them. A test that only checks "a declared stack round-trips"
 // cannot see this: it never produces the undeclared case.
 //
