@@ -11,7 +11,7 @@ jobs:
     permissions:
       contents: read
       actions: read
-    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-ci.yml@932d688f9bf39fa310b31f15643a2ee46af2df27
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-ci.yml@cad0616a3bbf5b1692cce8b10907085922fcc49e
     with:
       # metalog vendors insight_canon from its PUBLIC release, then builds the single root package
       # (test=true runs the full gtest suite; create=true verifies packaging + test_package).
@@ -38,7 +38,7 @@ jobs:
     permissions:
       pull-requests: write
       actions: read
-    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-sift-post.yml@932d688f9bf39fa310b31f15643a2ee46af2df27
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-sift-post.yml@cad0616a3bbf5b1692cce8b10907085922fcc49e
     with:
       run-id: ${{ github.run_id }}
     secrets: inherit
