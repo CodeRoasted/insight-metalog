@@ -160,8 +160,8 @@ constexpr TemplateSet kSecondWindow{.steady_a = "delta request accepted",
 ///   * a benign Info emerging late and self-looping                          -> time (novelty)
 /// The steady bed makes all three rare by frequency, so none of them rides top_k instead.
 [[nodiscard]] meta::MetaLogDocument close_window_with_three_causes(std::size_t top_k,
-                                                                  std::size_t reservoir_size,
-                                                                  const TemplateSet& templates)
+                                                                   std::size_t reservoir_size,
+                                                                   const TemplateSet& templates)
 {
     meta::MetaLogEngine engine{meta::MetaLogConfig{
         .top_k_size = top_k, .reservoir_size = reservoir_size, .emit_stability = false}};
@@ -192,8 +192,7 @@ constexpr TemplateSet kSecondWindow{.steady_a = "delta request accepted",
 // ══ producer 1 — `close_window` ═══════════════════════════════════════════════════════════════
 TEST(RetentionAxisCensus, EveryEntryClosedByCloseWindowCarriesAnEngagedAxis)
 {
-    const auto doc{close_window_with_three_causes(/*top_k=*/3, /*reservoir_size=*/8,
-                                                 kFirstWindow)};
+    const auto doc{close_window_with_three_causes(/*top_k=*/3, /*reservoir_size=*/8, kFirstWindow)};
     const Census census{census_of(doc)};
 
     // Arming condition 1 — the population, before any claim about it.
@@ -226,10 +225,9 @@ TEST(RetentionAxisCensus, EveryEntryClosedByCloseWindowCarriesAnEngagedAxis)
 // arm would then be measuring the fixture rather than the producer.
 TEST(RetentionAxisCensus, EveryEntryRederivedByComposeCarriesAnEngagedAxis)
 {
-    const auto lhs{close_window_with_three_causes(/*top_k=*/3, /*reservoir_size=*/8,
-                                                 kFirstWindow)};
-    const auto rhs{close_window_with_three_causes(/*top_k=*/3, /*reservoir_size=*/8,
-                                                 kSecondWindow)};
+    const auto lhs{close_window_with_three_causes(/*top_k=*/3, /*reservoir_size=*/8, kFirstWindow)};
+    const auto rhs{
+        close_window_with_three_causes(/*top_k=*/3, /*reservoir_size=*/8, kSecondWindow)};
     ASSERT_FALSE(lhs.stats.reservoir.empty()) << "the left input carries no reservoir to compose";
     ASSERT_FALSE(rhs.stats.reservoir.empty()) << "the right input carries no reservoir to compose";
 
