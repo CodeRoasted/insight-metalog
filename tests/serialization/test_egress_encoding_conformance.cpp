@@ -25,8 +25,8 @@
 //
 // ── WHY THE INJECTION POINT IS A `where` COORDINATE AND NOT A MESSAGE BODY ─────────────────────
 // This is the load-bearing part of the homing call, and it is the correction of a live blind spot.
-// `insight-eidos/sift/tests/report/change_report_test.cpp:111-140`
-// (`JsonStripsAnsiAndEscapesSurvivingControlBytes`) asserts THIS EXACT PROPERTY, is GREEN, and was
+// `F-SRC-insight-eidos:change_report_test.cpp:JsonStripsAnsiAndEscapesSurvivingControlBytes`
+// asserts THIS EXACT PROPERTY, is GREEN, and was
 // BLIND for the whole of 1.10.x: it injects \001 into a MESSAGE BODY, which becomes template TEXT
 // and surfaces only in Sift's own — correctly escaped — fields. The MetaLog diff wire carries
 // template IDs, not template text, so a byte injected into a message can never reach the

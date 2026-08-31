@@ -554,7 +554,7 @@ TEST(ReservoirTest, ErrorClassReserveIsExemptFromPerKindCap)
 // ── SRC-D-PROV-1 — the echoed-source salience gate, at the ENGINE altitude ──────────
 // The salience FUNCTION is locked by stats:SalienceScore.EchoedSourceSkipsFailureCueTier.
 // This is its engine-level twin: it proves the bucket-level `all_echoed_source` AND-reduction
-// (engine.cpp:244 — a template is "all echoed" only while EVERY event forming it is echoed
+// (`engine.cpp` — a template is "all echoed" only while EVERY event forming it is echoed
 // source; one runtime occurrence makes it false) AND that the engine threads it into the
 // salience computation, so an all-echoed `…failed…` template (level already demoted to
 // Unknown by canon A1) is NOT admitted to the reservoir, while the SAME text seen once as a

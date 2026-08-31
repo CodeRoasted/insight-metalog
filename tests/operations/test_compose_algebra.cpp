@@ -1240,7 +1240,7 @@ TEST(ComposeAlgebraTest, MinOverDeclaredCapsSurvivesASameProducerAbsentCapPair)
 // inputs carry a stamp and the stamps differ. Compose those two facts:
 //
 //   * `stats.top_k_size` IS axis `k`. Two stamped documents whose `top_k_size` differs carry
-//     different stamps, so the gate at compose.cpp:674 throws BEFORE the `min` at :723 runs. That
+//     different stamps, so `compose()`'s §2.4 gate throws BEFORE the top-K `min` runs. That
 //     `min` is a no-op on every stamped pair `compose()` accepts.
 //   * `stats.reservoir_size` IS axis `m`, so the same holds for two DECLARED reservoir caps that
 //     differ. Its absent branch is a different matter and the arm above owns it — absence is not
@@ -1248,11 +1248,11 @@ TEST(ComposeAlgebraTest, MinOverDeclaredCapsSurvivesASameProducerAbsentCapPair)
 //   * `behavior.top_ngrams_size` IS NOT IN THE STAMP AT ALL. Neither is `ngram_size` nor
 //     `max_ngram_keys`: the derivation names four axes and none of them is an n-gram parameter.
 //     So two documents from the SAME production configuration line can differ here while carrying
-//     byte-identical stamps, and the `min` at compose.cpp:592 is the ONE declared-cap `min` that
-//     is live between two stamped documents.
+//     byte-identical stamps, and the n-gram `min` in `compose.cpp` is the ONE declared-cap
+//     `min` that is live between two stamped documents.
 //
-// WHY THIS IS NOT A CURIOSITY. The shipped pipeline stamps: insight-eidos
-// engine/src/pipeline/insight_pipeline.cpp:49 sets `config.retention_profile =
+// WHY THIS IS NOT A CURIOSITY. The shipped pipeline stamps:
+// `F-SRC-insight-eidos:insight_pipeline.cpp` sets `config.retention_profile =
 // metalog::retention_profile_name(config)` on every run. So the reachability measured here is the
 // reachability on the product's own path, not a property of hand-built fixtures. §12.2's
 // commutativity MUST still wants `min` at all three sites — a conformant producer is not obliged
@@ -1310,7 +1310,7 @@ TEST(ComposeAlgebraTest, TheRetentionStampDecidesWhichDeclaredCapMinIsReachable)
                          }};
 
     // ── ARM 1. `top_k_size` is axis `k`, so two stamped documents that differ in it are REFUSED
-    // at the §2.4 gate and the `min` at compose.cpp:723 never runs.
+    // at the §2.4 gate and the top-K `min` in `compose.cpp` never runs.
     const auto wide_k{stamped(kTopKWide, kNgramsWide)};
     const auto narrow_k{stamped(kTopKNarrow, kNgramsWide)};
     ASSERT_NE(wide_k.retention_profile, narrow_k.retention_profile)
@@ -1322,7 +1322,7 @@ TEST(ComposeAlgebraTest, TheRetentionStampDecidesWhichDeclaredCapMinIsReachable)
     const auto doc_wide_k{close_one(wide_k)};
     const auto doc_narrow_k{close_one(narrow_k)};
     ASSERT_EQ(doc_wide_k.retention_profile, wide_k.retention_profile)
-        << "close_window must stamp the document from the config (engine.cpp:518)";
+        << "close_window must stamp the document from the config";
 
     EXPECT_THROW((void)meta::compose(doc_wide_k, doc_narrow_k), std::invalid_argument)
         << "two STAMPED documents differing only in top_k_size must be refused by the §2.4 gate "
@@ -1334,7 +1334,7 @@ TEST(ComposeAlgebraTest, TheRetentionStampDecidesWhichDeclaredCapMinIsReachable)
            "§12.2's commutativity MUST depend on argument order";
 
     // ── ARM 2. `top_ngrams_size` is in NO axis, so the same two stamps compose and the `min` at
-    // compose.cpp:592 is the one declared-cap min that is live between stamped documents.
+    // the n-gram min in `compose.cpp` is the one declared-cap min live between stamped documents.
     const auto wide_n{stamped(kTopKWide, kNgramsWide)};
     const auto narrow_n{stamped(kTopKWide, kNgramsNarrow)};
     ASSERT_EQ(wide_n.retention_profile, narrow_n.retention_profile)
@@ -1371,7 +1371,7 @@ TEST(ComposeAlgebraTest, TheRetentionStampDecidesWhichDeclaredCapMinIsReachable)
         << composed.behavior->top_ngrams.size();
 
     // ── ARM 3. The positive boundary: UNSTAMPED, the top-K min is reachable and it is a min.
-    // Without this arm, arm 1 would read as a claim that compose.cpp:723 is dead code.
+    // Without this arm, arm 1 would read as a claim that the top-K min is dead code.
     auto unstamped_wide{wide_k};
     auto unstamped_narrow{narrow_k};
     unstamped_wide.retention_profile.reset();
@@ -1386,7 +1386,7 @@ TEST(ComposeAlgebraTest, TheRetentionStampDecidesWhichDeclaredCapMinIsReachable)
     const auto unstamped_composed{meta::compose(doc_unstamped_wide, doc_unstamped_narrow)};
     EXPECT_EQ(unstamped_composed.stats.top_k_size, kTopKNarrow)
         << "with no stamp to gate them, two differing top-K caps DO reach the min at "
-           "compose.cpp:723 and it takes the smaller — got "
+           "the top-K min in compose.cpp and it takes the smaller — got "
         << unstamped_composed.stats.top_k_size << " from " << kTopKWide << " and " << kTopKNarrow;
     EXPECT_EQ(meta::compose(doc_unstamped_narrow, doc_unstamped_wide).stats.top_k_size,
               unstamped_composed.stats.top_k_size)

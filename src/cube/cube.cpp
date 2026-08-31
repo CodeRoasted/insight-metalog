@@ -639,8 +639,8 @@ namespace
     // as `categorical`, its ordinal collapse riding `band_floor`. So ordinality lives in the axis
     // identity and the band vocabulary, never in `kind`. Minting a third `kind` value would put a
     // comparison property into a shape enum and destroy the discrimination — and §16.2's enum is
-    // one of the two vocabularies SPEC.md:186 says this spec MINTS, so widening it is a spec act,
-    // not a producer's.
+    // one of the two vocabularies `SPEC.md` says this spec MINTS, so widening it is a spec
+    // act, not a producer's.
     [[nodiscard]] CubeAxis latency_shift_axis()
     {
         return CubeAxis{.name = "latency_shift",
