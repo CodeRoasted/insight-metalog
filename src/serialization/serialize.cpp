@@ -623,6 +623,11 @@ namespace dto
         std::string diff_version;
         DocRef previous;
         DocRef current;
+        // SPEC §13.2, REQUIRED: "changed" | "unchanged". Declared with the other three required
+        // members and before every optional signal property, because it is the assertion the
+        // witness rule then judges those properties against. Never defaulted — make_diff fills it
+        // from comparison_outcome_of, which reads the diff's findings.
+        std::string comparison_outcome;
         std::optional<double> kl_divergence;
         std::optional<double> js_divergence;
         std::optional<double> stability_score;
@@ -1169,6 +1174,10 @@ namespace
         out.diff_version = diff.diff_version;
         out.previous = make_doc_ref(diff.previous);
         out.current = make_doc_ref(diff.current);
+        // SPEC §13.2. Derived from the diff's FINDINGS by the one predicate that mirrors the
+        // schema's `x-metalog-vacuous` declarations — never from which members the block below
+        // happens to fill in, which is the vacuity spec 0.10.0 removed.
+        out.comparison_outcome = to_string(comparison_outcome_of(diff));
         out.kl_divergence = diff.kl_divergence;
         out.js_divergence = diff.js_divergence;
         out.stability_score = diff.stability_score;

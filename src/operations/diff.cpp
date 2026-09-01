@@ -126,6 +126,21 @@ namespace
                                       return std::abs(lhs.delta_bits) > std::abs(rhs.delta_bits);
                                   return lhs.template_id < rhs.template_id;
                               });
+            // SPEC §13.2.1: `branching_delta`'s declared vacuous value is the EMPTY array
+            // (`maxItems: 0`) — unlike the structurally similar `template_deltas`, whose
+            // declaration is PER ROW (`delta: const 0`) precisely because it is a union. This array
+            // is a union too: it carries a row for every template in either window's branching map,
+            // so it is non-empty whenever EITHER document has a branching block at all. Emitting it
+            // when no entropy moved publishes a FALSE WITNESS under the §13.2 rule and would force
+            // `comparison_outcome: "changed"` on two identical documents. Nothing moved ⇒ nothing
+            // emitted. Rows that did not move survive alongside those that did, as the union
+            // context they are: the declaration makes the whole array the finding, not each row.
+            // No consumer loses a decision — eidos reads this block through two filters that both
+            // already skip a zero row (`classify.cpp` `delta_bits == 0.0`, `sequence_field_banks`
+            // `|delta_bits| < branching_delta_threshold_bits`).
+            if (std::ranges::none_of(out.branching_delta, [](const BranchingDelta& row)
+                                     { return row.delta_bits != 0.0; }))
+                out.branching_delta.clear();
         }
     }
 
@@ -672,6 +687,68 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
     }
 
     return out;
+}
+
+// SPEC §13.2.1's evaluation, step 3, over this producer's own signal properties. The contract, the
+// exact-equality reason and the three deltas that deliberately do NOT decide the outcome are on the
+// declaration in metalog.cppm; this body carries only what each clause mirrors.
+ComparisonOutcome comparison_outcome_of(const MetaLogDiff& diff) noexcept
+{
+    // `kl_divergence` / `js_divergence` — `const: 0`: vacuous at zero (identical distributions).
+    if (diff.kl_divergence && *diff.kl_divergence != 0.0)
+        return ComparisonOutcome::Changed;
+    if (diff.js_divergence && *diff.js_divergence != 0.0)
+        return ComparisonOutcome::Changed;
+    // `stability_score` — `const: 1`, NOT zero: the score is 1 - js_divergence, so its no-change
+    // value is ONE and a shape rule reading "greater than zero" would witness on perfect stability.
+    if (diff.stability_score && *diff.stability_score != 1.0)
+        return ComparisonOutcome::Changed;
+    // `template_deltas` — declared PER ROW (`items.properties.delta.const: 0`). The array is a
+    // union over both windows, non-empty whenever either window is, so a ROW is never the finding;
+    // a non-zero `delta` is.
+    if (std::ranges::any_of(diff.template_deltas,
+                            [](const TemplateDelta& row) { return row.delta != 0; }))
+        return ComparisonOutcome::Changed;
+    // `new_templates` / `vanished_templates` / `branching_delta` — `maxItems: 0`: the array itself
+    // is the finding, so any row witnesses. diff_branching_delta above is what makes that true of
+    // the third one, which is a union like `template_deltas` but declared like these two.
+    if (!diff.new_templates.empty() || !diff.vanished_templates.empty() ||
+        !diff.branching_delta.empty())
+        return ComparisonOutcome::Changed;
+    // `ngram_delta` — vacuous when all three lists are empty; `ngram_size` is a PARAMETER, never a
+    // finding. Tested on content rather than on the optional's engagement: diff_ngram_delta only
+    // engages it on a non-empty list, and a rule that reads presence is the vacuity §13.2 removed.
+    if (diff.ngram_delta &&
+        (!diff.ngram_delta->new_ngrams.empty() || !diff.ngram_delta->vanished_ngrams.empty() ||
+         !diff.ngram_delta->rate_changed.empty()))
+        return ComparisonOutcome::Changed;
+    // `tail_delta` — nine numeric members and no array. The three `*_delta` members are the
+    // finding; the six `previous_`/`current_` members are the coordinates they are taken between.
+    if (diff.tail_delta && (diff.tail_delta->tail_template_count_delta != 0 ||
+                            diff.tail_delta->tail_entropy_bits_delta != 0.0 ||
+                            diff.tail_delta->tail_max_rate_delta != 0.0))
+        return ComparisonOutcome::Changed;
+    // `cube_diff` — `axes` is the diff's declared coordinate space, a DESCRIPTOR (§13.6) that is
+    // required and non-empty and never a finding; the finding is a populated emerging/vanishing
+    // border. This producer emits a cube_diff whenever BOTH inputs carried a cube, so the
+    // axes-only shape is its ORDINARY no-change output — the single largest vacuity in the release
+    // had `axes` been allowed to witness.
+    if (diff.has_cube_diff)
+    {
+        const CubeDiffBlock& cube{diff.cube_diff};
+        const bool emerged{cube.has_emerging &&
+                           (!cube.emerging.lower.empty() || !cube.emerging.upper.empty())};
+        const bool vanished{cube.has_vanishing &&
+                            (!cube.vanishing.lower.empty() || !cube.vanishing.upper.empty())};
+        if (emerged || vanished)
+            return ComparisonOutcome::Changed;
+    }
+    // `reservoir_delta` — vacuous when no salient template appeared, vanished, or crossed the
+    // ERROR/FATAL failure frontier.
+    if (!diff.reservoir_delta.empty())
+        return ComparisonOutcome::Changed;
+
+    return ComparisonOutcome::Unchanged;
 }
 
 } // namespace insight::metalog

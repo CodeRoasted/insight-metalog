@@ -449,6 +449,31 @@ class MetaLogEngine
 // `delta = current - previous`. See SPEC §13.
 [[nodiscard]] MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current);
 
+// The REQUIRED `comparison_outcome` (SPEC §13.2) this diff asserts, DERIVED from the diff's own
+// findings — see ComparisonOutcome in metalog.api.cppm for why it is derived and not stored.
+//
+// This is SPEC §13.2.1's evaluation step 3 run in C++ over the diff's domain values instead of
+// with a JSON-Schema validator over the serialized document: one clause per optional signal
+// property of `metalog_diff.v0.schema.json`, each mirroring that property's own
+// `x-metalog-vacuous` declaration. The declarations assert EXACT equality (`const: 0` matches
+// `0`/`0.0`/`-0.0` and NOT `1e-17`), so the scalar tests are exact float compares by contract.
+// `to_json(const MetaLogDiff&)` writes what this returns; a consumer wanting the verdict without
+// the bytes calls it directly. A signal property added to the schema joins the witness set on
+// arrival and must gain a clause here in the same pass — `scripts/spec_conformance_gate.sh` is
+// what measures the drift, over the exact bytes this producer publishes.
+//
+// THE THREE DELTAS THIS PRODUCER COMPUTES THAT DO NOT DECIDE THE OUTCOME, and why each cannot:
+//   * `field_histogram_deltas` — computed on every diff and deliberately NOT serialised (SPEC
+//     §3.5.2 names that choice conformant and not a defect; it lands with the full-fidelity batch
+//     diff surface). §13.2.1 step 3 makes a property ABSENT from the document not a witness, so
+//     counting it here would assert "changed" on a document carrying no witness — invalid under
+//     step 4. Empty in the default configuration (MetaLogConfig::max_param_histograms is 0).
+//   * `ordinal_histogram_deltas` — not a member of the standard at all (the W1 channel is a
+//     CodeRoast-internal in-process delta), and not serialised.
+//   * `service_edge_delta` — serialised under the §7 `extensions` container, which §13.2.1 step 2
+//     excludes from the witness set by name.
+[[nodiscard]] ComparisonOutcome comparison_outcome_of(const MetaLogDiff& diff) noexcept;
+
 // §13 cardinality monitor (cube_perf_and_collapse.md C2): the cube's distinct-value counts +
 // closed-cell count, as a PURE function of the closed cube. Observability only — a deterministic
 // function of the counts that NEVER feeds the deterministic content stream; the consumer (the eidos

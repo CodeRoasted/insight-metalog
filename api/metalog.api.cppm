@@ -1645,6 +1645,32 @@ struct ReservoirDelta
     [[nodiscard]] bool operator==(const ReservoirDelta&) const noexcept = default;
 };
 
+// ── comparison outcome (SPEC §13.2, REQUIRED on every MetaLogDiff since spec 0.10.0) ──
+//
+// The producer's ASSERTION ABOUT THE COMPARISON IT PERFORMED — never a summary of which fields it
+// chose to serialise. `Changed` obliges the document to carry a WITNESS: at least one signal
+// property that is non-vacuous by that property's own `x-metalog-vacuous` declaration in
+// `schema/metalog_diff.v0.schema.json` (§13.2.1). `Unchanged` forbids one; it is a POSITIVE result
+// ("the comparison ran and found nothing"), not an empty document, and it MAY still carry signal
+// properties as long as every one of them sits at its declared vacuous value.
+//
+// NOT a member of MetaLogDiff: it is a pure function of the diff's findings, and a stored copy is
+// redundant state that a hand-built diff (the eidos classify/sift tests build them) would carry at
+// a default contradicting its own content. Derived at the wire seam instead —
+// `comparison_outcome_of(const MetaLogDiff&)` in metalog.cppm is the single definition, callable
+// in-process by a consumer that wants the assertion without serialising.
+enum class ComparisonOutcome : std::uint8_t
+{
+    Unchanged, // the comparison ran and found no change; the document carries NO witness
+    Changed    // the comparison found at least one change; the document carries its witness
+};
+
+// The two wire tokens SPEC §13.2 fixes. Exhaustive over the enum by construction.
+[[nodiscard]] inline std::string_view to_string(ComparisonOutcome outcome) noexcept
+{
+    return outcome == ComparisonOutcome::Changed ? "changed" : "unchanged";
+}
+
 struct MetaLogDiff
 {
     std::string diff_version{"0.6.0"};
