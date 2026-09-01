@@ -955,7 +955,7 @@ inline constexpr std::string_view kProducerVersion{"1.10.3"};
 // api module disagree with the linked engine.
 //
 // pin-coherence: mirrors metalog-spec/SPEC.md
-inline constexpr std::string_view kMetaLogSpecVersion{"0.9.0"};
+inline constexpr std::string_view kMetaLogSpecVersion{"0.10.0"};
 
 struct ProducerBlock
 {
