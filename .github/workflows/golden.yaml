@@ -117,7 +117,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: CodeRoasted/malf-toolchain
-          ref: 38e5356bf33035b7f48081669cd4eb3f17315656
+          ref: 9ea2e0f1d5bff46c064edd5ae1ee339c204e5f16
           path: malf
           fetch-depth: 1
           persist-credentials: false
@@ -133,11 +133,11 @@ jobs:
 
       - name: Provision gcc-16.2 toolchain (OUR OWN published asset; arm64 auto-picked by uname -m)
         if: matrix.leg == 'gcc'
-        uses: CodeRoasted/malf-toolchain/.github/actions/setup-gcc@38e5356bf33035b7f48081669cd4eb3f17315656
+        uses: CodeRoasted/malf-toolchain/.github/actions/setup-gcc@9ea2e0f1d5bff46c064edd5ae1ee339c204e5f16
 
       - name: Provision clang-21 + libc++-21
         if: matrix.leg == 'clang'
-        uses: CodeRoasted/malf-toolchain/.github/actions/setup-clang21-libcxx@38e5356bf33035b7f48081669cd4eb3f17315656
+        uses: CodeRoasted/malf-toolchain/.github/actions/setup-clang21-libcxx@9ea2e0f1d5bff46c064edd5ae1ee339c204e5f16
 
       - name: Base — ninja + CMake 4.3.x (+ gcc-16.2 /opt wiring on the gcc leg)
         run: |
@@ -246,7 +246,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: CodeRoasted/malf-toolchain
-          ref: 38e5356bf33035b7f48081669cd4eb3f17315656
+          ref: 9ea2e0f1d5bff46c064edd5ae1ee339c204e5f16
           path: malf
           fetch-depth: 1
           persist-credentials: false
@@ -260,7 +260,7 @@ jobs:
           persist-credentials: false
 
       - name: Install + activate MSVC 14.52 (the C++23-modules fix floor; not pre-installed)
-        uses: CodeRoasted/malf-toolchain/.github/actions/setup-msvc1452@38e5356bf33035b7f48081669cd4eb3f17315656
+        uses: CodeRoasted/malf-toolchain/.github/actions/setup-msvc1452@9ea2e0f1d5bff46c064edd5ae1ee339c204e5f16
 
       - name: Verify the active toolset is MSVC 14.52, not a fallback
         shell: pwsh
@@ -457,7 +457,7 @@ jobs:
           pattern: golden-digest-*
 
       - name: Compare + validate the golden (all 5 legs must be byte-identical)
-        uses: CodeRoasted/malf-toolchain/.github/actions/coderoast-golden-compare@38e5356bf33035b7f48081669cd4eb3f17315656
+        uses: CodeRoasted/malf-toolchain/.github/actions/coderoast-golden-compare@9ea2e0f1d5bff46c064edd5ae1ee339c204e5f16
         with:
           digests-dir: digests
           min-legs: '5'
