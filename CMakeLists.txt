@@ -152,8 +152,15 @@ if(INSIGHT_METALOG_BUILD_TESTS)
         # Corpus fixtures (tests/fixtures/**): static log files a test reads by path. Distinct from
         # the LogCraft scenario corpus — these are plain given-logs inputs owned by this suite, so
         # the metalog tests stay free of any generator dependency.
+        # Golden vectors (tests/vectors/**): the EXPECTED wire bytes of compose()/diff() over the
+        # committed corpus, and the corpus itself. Two separate definitions rather than one root
+        # because the two are different species and only one of them is an expectation: the corpus
+        # is an INPUT this repo shares with the cross-leg determinism harness (scripts/), the
+        # vectors are the OUTPUT the suite pins.
         target_compile_definitions(insight_metalog_tests PRIVATE
-            INSIGHT_METALOG_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
+            INSIGHT_METALOG_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
+            INSIGHT_METALOG_VECTOR_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/vectors"
+            INSIGHT_METALOG_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/scripts/determinism_corpus")
         target_link_libraries(insight_metalog_tests PRIVATE
             insight::semantic_github
             insight::canon glaze::glaze picosha2::picosha2

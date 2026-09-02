@@ -15,6 +15,7 @@
 #include <chrono>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <spdlog/common.h> // spdlog::level — named for init_logging's sink/level choice in main
 #include <string>
 #include <vector>
@@ -34,11 +35,16 @@
 import insight.canon;
 import insight.metalog;
 
-// AFTER the imports (plain TU): the shared synthetic scenarios — the ADR-31.D8 near-full reservoir,
-// the §C3 cube collapse, the O4b service-edges over-cap topology, and the two window PAIRS whose
-// replayed artifact is a MetaLogDiff — shared with the in-suite tests so both oracles run the
-// identical windows.
+// AFTER the imports (plain TU): the shared scenarios — the ADR-31.D8 near-full reservoir, the §C3
+// cube collapse, the O4b service-edges over-cap topology, and the two window PAIRS whose replayed
+// artifact is a MetaLogDiff — shared with the in-suite tests so both oracles run the identical
+// windows. `corpus_windows_scenario.hpp` is the odd one out and the reason is worth naming: it is
+// not synthetic at all but the tokenize-and-split construction the DEFAULT (corpus-file) branch at
+// the bottom of main runs, factored out so the committed golden vectors
+// (tests/operations/test_golden_vectors.cpp) pin the artifact this harness emits rather than a
+// look-alike built by a second copy of the same twenty-five lines.
 #include "collapse_depths_scenario.hpp"
+#include "corpus_windows_scenario.hpp"
 #include "cube_collapse_scenario.hpp"
 #include "latency_shift_scenario.hpp"
 #include "ngram_cap_scenario.hpp"
@@ -248,56 +254,20 @@ int main(int argc, char** argv)
         return 0;
     }
 
-    std::ifstream input(argv[1], std::ios::binary);
-    if (!input)
+    namespace ml = insight::metalog;
+    const auto lines{ml::corpus_windows::read_lines(argv[1])};
+    if (!lines)
     {
         std::cerr << "cannot open " << argv[1] << "\n";
         return 2;
     }
-    std::vector<std::string> lines;
-    std::string line;
-    while (std::getline(input, line))
-    {
-        if (!line.empty() && line.back() == '\r')
-            line.pop_back();
-        lines.push_back(std::move(line));
-        line.clear();
-    }
-
-    namespace tk = insight::tokenization;
-    namespace ml = insight::metalog;
-    constexpr std::size_t kArenaBytes{std::size_t{1} << 22};
-    tk::ArenaAllocator arena{kArenaBytes};
-    // The degenerate composition (ADR-17): this harness verifies metalog reservoir/cube
-    // determinism over SYNTHETIC scenarios (not GHA dialect logs), so it needs no dialect
-    // vocabulary — and as a metalog script it does not link the semantic packages. compose({}) is a
-    // defined, runnable core-only state.
-    const insight::semantic::ComposedSemantics composed{insight::semantic::compose({})};
-    tk::Tokenizer tok{arena, tk::MaskConfig{}, composed};
-    std::vector<tk::CanonicalEvent> events;
-    events.reserve(lines.size());
-    for (const auto& raw : lines)
-        if (auto event{tok.process_line(raw)})
-            events.push_back(*event);
 
     ml::MetaLogConfig cfg;
-    cfg.max_param_histograms = 3;
-    cfg.emit_stability = true;
+    ml::corpus_windows::configure(cfg);
     ml::MetaLogEngine engine{cfg};
-    using Clock = std::chrono::system_clock;
-    const Clock::time_point window_start{std::chrono::seconds{1700000000}};
-    const Clock::time_point window_mid{std::chrono::seconds{1700000060}};
-    const Clock::time_point window_end{std::chrono::seconds{1700000120}};
-    const std::size_t half{events.size() / 2};
-
-    engine.open_window(window_start);
-    for (std::size_t i = 0; i < half; ++i)
-        engine.ingest_event(events[i]);
-    const auto doc1{engine.close_window(window_mid)};
-    engine.open_window(window_mid);
-    for (std::size_t i = half; i < events.size(); ++i)
-        engine.ingest_event(events[i]);
-    const auto doc2{engine.close_window(window_end)};
+    const auto pair{ml::corpus_windows::build(engine, *lines)};
+    const auto& doc1{pair.previous};
+    const auto& doc2{pair.current};
 
     // The two documents THEN the diff between them. The corpus sections are the only place a diff
     // is taken over REAL tokenized log text rather than a synthetic window, so they are what makes

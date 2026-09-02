@@ -24,3 +24,8 @@
 # Byte-exact reference data — never eol-normalize (corpora/goldens/fixtures
 # carry intentional CRLF / NUL / ANSI; a Windows checkout must preserve them verbatim).
 scripts/determinism_corpus/** -text
+# The golden vectors are the same species one step downstream: the EXPECTED wire bytes of
+# compose()/diff() over that corpus. A test that byte-compares them cannot survive an
+# eol-normalizing checkout, and `*.json text eol=lf` above would otherwise reach the
+# `.jsonl` records through `* text=auto`.
+tests/vectors/** -text
