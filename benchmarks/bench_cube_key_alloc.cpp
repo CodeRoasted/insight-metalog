@@ -1,5 +1,4 @@
-// NOLINTBEGIN(cppcoreguidelines-owning-memory,readability-magic-numbers) — a benchmark:
-// the global new/delete override IS the instrument, and the component lengths ARE the data.
+// NOLINTBEGIN(readability-magic-numbers) — a benchmark: the component lengths ARE the data.
 //
 // bench_cube_key_alloc.cpp — the measure-first arm for the cube-key heap row
 // (bugs.md 2026-08-02): MetaLogEngine::ingest_event builds two map keys as
@@ -14,7 +13,7 @@
 //
 //   empty  ""                                  0 B  no component_counts entry at all
 //   short  "src/auth"                          8 B  SSO on both
-//   mid    "/aws/lambda/myFunc"               18 B  allocates on gcc-15 ONLY
+//   mid    "/aws/lambda/myFunc"               18 B  allocates on libstdc++ ONLY
 //   long   "src/components/Button.spec.tsx"   30 B  allocates on both
 //
 // mid and long are the row's own attested shapes (cloud log-group components; canon's
@@ -22,22 +21,21 @@
 // event stream cycles 4 keys, so after the first lap every map access is a HIT — any
 // allocation seen per event is the LOOKUP key being materialised, not table growth.
 //
-// Two readouts per arm:
+// Two readouts per arm (heap_probe.hpp is the instrument — a counting passthrough on the
+// global heap, armed only inside the ingest loop):
 //   ns_per_event     — the real ingest cost (the share question)
 //   allocs_per_event — global operator new count / events, counted ONLY inside the
-//                      ingest loop (a thread_local gate; the override costs one
-//                      relaxed load when disarmed)
+//                      ingest loop
 // Attribution is by SUBTRACTION against the `empty` arm, everything else identical.
+
+#include "heap_probe.hpp"
 
 #include <benchmark/benchmark.h>
 
 #include <array>
-#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
-#include <new>
 #include <string_view>
 #include <vector>
 
@@ -46,36 +44,7 @@ import insight.canon;
 
 namespace meta = insight::metalog;
 namespace tok = insight::tokenization;
-
-namespace
-{
-
-// ── The instrument: a counting passthrough on the global heap ────────────────────────
-// thread_local gate so only the measured loop counts; the override itself allocates
-// nothing and costs one relaxed load + increment when armed, one load when not.
-thread_local bool g_count_allocs{false};
-thread_local std::uint64_t g_alloc_count{0};
-
-} // namespace
-
-void* operator new(std::size_t size)
-{
-    if (g_count_allocs)
-        ++g_alloc_count;
-    if (void* ptr{std::malloc(size)})
-        return ptr;
-    throw std::bad_alloc{};
-}
-
-void operator delete(void* ptr) noexcept
-{
-    std::free(ptr);
-}
-
-void operator delete(void* ptr, std::size_t) noexcept
-{
-    std::free(ptr);
-}
+using insight::metalog::bench::AllocCountScope;
 
 namespace
 {
@@ -116,12 +85,12 @@ void bench_cube_key_alloc(benchmark::State& state, std::string_view component)
             engine.ingest_event(ev);
         state.ResumeTiming();
 
-        g_alloc_count = 0;
-        g_count_allocs = true;
-        for (const auto& ev : events)
-            engine.ingest_event(ev);
-        g_count_allocs = false;
-        loop_allocs += g_alloc_count;
+        {
+            const AllocCountScope counting;
+            for (const auto& ev : events)
+                engine.ingest_event(ev);
+            loop_allocs += AllocCountScope::count();
+        }
 
         state.PauseTiming();
         auto doc{engine.close_window(t0 + std::chrono::seconds(60))};
@@ -164,4 +133,4 @@ BENCHMARK(BM_CubeKeyAlloc_ShortSSO)->Unit(benchmark::kMicrosecond);
 BENCHMARK(BM_CubeKeyAlloc_MidBand)->Unit(benchmark::kMicrosecond);
 BENCHMARK(BM_CubeKeyAlloc_LongOverSSO)->Unit(benchmark::kMicrosecond);
 
-// NOLINTEND(cppcoreguidelines-owning-memory,readability-magic-numbers)
+// NOLINTEND(readability-magic-numbers)
