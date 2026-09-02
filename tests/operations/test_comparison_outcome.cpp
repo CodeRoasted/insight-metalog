@@ -231,6 +231,55 @@ TEST(ComparisonOutcomeRule, ReservoirDeltaWitnessesOnAnyOfItsThreeLists)
     EXPECT_TRUE(outcome_is(diff, ComparisonOutcome::Changed));
 }
 
+// `withheld_signals` (§13.2.2, new in 0.10.0) declares `maxItems: 0` — any name is a finding, the
+// finding being that ANOTHER property carries one this document does not show. It is the only
+// clause whose input is a property that never reaches the wire: this producer computes
+// `field_histogram_deltas` on every diff and never serialises it (§3.5.2 blesses that), so a
+// comparison whose ONLY finding lay there had, before 0.10.0, no honest outcome — `"changed"`
+// carried no witness and `"unchanged"` was false. This producer emitted the false one, and the
+// first EXPECT below is the one that fails against that behaviour.
+TEST(ComparisonOutcomeRule, WithheldFieldHistogramDeltasWitnessThroughWithheldSignals)
+{
+    auto diff{bare_diff()};
+    EXPECT_TRUE(meta::withheld_signals_of(diff).empty());
+    EXPECT_TRUE(outcome_is(diff, ComparisonOutcome::Unchanged));
+
+    // One slot whose distribution moved, and nothing else in the whole document. Every other
+    // signal property stays at its declared vacuous value, so this row is the sole finding — and
+    // it is one no reader of the serialized document can see.
+    meta::FieldHistogramDelta row;
+    row.template_id = insight::template_id_of("user <*> logged in");
+    row.param_index = 0;
+    row.js_divergence = 0.42;
+    diff.field_histogram_deltas.push_back(row);
+
+    EXPECT_TRUE(outcome_is(diff, ComparisonOutcome::Changed));
+    EXPECT_EQ(meta::withheld_signals_of(diff),
+              (std::vector<std::string>{"field_histogram_deltas"}));
+}
+
+// §13.2.2 bounds what may be NAMED, and the bound is narrower than "everything this producer
+// drops": a member must be in the witness set (§13.2.1 step 2) and must not already witness in the
+// document. Two properties this producer computes fail that test in opposite ways, and naming
+// either would be a false statement about what the document withholds — `ordinal_histogram_deltas`
+// is not a member of the standard at all, and `service_edge_delta` IS carried, under the §7
+// `extensions` container. Neither may appear, and neither may move the outcome on its own.
+TEST(ComparisonOutcomeRule, WithheldSignalsNamesNeitherANonStandardNorAnExtensionProperty)
+{
+    auto diff{bare_diff()};
+
+    meta::OrdinalHistogramDelta ordinal;
+    ordinal.template_id = insight::template_id_of("request took <*> ms");
+    diff.ordinal_histogram_deltas.push_back(ordinal);
+
+    meta::ServiceEdgeDelta edges;
+    edges.emerged.push_back(meta::ServiceEdge{.caller = "api", .callee = "db", .weight = 7});
+    diff.service_edge_delta = edges;
+
+    EXPECT_TRUE(meta::withheld_signals_of(diff).empty());
+    EXPECT_TRUE(outcome_is(diff, ComparisonOutcome::Unchanged));
+}
+
 // ── Group B: the producer lands on the declared vacuous values ───────────────────────────────────
 
 // One window's worth of events. `alpha` branches to `beta` and to `gamma`, so the closed document

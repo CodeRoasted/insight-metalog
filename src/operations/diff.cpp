@@ -689,8 +689,22 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
     return out;
 }
 
+// SPEC §13.2.2 — the ONE property this producer withholds a finding in. Factored out so that the
+// noexcept, allocation-free `comparison_outcome_of` and the allocating `withheld_signals_of` decide
+// it by the SAME predicate instead of by two that can drift apart.
+//
+// `field_histogram_deltas` is computed on every diff and never reaches the wire — SPEC §3.5.2
+// blesses that choice, and `serialize.cpp`'s make_diff has no clause for it. Its declared vacuity
+// is `maxItems: 0`, so ANY row is a finding: there is no per-row threshold to mirror here, unlike
+// `template_deltas`. Empty in the default configuration (MetaLogConfig::max_param_histograms is 0),
+// so the ordinary document is unaffected by everything below.
+[[nodiscard]] bool withholds_field_histogram_deltas(const MetaLogDiff& diff) noexcept
+{
+    return !diff.field_histogram_deltas.empty();
+}
+
 // SPEC §13.2.1's evaluation, step 3, over this producer's own signal properties. The contract, the
-// exact-equality reason and the three deltas that deliberately do NOT decide the outcome are on the
+// exact-equality reason and the two deltas that deliberately do NOT decide the outcome are on the
 // declaration in metalog.cppm; this body carries only what each clause mirrors.
 ComparisonOutcome comparison_outcome_of(const MetaLogDiff& diff) noexcept
 {
@@ -747,8 +761,31 @@ ComparisonOutcome comparison_outcome_of(const MetaLogDiff& diff) noexcept
     // ERROR/FATAL failure frontier.
     if (!diff.reservoir_delta.empty())
         return ComparisonOutcome::Changed;
+    // `withheld_signals` (§13.2.2) — the witness of LAST RESORT, and that is why it is tested last:
+    // it witnesses a finding this document does NOT carry, so every property that carries its own
+    // has already returned above. A non-empty array is a witness by its `maxItems: 0` declaration,
+    // which is exactly what makes "changed" legal for a comparison whose only finding was withheld.
+    // Before 0.10.0 that comparison fell through to Unchanged — a false statement about a
+    // comparison that had run and found a change, and the hole §13.2.2 was minted to close.
+    if (withholds_field_histogram_deltas(diff))
+        return ComparisonOutcome::Changed;
 
     return ComparisonOutcome::Unchanged;
+}
+
+// SPEC §13.2.2. The contract — what may be named, and why this is derived rather than stored — is
+// on the declaration in metalog.cppm.
+std::vector<std::string> withheld_signals_of(const MetaLogDiff& diff)
+{
+    std::vector<std::string> names;
+    if (withholds_field_histogram_deltas(diff))
+        names.emplace_back("field_histogram_deltas");
+    // §13.2.2 requires the array sorted ascending and duplicate-free. Sorted EXPLICITLY although
+    // one clause cannot violate it: the MUST is then held by this line rather than by whoever adds
+    // the second clause remembering the alphabet. Uniqueness needs nothing — each clause appends a
+    // distinct literal, once.
+    std::ranges::sort(names);
+    return names;
 }
 
 } // namespace insight::metalog

@@ -485,17 +485,42 @@ class MetaLogEngine
 // arrival and must gain a clause here in the same pass — `scripts/spec_conformance_gate.sh` is
 // what measures the drift, over the exact bytes this producer publishes.
 //
-// THE THREE DELTAS THIS PRODUCER COMPUTES THAT DO NOT DECIDE THE OUTCOME, and why each cannot:
-//   * `field_histogram_deltas` — computed on every diff and deliberately NOT serialised (SPEC
-//     §3.5.2 names that choice conformant and not a defect; it lands with the full-fidelity batch
-//     diff surface). §13.2.1 step 3 makes a property ABSENT from the document not a witness, so
-//     counting it here would assert "changed" on a document carrying no witness — invalid under
-//     step 4. Empty in the default configuration (MetaLogConfig::max_param_histograms is 0).
+// THE TWO DELTAS THIS PRODUCER COMPUTES THAT DO NOT DECIDE THE OUTCOME, and why neither can:
 //   * `ordinal_histogram_deltas` — not a member of the standard at all (the W1 channel is a
-//     CodeRoast-internal in-process delta), and not serialised.
+//     CodeRoast-internal in-process delta), and not serialised. Not in the witness set, so
+//     §13.2.2 forbids naming it in `withheld_signals` too.
 //   * `service_edge_delta` — serialised under the §7 `extensions` container, which §13.2.1 step 2
-//     excludes from the witness set by name.
+//     excludes from the witness set by name. It is CARRIED, so it is not withheld either.
+//
+// `field_histogram_deltas` used to be a third, and is no longer: it now decides the outcome
+// INDIRECTLY, through `withheld_signals_of` below. See that function for the hole this closed.
 [[nodiscard]] ComparisonOutcome comparison_outcome_of(const MetaLogDiff& diff) noexcept;
+
+// SPEC §13.2.2's `withheld_signals`: the signal properties in which THIS comparison found a change
+// that the serialized document does not carry. Sorted ascending, duplicate-free, and EMPTY when
+// this producer withheld no finding — the caller omits the member in that case (§13.2's "emit the
+// declared vacuous value, or omit the property").
+//
+// THE HOLE THIS CLOSES, because it is the reason the member exists. This producer computes
+// `field_histogram_deltas` on every diff and deliberately does NOT serialise it — SPEC §3.5.2
+// names that choice conformant and not a defect, since the §11 streaming envelope cannot always
+// afford a per-slot block. Before 0.10.0 a comparison whose ONLY finding lay in that array had no
+// conformant document to emit: `"changed"` carried no witness and failed §13.2.1 clause 4, and
+// `"unchanged"` was FALSE, because the comparison ran and found a change. This producer emitted
+// the false one. `withheld_signals` is the witness of last resort — a non-empty array is itself a
+// witness (its declared vacuity is `maxItems: 0`), so `"changed"` becomes legal on its strength
+// alone and the finding stops vanishing.
+//
+// WHAT MAY BE NAMED, which is narrower than "everything this producer drops" (§13.2.2):
+// every member MUST be in the witness set (§13.2.1 step 2), MUST NOT be `withheld_signals`
+// itself, and MUST NOT already witness in the document. And the member reports a FINDING, never
+// an inventory of omissions — a producer that computed nothing for a property has nothing to
+// withhold, so a property is named only when it actually carries a change.
+//
+// Like `comparison_outcome`, this is DERIVED from the diff's findings rather than stored on
+// MetaLogDiff: a stored copy could disagree with the findings it claims to summarise, and there is
+// no state here that the diff does not already hold.
+[[nodiscard]] std::vector<std::string> withheld_signals_of(const MetaLogDiff& diff);
 
 // §13 cardinality monitor (cube_perf_and_collapse.md C2): the cube's distinct-value counts +
 // closed-cell count, as a PURE function of the closed cube. Observability only — a deterministic

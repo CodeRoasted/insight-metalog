@@ -639,6 +639,13 @@ namespace dto
         std::optional<TailDelta> tail_delta;
         std::optional<CubeDiff> cube_diff; // §13.6 emerging-border cube diff; omit when absent
         std::optional<ReservoirDelta> reservoir_delta; // §13.7 reservoir delta; omit when empty
+        // §13.2.2, the witness of last resort: the signal properties this comparison found a change
+        // in that this document does not carry. Omitted when empty rather than written as `[]` —
+        // §13.2 lets a producer emit a property's declared vacuous value OR omit it, and omitting
+        // keeps every document that withholds nothing byte-identical to what it was before 0.10.0.
+        // Filled from withheld_signals_of, which reads the diff's findings; never from which
+        // members the block above happens to fill in.
+        std::optional<std::vector<std::string>> withheld_signals;
         // DECLARED LAST: the standard's members first, then the §7 container (the Document
         // discipline). Carries the O4b (SRC-D-OTEL-21) service-topology delta; omitted when the
         // diff has no vendor data.
@@ -1178,6 +1185,10 @@ namespace
         // schema's `x-metalog-vacuous` declarations — never from which members the block below
         // happens to fill in, which is the vacuity spec 0.10.0 removed.
         out.comparison_outcome = to_string(comparison_outcome_of(diff));
+        // §13.2.2. Written from the same predicate that decided the outcome above, so a document
+        // asserting "changed" on a withheld finding always carries the name that witnesses it.
+        if (std::vector<std::string> withheld{withheld_signals_of(diff)}; !withheld.empty())
+            out.withheld_signals = std::move(withheld);
         out.kl_divergence = diff.kl_divergence;
         out.js_divergence = diff.js_divergence;
         out.stability_score = diff.stability_score;

@@ -1673,7 +1673,17 @@ enum class ComparisonOutcome : std::uint8_t
 
 struct MetaLogDiff
 {
-    std::string diff_version{"0.6.0"};
+    // SPEC §13.1.1: the version of the SPECIFICATION this document conforms to — the same axis
+    // AND the same value as `metalog_version`, never an independent version of the diff document.
+    // It therefore mirrors `kMetaLogSpecVersion` rather than carrying a literal: this was the THIRD
+    // hand-written copy of that one fact, and being hand-written it had drifted four MINOR versions
+    // behind, stamping `0.6.0` onto documents carrying `comparison_outcome` — a member the spec
+    // made REQUIRED at 0.10.0. §13.1.1 forbids exactly that (a producer MUST NOT emit a version
+    // older than the version at which the newest member it carries was minted) and states in the
+    // same breath that no schema keyword catches it: `pattern` fixes the shape, and JSON Schema
+    // cannot compare a version against the version at which a sibling member was minted. The rule
+    // binds the PRODUCER, so this is the only place it can be held.
+    std::string diff_version{kMetaLogSpecVersion};
     DocumentRef previous{};
     DocumentRef current{};
     std::optional<double> kl_divergence;
@@ -1685,8 +1695,8 @@ struct MetaLogDiff
     std::vector<BranchingDelta> branching_delta;
     std::optional<NGramDelta> ngram_delta;
     // O4b service-topology delta (SRC-D-OTEL-21). Present ONLY when both documents carried a
-    // service_edges block (absent ⇒ *unknown*). Additive on the DERIVED diff → no diff_version bump
-    // (the ngram_delta / latency_shift derived-not-compared precedent). See ServiceEdgeDelta.
+    // service_edges block (absent ⇒ *unknown*). Serialised under the §7 `extensions` container,
+    // which §13.2.1 step 2 excludes from the witness set by name. See ServiceEdgeDelta.
     std::optional<ServiceEdgeDelta> service_edge_delta;
     // Per-param distribution shift. Empty unless both documents were produced
     // with max_param_histograms > 0 and share at least one template_id.
@@ -1707,8 +1717,8 @@ struct MetaLogDiff
     // MetaLogDocument::cube.
     bool has_cube_diff{false};
     CubeDiffBlock cube_diff{};
-    // §5.3 reservoir delta. Additive on the DERIVED diff → NO diff_version /
-    // canonicalization_version bump (the latency_shift derived-not-compared precedent).
+    // §5.3 reservoir delta. Additive on the DERIVED diff → no canonicalization_version bump: that
+    // axis is canon's processing contract (§2.4), which a derived diff block does not move.
     // Inline value, NOT a presence-bool pair and NOT std::optional: emptiness IS absence
     // here (all three lists empty ⇒ the block is omitted from JSON — reservoir_delta.empty()), so a
     // separate has_ flag would be redundant state to keep in sync. Inline (not
