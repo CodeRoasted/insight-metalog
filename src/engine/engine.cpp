@@ -431,9 +431,9 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
             auto ord_it{bucket.ordinal_accumulators.find(observation.field_name)};
             if (ord_it == bucket.ordinal_accumulators.end())
             {
-                ord_it = bucket.ordinal_accumulators
-                             .try_emplace(std::string{observation.field_name})
-                             .first;
+                ord_it =
+                    bucket.ordinal_accumulators.try_emplace(std::string{observation.field_name})
+                        .first;
                 ord_it->second.schedule = observation.schedule;
                 ord_it->second.counts.assign(ordinal_schedule_bins(observation.schedule), 0U);
             }
