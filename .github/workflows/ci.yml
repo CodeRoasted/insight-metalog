@@ -11,7 +11,7 @@ jobs:
     permissions:
       contents: read
       actions: read
-    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-ci.yml@eed598dfbab97c148ec94050588de9b769d5f947
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-ci.yml@344c7b65e1e57822997dd4d8f27aaa33c204d0e6
     with:
       # metalog vendors insight_canon from its PUBLIC release, then builds the single root package
       # (test=true runs the full gtest suite; create=true verifies packaging + test_package).
@@ -20,8 +20,8 @@ jobs:
       # even though it comes from the same repo+tag. metalog test_requires it (conanfile.py) — without
       # the row the gtest suite cannot resolve it. Keep both rows pinned together on a canon bump.
       vendor: |
-        insight_canon 1.10.3 CodeRoasted/insight-canon public
-        insight_semantic_github 1.10.3 CodeRoasted/insight-canon public
+        insight_canon 1.10.4 CodeRoasted/insight-canon public
+        insight_semantic_github 1.10.4 CodeRoasted/insight-canon public
       modules: '.'
       # PUBLIC repo: sift-mode: public renders the Sift comment fork-safe (read-only token); the
       # sift-post job below posts it.
@@ -38,7 +38,7 @@ jobs:
     permissions:
       pull-requests: write
       actions: read
-    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-sift-post.yml@eed598dfbab97c148ec94050588de9b769d5f947
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-sift-post.yml@344c7b65e1e57822997dd4d8f27aaa33c204d0e6
     with:
       run-id: ${{ github.run_id }}
     secrets: inherit

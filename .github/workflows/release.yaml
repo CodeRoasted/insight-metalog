@@ -38,7 +38,7 @@ jobs:
 
   release:
     needs: golden
-    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-release.yml@eed598dfbab97c148ec94050588de9b769d5f947
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-release.yml@344c7b65e1e57822997dd4d8f27aaa33c204d0e6
     with:
       tag: ${{ github.event.inputs.tag || github.ref_name }}
       packages: 'insight_metalog:.'
@@ -46,8 +46,8 @@ jobs:
       # is a separate package from the SAME canon release (ADR-17.D8) and needs its own row — the conan
       # create builds test_package, which reaches metalog's test_requires. Keep in sync with ci.yml.
       vendor: |
-        insight_canon 1.10.3 CodeRoasted/insight-canon public
-        insight_semantic_github 1.10.3 CodeRoasted/insight-canon public
+        insight_canon 1.10.4 CodeRoasted/insight-canon public
+        insight_semantic_github 1.10.4 CodeRoasted/insight-canon public
       benchmark: 'insight_metalog_bench=insight-metalog'
     secrets: inherit
 
