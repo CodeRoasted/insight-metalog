@@ -147,13 +147,27 @@ class MetaLogEngine
         // schedule's log2 ladder. field_name → accumulator. Populated only when
         // config_.max_param_histograms > 0; field-keyed (not positional), so it never collides
         // with param_value_counts (a field is ordinal XOR categorical, SRC-D-W1-5).
+        //
+        // TRANSPARENT hash/eq, for the reason the three maps above carry (ADR-9.D2): the field name
+        // is a string_view over the catalog's own bytes, and the accumulator is hit once per
+        // observation per event — the OTEL span shape yields one span_duration_ns per span. Keyed
+        // through a non-transparent map, every observation built a std::string key, and three of
+        // the fifteen catalog keys are 16 chars (span_duration_ns, response_time_ms,
+        // duration_seconds): past libstdc++'s 15-char SSO band, so the ship leg paid 1 general-heap
+        // allocation + free per observation per event, measured at +7.9 ns/event over the 15-char
+        // control (bench_ordinal_key_alloc, insight-metalog 71a74af), while the dev leg (libc++,
+        // SSO 22) paid nothing — a defect one stdlib could not see. The lookup is now by view and
+        // the key is copied on first sight only. std::hash<string> == std::hash<string_view> over
+        // equal bytes is a C++17 guarantee, so key bytes and bucket layout are unchanged — and the
+        // emit path sorts the field names before it reads them, so no wire byte can move.
         struct OrdinalAccumulator
         {
             OrdinalSchedule schedule{};
             std::vector<std::uint64_t> counts; // sized to the schedule's B on first observation
             std::uint64_t total{0};
         };
-        std::unordered_map<std::string, OrdinalAccumulator> ordinal_accumulators;
+        std::unordered_map<std::string, OrdinalAccumulator, TransparentStringHash, std::equal_to<>>
+            ordinal_accumulators;
     };
 
     struct NGramKey

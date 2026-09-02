@@ -422,14 +422,22 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
     {
         for (const auto& observation : event.ordinals)
         {
-            auto [ord_it, ord_inserted]{
-                bucket.ordinal_accumulators.try_emplace(std::string{observation.field_name})};
-            auto& accumulator{ord_it->second};
-            if (ord_inserted)
+            // Same shape as the cube, component_counts and param_value_counts keys above
+            // (ADR-9.D2): hit by view, copy the key only when the table takes it. try_emplace
+            // cannot do that — it needs the key_type — so the steady-state hit is a find, and the
+            // emplace is reached on first sight only. Before this every observation materialised
+            // the key, which on a 16-char catalog key is a general-heap allocation + free per
+            // observation per event on the libstdc++ ship leg (bench_ordinal_key_alloc).
+            auto ord_it{bucket.ordinal_accumulators.find(observation.field_name)};
+            if (ord_it == bucket.ordinal_accumulators.end())
             {
-                accumulator.schedule = observation.schedule;
-                accumulator.counts.assign(ordinal_schedule_bins(observation.schedule), 0U);
+                ord_it = bucket.ordinal_accumulators
+                             .try_emplace(std::string{observation.field_name})
+                             .first;
+                ord_it->second.schedule = observation.schedule;
+                ord_it->second.counts.assign(ordinal_schedule_bins(observation.schedule), 0U);
             }
+            auto& accumulator{ord_it->second};
             const std::uint32_t bin{ordinal_bin_index(observation.schedule, observation.value)};
             if (bin < accumulator.counts.size())
             {

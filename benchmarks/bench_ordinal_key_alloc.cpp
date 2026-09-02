@@ -1,16 +1,18 @@
 // NOLINTBEGIN(readability-magic-numbers) — a benchmark: the key lengths ARE the data.
 //
 // bench_ordinal_key_alloc.cpp — the measure-first arm for the W1 ordinal accumulator's key
-// (ROADMAP N102). MetaLogEngine::ingest_event does
+// (ROADMAP N102), now its standing regression guard at 0. MetaLogEngine::ingest_event used to do
 //     bucket.ordinal_accumulators.try_emplace(std::string{observation.field_name})
-// on a NON-transparent map, so every declared ordinal observation of every event constructs a
-// std::string key — on a repeat hit too, where the key is only looked up and then destroyed.
+// on a NON-transparent map, so every declared ordinal observation of every event constructed a
+// std::string key — on a repeat hit too, where the key was only looked up and then destroyed.
 // Three of the fifteen kOrdinalFieldCatalog keys are exactly 16 chars (span_duration_ns,
 // response_time_ms, duration_seconds): over libstdc++'s 15-char SSO band and under libc++'s 22,
-// so the construction heap-allocates on the gcc/libstdc++ SHIP leg and never on the clang/libc++
-// dev leg (MEM:toolchain-clang21-dev-gcc16-ship). The neighbouring param_value_counts path was
-// repaired for this exact shape (the transparent find-then-copy form, insight-metalog b5883f6);
-// this accumulator was deliberately left until an arm existed. This is the arm.
+// so the construction heap-allocated on the gcc/libstdc++ SHIP leg and never on the clang/libc++
+// dev leg (MEM:toolchain-clang21-dev-gcc16-ship) — measured here at 1 allocation per observation
+// per event and +7.9 ns/event over the 15-char control (insight-metalog 71a74af). The map now
+// carries the transparent find-then-copy form param_value_counts took in b5883f6 (the key is
+// copied on first sight only), so every arm below reads 0 allocations on both legs; an arm
+// reading 1 again is the key construction coming back.
 //
 // ARMS. Every arm carries ONE observation per event — the OTEL span shape: a span yields exactly
 // one span_duration_ns (canon json.cpp, parse_otel_span), a structured HTTP record one
