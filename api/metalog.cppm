@@ -131,7 +131,16 @@ class MetaLogEngine
             component_counts;
         // Per-param value histograms; index i == CanonicalEvent::params[i].
         // Populated only when config_.max_param_histograms > 0.
-        std::vector<std::unordered_map<std::string, std::uint64_t>> param_value_counts;
+        //
+        // TRANSPARENT hash/eq, for the reason component_counts above carries (ADR-9.D2): the
+        // param value is a string_view over arena bytes stable only within the window, so it is
+        // copied into the key exactly when the table TAKES it — first sight, room left. A repeat
+        // value and a value the max_histogram_values cap declines both look up by string_view and
+        // construct nothing. std::hash<string> == std::hash<string_view> over equal bytes is a
+        // C++17 guarantee, so key bytes, bucket layout and iteration order are unchanged.
+        std::vector<
+            std::unordered_map<std::string, std::uint64_t, TransparentStringHash, std::equal_to<>>>
+            param_value_counts;
         std::vector<std::uint64_t> param_totals;
         // W1 ordinal accumulator (§4A.4 SRC-D-W1-2): per declared ordinal field (canon
         // kOrdinalFieldCatalog) seen on this template, its schedule + binned counts over the

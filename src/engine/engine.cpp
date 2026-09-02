@@ -379,8 +379,12 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
     }
 
     // Per-param field histogram accumulation.
-    // Gated on config_.max_param_histograms == 0 (default) → single
-    // predicted-not-taken branch; zero extra work on the hot path.
+    // At config_.max_param_histograms == 0 (the producer default) this is a single
+    // predicted-not-taken branch and no extra work reaches the hot path. Above 0 the loop body
+    // below runs per PARAM per EVENT, and that configuration ships: the Sift ingest pipeline
+    // enables it by default (sift.api-config.cppm, kDefaultIngestMaxParamHistograms) and the
+    // playground scenarios declare it. So the key handling below is hot-path work, not a
+    // test-only cost.
     if (config_.max_param_histograms > 0 && !event.params.empty())
     {
         const std::size_t param_count{std::min(config_.max_param_histograms, event.params.size())};
@@ -393,12 +397,18 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
         {
             ++bucket.param_totals[pi];
             auto& vcounts{bucket.param_value_counts[pi]};
-            const std::string val{event.params[pi]};
-            // Track the value if there is still room, or if it is already
-            // tracked (update an existing counter).
-            if (vcounts.size() < config_.max_histogram_values || vcounts.contains(val))
-                ++vcounts[val];
-            // else: value table full; total was already incremented above.
+            const std::string_view val{event.params[pi]};
+            // Same shape as the cube and component_counts keys above (ADR-9.D2): hit by view,
+            // copy only when the table takes the value. Before this the value was materialised
+            // into a std::string unconditionally, so every param of every event paid a
+            // general-heap allocation once it passed the SSO band — on a repeat hit, and even
+            // when the cap below discarded the value it had just built.
+            if (auto hit{vcounts.find(val)}; hit != vcounts.end())
+                ++hit->second;
+            else if (vcounts.size() < config_.max_histogram_values)
+                ++vcounts[std::string{val}]; // room left: the table takes ownership of the bytes
+            // else: value table full and this value is untracked; param_totals was already
+            // incremented above, which is why total may exceed Σ value_counts (SPEC §3.5).
 
             // HLL cardinality sketch — always add regardless of value-table cap.
             hll_state_->add(*lookup.content_id, pi, val);
@@ -688,7 +698,15 @@ void MetaLogEngine::build_top_k(MetaLogDocument& doc, const WindowAnalysis& anal
             {
                 FieldHistogram hist;
                 hist.param_index = static_cast<std::uint32_t>(pi);
-                hist.value_counts = bucket.param_value_counts[pi];
+                // Window close, not the hot path: a range insert rather than a copy-assign,
+                // because the accumulator carries the hot path's transparent comparator and the
+                // wire type does not. Same keys, same counts, and no consumer depends on the
+                // destination's iteration order — serialize sorts into a std::map, entropy and
+                // histogram_js reduce over __int128, compose and Sift's classify accumulate
+                // integers.
+                const auto& tracked{bucket.param_value_counts[pi]};
+                hist.value_counts.reserve(tracked.size());
+                hist.value_counts.insert(tracked.begin(), tracked.end());
                 hist.total = bucket.param_totals[pi];
                 // Shannon entropy over the tracked values.
                 // Note: when total > sum(value_counts) (cap was hit),
