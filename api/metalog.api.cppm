@@ -244,15 +244,25 @@ struct TransparentCubeKeyLess
 // wins). Backed by node-stable std::unordered_map, so returned string_views stay valid for the
 // registry's lifetime. Every member is defined OUT OF LINE (below), non-inline, ON PURPOSE — never
 // fold these back into the class body. `table_` is a std::unordered_map keyed on TemplateId, which
-// is exported from insight.canon (a module-attached type). gcc-15 emits the map's out-of-line
-// std::_Hashtable members
-// (_M_reset, _M_update_bbegin, …) with *internal* linkage for a module-attached key, so an inlined
-// copy/move/merge/intern in a *consumer* TU leaves them unresolved at link (surfaces only once the
-// consumer lives in a separate link unit — e.g. the insight-playground unit/contract target split).
-// Keeping the ops non-inline emits them once into libinsight_metalog; consumers just call the
-// external symbol. TemplateRegistry is a pure DISPLAY structure (never on the decision path), so
-// the forgone inlining is perf-immaterial. clang is unaffected — this is correctness-preserving
-// there.
+// is exported from insight.canon (a module-attached type). gcc-15 emitted the map's out-of-line
+// std::_Hashtable members (_M_reset, _M_update_bbegin, …) with *internal* linkage for a
+// module-attached key, so an inlined copy/move/merge/intern in a *consumer* TU was unresolved at
+// link — and it surfaced only once the consumer lived in a separate link unit (the
+// insight-playground unit/contract target split). Keeping the ops non-inline emits them once into
+// libinsight_metalog; consumers just call the external symbol. TemplateRegistry is a pure DISPLAY
+// structure (never on the decision path), so the forgone inlining is perf-immaterial. clang was
+// unaffected — correctness-preserving there.
+//
+// RE-MEASURED 2026-09-03 on the gcc-16.2 ship leg (`linux-gcc16-release`), wiped build trees: the
+// whole registry was moved INLINE into this class body and the impl unit emptied, then built here
+// (rc=0) AND downstream in insight-eidos (rc=0), where `insight_e2e_unit_tests` and
+// `insight_e2e_contract_tests` — the very separate-link-unit split that used to expose it — both
+// linked clean. So the internal-linkage defect does not reproduce on the current ship compiler.
+//
+// THE SPLIT STAYS ANYWAY, AND NOT MERELY OUT OF CAUTION: the MSVC half of the justification below
+// is independent of gcc and was NOT measured here — MSVC re-emits an interface-defined out-of-line
+// `= default` special member into every importer (LNK2005). One of the two reasons for this shape
+// is retired; the other is untouched, so the shape is still required.
 class TemplateRegistry
 {
   public:
@@ -281,10 +291,12 @@ class TemplateRegistry
 };
 
 // Every member is defined OUT OF LINE in the implementation unit src/metalog.api.impl.cpp, NOT here
-// in the interface — on purpose, for two compilers at once (see the class note above): gcc-15 needs
-// them non-inline (table_'s std::_Hashtable members, module-attached key), and MSVC re-emits an
-// out-of-line `= default` special member defined in a module *interface* into every importer
-// (LNK2005), so the interface must only DECLARE them. Never fold these back into the interface.
+// in the interface — see the class note above, which carries the 2026-09-03 re-measurement. Of the
+// two compilers this shape was built for, the gcc half is now measured INERT on gcc-16.2 (the
+// _Hashtable internal-linkage defect does not reproduce, verified downstream at the separate-link
+// -unit split) while the MSVC half stands unmeasured and unretired: MSVC re-emits an out-of-line
+// `= default` special member defined in a module *interface* into every importer (LNK2005), so the
+// interface must only DECLARE them. Never fold these back into the interface.
 
 // ── Presence churn (DN-50.D4) — the boundary-crossing monoid ──────────────────────
 //

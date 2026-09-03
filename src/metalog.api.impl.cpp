@@ -2,11 +2,15 @@
 //
 // The out-of-line home of TemplateRegistry's members. These are deliberately defined HERE, in an
 // implementation unit, rather than in the interface (api/metalog.api.cppm) for a two-compiler
-// reason (see the class note in the interface):
-//   • gcc-15 needs them NON-inline: table_ is a std::unordered_map keyed on TemplateId, a module-
-//     attached canon type, whose out-of-line std::_Hashtable members gcc emits with *internal*
-//     linkage — an inlined copy/merge/intern in a consumer TU is then unresolved at link. Keeping
+// reason (see the class note in the interface, which carries the measurement):
+//   • gcc-15 needed them NON-inline: table_ is a std::unordered_map keyed on TemplateId, a module-
+//     attached canon type, whose out-of-line std::_Hashtable members gcc emitted with *internal*
+//     linkage — an inlined copy/merge/intern in a consumer TU was then unresolved at link. Keeping
 //     them non-inline emits them once into libinsight_metalog; consumers call the external symbol.
+//     RE-MEASURED 2026-09-03 on gcc-16.2 (`linux-gcc16-release`, wiped trees): with the registry
+//     moved inline and this unit emptied, both this package and its downstream separate-link-unit
+//     consumers built clean, so THIS half of the reason is retired. It is recorded, not deleted,
+//     because the shape it justified is still required by the next bullet.
 //   • MSVC re-emits an out-of-line `= default` special member DEFINED IN A MODULE INTERFACE into
 //     every importer of that interface (e.g. engine.cpp), producing LNK2005 duplicate symbols. The
 //     interface must therefore only DECLARE them; the single definition lives in this impl unit.
