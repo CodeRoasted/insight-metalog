@@ -2,7 +2,7 @@ packages:
   insight_metalog:
     path: .
     version: 1.10.4
-    public: true
+    source_public: true
     release: true
     # insight_semantic_github is test_required (gtest suite + test_package); it must be in `depends` so
     # the released_packages DFS builds it BEFORE insight_metalog at the cut. ADR-17.D8 split it out of
