@@ -1,4 +1,3 @@
-// NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns.
 //
 // test_golden_vectors.cpp — the committed GOLDEN VECTORS for `compose()` (SPEC §12) and `diff()`
@@ -787,5 +786,3 @@ TEST(GoldenVectorProducerEnvelope, ProducerVersionIsStampedFromTheOnePackageCons
 }
 
 } // namespace
-
-// NOLINTEND

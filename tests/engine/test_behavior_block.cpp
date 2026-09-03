@@ -1,4 +1,3 @@
-// NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns
 // BehaviorBlock: n-gram emission, conditional probabilities, bounded keys (MetaLogEngine
 // close_window).
@@ -404,5 +403,3 @@ TEST_F(BehaviorBlockTest, OtelTraceScopingDepollutesConcurrentInterleave)
 }
 
 } // namespace
-
-// NOLINTEND

@@ -1,4 +1,3 @@
-// NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns
 // StabilityBlock: cross-window stability score, KL/JS divergences, new/vanished counts.
 
@@ -126,5 +125,3 @@ TEST(MetaLogEngineStability, StabilityScoreAlwaysInZeroOne)
 }
 
 } // namespace
-
-// NOLINTEND

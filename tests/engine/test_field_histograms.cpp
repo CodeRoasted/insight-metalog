@@ -1,4 +1,3 @@
-// NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns
 // FieldHistogram collection: per-param value counts, entropy, bounded value tables.
 
@@ -192,5 +191,3 @@ TEST(FieldHistogramTest, Enabled_ValueTableBoundedByMaxHistogramValues)
 // across runs/impls), so emission MUST key-sort or replay bit-identity is lost.
 
 } // namespace
-
-// NOLINTEND

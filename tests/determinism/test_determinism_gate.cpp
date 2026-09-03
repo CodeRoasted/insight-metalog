@@ -1,4 +1,3 @@
-// NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns.
 //
 // BEHAVIORAL coverage for the metalog document (the ADR-31.D8 reservoir regime, the always-on
@@ -720,4 +719,3 @@ TEST(MetaLogDocument, ADifferentialAxisOnlyEverPinsAnEmergingCellFromZero)
 }
 
 } // namespace
-// NOLINTEND

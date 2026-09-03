@@ -1,4 +1,3 @@
-// NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns.
 //
 // test_egress_encoding_conformance.cpp — the EGRESS ENCODING gate: `metalog::to_json` emits
@@ -602,4 +601,3 @@ TEST(EgressEncodingConformance, MetaLogDiffEmitsConformantJsonForEveryC0Byte)
 }
 
 } // namespace
-// NOLINTEND

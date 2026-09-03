@@ -1,4 +1,3 @@
-// NOLINTBEGIN
 // Unit tests for insight.metalog.detail.stats:
 //   statistics.cpp — shannon_entropy_bits, divergences, new_and_vanished, histogram_js
 //   salience.cpp   — dominant_level_of, dominant_role_of, surprise_band, novelty_band,
@@ -481,5 +480,3 @@ TEST(WireFormat, EveryProducerAbsenceOmitsTheRowLevelMember)
 }
 
 } // namespace
-
-// NOLINTEND

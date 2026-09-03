@@ -1,4 +1,3 @@
-// NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns
 // MetaLogEngine lifecycle + window envelope: open/close guards, reset semantics,
 // duration/lines_observed.
@@ -76,5 +75,3 @@ TEST(MetaLogEngineLifecycle, CloseBeforeOpenWindowThrows)
 }
 
 } // namespace
-
-// NOLINTEND

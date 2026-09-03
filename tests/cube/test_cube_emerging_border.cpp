@@ -1,4 +1,3 @@
-// NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns.
 //
 // test_cube_emerging_border.cpp — the cube-A EMERGING BORDER oracle over `cube_diff`, the
@@ -252,5 +251,3 @@ TEST(CubeEmergingBorder, RecoversDeclaredAntichainPerDifficultyClass)
             << score.produced_count << ")\n  produced:" << render(produced);
     }
 }
-
-// NOLINTEND

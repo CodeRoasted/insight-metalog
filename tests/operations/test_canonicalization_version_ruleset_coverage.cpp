@@ -1,4 +1,3 @@
-// NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns.
 //
 // test_canonicalization_version_ruleset_coverage.cpp — does §2.4's `canonicalization_version`
@@ -345,4 +344,3 @@ TEST_F(RulesetCoverageTest, OnlyANonStandardMemberRefusesTheIncomparablePair)
     EXPECT_FALSE(refuses(standard_a, standard_b, /*as_diff=*/true))
         << "diff refused the pair with `ruleset` stripped — same, re-derive before acting";
 }
-// NOLINTEND

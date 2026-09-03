@@ -1,4 +1,3 @@
-// NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns
 // Salience reservoir (Tier 2) + re-derivation coordinates: admission, caps, dedup, and the
 // coordinate XOR — a coordinate carries EITHER source_ref + bounds (it addresses one raw source)
@@ -812,5 +811,3 @@ TEST(ReDerivationCoordinate, ComposedSerialisesAsChildrenOnlyXOR)
 }
 
 } // namespace
-
-// NOLINTEND

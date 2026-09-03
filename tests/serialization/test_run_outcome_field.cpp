@@ -1,4 +1,3 @@
-// NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns
 // test_run_outcome_field.cpp — the additive run-verdict scalar on MetaLogDocument.
 // The additive-block discipline (a new block keeps the wire version because its ABSENCE is the
@@ -75,4 +74,3 @@ TEST(RunOutcomeField, StampedVerdictSerialises)
             << (*parsed)["run_outcome"].get<std::string>() << " in: " << json;
     }
 }
-// NOLINTEND

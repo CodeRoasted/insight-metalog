@@ -1,4 +1,3 @@
-// NOLINTBEGIN
 // bench_compose_diff_cube.cpp — standing stage-level perf + determinism coverage for the cube's
 // per-call cost inside compose()/diff() (Cube A, kept product per
 // technical_docs/adr/019-eidos-attribution-cube.md D1; design record:
@@ -501,5 +500,3 @@ void BM_StageCube_Determinism(benchmark::State& state)
 BENCHMARK(BM_StageCube_Determinism)->Iterations(1)->Unit(benchmark::kMicrosecond);
 
 } // namespace
-
-// NOLINTEND

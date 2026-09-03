@@ -1,4 +1,3 @@
-// NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns
 //
 // retention_profile_name() — the DERIVATION of SPEC §2.4's `retention_profile` from the producer
@@ -120,4 +119,3 @@ TEST(RetentionProfileName, CarriesTheSalienceArithmeticGeneration)
         << "the derived name does not open with the salience arithmetic generation ("
         << meta::kSalienceArithmeticGeneration << "): " << name;
 }
-// NOLINTEND

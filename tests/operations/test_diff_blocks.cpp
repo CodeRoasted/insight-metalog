@@ -1,4 +1,3 @@
-// NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns
 // diff(): field_histogram_deltas JS divergence and tail_delta population rules.
 
@@ -169,5 +168,3 @@ TEST(TailDeltaDiffTest, AbsentWhenEitherDocLacksTailSummary)
 }
 
 } // namespace
-
-// NOLINTEND

@@ -1,4 +1,3 @@
-// NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns.
 // diff(): MetaLogDiff::reservoir_delta — the chronic-vs-new streaming seam, without which a
 // chronic rare-fatal and a genuinely new one fire identically every window. Set-difference
@@ -206,5 +205,3 @@ TEST(ReservoirDeltaTest, OmittedFromJsonWhenBothMemoriesEmpty)
         << "empty reservoir_delta must be omitted from the wire; json was:\n"
         << json;
 }
-
-// NOLINTEND

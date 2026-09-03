@@ -1,4 +1,3 @@
-// NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns
 // HLL approximate cardinality per (template, param): population, capped-table behaviour, diff
 // delta.
@@ -151,5 +150,3 @@ TEST(HllCardinalityTest, CardinalityDeltaPopulatedInDiff)
 }
 
 } // namespace
-
-// NOLINTEND

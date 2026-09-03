@@ -1,4 +1,3 @@
-// NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns.
 //
 // test_transport_declaration_extension.cpp — the per-run transport declaration's EXISTENCE leg on
@@ -168,4 +167,3 @@ TEST(TransportDeclarationExtension, AnUndeclaredStackStillMintsTheTransportMembe
            "from something other than insight::transport::kTransportCatalogVersion:\n"
         << json;
 }
-// NOLINTEND

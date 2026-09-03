@@ -1,4 +1,4 @@
-// NOLINTBEGIN Smoke test: consumes insight::metalog as if external.
+// Smoke test: consumes insight::metalog as if external.
 #include <chrono>
 #include <string>
 
@@ -120,4 +120,3 @@ TEST(InsightMetaLogPackage, SecondWindowEmitsStability)
     EXPECT_EQ(json["stability"]["previous_window_end"].get<std::string>(), d1.window.end_iso)
         << serialized;
 }
-// NOLINTEND

@@ -1,4 +1,3 @@
-// NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns.
 //
 // THE JOINT GRAIN (DN-43.O3 item 3). canon was proven at the line, metalog at the window, and the
@@ -143,4 +142,3 @@ TEST_F(WindowingSeamTest, AnAbsentLevelIsOmittedFromTheWireRatherThanRenderedAsI
 }
 
 } // namespace
-// NOLINTEND

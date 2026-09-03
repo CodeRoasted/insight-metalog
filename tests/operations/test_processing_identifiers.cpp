@@ -1,4 +1,3 @@
-// NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns
 // The two opaque processing identifiers a document carries — canonicalization_version (the
 // masking/tokenization/classification rules) and retention_profile (top_k size, reservoir weights
@@ -115,5 +114,3 @@ TEST(ProcessingIdentifiers, SerialisesAtDocumentRoot)
 }
 
 } // namespace
-
-// NOLINTEND

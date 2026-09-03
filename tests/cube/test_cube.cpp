@@ -1,4 +1,3 @@
-// NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns.
 // The intra-window closed cube + its emerging-border `cube_diff`: closure / condensation, the
 // order-convex (lower, upper) border, compose re-closure, the reservoir→cell LOCATION cross,
@@ -965,5 +964,3 @@ TEST(CubeDiffLatencyShift, ThinSampleProjectsShiftAxisToStar)
         << "no shift cell may be manufactured from a below-floor sample\n"
         << shift_dump(diff.cube_diff);
 }
-
-// NOLINTEND

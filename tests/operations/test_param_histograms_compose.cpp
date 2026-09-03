@@ -1,4 +1,3 @@
-// NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns
 // compose(): param_histograms carry/merge/truncation. The rule under test: per-slot histograms are
 // CARRIED through compose(), not dropped, so per-slot distribution shifts stay visible in a diff
@@ -142,5 +141,3 @@ TEST(ParamHistogramsCompose, NoHistogramsWhenInputsHaveNone)
 }
 
 } // namespace
-
-// NOLINTEND

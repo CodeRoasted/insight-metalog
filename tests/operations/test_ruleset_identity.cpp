@@ -1,4 +1,3 @@
-// NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns
 // test_ruleset_identity.cpp — the composed-ruleset identity: the semantic packages in force are
 // content-hashed into one `semantic_identity` that rides every artifact, and two artifacts are
@@ -176,4 +175,3 @@ TEST(RulesetIdentity, DiffAgainstLegacyProceeds)
         << "diff against a legacy (unstamped) document proceeds — the consumer treats it with "
            "caution";
 }
-// NOLINTEND

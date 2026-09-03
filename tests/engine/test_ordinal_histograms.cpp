@@ -1,4 +1,3 @@
-// NOLINTBEGIN
 // W1 ordinal carrier (SRC-D-W1-2): the field-keyed binned histogram on TopKEntry, its
 // accumulation at ingest over the schedule's log2 ladder, the deterministic field-name emit order,
 // the same-as-param batch gate, and the metalog::diff ordinal_histogram_deltas pairing the eidos
@@ -155,5 +154,3 @@ TEST(OrdinalHistogramTest, DiffPairsOrdinalHistogramsBothSides)
     EXPECT_EQ(delta.previous_counts[prev_bin], 10u);
     EXPECT_EQ(delta.current_counts[curr_bin], 10u);
 }
-
-// NOLINTEND

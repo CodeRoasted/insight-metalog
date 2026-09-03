@@ -1,4 +1,3 @@
-// NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns.
 //
 // test_compose_algebra.cpp — SPEC §12.2's three algebraic clauses over `compose()`, which had NO
@@ -1397,4 +1396,3 @@ TEST(ComposeAlgebraTest, TheRetentionStampDecidesWhichDeclaredCapMinIsReachable)
 }
 
 } // namespace
-// NOLINTEND

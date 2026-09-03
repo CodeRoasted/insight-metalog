@@ -1,4 +1,3 @@
-// NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns
 // Wire serialisation: key-sorted value_counts, omit-empty discipline, bounded document overhead.
 
@@ -337,5 +336,3 @@ TEST(DroppedNgramObservationsWireTest, AnUncappedWindowOmitsTheKeyRatherThanWrit
 // ── FieldHistogramDiffTest ────────────────────────────────────────────────────
 
 } // namespace
-
-// NOLINTEND

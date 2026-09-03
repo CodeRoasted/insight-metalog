@@ -1,4 +1,3 @@
-// NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns.
 //
 // The thin-sample admissibility floor: CORPUS-PICK + regression guard. ordinal_w1's octave
@@ -196,5 +195,3 @@ TEST(ShiftSampleFloorGuard, RealRegressionStillEmergesAtFloor)
             << " — the floor is too high (blinds real shifts)";
     }
 }
-
-// NOLINTEND

@@ -1,4 +1,3 @@
-// NOLINTBEGIN — Unit tests: allow short identifiers and test-specific patterns
 //
 // The observed causal DAG (SRC-D-OTEL-11): a SPAN record's causality is
 // DECLARED (parent_span_id), so it never enters an adjacency ring. At window close the engine
@@ -179,5 +178,3 @@ TEST(SpanEdges, ObservedGraphReplaysBitIdentically)
     EXPECT_EQ(first.acquisition->span_records, second.acquisition->span_records);
     EXPECT_EQ(first.acquisition->orphan_parent_edges, second.acquisition->orphan_parent_edges);
 }
-
-// NOLINTEND

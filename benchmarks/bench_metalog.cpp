@@ -1,4 +1,3 @@
-// NOLINTBEGIN
 // MetaLog compression benchmark.
 //
 // This is the byte-budget anchor for Phase 3. It synthesises a window
@@ -264,5 +263,3 @@ void BM_MetaLogIngest_Where(benchmark::State& state)
 BENCHMARK(BM_MetaLogIngest_Where)->Unit(benchmark::kMicrosecond);
 
 } // namespace
-
-// NOLINTEND

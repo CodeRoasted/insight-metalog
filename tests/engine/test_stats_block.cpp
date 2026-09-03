@@ -1,4 +1,3 @@
-// NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns
 // StatsBlock: entropy, unique templates, top-K ordering, tail summary, frequency normalisation.
 
@@ -209,5 +208,3 @@ TEST(MetaLogEngineStats, FrequencySumsToOne)
 }
 
 } // namespace
-
-// NOLINTEND

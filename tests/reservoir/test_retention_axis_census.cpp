@@ -1,4 +1,3 @@
-// NOLINTBEGIN — gate: literals and printed diagnostics are intended.
 // test_retention_axis_census.cpp — every entry in a PRODUCED reservoir carries an ENGAGED
 // `retention_axis`.
 //
@@ -251,4 +250,3 @@ TEST(RetentionAxisCensus, EveryEntryRederivedByComposeCarriesAnEngagedAxis)
         << "the composed census saw " << census.axes.size() << " distinct axis value(s). Census:\n"
         << render_census(census);
 }
-// NOLINTEND

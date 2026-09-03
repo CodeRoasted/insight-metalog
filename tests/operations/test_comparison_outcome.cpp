@@ -1,4 +1,3 @@
-// NOLINTBEGIN
 // Unit tests: allow short identifiers and test-specific patterns.
 //
 // test_comparison_outcome.cpp — SPEC §13.2 / §13.2.1: the `comparison_outcome` member every
@@ -447,4 +446,3 @@ TEST(ComparisonOutcomeProducer, AChangedPairAssertsChangedAndCarriesTheWitness)
 }
 
 } // namespace
-// NOLINTEND
