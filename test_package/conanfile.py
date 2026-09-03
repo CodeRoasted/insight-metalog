@@ -32,7 +32,16 @@ class InsightMetalogTestPackageConan(ConanFile):
         # the assertion to mean anything: the recipe version (this value) and the C++ constant
         # `kProducerVersion` that the engine stamps into every document. Re-typing the number in
         # the test would collapse them into one and measure nothing but the typist.
-        tc.cache_variables["INSIGHT_METALOG_TESTED_VERSION"] = str(
+        #
+        # THE NAME IS `MALF_TESTED_VERSION` BECAUSE THIS RECIPE IS NOT THE ONLY PRODUCER. This
+        # method runs under `conan create` / `conan test` and nowhere else; `malf commands` — the
+        # verb that rebuilds compile_commands.json for the editor — configures this directory
+        # DIRECTLY, against a synthetic conan consumer, so it never executes the code below. Under
+        # that path malf passes the same variable from the tested package's own reference, and the
+        # CMakeLists reads one name from either producer. Before this name was shared, the
+        # configure-time refusal below fired on every `malf commands` run in this repo and the
+        # test_package translation unit was absent from the editor index (measured 2026-09-03).
+        tc.cache_variables["MALF_TESTED_VERSION"] = str(
             self.dependencies["insight_metalog"].ref.version
         )
         tc.generate()

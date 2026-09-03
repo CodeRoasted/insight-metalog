@@ -30,16 +30,26 @@ target_link_libraries(insight_metalog_test_package PRIVATE
     GTest::gtest
     GTest::gtest_main
 )
-# Fed by the test_package recipe from the tested reference. A configure-time refusal rather
-# than a default: an empty definition would turn the version assertion into a comparison
-# against "" — still red, but red for a reason nobody could attribute from the failure text.
-if(NOT INSIGHT_METALOG_TESTED_VERSION)
+# The version of the package under test, from whichever of the two producers configured this
+# directory: the test_package recipe's generate() under `conan create` / `conan test`, or `malf
+# commands` when it configures this directory directly to index its translation unit. One name, so
+# neither producer can satisfy the refusal below while the other does not.
+#
+# A configure-time refusal rather than a default: an empty definition would turn the version
+# assertion into a comparison against "" — still red, but red for a reason nobody could attribute
+# from the failure text. A default would be worse still — it would compare the emitted version
+# against a literal typed in this file, which measures the typist rather than the package.
+if(NOT MALF_TESTED_VERSION)
     message(FATAL_ERROR
-        "INSIGHT_METALOG_TESTED_VERSION was not passed by the test_package recipe. "
-        "The producer.version assertion has no oracle without it.")
+        "MALF_TESTED_VERSION was not passed. It carries the version of the package under test, "
+        "and it has two producers: the test_package recipe's generate() (conan create / conan "
+        "test) and `malf commands` (which configures this directory directly). The "
+        "producer.version assertion has no oracle without it.")
 endif()
+# The C++ side keeps a package-local macro name: the assertion in test_package.cpp is about
+# insight_metalog and has nothing to do with the build system that supplied the value.
 target_compile_definitions(insight_metalog_test_package PRIVATE
-    INSIGHT_METALOG_TESTED_VERSION="${INSIGHT_METALOG_TESTED_VERSION}")
+    INSIGHT_METALOG_TESTED_VERSION="${MALF_TESTED_VERSION}")
 target_compile_features(insight_metalog_test_package PRIVATE cxx_std_23)
 set_target_properties(insight_metalog_test_package PROPERTIES
     CXX_SCAN_FOR_MODULES ON CXX_MODULE_STD ON)
