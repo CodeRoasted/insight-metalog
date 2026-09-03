@@ -287,6 +287,13 @@ class MetaLogEngine
     void build_dominant_path(BehaviorBlock& behavior, const WindowAnalysis& analysis) const;
     [[nodiscard]] InternalTemplateID dominant_path_start() const;
     void build_stability(MetaLogDocument& doc, const WindowAnalysis& analysis) const;
+    // DN-50.D4 presence churn, base case. Stamps the one-window element on every RETAINED row
+    // (top_k UNION reservoir — the declared horizon) and opens the document's roll-up. Runs after
+    // the tail is built, because the roll-up's honesty rests on the tail being known. An
+    // event-free window is the monoid's identity and is stamped with nothing: it is exactly SPEC
+    // section 12.2's ZERO document, so churn survives `compose(A, ZERO) == A` for the same reason
+    // every required field does.
+    void build_presence_churn(MetaLogDocument& doc) const;
     // Intra-window closed cube (SPEC §16), built from the per-event (level, component,
     // role) joint accumulated in cube_base_. Always built (collapse-bounded, §C).
     void build_cube(MetaLogDocument& doc) const;

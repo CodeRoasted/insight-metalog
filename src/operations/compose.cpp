@@ -669,6 +669,103 @@ namespace
         return behavior;
     }
 
+    // DN-50.D4's WINDOW-ORDER MUST, enforced structurally instead of asserted.
+    //
+    // The churn product is not commutative — its boundary term `[last(A) != first(B)]` is
+    // orientation-sensitive — so a fold applied in the wrong order returns a value that is
+    // deterministic and WRONG, the one failure shape a determinism gate cannot see. Rather than
+    // document a precondition and hope, `fold_presence_churn` derives the orientation from the two
+    // documents' OWN window envelopes: an argument order that disagrees with time order cannot
+    // change the result, so the MUST is not something a caller can violate.
+    //
+    // Lexicographic on `start_iso` is valid for the fixed-width RFC 3339 UTC strings this producer
+    // emits — the same assumption `iso_min`/`iso_max` above already rest on. When the envelope
+    // cannot settle it (either side unstamped, or two documents claiming the SAME window start),
+    // window order is not a fact about the pair and the argument order stands. That corner is the
+    // one place the churn extension is argument-order-sensitive, and it is legal: SPEC section
+    // 12.2's commutativity MUST is scoped to REQUIRED fields, and churn is section 7 vendor data.
+    // Everywhere the envelope speaks — every document this producer emits — the fold is commutative
+    // AND window-ordered at once.
+    [[nodiscard]] bool lhs_is_earlier(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
+    {
+        if (lhs.window.start_iso.empty() || rhs.window.start_iso.empty())
+            return true;
+        if (lhs.window.start_iso != rhs.window.start_iso)
+            return lhs.window.start_iso < rhs.window.start_iso;
+        return true;
+    }
+
+    // DN-50.D4 presence churn across a composition: one monoid product per template of the composed
+    // retained set, plus the document-root roll-up over the declared horizon.
+    //
+    // ALLOCATION, DISCLOSED: two `unordered_map<TemplateId, PresenceChurn>` scratch indices, one
+    // per input, each reserved at `top_k.size() + reservoir.size()` — the input's ALREADY-DECLARED
+    // salience memory. Churn opens no new retention axis; that, and not memory volume, is the
+    // engineering gain over the private bank it replaces. `PresenceChurn` is 16 bytes and trivially
+    // copyable, so the index stores it by value and owns no reference into either input.
+    void fold_presence_churn(MetaLogDocument& out, const MetaLogDocument& lhs,
+                             const MetaLogDocument& rhs)
+    {
+        const bool in_order{lhs_is_earlier(lhs, rhs)};
+        const MetaLogDocument& earlier{in_order ? lhs : rhs};
+        const MetaLogDocument& later{in_order ? rhs : lhs};
+
+        const auto span_of{[](const MetaLogDocument& doc) -> std::uint32_t
+                           { return doc.presence_churn ? doc.presence_churn->span_windows : 0U; }};
+        const std::uint32_t earlier_span{span_of(earlier)};
+        const std::uint32_t later_span{span_of(later)};
+        if (earlier_span == 0 && later_span == 0)
+            return; // neither input observed a window: the output makes no churn claim either
+
+        const auto index_of{[](const MetaLogDocument& doc)
+                            {
+                                std::unordered_map<TemplateId, PresenceChurn> index;
+                                index.reserve(doc.stats.top_k.size() + doc.stats.reservoir.size());
+                                for (const auto& entry : doc.stats.top_k)
+                                    index.emplace(entry.template_id, entry.presence_churn);
+                                for (const auto& entry : doc.stats.reservoir)
+                                    index.emplace(entry.template_id, entry.presence_churn);
+                                return index;
+                            }};
+        const auto earlier_index{index_of(earlier)};
+        const auto later_index{index_of(later)};
+        // What "not on this side" MEANS is the honesty of the whole statistic, and it is decided by
+        // the side's own retention rather than assumed: exhaustive retention makes it a definite
+        // absence, a truncated one makes it unknowable (DN-50.D4, `retention_is_exhaustive`).
+        const PresenceChurn earlier_absent{presence_churn_of_unretained_range(
+            earlier_span, retention_is_exhaustive(earlier.stats))};
+        const PresenceChurn later_absent{
+            presence_churn_of_unretained_range(later_span, retention_is_exhaustive(later.stats))};
+
+        const auto element_of{[](const std::unordered_map<TemplateId, PresenceChurn>& index,
+                                 const PresenceChurn& absent, const TemplateId& tid)
+                              {
+                                  const auto found{index.find(tid)};
+                                  return found != index.end() ? found->second : absent;
+                              }};
+
+        PresenceChurnSummary summary{.span_windows = earlier_span + later_span,
+                                     .templates_with_churn = 0,
+                                     .total_transitions = 0,
+                                     .total_indeterminate = 0};
+        const auto fold_row{[&](const TemplateId& tid)
+                            {
+                                const PresenceChurn folded{compose_presence_churn(
+                                    element_of(earlier_index, earlier_absent, tid),
+                                    element_of(later_index, later_absent, tid))};
+                                summary.total_transitions += folded.transitions;
+                                summary.total_indeterminate += folded.indeterminate;
+                                if (folded.transitions > 0)
+                                    ++summary.templates_with_churn;
+                                return folded;
+                            }};
+        for (TopKEntry& entry : out.stats.top_k)
+            entry.presence_churn = fold_row(entry.template_id);
+        for (ReservoirEntry& entry : out.stats.reservoir)
+            entry.presence_churn = fold_row(entry.template_id);
+        out.presence_churn = summary;
+    }
+
 } // namespace
 
 MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
@@ -733,6 +830,9 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
     rederive_reservoir(out, state, lhs, rhs);
     build_composed_tail(out, state, lhs, rhs);
     recompute_composed_entropy(out, state, lhs, rhs);
+    // DN-50.D4 — after the composed retained set exists, since the fold is one product per row of
+    // it.
+    fold_presence_churn(out, lhs, rhs);
 
     // Display template strings are no longer carried on a composed document (SRC-D-TIR-5): they
     // resolve by id from the engine registry at serialise.

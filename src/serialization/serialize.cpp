@@ -121,18 +121,57 @@ namespace dto
     // Each member is an optional and each container is an optional: a row/document with no
     // vendor data emits no `extensions` key at all, so the omit-when-absent discipline the rest
     // of this file follows is unbroken and an empty container can never reach the wire.
+    // DN-50.D5 per-retained-row presence churn. Passes the SUBJECT leg of the disposition test
+    // (presence oscillation is a property of the observed window range, not of our pass over it)
+    // and the COMPARABILITY leg as a species-(b): the presence predicate depends on the retention
+    // parameters `retention_profile` names, and section 13 already requires `retention_profile`
+    // equal on both sides of the operations churn is produced by. So this is a PROTOTYPE placement
+    // rather than an exile — eventually standardizable, on the same footing as
+    // `stats.reservoir[].salience`, which the standard already carries.
+    //
+    // `first`/`last` are OPTIONAL and their absence is the DN-50.D4 `not retained here` symbol.
+    // That is unambiguous rather than a collapse of the two absent symbols: this block is emitted
+    // only for `span_windows >= 2`, so the EMPTY-RANGE symbol is unreachable on the wire by
+    // construction, and an omitted boolean can only mean the range's first (or last) window
+    // truncated without retaining this template. A consumer re-folding two adjacent documents reads
+    // an omission exactly as the producer does — the boundary contributes an `indeterminate`, not a
+    // transition.
+    struct PresenceChurn
+    {
+        std::uint32_t span_windows{0};
+        std::uint32_t transitions{0};
+        std::uint32_t indeterminate{0};
+        std::optional<bool> first;
+        std::optional<bool> last;
+    };
+
+    // The document-root roll-up (DN-50.D5). `horizon` names the presence predicate so
+    // `indeterminate` means the same thing across producers; without it the counters are
+    // uncomparable and the block fails its own honesty test.
+    struct PresenceChurnSummary
+    {
+        std::uint32_t span_windows{0};
+        std::uint32_t templates_with_churn{0};
+        std::uint64_t total_transitions{0};
+        std::uint64_t total_indeterminate{0};
+        std::string horizon;
+    };
+
     struct TopKExtensions
     {
         // Fails the comparability leg of the disposition test: the bins ride an unfrozen log2
         // ladder and `schedule_id` is an engine-side key, so two producers would emit
         // incomparable bins. It stays namespaced until an RFC freezes the ladder.
         std::optional<std::vector<OrdinalHistogram>> ordinal_histograms;
+        // DN-50.D4/D5 — the per-template churn element over the range this document covers.
+        std::optional<PresenceChurn> presence_churn;
 
         struct glaze
         {
             using T = TopKExtensions;
             static constexpr auto value =
-                glz::object("fr.coderoast.ordinal_histograms", &T::ordinal_histograms);
+                glz::object("fr.coderoast.ordinal_histograms", &T::ordinal_histograms,
+                            "fr.coderoast.presence_churn", &T::presence_churn);
         };
     };
 
@@ -327,6 +366,8 @@ namespace dto
         std::optional<ServiceEdgeBlock> service_edges;
         std::optional<TransportDeclaration> transport;
         std::optional<RulesetIdentity> ruleset;
+        // DN-50.D4/D5 — the presence-churn roll-up over the DECLARED horizon.
+        std::optional<PresenceChurnSummary> presence_churn_summary;
 
         struct glaze
         {
@@ -334,7 +375,7 @@ namespace dto
             static constexpr auto value = glz::object(
                 "fr.coderoast.acquisition", &T::acquisition, "fr.coderoast.service_edges",
                 &T::service_edges, "fr.coderoast.transport", &T::transport, "fr.coderoast.ruleset",
-                &T::ruleset);
+                &T::ruleset, "fr.coderoast.presence_churn_summary", &T::presence_churn_summary);
         };
     };
 
@@ -813,6 +854,40 @@ namespace
 
     // One top_k row, incl. the optional §3.5 per-param histograms (value_counts is
     // copied into a std::map so the wire is key-sorted, §15.6).
+    // DN-50.D4 presence symbol -> the wire's optional boolean. `Present`/`Absent` are the two
+    // definite presence bits; `Unretained` has no boolean to be, and an omitted member is how the
+    // wire says so (see dto::PresenceChurn). `EmptyRange` is unreachable here: the emit gate below
+    // only writes a block whose span is at least `kMinimumInformativeSpan`, and an element of
+    // non-zero span never carries that symbol.
+    [[nodiscard]] std::optional<bool> wire_presence(PresenceSymbol symbol) noexcept
+    {
+        switch (symbol)
+        {
+        case PresenceSymbol::Present:
+            return true;
+        case PresenceSymbol::Absent:
+            return false;
+        case PresenceSymbol::Unretained:
+        case PresenceSymbol::EmptyRange:
+            break;
+        }
+        return std::nullopt;
+    }
+
+    // THE EMIT GATE, and its argument. A one-window range cannot carry a transition —
+    // `transitions <= span_windows - 1` forces it to zero and `indeterminate` with it — so a
+    // span-1 block would be five members whose values another member already fixes: bytes on every
+    // single-window document, carrying no claim a reader could not derive. Below the informative
+    // span the block is omitted entirely, which is the omit-when-absent discipline the rest of this
+    // file follows, and it costs a consumer nothing: the base-window element is recoverable from
+    // the STANDARD members (a row in `stats.top_k`/`stats.reservoir` was present; anything else is
+    // `Absent` when `retention_is_exhaustive` holds and `Unretained` when it does not) — the same
+    // rule the producer itself applies.
+    [[nodiscard]] bool churn_is_informative(const PresenceChurn& churn) noexcept
+    {
+        return churn.span_windows >= PresenceChurnSummary::kMinimumInformativeSpan;
+    }
+
     dto::TopKEntry make_top_k_entry(const TopKEntry& entry, const TemplateRegistry& registry)
     {
         dto::TopKEntry row;
@@ -845,8 +920,11 @@ namespace
             }
             row.param_histograms = std::move(hists);
         }
-        // W1 ordinal histograms (§4A.4 SRC-D-W1-2) — emitted only when present (omit-when-empty),
-        // under the row's §7 container, which is itself created only for a row that needs it.
+        // The row's §7 container. Filled member by member and installed only if some member
+        // landed — never assigned per member, which is how a second vendor datum would silently
+        // erase the first (the document-root container carries the same rule and the same scar).
+        dto::TopKExtensions extensions;
+        // W1 ordinal histograms (§4A.4 SRC-D-W1-2) — emitted only when present (omit-when-empty).
         if (!entry.ordinal_histograms.empty())
         {
             std::vector<dto::OrdinalHistogram> ordinals;
@@ -856,8 +934,18 @@ namespace
                                                          .schedule_id = hist.schedule_id,
                                                          .counts = hist.counts,
                                                          .total = hist.total});
-            row.extensions = dto::TopKExtensions{.ordinal_histograms = std::move(ordinals)};
+            extensions.ordinal_histograms = std::move(ordinals);
         }
+        // DN-50.D5 presence churn, gated on the range being long enough to carry a claim.
+        if (churn_is_informative(entry.presence_churn))
+            extensions.presence_churn =
+                dto::PresenceChurn{.span_windows = entry.presence_churn.span_windows,
+                                   .transitions = entry.presence_churn.transitions,
+                                   .indeterminate = entry.presence_churn.indeterminate,
+                                   .first = wire_presence(entry.presence_churn.first),
+                                   .last = wire_presence(entry.presence_churn.last)};
+        if (extensions.ordinal_histograms || extensions.presence_churn)
+            row.extensions = std::move(extensions);
         return row;
     }
 
@@ -1042,6 +1130,17 @@ namespace
                 ruleset.packages.push_back({.name = pkg.name, .version = pkg.version});
             extensions.ruleset = std::move(ruleset);
         }
+        // DN-50.D5 presence-churn roll-up, under the same emit gate as the per-row blocks: a
+        // one-window document has no oscillation to report and says nothing rather than saying
+        // zero. `horizon` is written from the ONE constant that owns the predicate's spelling.
+        if (doc.presence_churn &&
+            doc.presence_churn->span_windows >= PresenceChurnSummary::kMinimumInformativeSpan)
+            extensions.presence_churn_summary = dto::PresenceChurnSummary{
+                .span_windows = doc.presence_churn->span_windows,
+                .templates_with_churn = doc.presence_churn->templates_with_churn,
+                .total_transitions = doc.presence_churn->total_transitions,
+                .total_indeterminate = doc.presence_churn->total_indeterminate,
+                .horizon = std::string{PresenceChurnSummary::kHorizon}};
         // The container is emitted when ANY member is present — never gated on a SUBSET of them.
         // It read `acquisition || service_edges` while those were the only two, which made the
         // transport member's existence silently conditional on an unrelated sibling riding along:
@@ -1049,7 +1148,7 @@ namespace
         // container, and a conditionally-present key is indistinguishable from a dead one to any
         // existence gate.
         if (extensions.acquisition || extensions.service_edges || extensions.transport ||
-            extensions.ruleset)
+            extensions.ruleset || extensions.presence_churn_summary)
             out.extensions = std::move(extensions);
         // The run verdict (ADR-17 / SPEC §2.5): additive, omit-when-Unknown — a verdict-free
         // document's wire is byte-identical to a pre-outcome producer's (absence = Unknown/legacy,

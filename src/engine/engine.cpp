@@ -489,6 +489,7 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end,
     build_reservoir(doc, analysis, reserved);
     build_tail_and_entropy(doc, analysis, reserved);
 
+    build_presence_churn(doc); // DN-50.D4 base case — AFTER the tail, which its horizon reads
     build_behavior(doc, analysis);
     build_stability(doc, analysis);
     build_cube(doc); // SPEC §16 — always (unconditional; collapse-bounded, §C)
@@ -989,6 +990,39 @@ void MetaLogEngine::build_tail_and_entropy(MetaLogDocument& doc, const WindowAna
             counts.push_back(entry.second->count);
         stats.entropy_bits = shannon_entropy_bits(counts, lines_observed_);
     }
+}
+
+// DN-50.D4 presence churn, base case: one observed window contributes the element
+// (span 1, 0 transitions, 0 indeterminate, Present, Present) to every template it RETAINED.
+//
+// A base window's per-row element is a constant, and the roll-up over it is forced: `transitions`
+// is bounded by `span_windows - 1`, so a one-window range has zero of them and zero templates with
+// churn. Stamping it anyway is what makes `compose()` a pure fold over the rows it is handed rather
+// than a function that must know which of its inputs came from an engine; the serializer, not this
+// function, is where the tautology is kept off the wire.
+//
+// AN EVENT-FREE WINDOW IS STAMPED WITH NOTHING, and that is a decision rather than a shortcut. SPEC
+// section 12.2 fixes the composition identity as "a MetaLog with lines_observed = 0 and empty
+// stats", which is precisely DN-50.D4's empty block: mapping the two onto one state is what makes
+// the monoid's identity law and the standard's identity MUST the same law. The price is named:
+// a window in which the producer observed nothing contributes no presence transition, so a stream
+// that falls silent and resumes reads as continuous presence rather than as churn. Treating
+// observed silence as a definite absence is a different measurand and a design decision, not a
+// local edit.
+void MetaLogEngine::build_presence_churn(MetaLogDocument& doc) const
+{
+    if (doc.window.lines_observed == 0)
+        return; // the monoid identity — see above
+
+    const PresenceChurn retained{presence_churn_of_retained_window()};
+    for (TopKEntry& entry : doc.stats.top_k)
+        entry.presence_churn = retained;
+    for (ReservoirEntry& entry : doc.stats.reservoir)
+        entry.presence_churn = retained;
+    doc.presence_churn = PresenceChurnSummary{.span_windows = 1,
+                                              .templates_with_churn = 0,
+                                              .total_transitions = 0,
+                                              .total_indeterminate = 0};
 }
 
 void MetaLogEngine::build_behavior(MetaLogDocument& doc, const WindowAnalysis& analysis) const

@@ -286,6 +286,150 @@ class TemplateRegistry
 // out-of-line `= default` special member defined in a module *interface* into every importer
 // (LNK2005), so the interface must only DECLARE them. Never fold these back into the interface.
 
+// ── Presence churn (DN-50.D4) — the boundary-crossing monoid ──────────────────────
+//
+// The measurand: "the presence of content oscillates" — a fact about the observed window range,
+// computed on the MetaLog document itself. It is deliberately NOT "the set of detectors that fire
+// oscillates", whose value is a function of every threshold upstream of it.
+
+// Presence of ONE template in ONE base window, plus the two ABSENT symbols the monoid needs.
+//
+// THE TWO ABSENCES ARE DIFFERENT FACTS AND A SINGLE optional<bool> WOULD BREAK THE IDENTITY LAW
+// (DN-50.D4). `EmptyRange` is the identity's projection — a range holding no observed window, which
+// MUST contribute nothing at a boundary. `Unretained` is a window that did happen and whose
+// retained set truncated: the template may have been in the tail, so its presence is not knowable
+// from the document, and that is a boundary we could not read rather than a boundary with no
+// transition. `Absent` is the strictly stronger claim, and it is available only where the window's
+// retained set was EXHAUSTIVE (`retention_is_exhaustive` below).
+//
+// Why the distinction carries the honesty of the whole statistic: `top_k` truncates by COUNT, so
+// "absent from the retained set" is not "absent from the window". A template oscillating around
+// the k-th rank would flip a naive presence bit with the world unchanged — invented churn, a
+// content claim whose value is a function of one of our own retention parameters, which is exactly
+// the defect this measurand exists to remove. The cheaper alternative — naming retained-set
+// membership AS presence — was rejected for that reason.
+enum class PresenceSymbol : std::uint8_t
+{
+    EmptyRange = 0, // the monoid identity's projections; contributes nothing at a boundary
+    Unretained = 1, // the window truncated and did not retain this template — presence UNKNOWN
+    Absent = 2,     // the window's retained set was exhaustive and did not hold it — presence 0
+    Present = 3,    // presence 1
+};
+
+// The composable element of the presence-churn monoid, per template over a window RANGE.
+//
+//   C(A)·C(B) = ( first(A), trans(A)+trans(B)+d, indet(A)+indet(B)+i, last(B) )
+//   (d, i)    = (0, 1)                     when either side of the boundary is Unretained
+//             = ([last(A) != first(B)], 0) otherwise
+//
+// ASSOCIATIVE (proof at DN-50.D4): first(A.B) = first(A) and last(A.B) = last(B), so both
+// bracketings reduce to trans A + trans B + trans C + [last A != first B] + [last B != first C].
+// That is what lets ONE element per block fold at every ladder level with no re-scan of the base
+// windows — the pyramid folds churn the way it folds counts.
+//
+// NOT COMMUTATIVE, and that is a normative MUST rather than a caveat: the boundary term is
+// orientation-sensitive, so the product is applied in WINDOW order. An implementation that folded a
+// ring in ring-slot order instead would produce a value that is deterministic and WRONG, which no
+// determinism gate can see. The enforcement is therefore structural rather than an assertion:
+// `compose()` derives the orientation from the two documents' own window envelopes, so an argument
+// order that disagrees with time order cannot change the result.
+//
+// A DEFAULT-CONSTRUCTED VALUE IS THE IDENTITY: span 0, no transitions, both projections
+// `EmptyRange`. "This entry carries no churn observation" and "the monoid's neutral element" are
+// therefore the same state by construction, which is why no std::optional wraps it — an optional
+// here would be a second spelling of a state the type already has, and the two would drift.
+struct PresenceChurn
+{
+    std::uint32_t span_windows{0};  // base windows this element covers; 0 IS the identity
+    std::uint32_t transitions{0};   // readable boundaries where presence changed
+    std::uint32_t indeterminate{0}; // boundaries where RETENTION, not presence, changed
+    PresenceSymbol first{PresenceSymbol::EmptyRange}; // presence in the FIRST window of the range
+    PresenceSymbol last{PresenceSymbol::EmptyRange};  // presence in the LAST window of the range
+
+    [[nodiscard]] bool operator==(const PresenceChurn&) const noexcept = default;
+};
+
+// The base element for a template the producer RETAINED in one observed window.
+[[nodiscard]] constexpr PresenceChurn presence_churn_of_retained_window() noexcept
+{
+    return {.span_windows = 1,
+            .transitions = 0,
+            .indeterminate = 0,
+            .first = PresenceSymbol::Present,
+            .last = PresenceSymbol::Present};
+}
+
+// The element for a template absent from the retained set of a range of `span_windows` windows.
+//
+// `retention_exhaustive` answers "did this range retain every template it observed?" (see
+// `retention_is_exhaustive`). When it did, the template was in NO window of the range: presence is
+// a definite 0 throughout, so the range contributes no transitions and hides no boundary. When it
+// did not, nothing about the template is knowable inside the range — so every one of its
+// `span_windows - 1` internal boundaries is declared unreadable rather than silently counted as
+// "no transition", which would under-report churn while looking like a measurement.
+[[nodiscard]] constexpr PresenceChurn
+presence_churn_of_unretained_range(std::uint32_t span_windows, bool retention_exhaustive) noexcept
+{
+    if (span_windows == 0)
+        return {};
+    if (retention_exhaustive)
+        return {.span_windows = span_windows,
+                .transitions = 0,
+                .indeterminate = 0,
+                .first = PresenceSymbol::Absent,
+                .last = PresenceSymbol::Absent};
+    return {.span_windows = span_windows,
+            .transitions = 0,
+            .indeterminate = span_windows - 1,
+            .first = PresenceSymbol::Unretained,
+            .last = PresenceSymbol::Unretained};
+}
+
+// The monoid product. `earlier` and `later` are the two operands IN WINDOW ORDER — the parameter
+// names are the contract, and `compose()` establishes it from the documents' window envelopes
+// rather than trusting a caller (see the MUST on `PresenceChurn`).
+[[nodiscard]] constexpr PresenceChurn compose_presence_churn(const PresenceChurn& earlier,
+                                                             const PresenceChurn& later) noexcept
+{
+    // The identity law, and the reason `EmptyRange` is a symbol of its own: an empty range
+    // contributes NO boundary term, where an unretained one contributes an indeterminate.
+    if (earlier.span_windows == 0)
+        return later;
+    if (later.span_windows == 0)
+        return earlier;
+    const bool boundary_readable{earlier.last != PresenceSymbol::Unretained &&
+                                 later.first != PresenceSymbol::Unretained};
+    return {.span_windows = earlier.span_windows + later.span_windows,
+            .transitions = earlier.transitions + later.transitions +
+                           (boundary_readable && earlier.last != later.first ? 1U : 0U),
+            .indeterminate =
+                earlier.indeterminate + later.indeterminate + (boundary_readable ? 0U : 1U),
+            .first = earlier.first,
+            .last = later.last};
+}
+
+// The document-root roll-up of per-template churn over the DECLARED horizon.
+struct PresenceChurnSummary
+{
+    // The presence predicate, DECLARED, so `indeterminate` means the same thing across producers.
+    // Without it the counters are uncomparable and the block fails its own honesty test. ONE
+    // spelling, owned here: the serializer writes this value and never a literal of its own.
+    static constexpr std::string_view kHorizon{"top_k_union_reservoir"};
+
+    // A one-window range cannot carry a transition (`transitions <= span_windows - 1` forces 0), so
+    // its churn block would be a member whose value another member already fixes. Below this span
+    // the block is omitted from the wire entirely rather than emitted as a tautology — the
+    // omit-when-absent discipline the rest of the document follows.
+    static constexpr std::uint32_t kMinimumInformativeSpan{2};
+
+    std::uint32_t span_windows{0};         // the composed range this roll-up covers
+    std::uint32_t templates_with_churn{0}; // retained templates with at least one transition
+    std::uint64_t total_transitions{0};
+    std::uint64_t total_indeterminate{0};
+
+    [[nodiscard]] bool operator==(const PresenceChurnSummary&) const noexcept = default;
+};
+
 struct TopKEntry
 {
     TemplateId
@@ -320,6 +464,10 @@ struct TopKEntry
     // on this template. Empty unless MetaLogConfig::max_param_histograms > 0. Sibling to
     // field_histograms; never collides (a field is ordinal XOR categorical, SRC-D-W1-5).
     std::vector<OrdinalHistogram> ordinal_histograms;
+    // DN-50.D4 presence churn for this template over the range the document covers. The identity
+    // (span 0) on a document that carries no churn observation; `presence_churn_of_retained_window`
+    // on every retained row of an observed window; the monoid product on a composed one.
+    PresenceChurn presence_churn{};
 };
 
 // Per-window acquisition self-assessment (SPEC §16.x; sift_where_attribution.md
@@ -794,6 +942,18 @@ struct ReservoirEntry
     // `structural_role` is intentionally left unset — the
     // cross is LOCATION (severity + where), not the full cube cell.
     std::optional<CubeCoord> cube_coord;
+    // DN-50.D4 presence churn, exactly as on TopKEntry — the declared horizon is
+    // `top_k UNION reservoir`, so a reservoir row is inside the measurand and must fold like any
+    // other retained row.
+    //
+    // DOMAIN-ONLY, NEVER SERIALISED, and for a reason that is not the DN-32.D3 precedent next door:
+    // SPEC section 7's placement table grants the `extensions` container at `stats.top_k[]` and at
+    // the document root, and NOT at `stats.reservoir[]`. A row extension here would be a bare
+    // vendor member at an ungranted placement — an issue on `metalog-spec`, never a member written
+    // locally. The document-root summary covers these rows and DECLARES that it does, through its
+    // `horizon`. Nothing deserialises a MetaLogDocument (this package exposes `to_json` and no
+    // inverse), so a document only ever reaches `compose()` in-process with the element intact.
+    PresenceChurn presence_churn{};
 };
 
 // Per-node branching statistics (MetaLog SPEC §4.2).
@@ -857,6 +1017,25 @@ struct StatsBlock
     // zero, so it is skipped; absent on BOTH is the only case where compose() omits the field.
     std::optional<std::size_t> reservoir_size;
 };
+
+// "Does absence from this document's retained set mean absence from every window it covers?" —
+// the predicate that decides whether the DN-50.D4 presence bit of an unretained template is a
+// definite `Absent` or an unknowable `Unretained`.
+//
+// It is derived from two members the STANDARD already carries, so a consumer re-folding two
+// documents off the wire computes the same answer the producer did, with no vendor member to read.
+// A tail template has a count of at least 1, so `tail_count == 0` says the tail is empty; the
+// second clause is belt-and-braces against a hand-built document whose counts are all zero.
+//
+// RECURSIVELY SOUND ON A COMPOSED DOCUMENT, which is the clause that makes it usable at all:
+// `compose()` sets `tail_count` to the merged visible tail mass PLUS both inputs' own `tail_count`,
+// so a composed zero means neither input hid anything and composition itself dropped nothing.
+// Reading `tail_unique` alone would NOT be sound there — an input's tail templates are absent from
+// the input document, so they can never appear in the composed `tail_unique`.
+[[nodiscard]] inline bool retention_is_exhaustive(const StatsBlock& stats) noexcept
+{
+    return stats.tail_count == 0 && stats.tail_unique == 0;
+}
 
 // One n-gram row in the behaviour block. `sequence` holds the
 // content-derived template_ids in observed order (size == ngram_size).
@@ -1122,6 +1301,12 @@ struct MetaLogDocument
     // a per-event coordinate any cell could carry); a per-quantum slice document (the aligned
     // diff's per-pair windows) correctly keeps Unknown — a quantum is not a run.
     insight::RunOutcome run_outcome{insight::RunOutcome::Unknown};
+    // DN-50.D4/D5 presence-churn roll-up over the declared horizon. ABSENT on a document that
+    // carries no churn observation at all — the monoid identity, and the state a hand-built or
+    // event-free document is in. All-integer and trivially copyable, so std::optional is sound here
+    // for the AcquisitionBlock reason (the bool-plus-inline workaround `has_cube` needs is for
+    // vector-owning optionals copied in consumer module TUs).
+    std::optional<PresenceChurnSummary> presence_churn;
 };
 
 // ── Producer configuration ─────────────────────────────────────
