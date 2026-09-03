@@ -40,11 +40,28 @@
 # an arm located by prose is disarmed by a rename.
 #
 # The floors that keep this from decaying back: a partition where SOME record is neither
-# species is exit 2, not a skip; a partition where EITHER count is zero is exit 2, because
+# species is exit 2, not a skip; a partition where ANY count is zero is exit 2, because
 # "no diffs in the digest" is precisely the blindness this closes and it must never again be
 # able to read as a pass; and the diff roster is re-derived from the corpus files on disk by
 # the same loop as the document roster, so a corpus section that stops emitting its diff reds
 # instead of shrinking quietly.
+#
+# ── Why TWO species but THREE populations, and why the third needed its own floor
+# This producer publishes two OPERATIONS over documents — `diff()` and `compose()` — and only
+# one of them serializes a species of its own. `compose()` returns a MetaLogDocument, so its
+# output is judged by `metalog.v0.schema.json` like any other document and joins the document
+# partition unchanged. That is exactly why it could be absent for as long as it was: until
+# 2026-09-03 the digest carried 23 documents and 9 diffs and ZERO composed documents, and no
+# count in this gate could tell — a species floor is blind to a missing operation, because the
+# operation's output is not a species. SPEC §8 clause 1 had therefore never once been applied
+# to a §12 result, on any leg, and every reading of this gate stayed true while it happened.
+# So the partition below counts THREE disjoint populations and floors all three (DN-82.D2 put
+# the composed record into every section that already held a window pair; DN-82.D4 specifies
+# these mechanics). The composed discriminator is the same KIND of fact as the species one and
+# for the same reason — structural, never positional and never a section name: a composed
+# document carries a `provenance` array (SPEC §12.4; `compose` always emits one), and a closed
+# window straight from the engine never does. `stability` is NOT usable for this: a composed
+# document omits it (§12.1), but so do most single-window documents.
 #
 # ── Why the reconciliation below runs BEFORE the verdict
 # A verdict over a corpus that quietly shrank is the failure this gate exists to
@@ -81,6 +98,7 @@
 #   1  at least one document or diff is schema-invalid — §8 clause 1 FAILS
 #   2  this gate could not run honestly (missing subject, missing oracle, a roster or
 #      count that does not reconcile, a record that is neither species, an empty species,
+#      an empty POPULATION — a published operation with no output in the digest —
 #      a validator whose self-test no longer bites)
 # 2 dominates 1: a run that could not look is never reported as a run that looked and found
 # nothing, and a second subject that could not be read never hides behind the first one's
@@ -193,19 +211,26 @@ echo
 # that skips a line, because a skip is exactly how a subject shrinks while every reading of it
 # stays true.
 echo "── partition: which schema each record must be judged against ──"
-DOCS_PART="$(mktemp)"; DIFFS_PART="$(mktemp)"; PART_META="$(mktemp)"
-trap 'rm -f "$DOCS_PART" "$DIFFS_PART" "$PART_META"' EXIT
+DOCS_PART="$(mktemp)"; DIFFS_PART="$(mktemp)"; COMPOSED_PART="$(mktemp)"; PART_META="$(mktemp)"
+trap 'rm -f "$DOCS_PART" "$DIFFS_PART" "$COMPOSED_PART" "$PART_META"' EXIT
 
-python3 - "$GOLDEN" "$DOCS_PART" "$DIFFS_PART" "$PART_META" <<'PARTITION' || die2 "the digest could not be partitioned into its two artifact species (see above)"
+python3 - "$GOLDEN" "$DOCS_PART" "$DIFFS_PART" "$COMPOSED_PART" "$PART_META" <<'PARTITION' || die2 "the digest could not be partitioned into its two artifact species and three populations (see above)"
 import json
 import sys
 
-src, docs_path, diffs_path, meta_path = sys.argv[1:5]
+src, docs_path, diffs_path, composed_path, meta_path = sys.argv[1:6]
 HEADER = lambda t: t.startswith("### ") and t.endswith(" ###")
 
 section = None          # the header line currently in force, or None before the first
-buckets = {"metalog": [], "diff": []}
-per_section = []        # (name, documents, diffs) in file order — records only, never headers
+# `metalog` is the SCHEMA partition — every record metalog.v0.schema.json decides, which
+# includes the composed ones, because a composed document IS a MetaLog document (§12). The
+# `composed` bucket is a VIEW of that same partition, not a fourth species: its records are
+# written to the metalog partition too, so the validator judges 23 + 9 and not 23. Its own
+# file exists for the roster loop below, which has to ask a per-section question the schema
+# run cannot ask. `window` counts the single-window remainder, so the three census columns
+# below are disjoint and their sum is the record count reader B found independently.
+buckets = {"metalog": [], "composed": [], "diff": []}
+per_section = []        # (name, windows, composed, diffs) in file order — never headers
 
 
 def flush():
@@ -213,8 +238,12 @@ def flush():
         return
     # Census the RECORDS before the header is prepended — a header is not a record, and
     # counting one as a record is precisely the arithmetic the reconciliation arm below
-    # exists to refuse.
-    per_section.append((section, len(buckets["metalog"]), len(buckets["diff"])))
+    # exists to refuse. `metalog` holds the composed records too, so the disjoint
+    # single-window column is the difference.
+    per_section.append((section,
+                        len(buckets["metalog"]) - len(buckets["composed"]),
+                        len(buckets["composed"]),
+                        len(buckets["diff"])))
     for kind in buckets:
         if buckets[kind]:
             # The header travels with its records, so the validator's SECTIONED parser is
@@ -223,7 +252,7 @@ def flush():
             buckets[kind].insert(0, section)
 
 
-out = {"metalog": [], "diff": []}
+out = {"metalog": [], "composed": [], "diff": []}
 for lineno, raw in enumerate(open(src, encoding="utf-8"), start=1):
     text = raw.strip()
     if not text:
@@ -251,46 +280,72 @@ for lineno, raw in enumerate(open(src, encoding="utf-8"), start=1):
         sys.exit(f"::error::line {lineno} of {src} {both}, so this gate cannot tell which "
                  f"schema decides it. Root members: {sorted(obj)}. Judging it against a "
                  f"guessed schema would fabricate either a red or a green.")
-    buckets["metalog" if is_doc else "diff"].append(raw.rstrip("\n"))
+    if is_diff:
+        buckets["diff"].append(raw.rstrip("\n"))
+        continue
+    buckets["metalog"].append(raw.rstrip("\n"))
+    # SPEC §12.4: `compose` always emits `provenance`, and a closed window from the engine
+    # never carries one. Structural, like the species discriminator above — a section name
+    # would be prose, and an arm located by prose is disarmed by a rename.
+    if "provenance" in obj:
+        buckets["composed"].append(raw.rstrip("\n"))
 
 flush()
 for kind in buckets:
     out[kind].extend(buckets[kind])
 
-for path, kind in ((docs_path, "metalog"), (diffs_path, "diff")):
+for path, kind in ((docs_path, "metalog"), (diffs_path, "diff"),
+                   (composed_path, "composed")):
     with open(path, "w", encoding="utf-8") as fh:
         for line in out[kind]:
             fh.write(line + "\n")
 
-docs = sum(row[1] for row in per_section)
-diffs = sum(row[2] for row in per_section)
-for name, doc_count, diff_count in per_section:
-    print(f"  {doc_count:>3} document(s) · {diff_count:>3} diff(s)   {name}")
+windows = sum(row[1] for row in per_section)
+composed = sum(row[2] for row in per_section)
+diffs = sum(row[3] for row in per_section)
+for name, window_count, composed_count, diff_count in per_section:
+    print(f"  {window_count:>3} window(s) · {composed_count:>3} composed · "
+          f"{diff_count:>3} diff(s)   {name}")
 with open(meta_path, "w", encoding="utf-8") as fh:
-    fh.write(f"PART_DOCS={docs}\nPART_DIFFS={diffs}\n")
+    fh.write(f"PART_WINDOWS={windows}\nPART_COMPOSED={composed}\nPART_DIFFS={diffs}\n")
 PARTITION
 
 # shellcheck source=/dev/null
 . "$PART_META"
-docs="$PART_DOCS"
+windows="$PART_WINDOWS"
+composed="$PART_COMPOSED"
 diffs="$PART_DIFFS"
-echo "  totals: $docs document(s) · $diffs diff(s)"
+# What metalog.v0.schema.json decides: the single windows AND the composed documents. This is
+# the number --expect-documents carries below, and it must be derived here rather than typed,
+# or the cross-reader tripwire becomes a count of lines this script chose.
+docs=$(( windows + composed ))
+echo "  totals: $docs document(s) — $windows single-window + $composed composed — · $diffs diff(s)"
 
 # Reader B vs reader C. They read the same bytes by different rules, so a disagreement means
 # one of them is wrong and neither verdict below is worth printing.
-[ $(( docs + diffs )) -eq "$records" ] || die2 "the partition accounts for $docs + $diffs = $(( docs + diffs )) record(s) but the independent count found $records — two readers of the same file disagree"
+[ $(( docs + diffs )) -eq "$records" ] || die2 "the partition accounts for $windows + $composed + $diffs = $(( docs + diffs )) record(s) but the independent count found $records — two readers of the same file disagree"
 
-# BOTH emptiness floors. A digest with no documents is the old failure; a digest with no
+# ALL THREE emptiness floors. A digest with no documents is the old failure; a digest with no
 # diffs is the failure this gate was extended to stop, and it is the one that reads as
-# success — every remaining axis is coherent, the count is smaller, and nothing says why.
-[ "$docs" -gt 0 ] || die2 "the digest carries ZERO documents — a verdict over an empty species is green for the one reason that matters: it never looked"
+# success — every remaining axis is coherent, the count is smaller, and nothing says why. The
+# composed floor is that same failure for an OPERATION rather than a species, and it is the
+# quietest of the three: a composed document is schema-identical to a single-window one, so
+# its absence changes no count this gate had before DN-82.D4.
+[ "$windows" -gt 0 ] || die2 "the digest carries ZERO single-window documents — a verdict over an empty species is green for the one reason that matters: it never looked"
 [ "$diffs" -gt 0 ] || die2 "the digest carries ZERO diffs — this producer serializes MetaLogDiffs (to_json(const MetaLogDiff&), republished verbatim as \`raw[].diff\` in every Sift change report), so a digest without one puts half the format back outside this gate. Restore the diff emission in determinism_bitidentity.sh; do NOT relax this floor."
+[ "$composed" -gt 0 ] || die2 "the digest carries ZERO composed documents — this producer publishes compose() as well as diff() (SPEC §12; the composed record is identified by its \`provenance\` array, §12.4), so a digest without one puts a published operation back outside this gate. Restore the compose() record in determinism_fixture.cpp's pair sections; do NOT relax this floor."
 
 # The diff roster: the SAME derived-from-disk loop, now over the diff partition. Without it,
 # six of the seven corpus sections could stop emitting their diff and the gate would still
 # find a diff to judge — a smaller, entirely plausible, all-conformant number.
 roster_over "$DIFFS_PART" "diff in the golden's section"
 echo "  roster: every committed corpus file's section carries a diff as well as its documents"
+
+# The composed roster: the same loop a third time. The floor above only refuses ZERO, and the
+# distance between "zero" and "all nine" is eight sections that could stop composing behind a
+# green — the same shrink the diff roster exists to refuse, one population over.
+roster_over "$COMPOSED_PART" "composed document in the golden's section"
+echo "  roster: every committed corpus file's section carries a composed document as well as its diff"
 echo
 
 # ── THE POPULATION (DN-42.D18). A diff arm whose corpus happens to hold only 3-D borders would go
@@ -314,6 +369,14 @@ echo
 # documents it was taken from. That is what makes all three shapes derivable inside one section
 # with no external oracle — and a diff without its inputs is exit 2, because a shape census that
 # quietly skips what it cannot pair is a census of whatever it could see.
+#
+# THE PAIR IS THE SINGLE-WINDOW PAIR, and that is why this census splits records three ways and
+# not two. A section's body is `previous · current · diff · composed` (DN-82.D2): the composed
+# record is a FUNCTION of the pair, never a member of it, so counting it as a document makes
+# every pair section read three documents, declares all nine unpaired, and drops all three
+# required witnesses to zero. That is not a hypothesis — it is what this gate did on the first
+# conformant digest carrying compose(), and the red named the census rather than the producer.
+# A fourth witness, over the composed population itself, is fenced inside the loop below.
 #
 # ── AND THE FALSIFIER §13.6 actually supports. `cube_diff.axes` EQUALS both inputs' axes appears
 # only in an unbolded comment inside a JSONC example and in a schema `description`; none of §13.6's
@@ -339,7 +402,7 @@ for lineno, raw in enumerate(open(src, encoding="utf-8"), start=1):
         continue
     if HEADER(text):
         name = text[4:-4]
-        current = {"name": name, "docs": [], "diffs": []}
+        current = {"name": name, "docs": [], "composed": [], "diffs": []}
         sections.append(current)
         continue
     if current is None:
@@ -354,7 +417,18 @@ for lineno, raw in enumerate(open(src, encoding="utf-8"), start=1):
         print(f"::error::the shape census could not read line {lineno} of {src} ({exc})",
               file=sys.stderr)
         sys.exit(2)
-    current["diffs" if "diff_version" in obj else "docs"].append(obj)
+    # THE SAME THREE-WAY SPLIT the partition above makes, on the same structural facts, and it
+    # is load-bearing here rather than cosmetic: this census derives a diff's shape from the two
+    # documents BESIDE it, so a section is pairable only when `docs` holds exactly the pair. Fold
+    # the composed record into `docs` and every pair section reads three, every one is declared
+    # unpaired, and all three required witnesses read zero — a gate that reds on a conformant
+    # digest for a reason that has nothing to do with the digest.
+    if "diff_version" in obj:
+        current["diffs"].append(obj)
+    elif "provenance" in obj:
+        current["composed"].append(obj)
+    else:
+        current["docs"].append(obj)
 
 
 def axis_names(document):
@@ -372,18 +446,67 @@ def border_cells(cube_diff):
                 yield region_name, side, cell
 
 
+def axis_descriptors(document):
+    """The cube's axes as whole, canonicalised DESCRIPTORS — never their names alone.
+
+    A collapse depth is carried INSIDE an axis (`band_floor`, `floor_depth`), not in the axis
+    list's shape: measured on this digest, all 14 sections declare the identical three axis
+    NAMES, `--collapse-depths` included, and what separates its two windows is one member,
+    `level.band_floor`. A name-keyed containment test is therefore true everywhere and
+    witnesses nothing.
+    """
+    cube = document.get("cube")
+    if not cube:
+        return None
+    return {json.dumps(axis, sort_keys=True) for axis in cube["axes"]}
+
+
 witnesses = {"differential-axis": [], "mixed-depth": [], "vacuous": []}
+composed_witnesses = {"mixed-depth-reclosure": []}
 violations = []
 unpaired = []
 
 for section in sections:
-    if not section["diffs"]:
+    if not section["diffs"] and not section["composed"]:
         continue
     if len(section["docs"]) != 2:
-        unpaired.append(f"{section['name']} ({len(section['docs'])} document(s), "
+        unpaired.append(f"{section['name']} ({len(section['docs'])} single-window document(s), "
+                        f"{len(section['composed'])} composed, "
                         f"{len(section['diffs'])} diff(s))")
         continue
     previous, current_doc = section["docs"]
+
+    # ── (iv) THE COMPOSED POPULATION (DN-82.D4 clause 4). One required shape, and it is the
+    # §12 counterpart of (ii): a composed document whose two inputs' cubes sit at DIFFERENT
+    # collapse depths, so §12's re-closure at the coarser depth is the thing being replayed
+    # rather than a merge of two identically-shaped cubes.
+    #
+    # Identified by CONTAINMENT and never by section name, for the reason (i) is: a name is
+    # prose and a rename disarms the arm silently. The predicate is `⊆`, deliberately NOT `⊊`
+    # — measured on this digest, the composed cube's axis set is EQUAL to the coarser input's
+    # (the banded one) and unequal to the finer one's, so an arm demanding a PROPER subset
+    # would red on the only witness that exists. Requiring containment in EXACTLY ONE input is
+    # what makes this the re-closure witness: containment in both is the trivial case every
+    # equal-depth section satisfies, and the `inputs differ` guard above already excludes it.
+    #
+    # This arm rules on a SHAPE and on no arithmetic. Whether compose()'s merged counts,
+    # entropy and frequencies are CORRECT is asserted in the operations suite's §12.1 arms; a
+    # digest is a replay artifact, and a gate that started grading compose()'s output here
+    # would be claiming an authority this instrument does not have.
+    if section["composed"]:
+        previous_set = axis_descriptors(previous)
+        current_set = axis_descriptors(current_doc)
+        if previous_set and current_set and previous_set != current_set:
+            for merged in section["composed"]:
+                merged_set = axis_descriptors(merged)
+                if merged_set is None:
+                    continue
+                inside = [merged_set <= previous_set, merged_set <= current_set]
+                if sum(inside) == 1:
+                    composed_witnesses["mixed-depth-reclosure"].append(section["name"])
+
+    if not section["diffs"]:
+        continue
     stored = axis_names(previous) | axis_names(current_doc)
     previous_axes = (previous.get("cube") or {}).get("axes")
     current_axes = (current_doc.get("cube") or {}).get("axes")
@@ -424,13 +547,18 @@ for shape in ("differential-axis", "mixed-depth", "vacuous"):
     found = witnesses[shape]
     mark = "ok " if found else "NONE"
     listed = ", ".join(sorted(set(found))) if found else "— no section in this digest produces it"
-    print(f"  [{mark}] {shape:<18} {len(set(found))} witness(es): {listed}")
+    print(f"  [{mark}] diff/{shape:<24} {len(set(found))} witness(es): {listed}")
+for shape in ("mixed-depth-reclosure",):
+    found = composed_witnesses[shape]
+    mark = "ok " if found else "NONE"
+    listed = ", ".join(sorted(set(found))) if found else "— no section in this digest produces it"
+    print(f"  [{mark}] composed/{shape:<20} {len(set(found))} witness(es): {listed}")
 
 rc = 0
 if unpaired:
-    print("::error::a diff in this digest does not sit beside the TWO documents it was taken "
-          "from, so its shape cannot be derived and this census would be a census of whatever it "
-          "could pair:", file=sys.stderr)
+    print("::error::a diff or composed document in this digest does not sit beside the TWO "
+          "single-window documents it was derived from, so its shape cannot be derived and this "
+          "census would be a census of whatever it could pair:", file=sys.stderr)
     for row in unpaired:
         print(f"    {row}", file=sys.stderr)
     rc = 2
@@ -440,6 +568,16 @@ if empty:
           f"pass: an arm that has never seen a shape is silent about it, and DN-42.D18 makes these "
           f"three a precondition rather than a hope. Add the emitting scenario in "
           f"determinism_bitidentity.sh; do NOT drop the requirement.", file=sys.stderr)
+    rc = 2
+empty_composed = [shape for shape in composed_witnesses if not composed_witnesses[shape]]
+if empty_composed:
+    print(f"::error::the COMPOSED corpus carries NO witness for {sorted(empty_composed)}. Every "
+          f"composed document in this digest merges two cubes of identical shape, so §12's "
+          f"re-closure at the coarser collapse depth is replayed by nothing and this gate is "
+          f"silent about it — the same blindness DN-42.D18 refuses one population over "
+          f"(DN-82.D4). The emitting section is a window PAIR whose two cubes sit at different "
+          f"depths; restore it in determinism_fixture.cpp, do NOT drop the requirement.",
+          file=sys.stderr)
     rc = 2
 if violations:
     print("::error::§13.6 differential-axis falsifier — a border cell contradicts the axis's own "
@@ -488,7 +626,8 @@ fi
 
 echo
 echo "── verdict ──"
-printf '  documents (%s, schema/metalog.v0.schema.json)      exit %s\n' "$docs" "$rc_docs"
+printf '  documents (%s = %s window + %s composed, schema/metalog.v0.schema.json)  exit %s\n' \
+  "$docs" "$windows" "$composed" "$rc_docs"
 printf '  diffs     (%s, schema/metalog_diff.v0.schema.json) exit %s\n' "$diffs" "$rc_diffs"
 printf '  §13.6 falsifier (house invariant, not SPEC §8)     exit %s\n' "$census_rc"
 

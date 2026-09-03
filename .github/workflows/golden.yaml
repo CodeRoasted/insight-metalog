@@ -487,7 +487,9 @@ jobs:
       #
       # The logic is a committed script rather than inline YAML because a gate nobody can run at the
       # desk is a gate nobody can prove reds. It carries its own arming step (the validator's
-      # 13-fixture self-test), so the desk run and this run are the same instrument with no second
+      # self-test, which prints its own fixture count rather than having one quoted here to go
+      # stale — it said 13 for as long as the corpus held 27), so the desk run and this run are
+      # the same instrument with no second
       # copy to drift. Its exit codes are the validator's, unmerged: 1 = the producer's documents are
       # schema-invalid, 2 = the gate could not run honestly. Never let a future edit collapse them.
       - name: SPEC §8 clauses 1 and 4 over the agreed golden (GATING — before the upload)

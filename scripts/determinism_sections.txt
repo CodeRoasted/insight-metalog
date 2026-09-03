@@ -60,9 +60,19 @@
 # stored-cube domain, so no single-window section can produce one — and a MetaLogDiff is the SECOND
 # artifact species this producer serializes, the one insight-eidos republishes verbatim as
 # `raw[].diff` in every Sift change report. The fourth record is the SECOND published OPERATION
-# (DN-82.D2): composing two reservoirs is where §12.1's minimum-over-declared-caps clause gets its
-# first replayed bytes. A single-window section composes with nothing, which is why only the two
-# PAIR rows below carry a fourth record and the five single rows above do not.
+# (DN-82.D2), which is what puts a §12 result under the public schema at all. A single-window
+# section composes with nothing, which is why only the two PAIR rows below carry a fourth record
+# and the five single rows above do not.
+#
+# WHAT THIS ROW DOES NOT BUY, measured at the artifact rather than reasoned: §12.1's
+# minimum-over-declared-caps clause gets NO asymmetric replayed bytes here. Neither window of any
+# pair section declares `stats.reservoir_size` — the only two sections that declare one are
+# --reservoir-nearfull (128) and --reservoir-streaming (64), and both are SINGLE-window, so they
+# compose with nothing. `behavior.top_ngrams_size` is 32 on every operand and `stats.top_k_size`
+# is equal on both operands of every pair (64 on eight, 16 on --collapse-depths). So `min` is
+# replayed only on its equal-operands and neither-declared branches. Closing the asymmetric branch
+# needs a reservoir-bearing PAIR, which is a new roster row — a decision for DN-082's owner, not a
+# repair, and it is written here so the gap is not re-discovered as a surprise.
 --latency-shift (Sec13.6 cube_diff differential axis)
 
 # The §16.10 compare-at-min PAIR, whose two cubes sit at DIFFERENT collapse depths so the diff's
