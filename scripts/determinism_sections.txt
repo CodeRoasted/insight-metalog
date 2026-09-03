@@ -29,7 +29,9 @@
 # What the -O/-ffp corners buy over these sections: a MetaLogDiff is where this producer's
 # floating point lives (kl/js divergence, frequencies, entropy bits), so the
 # -ffp-contract{off,fast} cells are load-bearing on the diff lines in a way they never are on a
-# pure-integer document.
+# pure-integer document. The COMPOSED document each pair section now emits as its fourth record
+# (DN-82.D2) carries floating point of its own — entropy bits over merged counts, and count/total
+# frequency division on the re-admitted blocks — so those cells are load-bearing there too.
 
 # The ADR-31.D8 item-reservoir at its admit/evict boundary, at the Sift BATCH tuple (M=128).
 --reservoir-nearfull (ADR-31.D8 synthetic M=128)
@@ -53,11 +55,14 @@
 # select's canonical-key tie-break, which is what proves that select bit-identical across legs.
 --service-edges (O4b service-topology over-cap top-K tie-break)
 
-# A window PAIR: it emits both documents and the `cube_diff`-bearing MetaLogDiff between them. The
-# §13.6 differential axis is EMERGENT-AT-DIFF — it has no stored-cube domain, so no single-window
-# section can produce one — and a MetaLogDiff is the SECOND artifact species this producer
-# serializes, the one insight-eidos republishes verbatim as `raw[].diff` in every Sift change
-# report.
+# A window PAIR: it emits both documents, the `cube_diff`-bearing MetaLogDiff between them, and the
+# document `compose()` merges them into. The §13.6 differential axis is EMERGENT-AT-DIFF — it has no
+# stored-cube domain, so no single-window section can produce one — and a MetaLogDiff is the SECOND
+# artifact species this producer serializes, the one insight-eidos republishes verbatim as
+# `raw[].diff` in every Sift change report. The fourth record is the SECOND published OPERATION
+# (DN-82.D2): composing two reservoirs is where §12.1's minimum-over-declared-caps clause gets its
+# first replayed bytes. A single-window section composes with nothing, which is why only the two
+# PAIR rows below carry a fourth record and the five single rows above do not.
 --latency-shift (Sec13.6 cube_diff differential axis)
 
 # The §16.10 compare-at-min PAIR, whose two cubes sit at DIFFERENT collapse depths so the diff's

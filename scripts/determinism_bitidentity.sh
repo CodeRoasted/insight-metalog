@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Determinism golden driver — the metalog leg of the Determinism-Golden-Proof (golden.yaml). Builds the
 # canon+metalog MODULE-LIB TOWER from source for ONE toolchain leg across the -O{0,3}×-ffp-contract
-# {off,fast} corners, asserts the serialized MetaLog document AND the serialized MetaLogDiff — the
-# producer's second artifact species — are byte-identical across that leg's corners, and EMITS the
-# leg's digest (DETERMINISM_OUT). WHAT it replays is not written here: the committed corpus comes off
-# disk, and the synthetic scenarios come from scripts/determinism_sections.txt, which owns their
+# {off,fast} corners, asserts the serialized MetaLog document, the serialized MetaLogDiff — the producer's
+# second artifact species — and the serialized output of compose(), its second published operation
+# (DN-82.D2), are byte-identical across that leg's corners, and EMITS the leg's digest
+# (DETERMINISM_OUT). WHAT it replays is not written here: the committed corpus comes off disk, and
+# the synthetic scenarios come from scripts/determinism_sections.txt, which owns their
 # identity, their order and their reason for existing (this driver and golden.yaml's MSVC leg both
 # read it; neither enumerates them).
 #
@@ -202,9 +203,10 @@ fi
 
 # THE EMIT — the shape of the digest, not its contents. Each cell writes the committed corpus first
 # (enumerated from disk, never a hand-kept count; each section is doc1 + doc2 + the MetaLogDiff
-# BETWEEN them), then one section per roster row, in roster order. A section is the ASCII header
-# `### <name> ###\n` followed by the fixture's raw stdout. golden.yaml's MSVC leg writes the same
-# two loops over the same two sources — that is the whole point of them being sources.
+# BETWEEN them + the document compose() merges them into), then one section per roster row, in roster
+# order. A section is the ASCII header `### <name> ###\n` followed by the fixture's raw stdout.
+# golden.yaml's MSVC leg writes the same two loops over the same two sources — that is the whole
+# point of them being sources.
 #
 # The per-section WHY lives beside its row in scripts/determinism_sections.txt. It is deliberately
 # NOT restated here: an enumeration written in two places is what put the MSVC leg two sections
@@ -229,7 +231,7 @@ if [ $rc -eq 0 ]; then
   # The section list in this message is DERIVED, not typed: a PASS line that names a roster it did
   # not read is how a green comes to describe a digest smaller than the one it judged.
   echo "PASS: byte-identical across ${#builds[@]} built cell(s) — $(echo "$CORPUS" | wc -l) corpus section(s)"
-  echo "  (documents + the diff between them) + ${#SECTIONS[@]} synthetic:$(printf ' %s' "${SECTIONS[@]%% *}")"
+  echo "  (documents + the diff between them + their composition) + ${#SECTIONS[@]} synthetic:$(printf ' %s' "${SECTIONS[@]%% *}")"
   echo "  over the '${LINUX_LEGS[*]}' leg's -O{0,3}×-ffp{off,fast} sweep."
   # Cross-leg-agreement mode (the ONLY mode now — no committed golden): emit this leg's full digest
   # (corpus + reservoir, byte-identical across its own -O×-ffp cells above) for the golden.yaml compare

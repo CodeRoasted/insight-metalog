@@ -2,9 +2,11 @@
 //  Standing-gate fixture (cross-machine bit-identity proxy).
 //
 //  Tokenizes a corpus through canon, feeds two windows into MetaLog with
-//  histograms + stability, and emits both full JSON documents AND the MetaLogDiff
-//  between them (the digest carries BOTH artifact species this producer
-//  serializes — see the --latency-shift branch for why that is not optional).
+//  histograms + stability, and emits both full JSON documents, the MetaLogDiff
+//  between them, and the document `compose()` merges them into. The digest
+//  carries BOTH artifact species this producer serializes AND BOTH operations it
+//  publishes — see the --latency-shift branch for why the diff is not optional,
+//  and the fourth record there for why the composed document is not either.
 //  Built across the
 //  gcc x clang x -O{0,2,3} x -ffp-contract={off,fast} matrix by
 //  scripts/determinism_bitidentity.sh, the output must be byte-identical across
@@ -217,11 +219,31 @@ int main(int argc, char** argv)
         engine.open_window(t1);
         ml::latency_shift::emit_window(engine, ml::latency_shift::kCurrentLatencyMs);
         const auto current{engine.close_window(t2)};
-        // Both inputs THEN the derived artifact: the section is self-contained, so a reader holding
-        // only the digest can re-derive the third line from the first two.
+        // Both inputs THEN the two derived artifacts: the section is self-contained, so a reader
+        // holding only the digest can re-derive lines three and four from the first two.
+        //
+        // THE SECOND PUBLISHED OPERATION (DN-82.D2). `diff()` and `compose()` are the two
+        // operations this producer publishes, and until the fourth record existed the digest held
+        // nine diffs and zero composed documents — so SPEC §8 clause 1 against
+        // `metalog.v0.schema.json` had never once been applied to a §12 result (the conformance
+        // gate judges this digest and nothing else), and no composed document had ever been
+        // replayed off the two Linux desk legs. `compose()` owns floating arithmetic the diff does
+        // not reach — entropy bits over MERGED counts, and count/total frequency division on the
+        // re-admitted blocks — which is what makes it worth the -ffp-contract{off,fast} corners.
+        // The in-suite golden vectors (tests/operations/test_golden_vectors.cpp) pin these same
+        // bytes, but only at the package's own build type and only on gcc and clang.
+        //
+        // This pair specifically: composing two reservoirs is where §12.1's
+        // minimum-over-declared-caps clause (DN-56.D2) gets its first replayed bytes.
+        //
+        // ORDER IS LOAD-BEARING, so nobody tidies it: the composed record is appended AFTER the
+        // diff, and the operands are (previous, current) — never (current, previous). §12.2's
+        // commutativity is asserted in the operations suite; a digest is a replay artifact, not the
+        // place to assert an algebra.
         std::cout << ml::to_json(previous, engine.registry()) << "\n"
                   << ml::to_json(current, engine.registry()) << "\n"
-                  << ml::to_json(ml::diff(previous, current)) << "\n";
+                  << ml::to_json(ml::diff(previous, current)) << "\n"
+                  << ml::to_json(ml::compose(previous, current), engine.registry()) << "\n";
         return 0;
     }
 
@@ -248,9 +270,14 @@ int main(int argc, char** argv)
         engine.open_window(t1);
         ml::collapse_depths::emit_current(engine);
         const auto current{engine.close_window(t2)};
+        // The fourth record composes two cubes at DIFFERENT collapse depths, which is §12's
+        // re-closure at the coarser depth (DN-056's subject) — the one compose() clause no
+        // corpus pair reaches, since every corpus pair bands both windows alike or neither.
+        // Appended after the diff for the reason the --latency-shift branch states.
         std::cout << ml::to_json(previous, engine.registry()) << "\n"
                   << ml::to_json(current, engine.registry()) << "\n"
-                  << ml::to_json(ml::diff(previous, current)) << "\n";
+                  << ml::to_json(ml::diff(previous, current)) << "\n"
+                  << ml::to_json(ml::compose(previous, current), engine.registry()) << "\n";
         return 0;
     }
 
@@ -269,14 +296,17 @@ int main(int argc, char** argv)
     const auto& doc1{pair.previous};
     const auto& doc2{pair.current};
 
-    // The two documents THEN the diff between them. The corpus sections are the only place a diff
-    // is taken over REAL tokenized log text rather than a synthetic window, so they are what makes
-    // template_deltas / branching_delta / ngram_delta / tail_delta / reservoir_delta / kl+js
-    // divergence — the whole body Sift publishes — a replayed, schema-judged artifact instead of an
-    // inferred one. Emitted after its inputs so the section stays self-contained.
+    // The two documents THEN the diff between them THEN their composition. The corpus sections are
+    // the only place either operation runs over REAL tokenized log text rather than a synthetic
+    // window, so they are what makes template_deltas / branching_delta / ngram_delta / tail_delta /
+    // reservoir_delta / kl+js divergence — the whole body Sift publishes — and the §12 merge of two
+    // real windows replayed, schema-judged artifacts instead of inferred ones. Both derived records
+    // are emitted after their inputs so the section stays self-contained, and the composed record
+    // sits after the diff for the reason the --latency-shift branch states.
     std::cout << ml::to_json(doc1, engine.registry()) << "\n"
               << ml::to_json(doc2, engine.registry()) << "\n"
-              << ml::to_json(ml::diff(doc1, doc2)) << "\n";
+              << ml::to_json(ml::diff(doc1, doc2)) << "\n"
+              << ml::to_json(ml::compose(doc1, doc2), engine.registry()) << "\n";
     return 0;
 }
 
