@@ -145,8 +145,8 @@ constexpr std::uint64_t kSeed{0x5150'C0DE'C0FF'EE01ULL};
 
 // The left fold over a half-open range, in WINDOW order. Every arm folds through this one function
 // so that a difference between arms is a difference in BRACKETING and nothing else.
-[[nodiscard]] PresenceChurn fold_range(const std::vector<PresenceSymbol>& sequence, std::size_t from,
-                                       std::size_t to)
+[[nodiscard]] PresenceChurn fold_range(const std::vector<PresenceSymbol>& sequence,
+                                       std::size_t from, std::size_t to)
 {
     PresenceChurn out{};
     for (std::size_t i{from}; i < to; ++i)
@@ -159,11 +159,12 @@ constexpr std::uint64_t kSeed{0x5150'C0DE'C0FF'EE01ULL};
 // `EmptyRange` are one symbol, so an empty operand's boundary is treated as unreadable exactly as a
 // truncated one's is. `DN-50.D4` predicts this breaks the IDENTITY law (`e . B != B`), and the
 // negative arm below holds it to that prediction.
-[[nodiscard]] PresenceChurn collapsed_product(const PresenceChurn& earlier, const PresenceChurn& later)
+[[nodiscard]] PresenceChurn collapsed_product(const PresenceChurn& earlier,
+                                              const PresenceChurn& later)
 {
-    const auto absent_like{[](PresenceSymbol symbol)
-                           { return symbol == PresenceSymbol::Unretained ||
-                                    symbol == PresenceSymbol::EmptyRange; }};
+    const auto absent_like{
+        [](PresenceSymbol symbol)
+        { return symbol == PresenceSymbol::Unretained || symbol == PresenceSymbol::EmptyRange; }};
     const bool boundary_readable{!absent_like(earlier.last) && !absent_like(later.first)};
     return {.span_windows = earlier.span_windows + later.span_windows,
             .transitions = earlier.transitions + later.transitions +
@@ -234,7 +235,7 @@ void check_every_split(const std::vector<PresenceSymbol>& sequence)
     const PresenceChurn expected{reference_churn(sequence)};
     const PresenceChurn whole{fold_range(sequence, 0, sequence.size())};
     ASSERT_EQ(whole, expected) << "sequence=" << render(sequence) << " fold=" << render(whole)
-                              << " reference=" << render(expected);
+                               << " reference=" << render(expected);
     for (std::size_t split{0}; split <= sequence.size(); ++split)
     {
         const PresenceChurn left{fold_range(sequence, 0, split)};
@@ -289,10 +290,10 @@ void check_every_associativity(const std::vector<PresenceSymbol>& sequence)
             const PresenceChurn a{fold_range(sequence, 0, i)};
             const PresenceChurn b{fold_range(sequence, i, j)};
             const PresenceChurn c{fold_range(sequence, j, n)};
-            const PresenceChurn left_first{meta::compose_presence_churn(
-                meta::compose_presence_churn(a, b), c)};
-            const PresenceChurn right_first{meta::compose_presence_churn(
-                a, meta::compose_presence_churn(b, c))};
+            const PresenceChurn left_first{
+                meta::compose_presence_churn(meta::compose_presence_churn(a, b), c)};
+            const PresenceChurn right_first{
+                meta::compose_presence_churn(a, meta::compose_presence_churn(b, c))};
             ASSERT_EQ(left_first, right_first)
                 << "sequence=" << render(sequence) << " cuts=(" << i << "," << j
                 << ") (A.B).C=" << render(left_first) << " A.(B.C)=" << render(right_first);
@@ -345,22 +346,22 @@ TEST(PresenceChurnProperty, TheProductIsNotCommutativeAndTheSweepExhibitsIt)
     std::size_t compared{0};
     std::size_t disagreements{0};
     for (std::size_t length{1}; length <= 4; ++length)
-        for_each_sequence(
-            length,
-            [&](const std::vector<PresenceSymbol>& left_seq)
-            {
-                for_each_sequence(length,
-                                  [&](const std::vector<PresenceSymbol>& right_seq)
-                                  {
-                                      const PresenceChurn a{fold_range(left_seq, 0, left_seq.size())};
-                                      const PresenceChurn b{
-                                          fold_range(right_seq, 0, right_seq.size())};
-                                      ++compared;
-                                      if (meta::compose_presence_churn(a, b) !=
-                                          meta::compose_presence_churn(b, a))
-                                          ++disagreements;
-                                  });
-            });
+        for_each_sequence(length,
+                          [&](const std::vector<PresenceSymbol>& left_seq)
+                          {
+                              for_each_sequence(length,
+                                                [&](const std::vector<PresenceSymbol>& right_seq)
+                                                {
+                                                    const PresenceChurn a{
+                                                        fold_range(left_seq, 0, left_seq.size())};
+                                                    const PresenceChurn b{
+                                                        fold_range(right_seq, 0, right_seq.size())};
+                                                    ++compared;
+                                                    if (meta::compose_presence_churn(a, b) !=
+                                                        meta::compose_presence_churn(b, a))
+                                                        ++disagreements;
+                                                });
+                          });
     ASSERT_GT(compared, 0U);
     EXPECT_GT(disagreements, 0U)
         << "the boundary term [last(A) != first(B)] is orientation-sensitive, so SOME ordered pair "
@@ -412,8 +413,8 @@ TEST(PresenceChurnProperty, CollapsingTheTwoAbsentSymbolsRedsTheIdentityLaw)
     // And the failure must be the SPECIFIC one DN-50.D4 predicts, not merely some failure: an
     // element opening on `Unretained` gains a boundary indeterminate against the empty range, which
     // is exactly the residue `EmptyRange` exists to not produce.
-    const PresenceChurn opens_unretained{fold_range(
-        {PresenceSymbol::Unretained, PresenceSymbol::Present}, 0, 2)};
+    const PresenceChurn opens_unretained{
+        fold_range({PresenceSymbol::Unretained, PresenceSymbol::Present}, 0, 2)};
     const PresenceChurn collapsed{collapsed_product(identity, opens_unretained)};
     EXPECT_EQ(collapsed.indeterminate, opens_unretained.indeterminate + 1U)
         << "collapsed=" << render(collapsed) << " true=" << render(opens_unretained);

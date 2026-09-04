@@ -191,8 +191,9 @@ TEST(PresenceChurnRankBoundary, ThePlantedTemplateIsAlwaysPresentAndItsRankOscil
         EXPECT_EQ(is_retained(doc, oscillator), retained)
             << "window " << n << " rank arrangement did not take effect. " << render_top_k(doc);
         EXPECT_EQ(is_retained(doc, rival), !retained)
-            << "window " << n << ": the rival must occupy the third slot exactly when the planted "
-                                 "template does not. "
+            << "window " << n
+            << ": the rival must occupy the third slot exactly when the planted "
+               "template does not. "
             << render_top_k(doc);
     }
 }
@@ -258,9 +259,8 @@ TEST(PresenceChurnRankBoundary, TheNaiveMembershipReadingWouldHaveInventedThreeT
     std::vector<bool> membership;
     membership.reserve(kOscillatingWindows);
     for (std::size_t n = 0; n < kOscillatingWindows; ++n)
-        membership.push_back(
-            is_retained(planted_window(static_cast<int>(n), /*oscillator_retained=*/n % 2 == 0),
-                        oscillator));
+        membership.push_back(is_retained(
+            planted_window(static_cast<int>(n), /*oscillator_retained=*/n % 2 == 0), oscillator));
 
     std::uint32_t naive_transitions{0};
     for (std::size_t i = 1; i < membership.size(); ++i)
@@ -276,8 +276,8 @@ TEST(PresenceChurnRankBoundary, TheNaiveMembershipReadingWouldHaveInventedThreeT
     ASSERT_TRUE(churn.has_value());
     EXPECT_LT(churn->transitions, naive_transitions)
         << "the shipped statistic must be STRICTLY quieter than the naive one on this input; that "
-           "difference is the whole content of DN-50.D4's ruling. shipped=" << render(*churn)
-        << " naive_transitions=" << naive_transitions;
+           "difference is the whole content of DN-50.D4's ruling. shipped="
+        << render(*churn) << " naive_transitions=" << naive_transitions;
 }
 
 // ── The vacuity antidote ────────────────────────────────────────────────────────
