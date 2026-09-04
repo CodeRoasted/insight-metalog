@@ -1,6 +1,6 @@
 // Unit tests: allow short identifiers and test-specific patterns.
 //
-// test_presence_churn_rank_boundary.cpp — `G-T4` of DN-50.D8: the INVENTED-CHURN arm.
+// test_presence_churn_rank_boundary.cpp — `DN-50.D8`'s `G-T4`: the INVENTED-CHURN arm.
 //
 // THE DEFECT THIS GATE EXISTS TO CATCH, stated before any assertion. `top_k` truncates by COUNT, so
 // "absent from the retained set" is not "absent from the window". A template whose rank oscillates
@@ -197,7 +197,7 @@ TEST(PresenceChurnRankBoundary, ThePlantedTemplateIsAlwaysPresentAndItsRankOscil
     }
 }
 
-// ── G-T4 proper ─────────────────────────────────────────────────────────────────
+// ── DN-50.D8's G-T4 proper ──────────────────────────────────────────────────────
 
 // THE GATE. Pre-registered by DN-50.D8: `transitions = 0` and `indeterminate > 0`.
 TEST(PresenceChurnRankBoundary, ConstantPresenceAcrossTheRankBoundaryInventsNoTransition)

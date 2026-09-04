@@ -1,6 +1,6 @@
 // Unit tests: allow short identifiers and test-specific patterns.
 //
-// test_presence_churn_property.cpp — `G-T3` of DN-50.D8: the presence-churn monoid proven over a
+// test_presence_churn_property.cpp — `DN-50.D8`'s `G-T3`: the presence-churn monoid proven over a
 // POPULATION rather than sampled on a witness.
 //
 // WHY THIS FILE EXISTS BESIDE THE WITNESS SUITE. `test_presence_churn_monoid.cpp` carries each law
@@ -223,7 +223,7 @@ template <typename Visitor> void for_each_sequence(std::size_t length, Visitor&&
     return population;
 }
 
-// ── G-T3, positive: the fold equals the split product at EVERY split point ────────
+// ── DN-50.D8's G-T3, positive: the fold equals the split product at EVERY split point ─
 
 // The load-bearing property: for every split point s, fold(w_1..w_n) == fold(w_1..w_s) .
 // fold(w_{s+1}..w_n), and both equal the independently computed reference. The split-point sweep is
@@ -275,7 +275,7 @@ TEST(PresenceChurnProperty, SeededTheFoldEqualsTheSplitProductAtEverySplitPoint)
     }
 }
 
-// ── G-T3, positive: associativity at every ORDERED PAIR of split points ──────────
+// ── DN-50.D8's G-T3, positive: associativity at every ORDERED PAIR of split points ───
 
 // DN-50.D4's proof is that (A.B).C and A.(B.C) both reduce to the same sum. This arm holds the
 // implementation to it for every way of cutting a sequence into three parts — the general statement
@@ -333,7 +333,7 @@ TEST(PresenceChurnProperty, SeededAssociativityHoldsAtEveryPairOfSplitPoints)
     }
 }
 
-// ── G-T3, negative arm (a): the product is NOT commutative ───────────────────────
+// ── DN-50.D8's G-T3, negative arm (a): the product is NOT commutative ────────────────
 
 // The MUST has teeth only if disagreement is EXHIBITED. A product that quietly became symmetric —
 // by dropping the orientation from the boundary term, the one-line change that makes every positive
@@ -375,7 +375,7 @@ TEST(PresenceChurnProperty, TheProductIsNotCommutativeAndTheSweepExhibitsIt)
     EXPECT_EQ(meta::compose_presence_churn(absent, present).first, PresenceSymbol::Absent);
 }
 
-// ── G-T3, negative arm (b): collapsing the two absent symbols breaks the identity ─
+// ── DN-50.D8's G-T3, negative arm (b): collapsing the absent symbols breaks identity ─
 
 // DN-50.D4 requires TWO distinct absent symbols and says a single `optional<bool>` is the obvious
 // implementation and the wrong one. This arm measures the prediction: run the collapsed product
