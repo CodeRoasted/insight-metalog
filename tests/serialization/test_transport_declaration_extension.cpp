@@ -114,6 +114,19 @@ TEST(TransportDeclarationExtension, TheDocumentRootCarriesTheExtensionsContainer
 // catalogue in force — not about the catalogue's value, which canon owns and freezes. A literal
 // here would be a second source of truth that goes stale at the next bump and passes anyway.
 //
+/// THE RECORDED STATE of what was a pre-registered red — now `true`: the producer DOES emit
+/// `extensions["fr.coderoast.transport"]`, so the positive contract in the case below runs and
+/// holds it. Flip it back only if the member is deliberately withdrawn.
+///
+/// **THE RED HAD ALREADY BEEN REPAIRED AND NOTHING SAID SO.** Until 2026-09-04 this case opened
+/// with a `GTEST_SKIP` describing the missing member, and a gtest skip exits 0 — so once the
+/// carrier actually landed, the case went on printing a registered red and counting as a pass,
+/// and the positive contract below had never run against a producer that satisfies it. Replacing
+/// the skip with an assertion against this constant surfaced the repair on the FIRST run: the
+/// document carries `{"catalog_version": "transport-catalog-3", "names": []}`, which is the shape
+/// the old skip message said to expect. That is the whole argument for the shape, measured.
+constexpr bool kTransportMemberIsEmitted{true};
+
 // Flips to green when `fr.coderoast.transport` is emitted from the document root's extensions.
 TEST(TransportDeclarationExtension, AnUndeclaredStackStillMintsTheTransportMember)
 {
@@ -125,25 +138,37 @@ TEST(TransportDeclarationExtension, AnUndeclaredStackStillMintsTheTransportMembe
     const bool has_member{has_extensions &&
                           (*parsed)["extensions"].contains("fr.coderoast.transport")};
 
+    // PRE-REGISTERED RED, PINNED RATHER THAN SKIPPED (Founder, 2026-09-04). This branch used to
+    // `GTEST_SKIP` with the diagnosis below, on the reasoning that a red should be REGISTERED
+    // without blocking the cut. The reasoning holds; the mechanism did not. **A gtest skip exits
+    // 0 and ctest counts it as passed**, so the registered red was reported as a passing test and
+    // the pass count covered a contract the producer does not honour.
+    //
+    // `kTransportMemberIsEmitted` is the RECORDED state, and comparing reality against it is a
+    // real subject rather than a tautology: it reds in BOTH directions. While the red stands the
+    // case passes having asserted something true; the day the producer starts emitting the member
+    // it FAILS, which is the signal to flip the constant and let the positive contract below run.
+    // Nothing is blocked in the meantime, which was the whole point of the skip.
+    ASSERT_EQ(has_member, kTransportMemberIsEmitted)
+        << (has_member
+                ? "THE PRE-REGISTERED RED IS REPAIRED — this producer now emits "
+                  "`extensions[\"fr.coderoast.transport\"]`. Set kTransportMemberIsEmitted to "
+                  "true in this file; the positive contract below then runs and holds it.\n"
+                : "REGRESSION — the member was recorded as EMITTED and is now absent.\n"
+                  "  extensions container present: ")
+        << (has_member ? "" : (has_extensions ? "yes" : "no"))
+        << "\n  The member must be emitted ALWAYS, with an empty `names[]` when nothing was "
+           "declared. A key emitted only for a non-empty stack is indistinguishable from a key "
+           "this producer cannot emit, so \"no transport declared\" and \"this producer does not "
+           "carry the field\" become the same absence to every consumer — and those are different "
+           "facts about the run.\n  Expected shape: {\"catalog_version\": \""
+        << insight::transport::kTransportCatalogVersion << "\", \"names\": []}.\n  Document:\n"
+        << json;
+
+    // The red still stands, pinned by the assertion above. Everything below is the POSITIVE
+    // contract and is the flip's target — reachable, never dead, the moment the producer emits.
     if (!has_member)
-    {
-        GTEST_SKIP()
-            << "PRE-REGISTERED RED — a document produced with no transport declaration carries no "
-               "`extensions[\"fr.coderoast.transport\"]` member.\n"
-               "  extensions container present: "
-            << (has_extensions ? "yes" : "no")
-            << "; `fr.coderoast.transport` present: no.\n"
-               "  The member must be emitted ALWAYS, with an empty `names[]` when nothing was "
-               "declared. A key emitted only for a non-empty stack is indistinguishable from a key "
-               "this producer cannot emit, so \"no transport declared\" and \"this producer does "
-               "not carry the field\" become the same absence to every consumer — and those are "
-               "different facts about the run.\n"
-               "  Expected shape: {\"catalog_version\": \""
-            << insight::transport::kTransportCatalogVersion
-            << "\", \"names\": []}.\n"
-               "  Flips to green when the carrier lands. Document:\n"
-            << json;
-    }
+        return;
 
     auto& member{(*parsed)["extensions"]["fr.coderoast.transport"]};
 
