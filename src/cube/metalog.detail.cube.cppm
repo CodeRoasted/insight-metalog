@@ -84,15 +84,8 @@ struct Cell
     {
         return static_cast<std::size_t>(std::popcount(pinned_mask()));
     }
-    // Value equality is tuple equality (pinned_mask is derived from it). Spelled as a FRIEND
-    // because gcc-15's mangler choked on a member operator in a module (same shape as the cube
-    // package's Cell). RE-MEASURED 2026-09-03 on gcc-16.2 (`linux-gcc16-release`, wiped tree):
-    // rewritten as a member `operator==`, this package and its downstream consumers built clean,
-    // so the mangler defect does not reproduce on the current ship compiler. KEPT as a friend per
-    // ADR-3.D7 — a wrong removal reds the ship leg at the tag and a wrong retention costs one
-    // spelling — and note the converse trap before "modernising" this: a DEFAULTED friend
-    // operator== reaching an import-std type is a separate gcc defect that is still live on 16.2.
-    // This one is not defaulted, so it sits clear of that; keep it that way.
+    // Value equality is tuple equality (pinned_mask is derived from it). Written out, never
+    // `= default`: a DEFAULTED friend operator== reaching an import-std type is a live GNU defect.
     friend constexpr bool operator==(const Cell& lhs, const Cell& rhs) noexcept
     {
         return lhs.value == rhs.value;
