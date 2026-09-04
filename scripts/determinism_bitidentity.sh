@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Determinism golden driver — the metalog leg of the Determinism-Golden-Proof (golden.yaml). Builds the
-# canon+metalog MODULE-LIB TOWER from source for ONE toolchain leg across the -O{0,3}×-ffp-contract
-# {off,fast} corners, asserts the serialized MetaLog document, the serialized MetaLogDiff — the producer's
+# canon+metalog MODULE-LIB TOWER from source for ONE toolchain leg across the -O{0,3} corners,
+# asserts the serialized MetaLog document, the serialized MetaLogDiff — the producer's
 # second artifact species — and the serialized output of compose(), its second published operation
 # (DN-82.D2), are byte-identical across that leg's corners, and EMITS the leg's digest
 # (DETERMINISM_OUT). WHAT it replays is not written here: the committed corpus comes off disk, and
@@ -12,7 +12,7 @@
 # There is NO committed golden (retired — no more committed-golden apparatus). Cross-toolchain / cross-
 # stdlib / cross-ISA / cross-OS bit-identity is asserted by golden.yaml's `compare` job, which byte-
 # compares the digests this driver emits for every leg (gcc/clang × x86/arm64) against the MSVC leg's.
-# This script proves only the per-leg -O/-ffp sweep-invariance and emits — one leg per CI job.
+# This script proves only the per-leg -O sweep-invariance and emits — one leg per CI job.
 #
 # ── Approach B (Daidalos ruling 2026-06-06; the private twin of canon's det_public_proof.sh)
 # The 1.5.1 unwrap turned canon+metalog into C++20 modules, so "build the tower N ways" means: per leg,
@@ -31,10 +31,13 @@
 # or by golden.yaml. EXIT CODES — every one of them is a red, and they are distinct so a CI log names
 # the stage without being read:
 #   0  every built cell agreed byte for byte (and, with DETERMINISM_OUT set, the digest was emitted)
-#   1  -O/-ffp divergence within the leg
+#   1  -O divergence within the leg
 #   2  bad interface (unknown DETERMINISM_LEG / unknown leg key) or a missing subject file
 #   3  gate integrity: some configured cell did not build (a one-corner green is hollow)
 #   4  the fixture itself failed on a section — see scripts/determinism_emit.sh for why that is a red
+#   5  the -ffp-contract premise broke: a first-party TU is no longer at `off` (see the CELL MATRIX
+#      note below — that premise is what retired the -ffp axis, so its loss is not a condition to
+#      carry on through)
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -91,15 +94,49 @@ echo "build parallelism: $JOBS jobs (MemAvailable=${mem_gb}GB cpu=$ncpu)"
 # The CELL MATRIX = stdlib leg × optimization corner. Two orthogonal hazard axes:
 #   - stdlib leg (ship gcc/libstdc++ vs clang-21/libc++): catches ITERATION-ORDER leaks (unordered_*),
 #     the ADR-31.D8 class — the cross-stdlib axis is the ONLY one that exposes a hash-order flip.
-#   - optimization corner (-O{0,3} × -ffp-contract{off,fast}): catches FP-CONTRACTION / reassociation
-#     leaks — a stray float op in the det_math / salience path that -ffp=fast would reorder. A correct
-#     integer/fixed-point det core is -ffp-INVARIANT, so these MUST stay identical; a divergent -ffp
-#     cell is a det_math gap. (-DNDEBUG is fixed from Release; only -O / -ffp vary per cell.)
+#   - optimization corner (-O{0,3}): catches -O-sensitive ordering leaks. (-DNDEBUG is fixed from
+#     Release; only -O varies per cell.)
+#
+# ── WHY THERE IS NO -ffp-contract AXIS, and how that stays honest ─────────────────────────────────
+# This sweep ran a third axis, -ffp-contract={off,fast}, doubling the cells to four per leg. It was
+# INERT, for two independent reasons, both measured at the desk on 2026-09-04 on THIS harness (canon
+# retired the same axis on the same two reasons a day earlier; this is not that measurement carried
+# across — the flag order is a property of each harness's own CMake):
+#
+#   1. THE FLAG NEVER REACHED THE COMPILE LINE AS `fast`. insight_metalog declares
+#      -ffp-contract=off with target_compile_options(... PUBLIC ...) — the determinism requirement
+#      itself — and canon's core declares it the same way. det_harness/CMakeLists.txt injects the
+#      cell's flags through add_compile_options at DIRECTORY scope (line 33) BEFORE
+#      add_subdirectory(canon) / add_subdirectory(metalog) (lines 56-57), and CMake emits directory
+#      options BEFORE a target's own. Last flag wins in gcc/clang. Measured by configuring the
+#      O3_fast cell and reading its own compile_commands.json: **66 of 66 first-party TUs at
+#      effective `off`**, every line ending `-ffp-contract=fast -ffp-contract=off`. The two `fast`
+#      lines in that database are CMake's synthesised `std` module, which links no first-party
+#      target.
+#   2. AND THE ISA COULD NOT HAVE CONTRACTED ANYWAY. The profiles pin -march=x86-64-v2, which
+#      predates FMA3. Measured on both toolchains (g++ 16.2.0, clang 21.1.8): `-march=x86-64-v2
+#      -dM -E` defines neither __FMA__ nor __AVX__. With no FMA instruction available there is
+#      nothing for `fast` to fuse.
+#
+# So two of four cells were the other two run again, while the gate-integrity check demanded all
+# four build and the FAIL text told its reader to diagnose a divergence as a contraction leak — in
+# a sweep where contraction was never enabled. That is a false CLAIM over an intact GUARANTEE, paid
+# for at 2x the tower build on every leg.
+#
+# WHY RETIRED RATHER THAN MADE TO VARY. Making it vary needs metalog (and canon) to stop forcing
+# -ffp-contract=off PUBLIC, and that flag IS the invariant. Testing an invariant by disabling it
+# tests nothing. It would ALSO need the ISA pin moved off the ship baseline, so the sweep would stop
+# proving the shipped configuration.
+#
+# THE PREMISE IS RE-DERIVED EVERY RUN, never trusted: assert_ffp_contract_forced_off below reads
+# each cell's own compile_commands.json and exits 5 if any first-party TU's EFFECTIVE (last-wins)
+# -ffp-contract is anything but `off`. If either package stops forcing it, the retirement stops
+# being justified and this gate says so on the spot instead of going quietly uncovered.
 #
 # LEG — golden.yaml runs ONE leg per CI job via DETERMINISM_LEG (gcc|clang), keyed into LEG_SPEC below.
 # The cross-STDLIB property (ship gcc/libstdc++ ≡ clang-21/libc++ — the only axis that exposes an
 # unordered_* iteration-order leak, ADR-31.D8), cross-ISA, and cross-OS are all the golden.yaml `compare` of
-# every leg's emitted digest; this script proves only THIS leg's -O/-ffp sweep-invariance and emits.
+# every leg's emitted digest; this script proves only THIS leg's -O sweep-invariance and emits.
 # The conan PROFILE per leg is overridable so the SAME driver runs on a 2nd ISA: the arm64 legs inject
 # DETERMINISM_GCC_PROFILE=linux-gcc16-arm64-release / DETERMINISM_CLANG_PROFILE=linux-clang21-libcxx-arm64-release
 # (the only x86↔arm64 difference is the profile's arch/-march; the compiler binaries are wired identically).
@@ -127,11 +164,65 @@ case "${DETERMINISM_LEG:-}" in
 esac
 read -ra LINUX_LEGS <<<"${DETERMINISM_LEGS:-clang-libcxx}"
 
+# Every FIRST-PARTY compile line in a cell must end up at -ffp-contract=off (last flag wins in
+# gcc/clang) — the premise under which the -ffp-contract axis was retired from this sweep. A TU at
+# `fast`, or one carrying no -ffp-contract at all (gcc's default IS `fast`), means the flag stopped
+# being forced and this gate is no longer covering what it stopped claiming to cover.
+#
+# TWO ROOTS, because this harness builds a TOWER: canon's core and metalog. canon's own
+# det_public_proof.sh takes one; the shape is otherwise identical and deliberately so.
+#
+# SCOPED TO SOURCES UNDER THOSE ROOTS, and the scoping is load-bearing rather than tidy. The
+# harness's compile_commands.json also lists TUs neither repo owns — CMake synthesises one for the
+# `std` module under CXX_MODULE_STD, in the BUILD tree, and it links no first-party target
+# (measured: 2 such lines, both at `fast`, in the O3_fast cell). Judging those would put a red on
+# this gate for a flag nobody here declares. The anti-vacuity cost of scoping is paid below: a
+# filter that matched NOTHING would pass silently, so an empty first-party set is itself a red.
+assert_ffp_contract_forced_off() {   # <compile_commands.json> <cell-tag> <root>...
+  local cc="$1" tag="$2"; shift 2
+  local roots=("$@") total=0 bad=0 line src eff root fp
+  if [ ! -f "$cc" ]; then
+    echo "FFP PREMISE UNCHECKABLE: $tag emitted no compile_commands.json at $cc"
+    echo "  — CMAKE_EXPORT_COMPILE_COMMANDS is set in det_harness/CMakeLists.txt; its absence is a harness break."
+    return 1
+  fi
+  while IFS= read -r line; do
+    src="${line##*-c }"; src="${src%\",}"
+    fp=0
+    for root in "${roots[@]}"; do case "$src" in "$root"/*) fp=1 ;; esac; done
+    [ "$fp" -eq 1 ] || continue
+    total=$((total + 1))
+    case "$line" in
+      *-ffp-contract=*) eff="${line##*-ffp-contract=}"; eff="${eff%%[^a-z]*}" ;;
+      *)                eff="<unset>" ;;
+    esac
+    if [ "$eff" != "off" ]; then
+      bad=$((bad + 1))
+      [ "$bad" -le 5 ] && echo "   effective -ffp-contract=$eff on $src"
+    fi
+  done < <(grep '"command":' "$cc")
+  if [ "$total" -eq 0 ]; then
+    echo "FFP PREMISE UNCHECKABLE: $tag's compile_commands.json lists no compile line under ${roots[*]}."
+    echo "  A scoped assertion that matches nothing is a vacuous pass, so it is a red instead."
+    return 1
+  fi
+  if [ "$bad" -ne 0 ]; then
+    echo "FFP PREMISE BROKEN: $bad of $total first-party compile line(s) in cell $tag are NOT at -ffp-contract=off."
+    echo "  This sweep dropped its -ffp-contract={off,fast} axis because canon and metalog force the flag"
+    echo "  PUBLIC, making the axis inert (see the CELL MATRIX note above). That is no longer true. Either"
+    echo "  restore the PUBLIC declaration in the package that lost it, or restore the axis here — not neither."
+    return 1
+  fi
+  echo "  ffp premise: $total first-party TU(s) in $tag at -ffp-contract=off"
+  return 0
+}
+
+# -ffp-contract=off is STATED per cell rather than inherited: both packages force it PUBLIC anyway
+# (the retirement argument above), and a cell that names the flag it is built under is one the
+# assertion below can be read against.
 cells=(
-  "O3_off:-O3 -ffp-contract=off"
-  "O0_off:-O0 -ffp-contract=off"
-  "O3_fast:-O3 -ffp-contract=fast"
-  "O0_fast:-O0 -ffp-contract=fast"
+  "O3:-O3 -ffp-contract=off"
+  "O0:-O0 -ffp-contract=off"
 )
 declare -A BIN
 declare -A LEG_BUILT
@@ -167,7 +258,7 @@ for legkey in "${LINUX_LEGS[@]}"; do
   cc_abs="$(command -v "$prof_cc")" || cc_abs="$prof_cc"
   echo "leg $tag: CXX=$cxx_abs ($("$cxx_abs" --version 2>/dev/null | head -1))"
 
-  # conan install once per leg (the deps are -O/-ffp-independent); each cell re-cmakes the tower.
+  # conan install once per leg (the deps are -O-independent); each cell re-cmakes the tower.
   legdir="$WORK/conan-$tag"
   if ! conan install "$META" --profile:host="$profile" --profile:build="$profile" \
         --build=missing -of "$legdir" >"$legdir.install.log" 2>&1; then
@@ -192,6 +283,11 @@ for legkey in "${LINUX_LEGS[@]}"; do
           -DCELL_FLAGS="$cflags -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_OFF" >"$bdir.cfg.log" 2>&1; then
       echo "CONFIGURE FAIL: $ctag"; tail -40 "$bdir.cfg.log" | sed 's/^/   /'; continue
     fi
+    # The retired axis's premise, re-derived from THIS cell's own compile lines. Checked after
+    # CONFIGURE and before the build — the database exists at configure time, so a broken premise
+    # costs nothing to find. A hard exit, not a CONFIGURE FAIL: a broken premise means the sweep
+    # silently lost coverage it stopped claiming, which is not a condition to carry on through.
+    assert_ffp_contract_forced_off "$bdir/compile_commands.json" "$ctag" "$CANON" "$META" || exit 5
     if ! cmake --build "$bdir" --target det_fixture --parallel "$JOBS" >"$bdir.build.log" 2>&1; then
       echo "BUILD FAIL: $ctag"; tail -40 "$bdir.build.log" | sed 's/^/   /'; continue
     fi
@@ -211,7 +307,7 @@ for legkey in "${LINUX_LEGS[@]}"; do
 done
 if [ "${#builds[@]}" -eq 0 ] || [ "${#builds[@]}" -ne "$expected" ]; then
   echo "GATE INTEGRITY FAIL: built ${#builds[@]} cells, expected $expected"
-  echo "  (DETERMINISM_LEGS='${LINUX_LEGS[*]}' × ${#cells[@]} -O/-ffp corners). See the FAIL tails above."
+  echo "  (DETERMINISM_LEGS='${LINUX_LEGS[*]}' × ${#cells[@]} -O corners). See the FAIL tails above."
   exit 3
 fi
 
@@ -235,14 +331,14 @@ for ctag in "${builds[@]}"; do
   det_emit_digest "${BIN[$ctag]}" "$WORK/$ctag.out" "$CORPUS" "${SECTIONS[@]}" || {
     echo "EMIT FAIL: cell $ctag — the fixture failed on a section (cause above)."
     echo "  Not a determinism result: the digest is truncated, and every cell would truncate the same"
-    echo "  way, so the -O/-ffp compare below would have called that agreement. golden.yaml's MSVC leg"
+    echo "  way, so the -O compare below would have called that agreement. golden.yaml's MSVC leg"
     echo "  throws on this same condition; this leg no longer disagrees with it."
     exit 4
   }
 done
 rc=0; ref="${builds[0]}"
 echo "reference: $ref  sha=$(sha256sum "$WORK/$ref.out" | cut -c1-16)"
-echo "── built Linux legs (cross-stdlib when >1 leg; -O{0,3}×-ffp{off,fast} corners always) ──"
+echo "── built Linux legs (cross-stdlib when >1 leg; -O{0,3} corners always) ──"
 for ctag in "${builds[@]}"; do
   if cmp -s "$WORK/$ref.out" "$WORK/$ctag.out"; then st=IDENTICAL; else st=DIVERGENT; rc=1; fi
   printf "  %-28s %s\n" "$ctag" "$st"
@@ -253,9 +349,9 @@ if [ $rc -eq 0 ]; then
   # not read is how a green comes to describe a digest smaller than the one it judged.
   echo "PASS: byte-identical across ${#builds[@]} built cell(s) — $(echo "$CORPUS" | wc -l) corpus section(s)"
   echo "  (documents + the diff between them + their composition) + ${#SECTIONS[@]} synthetic:$(printf ' %s' "${SECTIONS[@]%% *}")"
-  echo "  over the '${LINUX_LEGS[*]}' leg's -O{0,3}×-ffp{off,fast} sweep."
+  echo "  over the '${LINUX_LEGS[*]}' leg's -O{0,3} sweep."
   # Cross-leg-agreement mode (the ONLY mode now — no committed golden): emit this leg's full digest
-  # (corpus + reservoir, byte-identical across its own -O×-ffp cells above) for the golden.yaml compare
+  # (corpus + reservoir, byte-identical across its own -O cells above) for the golden.yaml compare
   # job to byte-compare against every other leg (gcc/clang × x86/arm64 + msvc). One leg per job → the
   # cross-stdlib/ISA/OS assertion is that compare, not this script.
   if [ -n "${DETERMINISM_OUT:-}" ]; then
@@ -263,12 +359,14 @@ if [ $rc -eq 0 ]; then
     echo "emitted digest → $DETERMINISM_OUT  (leg '${LINUX_LEGS[*]}', $(sha256sum "$WORK/$ref.out" | cut -c1-16)…)"
   fi
 else
-  echo "FAIL: determinism divergence within the '${LINUX_LEGS[*]}' leg's -O/-ffp sweep — a det_math"
-  echo "  -ffp-contraction leak, an -O-sensitive ordering leak, OR (on either --reservoir-* marker)"
-  echo "  the ADR-31.D8 item-reservoir admit/evict leak — the streaming marker is the one that speaks"
-  echo "  about the DEPLOYED tuple. On a DIFF line it is neither: a diff carries this producer's"
-  echo "  floating point (kl/js divergence, frequencies, entropy bits), so an -ffp cell that diverges"
-  echo "  there is a det_math gap in the diff path, which no document section can exhibit."
+  echo "FAIL: determinism divergence within the '${LINUX_LEGS[*]}' leg's -O{0,3} sweep — an"
+  echo "  -O-SENSITIVE ORDERING leak, OR (on either --reservoir-* marker) the ADR-31.D8"
+  echo "  item-reservoir admit/evict leak — the streaming marker is the one that speaks about the"
+  echo "  DEPLOYED tuple."
+  echo "  NOT an -ffp contraction leak, and that used to be this message's first suggestion: this"
+  echo "  sweep has no -ffp axis, both packages force -ffp-contract=off PUBLIC, and the premise"
+  echo "  assertion re-derived that from every cell's own compile lines before this compare ran."
+  echo "  Contraction cannot be what these cells disagree about — chase -O, or the reservoir."
   echo "  Localize: diff \$WORK/<ctag>.out vs \$WORK/$ref.out."
 fi
 exit $rc
