@@ -68,8 +68,26 @@ jobs:
           persist-credentials: false
       - run: bash scripts/determinism_sections_check.sh
 
+  # THE SECOND CHEAP GATE, and it stands in a different seam. `roster-guard` asks whether the five
+  # legs replay the SAME list; this one asks whether they agree about what a FAILURE is. Until
+  # 2026-09-04 they did not: the Linux driver ran the fixture as `… >>out 2>/dev/null` with no `set
+  # -e` and no `$?`, so a fixture exiting 2 wrote an empty body under a correct header in all four
+  # -O/-ffp cells, `cmp` called the empty bodies identical and the leg emitted a truncated digest —
+  # while `Add-Section` below has always thrown on the same exit code. A separate job rather than a
+  # step in `roster-guard`, so neither check name moves: both are cheap, both `needs:`-gate the
+  # metered proofs, and a red here still costs zero Windows minutes.
+  emit-guard:
+    name: "digest writer ≡ fixture exit status"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - run: bash scripts/determinism_emit_check.sh
+
   proof-linux:
-    needs: roster-guard
+    needs: [roster-guard, emit-guard]
     name: ${{ matrix.label }}
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -216,7 +234,7 @@ jobs:
           if-no-files-found: error
 
   proof-msvc:
-    needs: roster-guard
+    needs: [roster-guard, emit-guard]
     name: "msvc-14.52 · O2-fast"
     runs-on: windows-2025
     env:

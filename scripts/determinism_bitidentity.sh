@@ -27,12 +27,26 @@
 #   DETERMINISM_CANON_ROOT=<dir>     canon SOURCE root (the harness add_subdirectory-builds it per cell)
 #   DETERMINISM_{GCC,CLANG}_PROFILE  conan profile per leg (x86 defaults; arm64 legs inject the arm profiles)
 #
-# Requires conan + the leg profiles seeded in CONAN_HOME/profiles. Exit non-zero on any -O/-ffp divergence
-# or a cell build failure (a one-corner green is hollow). Run locally (sweep-invariance check) or by golden.yaml.
+# Requires conan + the leg profiles seeded in CONAN_HOME/profiles. Run locally (sweep-invariance check)
+# or by golden.yaml. EXIT CODES — every one of them is a red, and they are distinct so a CI log names
+# the stage without being read:
+#   0  every built cell agreed byte for byte (and, with DETERMINISM_OUT set, the digest was emitted)
+#   1  -O/-ffp divergence within the leg
+#   2  bad interface (unknown DETERMINISM_LEG / unknown leg key) or a missing subject file
+#   3  gate integrity: some configured cell did not build (a one-corner green is hollow)
+#   4  the fixture itself failed on a section — see scripts/determinism_emit.sh for why that is a red
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 META="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# The section writer — how a section becomes bytes, and what happens when the fixture producing them
+# fails. Sourced rather than inlined so those failure semantics are provable at a desk with no
+# toolchain (scripts/determinism_emit_check.sh); the ENUMERATIONS stay here, in this file.
+EMIT_LIB="$SCRIPT_DIR/determinism_emit.sh"
+[ -f "$EMIT_LIB" ] || { echo "no $EMIT_LIB (the section writer)"; exit 2; }
+# shellcheck source=determinism_emit.sh
+. "$EMIT_LIB"
 # canon SOURCE root (the harness add_subdirectory-builds it per cell). Defaults to the sibling checkout;
 # DETERMINISM_CANON_ROOT overrides it for CI, where insight-canon is checked out into a job-local path
 # (e.g. $GITHUB_WORKSPACE/_canon) rather than a sibling of metalog.
@@ -211,13 +225,20 @@ fi
 # The per-section WHY lives beside its row in scripts/determinism_sections.txt. It is deliberately
 # NOT restated here: an enumeration written in two places is what put the MSVC leg two sections
 # behind on 2026-08-24, and a prose copy of a list rots exactly the same way the code copy did.
+#
+# The per-section fixture EXIT STATUS is checked, and a non-zero one FAILS THE RUN rather than
+# leaving an empty body under a correctly-spelled header. Until 2026-09-04 it was discarded here
+# while golden.yaml's MSVC `Add-Section` threw on it — two legs of one gate disagreeing about what
+# counts as a failure. det_emit_digest (scripts/determinism_emit.sh) owns both halves now, and it
+# is handed the two lists THIS file enumerated: one enumerator per emitter, unchanged.
 for ctag in "${builds[@]}"; do
-  : >"$WORK/$ctag.out"
-  for f in $CORPUS; do echo "### $(basename "$f") ###" >>"$WORK/$ctag.out"; "${BIN[$ctag]}" "$f" >>"$WORK/$ctag.out" 2>/dev/null; done
-  for section in "${SECTIONS[@]}"; do
-    echo "### $section ###" >>"$WORK/$ctag.out"
-    "${BIN[$ctag]}" "${section%% *}" >>"$WORK/$ctag.out" 2>/dev/null
-  done
+  det_emit_digest "${BIN[$ctag]}" "$WORK/$ctag.out" "$CORPUS" "${SECTIONS[@]}" || {
+    echo "EMIT FAIL: cell $ctag — the fixture failed on a section (cause above)."
+    echo "  Not a determinism result: the digest is truncated, and every cell would truncate the same"
+    echo "  way, so the -O/-ffp compare below would have called that agreement. golden.yaml's MSVC leg"
+    echo "  throws on this same condition; this leg no longer disagrees with it."
+    exit 4
+  }
 done
 rc=0; ref="${builds[0]}"
 echo "reference: $ref  sha=$(sha256sum "$WORK/$ref.out" | cut -c1-16)"
