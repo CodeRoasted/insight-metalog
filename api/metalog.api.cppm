@@ -242,19 +242,17 @@ struct TransparentCubeKeyLess
 // decision path — so it does not belong in the entries that flow through the pyramid; this is its
 // one home. Append-only, intern-once-per-id (same id => same canon-masked content, so first writer
 // wins). Backed by node-stable std::unordered_map, so returned string_views stay valid for the
-// registry's lifetime. Every member is DECLARED here and DEFINED in the implementation unit, never
-// in this class body: MSVC re-emits an interface-defined `= default` special member into every
-// importer of the interface, producing LNK2005 duplicate symbols. The forgone inlining costs
-// nothing — TemplateRegistry is a pure DISPLAY structure, never on the decision path.
+// registry's lifetime. The named members are defined in the implementation unit; the special
+// members are defaulted here, which is what the class actually wants.
 class TemplateRegistry
 {
   public:
-    TemplateRegistry();
-    TemplateRegistry(const TemplateRegistry&);
-    TemplateRegistry(TemplateRegistry&&) noexcept;
-    TemplateRegistry& operator=(const TemplateRegistry&);
-    TemplateRegistry& operator=(TemplateRegistry&&) noexcept;
-    ~TemplateRegistry();
+    TemplateRegistry() = default;
+    TemplateRegistry(const TemplateRegistry&) = default;
+    TemplateRegistry(TemplateRegistry&&) noexcept = default;
+    TemplateRegistry& operator=(const TemplateRegistry&) = default;
+    TemplateRegistry& operator=(TemplateRegistry&&) noexcept = default;
+    ~TemplateRegistry() = default;
 
     // Intern (first writer wins); returns a view stable for the registry's lifetime.
     std::string_view intern(TemplateId template_id, std::string_view template_str);

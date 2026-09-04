@@ -1,24 +1,13 @@
 // insight.metalog.api — implementation unit.
 //
-// The out-of-line home of TemplateRegistry's members, defined HERE rather than in the interface
-// (api/metalog.api.cppm) because MSVC re-emits an interface-defined `= default` special member into
-// every importer of that interface, producing LNK2005 duplicate symbols. The interface declares;
-// this unit defines.
+// The out-of-line home of TemplateRegistry's named members. Its special members are defaulted in
+// the class body.
 module insight.metalog.api;
 import insight.metalog.internal; // std (unordered_map / string / string_view / size_t)
 import insight.canon;            // TemplateId (the module-attached map key)
 
 namespace insight::metalog
 {
-
-// `= default` keeps the exact special-member semantics (incl. deduced noexcept) the implicit
-// declarations had.
-TemplateRegistry::TemplateRegistry() = default;
-TemplateRegistry::TemplateRegistry(const TemplateRegistry&) = default;
-TemplateRegistry::TemplateRegistry(TemplateRegistry&&) noexcept = default;
-TemplateRegistry& TemplateRegistry::operator=(const TemplateRegistry&) = default;
-TemplateRegistry& TemplateRegistry::operator=(TemplateRegistry&&) noexcept = default;
-TemplateRegistry::~TemplateRegistry() = default;
 
 std::string_view TemplateRegistry::intern(TemplateId template_id, std::string_view template_str)
 {
