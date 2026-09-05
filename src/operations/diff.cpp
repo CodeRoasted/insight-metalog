@@ -8,14 +8,8 @@ import insight.metalog.detail.stats;
 import insight.metalog.detail.operations;
 import insight.metalog.detail.cube;
 
-// MetaLog pairwise diff (SPEC §13): the stateless delta between two documents
-// (previous -> current). Template/branching/n-gram/field-histogram/tail deltas +
-// the KL/JS divergence summary. Single responsibility — diff semantics only.
-
 namespace insight::metalog
 {
-
-// ── diff (SPEC §13) ────────────────────────────────────────────
 
 namespace
 {
@@ -38,8 +32,8 @@ namespace
         return out;
     }
 
-    // template_deltas: union of template_ids, each row's prev/cur count + delta +
-    // frequencies; also collects new/vanished. Sorted by |delta| desc, id asc.
+    // post: a row per template in either window with both counts, the delta and both frequencies,
+    // sorted by absolute delta desc then id asc.
     void diff_template_deltas(MetaLogDiff& out,
                               const std::unordered_map<TemplateId, std::uint64_t>& prev_counts,
                               const std::unordered_map<TemplateId, std::uint64_t>& cur_counts,
@@ -86,8 +80,7 @@ namespace
         std::ranges::sort(out.vanished_templates);
     }
 
-    // branching_delta: join branching entropies on template_id. Missing branching
-    // rows mean "not comparable" (e.g. composed docs), not zero entropy.
+    // note: a missing branching row means not comparable, never zero entropy.
     void diff_branching_delta(MetaLogDiff& out, const MetaLogDocument& previous,
                               const MetaLogDocument& current)
     {
@@ -126,25 +119,16 @@ namespace
                                       return std::abs(lhs.delta_bits) > std::abs(rhs.delta_bits);
                                   return lhs.template_id < rhs.template_id;
                               });
-            // SPEC §13.2.1: `branching_delta`'s declared vacuous value is the EMPTY array
-            // (`maxItems: 0`) — unlike the structurally similar `template_deltas`, whose
-            // declaration is PER ROW (`delta: const 0`) precisely because it is a union. This array
-            // is a union too: it carries a row for every template in either window's branching map,
-            // so it is non-empty whenever EITHER document has a branching block at all. Emitting it
-            // when no entropy moved publishes a FALSE WITNESS under the §13.2 rule and would force
-            // `comparison_outcome: "changed"` on two identical documents. Nothing moved ⇒ nothing
-            // emitted. Rows that did not move survive alongside those that did, as the union
-            // context they are: the declaration makes the whole array the finding, not each row.
-            // No consumer loses a decision — eidos reads this block through two filters that both
-            // already skip a zero row (`classify.cpp` `delta_bits == 0.0`, `sequence_field_banks`
-            // `|delta_bits| < branching_delta_threshold_bits`).
+            // invariant: emitted only when some entropy moved -- the declared vacuity is the EMPTY
+            // array, so emitting an unmoved union would publish a false witness.
+            // note: rows that did not move survive beside those that did; the array is the finding.
             if (std::ranges::none_of(out.branching_delta, [](const BranchingDelta& row)
                                      { return row.delta_bits != 0.0; }))
                 out.branching_delta.clear();
         }
     }
 
-    // ngram_delta: new/vanished sequences and rate-changed common ones.
+    // post: new and vanished sequences plus the rate-changed common ones.
     void diff_ngram_delta(MetaLogDiff& out, const MetaLogDocument& previous,
                           const MetaLogDocument& current)
     {
@@ -152,10 +136,8 @@ namespace
             return;
         NGramDelta ngram_delta;
         ngram_delta.ngram_size = current.behavior->ngram_size;
-        // SRC-D-TIR-4(2): scalar-NgramId point-lookup maps, value carrying the sequence for
-        // output. new_ngrams / vanished_ngrams are iterated into output, so — unlike
-        // rate_changed (sorted at the end) — they are explicitly sorted here to stay
-        // determinism-stable across stdlibs (ADR-16: never emit unordered iteration order).
+        // note: new and vanished are sorted explicitly because they are iterated into the output.
+        // refs: SRC-D-TIR-4, ADR-16.D1
         struct NgramProb
         {
             std::vector<TemplateId> sequence;
@@ -199,14 +181,10 @@ namespace
             out.ngram_delta = std::move(ngram_delta);
     }
 
-    // service_edge_delta (O4b, SRC-D-OTEL-21): the service-topology delta — its OWN pass. Defined
-    // ONLY when BOTH documents carried a service_edges block (both had trace substrate); absent on
-    // either ⇒ leave it unset (edge verdicts are *unknown*, never "all emerged" — SRC-D-OTEL-20).
-    // Semantics-free set/integer arithmetic (metalog stays polarity-blind; the degraded reading +
-    // fold are eidos). Both blocks are canonical-sorted, and std::map iteration is ordered →
-    // emerged/vanished/weight_changed are canonical without a re-sort. Emitted only when non-empty
-    // (the ngram_delta discipline — an empty delta and an absent block both mean "no edge change"
-    // to the consumer).
+    // post: defined ONLY when both documents carried a service_edges block; absent on either side
+    // leaves it unset, so edge verdicts are unknown rather than all-emerged.
+    // note: both blocks are canonically sorted, so the three lists need no re-sort.
+    // refs: SRC-D-OTEL-21, SRC-D-OTEL-20
     void diff_service_edge_delta(MetaLogDiff& out, const MetaLogDocument& previous,
                                  const MetaLogDocument& current)
     {
@@ -220,17 +198,15 @@ namespace
             cur_w[{edge.caller, edge.callee}] = edge.weight;
 
         ServiceEdgeDelta delta;
-        for (const auto& [key, weight] :
-             cur_w) // emerged: in current, absent in previous (θ_was=0, θ_now=1)
+        for (const auto& [key, weight] : cur_w)
             if (!prev_w.contains(key))
                 delta.emerged.push_back(
                     {.caller = key.first, .callee = key.second, .weight = weight});
-        for (const auto& [key, weight] : prev_w) // vanished: in previous, absent in current
+        for (const auto& [key, weight] : prev_w)
             if (!cur_w.contains(key))
                 delta.vanished.push_back(
                     {.caller = key.first, .callee = key.second, .weight = weight});
-        for (const auto& [key, cur_weight] :
-             cur_w) // weight-changed: present both sides, weight moved
+        for (const auto& [key, cur_weight] : cur_w)
         {
             const auto prev_it{prev_w.find(key)};
             if (prev_it == prev_w.end() || prev_it->second == cur_weight)
@@ -246,7 +222,7 @@ namespace
             out.service_edge_delta = std::move(delta);
     }
 
-    // The histogram for a given wildcard slot within a top_k entry, or nullptr.
+    // post: the histogram for that wildcard slot, or nullptr.
     [[nodiscard]] const FieldHistogram* find_param_histogram(const TopKEntry& entry,
                                                              std::uint32_t param_index)
     {
@@ -256,13 +232,11 @@ namespace
         return nullptr;
     }
 
-    // field_histogram_deltas: per-(template_id, param_index) JS divergence between the
-    // two value_counts distributions. Only for template_ids present in both top_k
-    // lists with field_histograms (max_param_histograms > 0). Sorted by JS desc.
+    // post: a JS divergence per (template_id, param_index) present in BOTH top_k lists with field
+    // histograms, sorted by JS desc.
     void diff_field_histogram_deltas(MetaLogDiff& out, const MetaLogDocument& previous,
                                      const MetaLogDocument& current)
     {
-        // Build lookup: template_id -> TopKEntry* for previous doc.
         std::unordered_map<TemplateId, const TopKEntry*> prev_tke;
         for (const auto& entry : previous.stats.top_k)
             if (!entry.field_histograms.empty())
@@ -291,10 +265,9 @@ namespace
                 fhd.current_entropy_bits = curr_fh.entropy_bits;
                 fhd.js_divergence = histogram_js(prev_fh->value_counts, prev_fh->total,
                                                  curr_fh.value_counts, curr_fh.total);
-                // Per-side sample size backing the JS estimate (confidence basis).
+                // note: the two sample counts are the confidence basis behind the JS estimate.
                 fhd.previous_sample_count = prev_fh->total;
                 fhd.current_sample_count = curr_fh.total;
-                // Cardinality tracking: propagate HLL estimates when both sides have them.
                 fhd.previous_cardinality = prev_fh->approximate_cardinality;
                 fhd.current_cardinality = curr_fh.approximate_cardinality;
                 if (fhd.previous_cardinality > 0 || fhd.current_cardinality > 0)
@@ -315,7 +288,7 @@ namespace
                           });
     }
 
-    // The ordinal histogram for `field_name` within a top_k entry, or nullptr.
+    // post: the ordinal histogram for that field, or nullptr.
     [[nodiscard]] const OrdinalHistogram* find_ordinal_histogram(const TopKEntry& entry,
                                                                  std::string_view field_name)
     {
@@ -325,13 +298,10 @@ namespace
         return nullptr;
     }
 
-    // ordinal_histogram_deltas (§4A.4 SRC-D-W1-1/SRC-D-W1-4 — the W1 channel): per-(template_id,
-    // ordinal field)
-    // pairing of the two windows' binned ordinal histograms. Only for (template_id, field_name)
-    // present in BOTH top_k lists with ordinal_histograms. Carries both sides' raw counts + totals
-    // + schedule_ids — eidos gates on the schedule_ids matching (the SRC-D-W1-4 comparability gate)
-    // then computes the exact-integer Wasserstein-1 distance. Deterministic order (template_id,
-    // field_name).
+    // post: a row per (template_id, field_name) in BOTH top_k lists, carrying both sides' counts,
+    // totals and schedule_ids, in deterministic order.
+    // note: the consumer gates on the schedule_ids matching, then computes the W1 distance.
+    // refs: SRC-D-W1-1, SRC-D-W1-4
     void diff_ordinal_histogram_deltas(MetaLogDiff& out, const MetaLogDocument& previous,
                                        const MetaLogDocument& current)
     {
@@ -377,10 +347,8 @@ namespace
                           });
     }
 
-    // tail_delta: pairwise change in long-tail shape. Only when BOTH documents carry
-    // a tail_summary (a one-sided tail is appearance/vanishing, expressed by the
-    // template-level signals). Stateless before/after/delta; consumers decide
-    // significance (the "louder AND more concentrated" rule is theirs).
+    // post: emitted only when BOTH documents carry a tail_summary; a one-sided tail is carried by
+    // the template-level signals instead.
     void diff_tail_delta(MetaLogDiff& out, const MetaLogDocument& previous,
                          const MetaLogDocument& current)
     {
@@ -404,39 +372,18 @@ namespace
         }
     }
 
-    // ── latency_shift differential axis (cube_differential_axes.md §4) ──
-    // The Attribution Cube's first differential dimension: a per-component latency shift the
-    // emerging border reads at diff time. Metalog owns the ladder + the W1 distance, so the whole
-    // computation lives here; the cube (detail.cube) only consumes the finished map.
-
-    // A component's summed latency distribution for this document: every top_k entry's
-    // DurationLog2Ns ordinal histogram, attributed to the entry's dominant_component (the
-    // per-component MECH granularity — §7.3; the finer per-(template,component) is the alternative
-    // not built). All duration fields share the frozen 48-bin ladder, so their counts are
-    // directly summable. Deterministic: integer sums over the ordered top_k, order-independent.
+    // note: metalog owns the ladder and the W1 distance; the cube consumes the finished map.
+    // invariant: every duration field shares the frozen ladder, so the counts are directly summable
+    // and the sum is an integer over the ordered top_k.
     struct ComponentOrdinal
     {
         std::vector<std::uint64_t> counts;
         std::uint64_t total{0};
 
-        // Thin-sample admissibility floor (§6.1.1). ordinal_w1's octave thresholds are
-        // scale-relative (W1 = numerator/(Na·Nb)), so they apply NO absolute-sample gate — a
-        // 1-event-vs-1-event pairing manufactures latency_shift=HIGH from a single differing bin. A
-        // shift verdict is trustworthy only when BOTH sides carry at least this many paired events.
-        // This is an ABSOLUTE count (not a ratio like kCoverFloor): the ratio-normalization is
-        // exactly what lets tiny samples read HIGH, so what is missing is a floor on N, not another
-        // ratio.
-        //
-        // CORPUS-PICKED (pre-registered, then FROZEN — studies/003): a resampling scan draws
-        // matched NULL pairs (both sides from the SAME representative log2-duration shape — no real
-        // shift) at a grid of sample sizes and measures the false-ACTIONABLE rate (MED ≥2 octaves /
-        // HIGH ≥5 — the bands a consumer acts on; the LOW ½-octave band is sampling-noise-dominated
-        // and accepted as noise-adjacent). The binding shape is a bimodal cache (hit/miss): its
-        // null false-actionable rate is 5.4% at N=16, 1.8% at N=24, 0.6% at N=32. 32 is chosen over
-        // the razor-thin 24 for a ~3× margin under the 2% target (a frozen guard at 1.8% would
-        // flake across seeds), and a real +3-octave (8×) latency_multiplier regression still
-        // emerges >97% of the time at N=32 (the positive control). Frozen here; the scan + both
-        // guards are test_shift_sample_floor.cpp.
+        // invariant: an ABSOLUTE paired-event floor, not a ratio -- the W1 thresholds are
+        // scale-relative, which is exactly what lets a tiny sample read HIGH.
+        // note: corpus-picked then FROZEN; the scan and both guards are in the sample-floor test.
+        // refs: STU-3.A1
         static constexpr std::uint64_t kShiftSampleFloor{32};
     };
 
@@ -449,13 +396,12 @@ namespace
         for (const auto& entry : doc.stats.top_k)
         {
             if (!entry.dominant_component || entry.dominant_component->empty())
-                continue; // no WHERE label → no per-component shift attribution
-            const std::string& component{*entry.dominant_component}; // engaged: guarded just above
+                continue;
+            const std::string& component{*entry.dominant_component};
             for (const auto& hist : entry.ordinal_histograms)
             {
                 if (hist.schedule_id != duration_schedule)
-                    continue; // only the latency/duration ladder feeds latency_shift (size/bytes is
-                              // not it)
+                    continue;
                 ComponentOrdinal& agg{by_component[component]};
                 if (agg.counts.size() < hist.counts.size())
                     agg.counts.resize(hist.counts.size(), 0);
@@ -467,18 +413,11 @@ namespace
         return by_component;
     }
 
-    // The per-component latency drift map the cube's diff-only latency_shift axis reads. For each
-    // component present in BOTH windows with a comparable duration distribution, the exact W1 shift
-    // bucket AND direction — BIDIRECTIONAL and polarity-MUTE (cube_differential_axes.md §7.4): a
-    // component that moved in EITHER direction (up = higher/slower, down = lower/faster) is a shift
-    // cell. metalog does NOT judge good/bad — the reading layer (eidos classify) maps the sign to
-    // regression/recovery. Only within-noise (shift None) and the rare exactly-balanced case
-    // (direction None) are dropped (no directional shift); those are the SHIFT_NONE baseline. Used
-    // for point lookup only (never iterated into content) → the unordered_map is not a determinism
-    // surface; the (component → drift) SET is a deterministic function of the inputs. The sign is
-    // oriented previous→current (the MetaLogDiff previous/current stamp): up = current shifted
-    // higher than previous, so diff(A,B) and diff(B,A) carry opposite signs — a consumer reads the
-    // order off the serialized previous/current, not a call parameter.
+    // post: for each component in BOTH windows with a comparable duration distribution, the exact
+    // W1 shift bucket and its direction, oriented previous to current.
+    // assert: the map is point-lookup only and never iterated into content, so it is not a
+    // determinism surface.
+    // note: metalog does not judge good or bad; the reading layer maps the sign.
     [[nodiscard]] std::unordered_map<std::string, OrdinalDrift>
     component_latency_shifts(const MetaLogDocument& previous, const MetaLogDocument& current)
     {
@@ -491,15 +430,9 @@ namespace
         {
             const auto prev_it{prev_by_component.find(component)};
             if (prev_it == prev_by_component.end())
-                continue; // absent in baseline → no comparable distribution (no A-side to diff
-                          // against)
-            // Thin-sample floor (§6.1.1): a shift verdict needs enough paired events to be
-            // trustworthy. Below the floor the axis is INADMISSIBLE for this window — we skip the
-            // component, leaving it on the SHIFT_NONE ≡ kStar mute baseline. On this
-            // emergent-at-diff axis "cannot carry the axis" and "no cell emerges" coincide by
-            // construction (project-to-*), so the skip IS the projection — never a manufactured
-            // SHIFT_NONE cell. This is the ONLY shift border-emitter, so single-definition holds
-            // without a shared predicate.
+                // assert: below the floor the axis is INADMISSIBLE, so the component stays on the
+                // mute baseline -- the skip IS the projection, never a made-up cell.
+                continue;
             if (std::min(prev_it->second.total, cur_agg.total) <
                 ComponentOrdinal::kShiftSampleFloor)
                 continue;
@@ -511,12 +444,8 @@ namespace
         return shifts;
     }
 
-    // ── reservoir delta (§5.3) ─────────────────────────────────────
-    // The ERROR/FATAL failure frontier is `is_failure_level`, EXPORTED from metalog.api.cppm —
-    // this TU held the second of two copies of it (DN-64.D3 row 6) and no longer spells its own.
-
-    // One side's salience-memory record for a template: everything the frontier compare and the
-    // crossing row need, so a consumer never re-reads the documents to render one.
+    // note: one side's record carries everything the frontier compare and the row need.
+    // refs: DN-64.D3
     struct SalienceMemoryEntry
     {
         std::optional<EventLevel> level;
@@ -524,11 +453,10 @@ namespace
         double frequency{0.0};
     };
 
-    // A document's salience memory = the template_ids of top_k ∪ reservoir with the
-    // dominant_level, count and share each carries. Disjoint by construction (a reservoir template
-    // did not make top_k), so no key collision. POINT-LOOKUP map only (membership + frontier level
-    // compare); never iterated into output, so the unordered_map is not a determinism surface
-    // (ADR-31.D8), exactly like component_latency_shifts above.
+    // post: the template_ids of top_k union reservoir with each one's dominant level, count and
+    // share; the two sets are disjoint by construction.
+    // note: point-lookup only, so the map is not a determinism surface.
+    // refs: ADR-31.D8
     [[nodiscard]] std::unordered_map<TemplateId, SalienceMemoryEntry>
     salience_memory(const MetaLogDocument& doc)
     {
@@ -558,10 +486,8 @@ namespace
                                    .retention_axis = entry.retention_axis};
     }
 
-    // The §5.3 reservoir delta: new/vanished rare-salient templates over the two documents'
-    // salience memory + ERROR/FATAL failure-frontier crossings. Additive on the derived diff
-    // (no version bump). Every list is emitted sorted by template_id — the ONLY output order,
-    // so the unordered_map membership lookups never leak (ADR-31.D8).
+    // post: new and vanished rare-salient templates plus failure-frontier crossings, every list
+    // emitted sorted by template_id.
     void diff_reservoir_delta(MetaLogDiff& out, const MetaLogDocument& previous,
                               const MetaLogDocument& current)
     {
@@ -571,28 +497,23 @@ namespace
             salience_memory(current)};
         ReservoirDelta& delta{out.reservoir_delta};
 
-        // new_salient: current.reservoir entries absent from previous.(top_k ∪ reservoir).
         for (const auto& entry : current.stats.reservoir)
             if (!prev_memory.contains(entry.template_id))
                 delta.new_salient.push_back(reservoir_snapshot(entry));
 
-        // vanished_salient: previous.reservoir entries absent from current.(top_k ∪ reservoir).
         for (const auto& entry : previous.stats.reservoir)
             if (!cur_memory.contains(entry.template_id))
                 delta.vanished_salient.push_back(reservoir_snapshot(entry));
 
-        // frontier_crossings: templates in BOTH memories whose dominant_level crosses the
-        // failure frontier (a change in failure-membership). Direction is oriented
-        // previous→current: Up = crossed INTO failure, Down = crossed OUT. Both sides' counts and
-        // shares ride along, from the memory record each side owns.
+        // note: direction is oriented previous to current -- Up crossed INTO failure, Down out.
         for (const auto& [template_id, cur_side] : cur_memory)
         {
             const auto prev_it{prev_memory.find(template_id)};
             if (prev_it == prev_memory.end())
-                continue; // not on both sides → not a crossing (it is a new/vanished member)
+                continue;
             const SalienceMemoryEntry& prev_side{prev_it->second};
             if (is_failure_level(prev_side.level) == is_failure_level(cur_side.level))
-                continue; // failure-membership unchanged → no crossing
+                continue;
             delta.frontier_crossings.push_back(FrontierCrossing{
                 .template_id = template_id,
                 .direction = is_failure_level(cur_side.level) ? FrontierDirection::Up
@@ -618,19 +539,14 @@ namespace
 
 MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current)
 {
-    // §2.4 comparability gate (§13): a diff across mismatched processing contracts
-    // is not meaningful — the documents fingerprint different rules. MUST fail.
+    // assert: a diff across mismatched processing contracts is not meaningful and MUST fail.
     check_processing_identifier_gate(previous.canonicalization_version,
                                      current.canonicalization_version, "canonicalization_version",
                                      "diff");
     check_processing_identifier_gate(previous.retention_profile, current.retention_profile,
                                      "retention_profile", "diff");
-    // SRC-II-7 (ADR-17): two documents are comparable iff their composed-ruleset identity
-    // matches. Both stamped + different ⇒ the docs fingerprint DIFFERENT vocabularies ⇒ REFUSE
-    // (this is the "no raw inputs to re-segment" branch — a stored MetaLog cannot be re-tokenized;
-    // the Sift raw path re-tokenizes both sides under the live composition, so their identities
-    // match here). One side absent (a legacy producer) ⇒ proceed, absence-tolerant — never a silent
-    // equal across a KNOWN mismatch.
+    // note: one side absent is a legacy producer and proceeds; both stamped and different refuses.
+    // refs: SRC-II-7, ADR-17.D8
     check_processing_identifier_gate(
         previous.ruleset ? std::optional<std::string>{previous.ruleset->semantic_identity}
                          : std::nullopt,
@@ -662,24 +578,16 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
     diff_branching_delta(out, previous, current);
     diff_ngram_delta(out, previous, current);
     diff_field_histogram_deltas(out, previous, current);
-    diff_ordinal_histogram_deltas(out, previous, current); // W1 (§4A.4 SRC-D-W1-1/SRC-D-W1-4)
+    diff_ordinal_histogram_deltas(out, previous, current);
     diff_tail_delta(out, previous, current);
-    diff_reservoir_delta(out, previous, current); // §5.3 chronic-vs-new streaming seam
-    diff_service_edge_delta(out, previous,
-                            current); // O4b (SRC-D-OTEL-21): distilled service topology
-    // SPEC §13.6 cube_diff — the emerging border. The ONE gate is "both documents carried a cube",
-    // on the explicit presence flags. There is no axes-equality gate, here or in cube_diff_of
-    // (DN-42.D17 §4): the §2.4 gate above freezes the axis SET per canonicalization_version, but
-    // NOT the per-window collapse STAMPS (band_floor / floor_depth, §16.10) — two windows of the
-    // same contract routinely differ there, and §16.10 mandates diffing that pair at the minimal
-    // common collapse rather than refusing it. So the presence check below is the whole gate:
-    // cube_diff_of is total over the pair it is handed.
+    diff_reservoir_delta(out, previous, current);
+    diff_service_edge_delta(out, previous, current);
+    // assert: the ONE gate is that both carried a cube; there is no axes-equality gate, since the
+    // contract freezes the axis SET, not the collapse stamps.
+    // refs: DN-42.D17
     if (previous.has_cube && current.has_cube)
     {
-        // The diff-only latency_shift differential axis (§4): a per-component SIGNED latency shift
-        // (up or down, polarity-mute) the emerging border reads. Computed from the two documents'
-        // ordinal histograms (metalog owns the ladder + W1); empty when neither carries comparable
-        // duration data → the plain 3-D border.
+        // note: the shift map is empty when neither document carries comparable duration data.
         const std::unordered_map<std::string, OrdinalDrift> latency_shifts{
             component_latency_shifts(previous, current)};
         out.cube_diff = cube::cube_diff_of(previous.cube, current.cube, latency_shifts);
@@ -689,64 +597,44 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
     return out;
 }
 
-// SPEC §13.2.2 — the ONE property this producer withholds a finding in. Factored out so that the
-// noexcept, allocation-free `comparison_outcome_of` and the allocating `withheld_signals_of` decide
-// it by the SAME predicate instead of by two that can drift apart.
-//
-// `field_histogram_deltas` is computed on every diff and never reaches the wire — SPEC §3.5.2
-// blesses that choice, and `serialize.cpp`'s make_diff has no clause for it. Its declared vacuity
-// is `maxItems: 0`, so ANY row is a finding: there is no per-row threshold to mirror here, unlike
-// `template_deltas`. Empty in the default configuration (MetaLogConfig::max_param_histograms is 0),
-// so the ordinary document is unaffected by everything below.
+// post: true iff the diff computed field-histogram rows that never reach the wire.
+// note: its declared vacuity is an empty array, so ANY row is a finding.
 [[nodiscard]] bool withholds_field_histogram_deltas(const MetaLogDiff& diff) noexcept
 {
     return !diff.field_histogram_deltas.empty();
 }
 
-// SPEC §13.2.1's evaluation, step 3, over this producer's own signal properties. The contract, the
-// exact-equality reason and the two deltas that deliberately do NOT decide the outcome are on the
-// declaration in metalog.cppm; this body carries only what each clause mirrors.
+// note: the contract and the two deltas that deliberately do not decide are on the header.
 ComparisonOutcome comparison_outcome_of(const MetaLogDiff& diff) noexcept
 {
-    // `kl_divergence` / `js_divergence` — `const: 0`: vacuous at zero (identical distributions).
+    // note: the two divergences are vacuous at zero -- identical distributions.
     if (diff.kl_divergence && *diff.kl_divergence != 0.0)
         return ComparisonOutcome::Changed;
     if (diff.js_divergence && *diff.js_divergence != 0.0)
         return ComparisonOutcome::Changed;
-    // `stability_score` — `const: 1`, NOT zero: the score is 1 - js_divergence, so its no-change
-    // value is ONE and a shape rule reading "greater than zero" would witness on perfect stability.
+    // assert: stability_score's no-change value is ONE, not zero, so a greater-than-zero rule would
+    // witness on perfect stability.
     if (diff.stability_score && *diff.stability_score != 1.0)
         return ComparisonOutcome::Changed;
-    // `template_deltas` — declared PER ROW (`items.properties.delta.const: 0`). The array is a
-    // union over both windows, non-empty whenever either window is, so a ROW is never the finding;
-    // a non-zero `delta` is.
+    // note: template_deltas is declared PER ROW, so a non-zero delta is the finding, not a row.
     if (std::ranges::any_of(diff.template_deltas,
                             [](const TemplateDelta& row) { return row.delta != 0; }))
         return ComparisonOutcome::Changed;
-    // `new_templates` / `vanished_templates` / `branching_delta` — `maxItems: 0`: the array itself
-    // is the finding, so any row witnesses. diff_branching_delta above is what makes that true of
-    // the third one, which is a union like `template_deltas` but declared like these two.
+    // note: these three declare an empty array, so the array itself is the finding.
     if (!diff.new_templates.empty() || !diff.vanished_templates.empty() ||
         !diff.branching_delta.empty())
         return ComparisonOutcome::Changed;
-    // `ngram_delta` — vacuous when all three lists are empty; `ngram_size` is a PARAMETER, never a
-    // finding. Tested on content rather than on the optional's engagement: diff_ngram_delta only
-    // engages it on a non-empty list, and a rule that reads presence is the vacuity §13.2 removed.
+    // note: ngram_delta is tested on content, never on the optional's engagement.
     if (diff.ngram_delta &&
         (!diff.ngram_delta->new_ngrams.empty() || !diff.ngram_delta->vanished_ngrams.empty() ||
          !diff.ngram_delta->rate_changed.empty()))
         return ComparisonOutcome::Changed;
-    // `tail_delta` — nine numeric members and no array. The three `*_delta` members are the
-    // finding; the six `previous_`/`current_` members are the coordinates they are taken between.
+    // note: the three delta members are the finding; the six coordinates are not.
     if (diff.tail_delta && (diff.tail_delta->tail_template_count_delta != 0 ||
                             diff.tail_delta->tail_entropy_bits_delta != 0.0 ||
                             diff.tail_delta->tail_max_rate_delta != 0.0))
         return ComparisonOutcome::Changed;
-    // `cube_diff` — `axes` is the diff's declared coordinate space, a DESCRIPTOR (§13.6) that is
-    // required and non-empty and never a finding; the finding is a populated emerging/vanishing
-    // border. This producer emits a cube_diff whenever BOTH inputs carried a cube, so the
-    // axes-only shape is its ORDINARY no-change output — the single largest vacuity in the release
-    // had `axes` been allowed to witness.
+    // note: axes is a required descriptor and never a finding -- the border is.
     if (diff.has_cube_diff)
     {
         const CubeDiffBlock& cube{diff.cube_diff};
@@ -757,33 +645,25 @@ ComparisonOutcome comparison_outcome_of(const MetaLogDiff& diff) noexcept
         if (emerged || vanished)
             return ComparisonOutcome::Changed;
     }
-    // `reservoir_delta` — vacuous when no salient template appeared, vanished, or crossed the
-    // ERROR/FATAL failure frontier.
+    // note: vacuous when no salient template appeared, vanished or crossed the frontier.
     if (!diff.reservoir_delta.empty())
         return ComparisonOutcome::Changed;
-    // `withheld_signals` (§13.2.2) — the witness of LAST RESORT, and that is why it is tested last:
-    // it witnesses a finding this document does NOT carry, so every property that carries its own
-    // has already returned above. A non-empty array is a witness by its `maxItems: 0` declaration,
-    // which is exactly what makes "changed" legal for a comparison whose only finding was withheld.
-    // Before 0.10.0 that comparison fell through to Unchanged — a false statement about a
-    // comparison that had run and found a change, and the hole §13.2.2 was minted to close.
+    // assert: the withheld-signals witness is tested LAST -- it witnesses a finding the document
+    // does not carry, so every property that carries its own has already returned.
     if (withholds_field_histogram_deltas(diff))
         return ComparisonOutcome::Changed;
 
     return ComparisonOutcome::Unchanged;
 }
 
-// SPEC §13.2.2. The contract — what may be named, and why this is derived rather than stored — is
-// on the declaration in metalog.cppm.
+// note: the contract -- what may be named, and why this is derived -- is on the declaration.
 std::vector<std::string> withheld_signals_of(const MetaLogDiff& diff)
 {
     std::vector<std::string> names;
     if (withholds_field_histogram_deltas(diff))
         names.emplace_back("field_histogram_deltas");
-    // §13.2.2 requires the array sorted ascending and duplicate-free. Sorted EXPLICITLY although
-    // one clause cannot violate it: the MUST is then held by this line rather than by whoever adds
-    // the second clause remembering the alphabet. Uniqueness needs nothing — each clause appends a
-    // distinct literal, once.
+    // assert: sorted explicitly so the MUST is held by this line, not by whoever adds a second
+    // clause remembering the alphabet.
     std::ranges::sort(names);
     return names;
 }
