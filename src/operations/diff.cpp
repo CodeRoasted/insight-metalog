@@ -455,7 +455,7 @@ namespace
 
     // post: the template_ids of top_k union reservoir with each one's dominant level, count and
     // share; the two sets are disjoint by construction.
-    // note: point-lookup only, so the map is not a determinism surface.
+    // note: its order never reaches the wire -- every emitted list is sorted by template_id.
     // refs: ADR-31.D8
     [[nodiscard]] std::unordered_map<TemplateId, SalienceMemoryEntry>
     salience_memory(const MetaLogDocument& doc)

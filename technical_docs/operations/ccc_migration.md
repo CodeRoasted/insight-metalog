@@ -711,8 +711,8 @@ a ratio, precisely because the W1 thresholds are scale-relative and that is what
 read HIGH.
 
 **Interrogation** — one fresh agent, twelve questions, 44 tool uses, 128 k tokens, 5.7 minutes.
-Transcript checked: `GIT COMMANDS RUN: none`. **Score: 12 of 12 recovered, 0 not recovered, 0
-wrong**, every answer at high confidence.
+Transcript checked: `GIT COMMANDS RUN: none`. **Score: 12 of 12 recovered, 0 not recovered — and ONE `note:` THIS CONVERSION WROTE WAS NOT
+LITERALLY TRUE, caught before its witness landed.**
 
 Four answers went past the prose they replaced. Q2 recovered the non-associativity ruling AND named
 the test that asserts the scope-dependence from both sides — the divergence under a binding cap and
@@ -722,6 +722,19 @@ attribution, from the arithmetic rather than from the comment. Q7 found `STU-3.A
 scan, its three measured null rates and both guard tests, and then bounded the claim correctly: the
 number was picked against one binding shape, a bimodal cache. Q10 confirmed both point-lookup maps
 are never iterated into content and named the sorted output that makes each safe.
+
+**THE NOT-TRUE LINE.** This conversion wrote, above `salience_memory`:
+`// note: point-lookup only, so the map is not a determinism surface.` The reader answered Q10
+correctly and then went past it: `diff_reservoir_delta` **does** range-iterate `cur_memory`, at
+`for (const auto& [template_id, cur_side] : cur_memory)`, to build `frontier_crossings`. Verified
+here at the source — the iteration is real, and what makes the output safe is the explicit
+`std::ranges::sort(delta.frontier_crossings, by_crossing_id)` three lines later, over a total order
+on unique 16-byte ids. The deleted prose said *"never iterated into output"*, which is defensible
+read as *"its order never reaches the output"*; the paraphrase *"point-lookup only"* is the half
+that is false. The line now names the real mechanism:
+`// note: its order never reaches the wire -- every emitted list is sorted by template_id.`
+`OPS-8.S7` steps 2 and 3 were re-run after the edit: 0 would-be violations, comment-only against
+`HEAD`. **`prev_memory` genuinely is lookup-only; only the `cur_memory` half was wrong.**
 
 **Finding 9 — a malformed suppression that silences everything, and the reader derived it
 independently.** `compose.cpp` carries
@@ -737,7 +750,14 @@ narrowing it would change what the linter checks, which is not a comment-only ac
 and deciding whether the line has a second finding the over-broad directive was hiding — is a
 finding for the lane that owns this source.
 
-**Witnesses.** Comment-only: both files, code token stream byte-identical to `HEAD`. Grammar:
+**Finding 10 — the workspace's own comment gate admits the malformed suppression, for Argos.** The
+reader checked `malf/comment_contract_lint.py`'s `NOLINT` recogniser, `^NOLINT(NEXTLINE|BEGIN|END)?\b`,
+and it matches the spaced spelling — so the CCC gate counts a suppress-everything directive as a
+well-formed tool form. A one-character tightening of that pattern would make the class visible
+workspace-wide; how many other sites carry it is unmeasured.
+
+**Witnesses.** Comment-only: both files, code token stream byte-identical to `HEAD`, re-taken after
+the hand edit. Grammar:
 `malf format --check` over the unit — 154 comment lines, forms `pre=1 post=25 invariant=10
 assert=11 note=44 refs=23 continuation=34 tool=6`, **0 would-be violations**; the kept suppression
 still sits directly under its `note:` and directly above its target. Comment lines 424 → 154 (64 %
@@ -997,10 +1017,11 @@ counts `insight-metalog` rather than failing it.
 **1 530 of the repo's 6 701 would-be violations, 22.8 %, in nine commits.** Every claim held for a
 reader was recovered — **45 of 45, 0 not recovered** — so nothing had to be re-homed above the
 comment rung. **Two lines this conversion itself wrote were found defective by the readers and
-corrected before their commits**: the `observability only` note in unit 3, which was false, the
-`assert:` in unit 5, which dropped the qualifier its premise rested on, and the `open_window`
-`invariant:` in unit 7, whose universal *"every"* was false for three members. **Three lines, all
-found by the readers, none by a gate.** **One defect this lane filed
+corrected**: the `observability only` note in unit 3, which was false; the `assert:` in unit 5,
+which dropped the qualifier its premise rested on; the `open_window` `invariant:` in unit 7, whose
+universal *"every"* was false for three members; and the `salience_memory` `note:` in unit 9, whose
+*"point-lookup only"* is false for the half of the map that is range-iterated. **Four lines, every
+one found by a cold reader and none by any gate.** **One defect this lane filed
 was withdrawn** after unit 2's reader found the figure's authority in the published spec. Every unit comment-only
 against `HEAD` by code-token-stream equality, every unit at zero would-be violations under `malf
 format --check`, and `malf test insight-metalog` **297 of 297 on clang-21 and 297 of 297 on
@@ -1049,14 +1070,12 @@ files**). Harness: `scripts/` 545 · `benchmarks/` 241 · `test_package/` 16. Te
   | batch A | 2026-09-06 00:16 | units 1-2 | 297 of 297 clang-21; the gcc leg's provenance is void — a sibling reclaimed the slot mid-leg (see verdict item 1) |
   | batch B | 2026-09-06 00:30 | units 1-4, all four in the tree | 297 of 297 clang-21, 297 of 297 gcc-16 |
   | batch C | 2026-09-06 00:55 | units 5-7 | 297 of 297 clang-21, 297 of 297 gcc-16 |
-| batch D | **owed** | units 8-9 | NOT TAKEN — the slot was held continuously by sibling lanes from 01:09 |
+| batch D | 2026-09-06 01:14 | units 8-9 | 297 of 297 clang-21, 297 of 297 gcc-16 |
 
-  **Batch D is OWED and this ledger says so rather than implying it was taken.** Units 8 and 9
-  carry three of the four witnesses — comment-only, grammar at zero, and readers at 6 of 6 and 12
-  of 12 — and the fourth is a `malf test insight-metalog` on both toolchains at the next
-  acquisition. They are landed rather than held back because a shared worktree with uncommitted
-  work is the state this programme does not tolerate, and the batched rule puts the witness AFTER
-  the landing by construction. If batch D reds, bisect by unit.
+  Batch D was taken after units 8 and 9 had landed — the batched rule puts the witness after the
+  landing by construction, and it is why those two were committed rather than held in a dirty tree
+  while the slot was contended. It was acquired in the FOREGROUND and its stamp read
+  `anchor 3053 … ALIVE` before the release.
 
   Batch B supersedes batch A: it re-ran both legs with units 1-2 still in the tree, so nothing
   rests on the leg whose provenance was void. Batch C was taken at a slot acquired in the
