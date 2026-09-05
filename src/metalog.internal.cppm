@@ -1,5 +1,6 @@
-// insight.metalog.internal — lone import-std manifest (ADR-3.D4) + global C fixed-width
-// type re-exports (metalog source uses unqualified uint64_t/int64_t/size_t etc.).
+// refs: ADR-3.D4
+// invariant: the one `import std` of the metalog library module graph; every api/ and src/ unit
+// imports this module plain to reach std.
 export module insight.metalog.internal;
 export import std;
 export {

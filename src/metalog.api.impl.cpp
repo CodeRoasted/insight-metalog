@@ -1,10 +1,6 @@
-// insight.metalog.api — implementation unit.
-//
-// The out-of-line home of TemplateRegistry's named members. Its special members are defaulted in
-// the class body.
 module insight.metalog.api;
-import insight.metalog.internal; // std (unordered_map / string / string_view / size_t)
-import insight.canon;            // TemplateId (the module-attached map key)
+import insight.metalog.internal;
+import insight.canon;
 
 namespace insight::metalog
 {
