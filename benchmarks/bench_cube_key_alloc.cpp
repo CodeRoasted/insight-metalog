@@ -1,33 +1,9 @@
-// NOLINTBEGIN(readability-magic-numbers) — a benchmark: the component lengths ARE the data.
-//
-// bench_cube_key_alloc.cpp — the measure-first arm for the cube-key heap row
-// (bugs.md 2026-08-02): MetaLogEngine::ingest_event builds two map keys as
-// `std::string` per event (cube_base_'s tuple key, unconditional; component_counts',
-// when the component is non-empty), and ADR-9.D2 claims the hot path is arena/bounded.
-//
-// WHAT THIS MEASURES, and why the existing WHERE bench cannot: BM_MetaLogIngest_Where
-// drives 8-char components — inside the SSO band on BOTH stdlibs — so it is
-// structurally blind to the allocation the row is about. The SSO boundary is the trap:
-// libstdc++ inlines ≤ 15 chars, libc++ ≤ 22, so a 16-22-char component allocates on the
-// SHIP leg and not on the DEV leg. The arms below straddle the band on purpose:
-//
-//   empty  ""                                  0 B  no component_counts entry at all
-//   short  "src/auth"                          8 B  SSO on both
-//   mid    "/aws/lambda/myFunc"               18 B  allocates on libstdc++ ONLY
-//   long   "src/components/Button.spec.tsx"   30 B  allocates on both
-//
-// mid and long are the row's own attested shapes (cloud log-group components; canon's
-// recognize_location() test-file fill). STEADY STATE is the load-bearing condition: the
-// event stream cycles 4 keys, so after the first lap every map access is a HIT — any
-// allocation seen per event is the LOOKUP key being materialised, not table growth.
-//
-// Two readouts per arm (heap_probe.hpp is the instrument — a counting passthrough on the
-// global heap, armed only inside the ingest loop):
-//   ns_per_event     — the real ingest cost (the share question)
-//   allocs_per_event — global operator new count / events, counted ONLY inside the
-//                      ingest loop
-// Attribution is by SUBTRACTION against the `empty` arm, everything else identical.
-
+// invariant: the arms straddle the two stdlibs' small-string bands on purpose -- libstdc++ inlines
+// up to 15 chars and libc++ up to 22, so a 16-to-22-char component allocates on
+// invariant: the ship leg only. Empty, 8, 18 and 30 chars are the four arm lengths.
+// invariant: allocation is attributed by SUBTRACTION against the empty arm, every other input being
+// identical.
+// refs: ADR-9.D2
 #include "heap_probe.hpp"
 
 #include <benchmark/benchmark.h>
@@ -65,7 +41,8 @@ void bench_cube_key_alloc(benchmark::State& state, std::string_view component)
     {
         tok::CanonicalEvent ev;
         ev.template_str = kTemplates[i % kTemplates.size()];
-        ev.component = component; // static-storage view: stays valid across the run
+        // invariant: a static-storage view, so it stays valid for the whole run.
+        ev.component = component;
         ev.level = insight::LogLevel::Info;
         events.push_back(ev);
     }
@@ -79,8 +56,8 @@ void bench_cube_key_alloc(benchmark::State& state, std::string_view component)
         state.PauseTiming();
         meta::MetaLogEngine engine{config};
         engine.open_window(t0);
-        // WARM LAP, untimed and uncounted: every key enters its map here, so the timed
-        // laps below observe pure steady state — hits only, no table growth.
+        // invariant: the warm lap is untimed and uncounted, so the timed laps see steady state --
+        // every map access is a hit and any allocation counted is the lookup key, not table growth.
         for (const auto& ev : events)
             engine.ingest_event(ev);
         state.ResumeTiming();
@@ -132,5 +109,3 @@ BENCHMARK(BM_CubeKeyAlloc_Empty)->Unit(benchmark::kMicrosecond);
 BENCHMARK(BM_CubeKeyAlloc_ShortSSO)->Unit(benchmark::kMicrosecond);
 BENCHMARK(BM_CubeKeyAlloc_MidBand)->Unit(benchmark::kMicrosecond);
 BENCHMARK(BM_CubeKeyAlloc_LongOverSSO)->Unit(benchmark::kMicrosecond);
-
-// NOLINTEND(readability-magic-numbers)

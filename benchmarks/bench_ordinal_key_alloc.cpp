@@ -1,48 +1,9 @@
-// NOLINTBEGIN(readability-magic-numbers) — a benchmark: the key lengths ARE the data.
-//
-// bench_ordinal_key_alloc.cpp — the measure-first arm for the W1 ordinal accumulator's key
-// (ROADMAP N102), now its standing regression guard at 0. MetaLogEngine::ingest_event used to do
-//     bucket.ordinal_accumulators.try_emplace(std::string{observation.field_name})
-// on a NON-transparent map, so every declared ordinal observation of every event constructed a
-// std::string key — on a repeat hit too, where the key was only looked up and then destroyed.
-// Three of the fifteen kOrdinalFieldCatalog keys are exactly 16 chars (span_duration_ns,
-// response_time_ms, duration_seconds): over libstdc++'s 15-char SSO band and under libc++'s 22,
-// so the construction heap-allocated on the gcc/libstdc++ SHIP leg and never on the clang/libc++
-// dev leg (MEM:toolchain-clang21-dev-gcc16-ship) — measured here at 1 allocation per observation
-// per event and +7.9 ns/event over the 15-char control (insight-metalog 71a74af). The map now
-// carries the transparent find-then-copy form param_value_counts took in b5883f6 (the key is
-// copied on first sight only), so every arm below reads 0 allocations on both legs; an arm
-// reading 1 again is the key construction coming back.
-//
-// ARMS. Every arm carries ONE observation per event — the OTEL span shape: a span yields exactly
-// one span_duration_ns (canon json.cpp, parse_otel_span), a structured HTTP record one
-// response_time_ms or duration_seconds — so the key LENGTH is the only variable across arms:
-//   none      no ordinal at all          the block is never entered — the control every other
-//                                        arm is subtracted against
-//   key15     elapsed_seconds            a real catalog key, 15 chars: SSO on BOTH stdlibs — the
-//                                        negative control (0 allocations on both legs, or the
-//                                        instrument is reading something other than the key)
-//   key16     span_duration_ns           a real catalog key, 16 chars: allocates on libstdc++ ONLY
-//   key16mix  the three 16-char keys cycling per event (a trace stream interleaved with two
-//                                        structured HTTP shapes): three accumulators, one length
-//                                        — the count is per OBSERVATION, whichever key it is
-//   key23     http_server_duration_ms    23 chars, NOT a catalog key (the engine keys on the bytes
-//                                        it is handed and validates nothing): over BOTH SSO bands,
-//                                        so the instrument is proven to see an allocation on the
-//                                        dev leg too — a leg reading 0 on key16 AND 0 here would
-//                                        be a blind instrument, not a clean path
-// STEADY STATE is the load-bearing condition, exactly as in bench_cube_key_alloc: an untimed,
-// uncounted warm lap enters every accumulator, so the counted lap is hits only and an allocation
-// seen per event is the LOOKUP key being materialised, never table growth. The workload is
-// deterministic — the ordinal values follow a fixed integer pattern, the window opens at a fixed
-// epoch, and no RNG and no wall clock reach the loop.
-//
-// Two readouts per arm (heap_probe.hpp is the instrument):
-//   ns_per_event     — the ingest cost with the ordinal path enabled (max_param_histograms > 0,
-//                      the gate the block shares with the param histograms; params stay empty so
-//                      that loop never runs and the ordinal block is the only variable)
-//   allocs_per_event — global operator new count / events, counted only inside the timed loop
-
+// invariant: every arm reads 0 allocations per event on both toolchains; an arm reading 1 again is
+// the accumulator's key construction coming back.
+// invariant: every arm carries exactly ONE ordinal observation per event, so the key LENGTH is the
+// only variable across arms.
+// note: the 23-char arm proves the instrument sees an allocation on the dev leg too.
+// refs: ADR-9.D2
 #include "heap_probe.hpp"
 
 #include <benchmark/benchmark.h>
@@ -69,9 +30,6 @@ constexpr std::size_t kEvents{1'000};
 constexpr std::array<std::string_view, 4> kTemplates{"span http.server", "span db.query",
                                                      "span cache.get", "span queue.publish"};
 
-// The key lengths are the data; the catalog membership of each real key is PINNED, so the arm
-// names stay true if the catalog is ever edited (a renamed key would silently turn a "real
-// catalog key" arm into a synthetic one).
 constexpr std::string_view kKey15{"elapsed_seconds"};
 constexpr std::string_view kKey16{"span_duration_ns"};
 constexpr std::array<std::string_view, 3> kKey16Mix{"span_duration_ns", "response_time_ms",
@@ -90,7 +48,8 @@ static_assert(insight::match_ordinal_field(kKey16Mix[1]) != nullptr &&
 static_assert(insight::match_ordinal_field(kKey23) == nullptr,
               "the 23-char key is deliberately synthetic — the catalog has no key past 16 chars");
 
-// The observations must outlive the events that span them: built first, never resized after.
+// invariant: the observations outlive the events that span them -- built first, never resized
+// afterwards.
 struct Fixture
 {
     std::vector<insight::OrdinalObservation> observations;
@@ -107,7 +66,7 @@ Fixture make_fixture(std::span<const std::string_view> keys)
             fixture.observations.push_back(insight::OrdinalObservation{
                 .field_name = keys[i % keys.size()],
                 .schedule = insight::OrdinalSchedule::DurationLog2Ns,
-                // A fixed spread over 40 octaves of the ladder — deterministic, no RNG.
+                // invariant: a fixed spread over 40 octaves of the ladder, with no RNG.
                 .value = std::int64_t{1} << (i % 40)});
     for (std::size_t i{0}; i < kEvents; ++i)
     {
@@ -126,11 +85,13 @@ void bench_ordinal_key_alloc(benchmark::State& state, std::span<const std::strin
     meta::MetaLogConfig config;
     config.top_k_size = 64;
     config.top_ngrams_size = 32;
-    config.max_param_histograms = 1; // the gate the ordinal block sits behind (engine.cpp)
+    // invariant: the gate the ordinal block sits behind; params stay empty, so the ordinal block is
+    // the only variable this arm moves.
+    config.max_param_histograms = 1;
 
     const Fixture fixture{make_fixture(keys)};
 
-    // A fixed epoch, not the wall clock: the window boundary is part of the workload's inputs.
+    // invariant: a fixed epoch, never the wall clock, so the window boundary is an input.
     const std::chrono::system_clock::time_point t0{std::chrono::seconds{1'700'000'000}};
     std::int64_t total_events{0};
     std::uint64_t loop_allocs{0};
@@ -140,8 +101,8 @@ void bench_ordinal_key_alloc(benchmark::State& state, std::span<const std::strin
         state.PauseTiming();
         meta::MetaLogEngine engine{config};
         engine.open_window(t0);
-        // WARM LAP, untimed and uncounted: every accumulator is created here, so the timed lap
-        // below observes pure steady state — hits only, no table growth.
+        // invariant: the warm lap is untimed and uncounted, so the timed lap sees steady state --
+        // hits only, and any allocation counted is the lookup key, not table growth.
         for (const auto& ev : fixture.events)
             engine.ingest_event(ev);
         state.ResumeTiming();
@@ -198,5 +159,3 @@ BENCHMARK(BM_OrdinalKeyAlloc_Key15Sso)->Unit(benchmark::kMicrosecond);
 BENCHMARK(BM_OrdinalKeyAlloc_Key16ShipLegOnly)->Unit(benchmark::kMicrosecond);
 BENCHMARK(BM_OrdinalKeyAlloc_Key16TraceMix)->Unit(benchmark::kMicrosecond);
 BENCHMARK(BM_OrdinalKeyAlloc_Key23OverBothSso)->Unit(benchmark::kMicrosecond);
-
-// NOLINTEND(readability-magic-numbers)

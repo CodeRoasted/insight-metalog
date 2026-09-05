@@ -1,26 +1,8 @@
-// bench_compose_diff_cube.cpp — standing stage-level perf + determinism coverage for the cube's
-// per-call cost inside compose()/diff() (Cube A, kept product per
-// technical_docs/adr/019-eidos-attribution-cube.md D1; design record:
-// technical_docs/history/architecture-v1/cube_perf_and_collapse.md §A2/§A3). Where the detection
-// bench_cube_tick measures the cube's share of the whole matured pyramid tick, this isolates the
-// per-call cost of the pieces compose()/diff() spend their time in, so a regression in any one is
-// attributable:
-//
-//   piece 1 — map/string-union plumbing : compose()/diff() MINUS the reductions MINUS the cube.
-//   piece 2 — reduction tail            : shannon_entropy_bits / divergences / histogram_js
-//                                          (contiguous count work — the SIMD-amenable part).
-//   piece 3 — cube re-closure           : build_closed_cube / compose_cubes / cube_diff_of
-//                                          (the cube=on − cube=off gap inside compose()/diff()).
-//
-// Comparing piece 2's primitives against the compose()/diff() totals locates where the stage cost
-// sits: the reductions are a thin slice, so the re-closure round-trip is the lever, not the
-// reduction tail (§A3; the interned-cube rework).
-//
-// Determinism (SPEC §16.9, SACRED): BM_StageCube_Determinism re-runs build_closed_cube +
-// compose_cubes + cube_diff_of and aborts if the content differs across runs — the determinism
-// guard for the kept cube's stage path. The corpus uses a local splitmix64 (portable integer RNG,
-// never a std::*_distribution, whose draw sequence is unspecified and differs across stdlibs).
-
+// post: attributes the per-call cost of compose() and diff() to three pieces -- the map and string
+// union plumbing, the reduction tail, and the cube re-closure.
+// invariant: the corpus draws from a local splitmix64 and never a std distribution, whose draw
+// sequence is unspecified and differs across standard libraries.
+// refs: ADR-19.D1
 #include <benchmark/benchmark.h>
 
 import insight.metalog.bench;
@@ -56,7 +38,6 @@ struct SplitMix64
 constexpr std::size_t kComponentCount{16};
 constexpr std::size_t kTemplateCount{256};
 
-// ── representative documents (cube on/off) via the real engine ───────────────────────────────
 struct DocCorpus
 {
     std::vector<std::string> components;
@@ -66,7 +47,8 @@ struct DocCorpus
 
 [[nodiscard]] meta::MetaLogConfig stage_config() noexcept
 {
-    meta::MetaLogConfig config; // cube + WHERE + acquisition are always-on (1.7.2)
+    // invariant: the cube, the WHERE carrier and acquisition are always on.
+    meta::MetaLogConfig config;
     config.top_k_size = 64;
     config.top_ngrams_size = 32;
     config.max_ngram_keys = 4096;
@@ -118,9 +100,8 @@ struct DocCorpus
 constexpr std::size_t kStageWindowCount{6};
 constexpr std::size_t kStageWindowSize{4'000};
 
-// ── representative reduction-tail inputs (bucket 2) ───────────────────────────────────────────
-// Sizes mirror what compose()/diff() actually feed: a ~tail-sized count vector for entropy, and
-// two ~vocabulary-sized template→count maps for the divergence over the unified distribution.
+// invariant: the sizes mirror what compose() and diff() feed -- a tail-sized count vector for the
+// entropy, and two vocabulary-sized template-to-count maps for the divergence.
 [[nodiscard]] std::vector<std::uint64_t> make_count_vector(std::size_t n, std::uint64_t seed)
 {
     SplitMix64 rng{seed};
@@ -131,9 +112,8 @@ constexpr std::size_t kStageWindowSize{4'000};
     return counts;
 }
 
-// divergences() is keyed by the content-derived TemplateId POD (template distribution) since the
-// perf review; histogram_js() is keyed by the field VALUE string (value distribution) — hence two
-// helpers.
+// invariant: divergences() keys on the TemplateId POD and histogram_js() on the field value string,
+// so the two inputs need separate builders.
 [[nodiscard]] std::unordered_map<insight::TemplateId, std::uint64_t>
 make_id_count_map(std::size_t n, std::uint64_t seed, std::size_t key_shift)
 {
@@ -141,7 +121,8 @@ make_id_count_map(std::size_t n, std::uint64_t seed, std::size_t key_shift)
     std::unordered_map<insight::TemplateId, std::uint64_t> counts;
     counts.reserve(n);
     for (std::size_t i{0}; i < n; ++i)
-        // key_shift overlaps the two maps partially (a shared vocabulary + a private tail).
+        // invariant: key_shift overlaps the two maps partially -- a shared vocabulary and a private
+        // tail each.
         counts.emplace(insight::template_id_of("tmpl_" + std::to_string(i + key_shift)),
                        1U + (rng.next() % 4096U));
     return counts;
@@ -184,7 +165,6 @@ total_of(const std::unordered_map<std::string, std::uint64_t>& counts) noexcept
     return total;
 }
 
-// ── compose() / diff() — the always-on cube path (its cost incl. the collapse guardrail) ───────
 void BM_Compose(benchmark::State& state)
 {
     const DocCorpus corpus{make_doc_corpus(kStageWindowCount, kStageWindowSize)};
@@ -215,11 +195,10 @@ void BM_Diff(benchmark::State& state)
 }
 BENCHMARK(BM_Diff)->Unit(benchmark::kMicrosecond);
 
-// ── cube primitives — piece 3 in isolation ───────────────────────────────────────────────────
 [[nodiscard]] std::vector<cube::BaseRow> make_base_rows(std::span<const std::string> components)
 {
-    // The per-event (level, component, role) joint at representative low cardinality. Owns no
-    // strings — component views into the caller's pool (kept alive for build_closed_cube).
+    // invariant: the per-event joint at representative low cardinality; it owns no strings, the
+    // component views pointing into a pool the caller keeps alive.
     SplitMix64 rng{0x5EED'B45E'0000'0001ULL};
     std::map<std::tuple<LogLevel, std::size_t, StructuralRole>, std::uint64_t> joint;
     for (std::size_t e{0}; e < 20'000; ++e)
@@ -288,14 +267,8 @@ void BM_CubeDiffOf(benchmark::State& state)
 }
 BENCHMARK(BM_CubeDiffOf)->Unit(benchmark::kMicrosecond);
 
-// ── round-trip attribution: coord_of / cell_of replicated (the §13 re-closure lever) ─────────
-// compose_cubes / cube_diff_of parse every closed CubeCoord back to an interned Cell on INPUT
-// (cell_of) and re-stringify Cell → CubeCoord on OUTPUT (coord_of), on EVERY op (×~23/tick via
-// the fibo pyramid). These benches replicate those exact string ops over a representative cube's
-// ~225 cells to attribute the round-trip WITHOUT exposing the sealed anonymous internals
-// (coord_of/cell_of are file-local in cube.cpp, and that code is the rewrite target — exposing it
-// now would be debt). The replicas mirror insight-metalog/src/cube/cube.cpp verbatim; the cost
-// they measure is exactly what "keep the cube interned end-to-end" (lever 1) reclaims.
+// invariant: these replicate cube.cpp's own coord_of and cell_of verbatim, which are file-local
+// there, so the round trip is attributed without exposing the sealed internals.
 [[nodiscard]] LogLevel level_from_spec_replica(std::string_view spec) noexcept
 {
     if (spec == "TRACE")
@@ -368,8 +341,8 @@ BENCHMARK(BM_CubeDiffOf)->Unit(benchmark::kMicrosecond);
 struct CubeFixture
 {
     meta::CubeBlock block;
-    std::vector<std::string> labels; // the sorted WHERE-leaf dictionary
-    std::vector<cube::Cell> cells;   // the block's coords parsed back to interned Cells
+    std::vector<std::string> labels;
+    std::vector<cube::Cell> cells;
 };
 
 [[nodiscard]] CubeFixture make_cube_fixture()
@@ -389,7 +362,7 @@ struct CubeFixture
     return fixture;
 }
 
-// INPUT parse: CubeCoord → interned Cell, over every closed cell (what compose/diff do ×2/op).
+// post: the input parse, CubeCoord to interned Cell, over every closed cell.
 void BM_CoordParse(benchmark::State& state)
 {
     const CubeFixture fixture{make_cube_fixture()};
@@ -400,7 +373,7 @@ void BM_CoordParse(benchmark::State& state)
 }
 BENCHMARK(BM_CoordParse)->Unit(benchmark::kMicrosecond);
 
-// OUTPUT stringify: interned Cell → CubeCoord, over every closed cell (what build/compose emit).
+// post: the output stringify, interned Cell to CubeCoord, over every closed cell.
 void BM_CoordStringify(benchmark::State& state)
 {
     const CubeFixture fixture{make_cube_fixture()};
@@ -411,12 +384,9 @@ void BM_CoordStringify(benchmark::State& state)
 }
 BENCHMARK(BM_CoordStringify)->Unit(benchmark::kMicrosecond);
 
-// ── reduction primitives — piece 2 (the SIMD-amenable tail) ───────────────────────────────────
-// Operating points (the sizes compose()/diff() actually feed): the COMPOSE tail-entropy runs over
-// the merged tail (≈ pool − top_k ≈ 192 here); the DIFF divergence runs over counts_of = top_k
-// (≤64 per side, union ≤128). The sweeps bracket those so the per-call cost can be read at the
-// real point. The reductions are det_log2_fixed (bit-serial integer log2, no libm) — the only
-// SIMD-amenable piece, but per §A3 their cost rides det_log2_fixed per element, not the add.
+// invariant: the sweeps bracket the real operating points -- the compose tail entropy runs over the
+// merged tail, the diff divergence over the top_k union.
+// note: the reductions are integer log2, with no libm call on the path.
 void BM_ShannonEntropy(benchmark::State& state)
 {
     const auto n{static_cast<std::size_t>(state.range(0))};
@@ -430,9 +400,11 @@ BENCHMARK(BM_ShannonEntropy)->Arg(64)->Arg(128)->Arg(192)->Unit(benchmark::kNano
 
 void BM_Divergences(benchmark::State& state)
 {
-    const auto n{static_cast<std::size_t>(state.range(0))}; // n = keys PER SIDE (top_k ≈ 64)
+    // invariant: n is the key count PER SIDE.
+    const auto n{static_cast<std::size_t>(state.range(0))};
     const auto cur{make_id_count_map(n, 0x5EED'0002, 0)};
-    const auto prev{make_id_count_map(n, 0x5EED'0003, n / 4)}; // 75% vocabulary overlap
+    // invariant: the two sides share three quarters of their vocabulary.
+    const auto prev{make_id_count_map(n, 0x5EED'0003, n / 4)};
     const std::uint64_t cur_total{total_of(cur)};
     const std::uint64_t prev_total{total_of(prev)};
     for (auto _ : state)
@@ -454,7 +426,8 @@ void BM_HistogramJs(benchmark::State& state)
 }
 BENCHMARK(BM_HistogramJs)->Arg(64)->Unit(benchmark::kNanosecond);
 
-// ── determinism gate ──────────────────────────────────────────────────────────────────────────
+// invariant: re-runs build_closed_cube, compose_cubes and cube_diff_of and aborts if the content
+// differs between runs, so a non-deterministic cell fails loudly.
 void BM_StageCube_Determinism(benchmark::State& state)
 {
     std::vector<std::string> components;
@@ -478,10 +451,8 @@ void BM_StageCube_Determinism(benchmark::State& state)
                      "bit-identical across runs\n";
         std::abort();
     }
-    // cube_diff_of over two distinct deterministic cubes (the closed base vs its self-compose,
-    // which doubles every count) — the kept cube's diff path must be bit-identical run-to-run too.
-    // This is the byte-identical-cell guard the retired do-operator harness used to provide, now on
-    // the PRODUCTION cube (ADR-19): a non-deterministic diff cell aborts loudly.
+    // invariant: the two operands are a closed base and its self-compose, which doubles every
+    // count, so the diff path is exercised over two distinct deterministic cubes.
     const auto diff_a{cube::cube_diff_of(first, composed_a)};
     const auto diff_b{cube::cube_diff_of(first, composed_a)};
     if (diff_a != diff_b)

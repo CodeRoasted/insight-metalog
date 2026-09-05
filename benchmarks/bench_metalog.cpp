@@ -1,18 +1,7 @@
-// MetaLog compression benchmark.
-//
-// This is the byte-budget anchor for Phase 3. It synthesises a window
-// of CanonicalEvents with a Zipf-ish template distribution, runs them
-// through MetaLogEngine, and reports the size of the produced JSON
-// envelope so we can diff it across PRs.
-//
-// Two reported counters:
-//   * BytesPerWindow    — size of the JSON envelope, in bytes.
-//   * BytesPerMillion   — extrapolated bytes per million lines.
-//
-// The "≤ 4 KB per million lines" architectural target lives in
-// technical_docs/overview/architecture.md §6 and is aspirational; this bench
-// is what we measure against when we go after it.
-
+// post: reports the produced JSON envelope's size for a synthesised window whose template
+// distribution is Zipf-ish, so the byte cost can be diffed across changes.
+// note: the spec's 4 KB-per-million target is stats-only, so this arm is not measured on it.
+// refs: F-SRC-metalog-spec:SPEC.md
 #include <benchmark/benchmark.h>
 
 import insight.metalog.bench;
@@ -23,9 +12,8 @@ namespace
 namespace tok = insight::tokenization;
 namespace meta = insight::metalog;
 
-// Storage that owns the synthetic template strings so the
-// `string_view`s on `CanonicalEvent` stay valid for the duration of
-// the benchmark loop.
+// invariant: owns the synthetic template strings, so every CanonicalEvent string_view stays valid
+// for the whole benchmark loop.
 struct SyntheticCorpus
 {
     std::vector<std::string> templates;
@@ -43,8 +31,8 @@ SyntheticCorpus make_corpus(std::size_t n_templates)
     return c;
 }
 
-// One run of the engine: open window, ingest n_events, close, write
-// the envelope size + lines into out-params.
+// post: opens a window, ingests n_events, closes it, and writes the envelope size and the line
+// count into the out-params.
 void run_once(const SyntheticCorpus& corpus, std::size_t n_events,
               const meta::MetaLogConfig& config, std::uint32_t seed, std::size_t& out_bytes,
               std::uint64_t& out_lines, std::size_t& out_unique)
@@ -74,8 +62,7 @@ void run_once(const SyntheticCorpus& corpus, std::size_t n_events,
     out_unique = doc.stats.unique_templates;
 }
 
-// state.range(0) = number of events ingested in the window.
-// state.range(1) = top_k_size (controls the compression budget).
+// invariant: range(0) is the event count for the window and range(1) the top_k_size.
 void BM_MetaLogCompress(benchmark::State& state)
 {
     const std::size_t n_events = static_cast<std::size_t>(state.range(0));
@@ -100,10 +87,7 @@ void BM_MetaLogCompress(benchmark::State& state)
         benchmark::DoNotOptimize(last_bytes);
     }
 
-    // Counters get aggregated/scaled by Google Benchmark in ways
-    // that don't match what we want for raw envelope size. We embed
-    // the absolute bytes (window + extrapolated /M lines) in the
-    // label, which the runner prints verbatim.
+    // note: the absolute bytes ride the label because the counter machinery rescales them.
     const double per_million = last_lines > 0 ? static_cast<double>(last_bytes) * 1'000'000.0 /
                                                     static_cast<double>(last_lines)
                                               : 0.0;
@@ -119,27 +103,10 @@ BENCHMARK(BM_MetaLogCompress)
     ->ArgsProduct({{1'000, 10'000, 100'000}, {16, 32, 64}})
     ->Unit(benchmark::kMillisecond);
 
-// ── Field histogram ingest-cost benchmark ─────────────────────────────────────
-//
-// Measures the marginal cost of per-param value histogram accumulation inside
-// ingest_event() for a realistic HTTP scenario (3 params: method, path, status).
-//
-// state.range(0) = max_param_histograms
-//   0 → disabled (baseline, one branch per event, zero extra work)
-//   1 → track params[0] only (path distribution)
-//   3 → track all 3 params (full field observability)
-//
-// Corpus: 1 000 events per window iteration, fixed method+path, Bernoulli(0.2)
-// status — matches the detection test scenario.
-//
-// Reported:
-//   items/s      — ingest_event calls per second
-//   ns_per_event — average nanoseconds per call
-//
-// Use this to check whether enabling histograms crosses any budget threshold.
-// On typical workloads (< 64 distinct values per slot) the map lookups are all
-// cache-warm; expect single-digit ns overhead per param slot.
-
+// post: the marginal ingest cost of per-param value histograms for a three-param HTTP shape, with
+// range(0) the max_param_histograms setting.
+// invariant: the corpus is 1 000 events per window with a fixed method and path and a one-in-five
+// status split.
 void BM_MetaLogIngest_FieldHistograms(benchmark::State& state)
 {
     const std::size_t max_hist{static_cast<std::size_t>(state.range(0))};
@@ -149,8 +116,8 @@ void BM_MetaLogIngest_FieldHistograms(benchmark::State& state)
     config.top_ngrams_size = 32;
     config.max_param_histograms = max_hist;
 
-    // Pre-build event fixtures with owned param strings so the benchmark
-    // loop is hot and allocation is excluded from timing.
+    // invariant: the fixtures own their param strings and are built before the loop, so no
+    // allocation of theirs lands inside the timed region.
     constexpr std::size_t kEvents{1'000};
 
     struct Fixture
@@ -164,7 +131,7 @@ void BM_MetaLogIngest_FieldHistograms(benchmark::State& state)
     fixtures.reserve(kEvents);
     {
         std::mt19937 rng{0x1A2B3C4D};
-        std::uniform_int_distribution<int> coin{0, 4}; // ~20 % "500"
+        std::uniform_int_distribution<int> coin{0, 4};
         for (std::size_t i{0}; i < kEvents; ++i)
         {
             Fixture f;
@@ -197,21 +164,10 @@ void BM_MetaLogIngest_FieldHistograms(benchmark::State& state)
         static_cast<double>(total_events),
         benchmark::Counter::kIsRate | benchmark::Counter::kInvert, benchmark::Counter::kIs1000);
 }
-BENCHMARK(BM_MetaLogIngest_FieldHistograms)
-    ->Arg(0) // disabled (baseline)
-    ->Arg(1) // track 1 param slot
-    ->Arg(3) // track all 3 param slots
-    ->Unit(benchmark::kMicrosecond);
+BENCHMARK(BM_MetaLogIngest_FieldHistograms)->Arg(0)->Arg(1)->Arg(3)->Unit(benchmark::kMicrosecond);
 
-// ── WHERE-carrier ingest-cost benchmark ────────────────────────────────────────
-//
-// Measures the always-on cost of populating the per-template component marginal
-// (Bucket::component_counts) inside ingest_event(). The graduate-or-keep question is
-// settled — WHERE (and the cube + acquisition) are unconditional (1.7.2) — so this
-// tracks the absolute cost we always pay. Every event carries a low-card component
-// (the realistic structured case). Compare ns_per_event against the FieldHistograms
-// baseline to size the cost relative to level_counts (an enum-keyed increment) — the
-// component marginal is the same shape PLUS a short-string allocation + hash for the key.
+// post: the always-on cost of the per-template component marginal, which every event pays.
+// note: read it against the field-histogram arm to size it beside an enum-keyed increment.
 void BM_MetaLogIngest_Where(benchmark::State& state)
 {
     meta::MetaLogConfig config;
@@ -219,7 +175,7 @@ void BM_MetaLogIngest_Where(benchmark::State& state)
     config.top_ngrams_size = 32;
 
     constexpr std::size_t kEvents{1'000};
-    // A handful of low-card subsystems — the F3b functional-source shape (NOT host).
+    // invariant: low-cardinality functional-source components, never host names.
     static constexpr std::array<std::string_view, 4> kComponents{"src/auth", "src/db", "src/api",
                                                                  "src/core"};
     static constexpr std::array<std::string_view, 4> kTemplates{
@@ -235,7 +191,8 @@ void BM_MetaLogIngest_Where(benchmark::State& state)
             tok::CanonicalEvent ev;
             const std::size_t idx{pick(rng)};
             ev.template_str = kTemplates[idx];
-            ev.component = kComponents[idx]; // static-storage views stay valid
+            // invariant: a static-storage view, so it stays valid for the whole run.
+            ev.component = kComponents[idx];
             ev.level = insight::LogLevel::Info;
             events.push_back(ev);
         }
