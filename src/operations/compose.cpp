@@ -398,8 +398,8 @@ namespace
                 continue;
             const auto count = ordered[i].second;
             tail_count += count;
-            // note: NOLINT: a clamp; the SPACED directive suppresses every check on that line.
-            // NOLINTNEXTLINE (readability-use-std-min-max) defensive clamp (hot path)
+            // note: NOLINT: a defensive clamp over the tail, not a min/max of two operands.
+            // NOLINTNEXTLINE(readability-use-std-min-max)
             if (count > tail_max)
                 tail_max = count;
             tail_counts.push_back(count);
