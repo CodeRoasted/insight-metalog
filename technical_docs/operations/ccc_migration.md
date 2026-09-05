@@ -372,3 +372,75 @@ compile on the gcc leg, which a comment-only commit may not carry.
 the hand edit. Grammar: `malf format --check` over the unit — 47 comment lines, forms `pre=1 post=12
 invariant=8 note=7 refs=3 continuation=14 tool=2`, **0 would-be violations**. Comment lines 136 → 47
 (65 % fewer); would-be violations 134 → 0.
+
+## Unit 4 — `src/cube/cube.cpp` (1 file, 249 would-be violations)
+
+The cube's heavy machinery: closure, lossless base recovery, the per-window dimensional-collapse
+guardrail, the order-convex border, and the diff/compose re-closure. 251 comment lines, 249 of them
+violations (223 bare, 24 trailing, 1 spacer, 1 ruler), 2 tool forms.
+
+**Census (`OPS-8.S4`).** Zero `NOLINT`, zero `/*name*/`, zero `clang-format off`, zero
+`wall-clock:`, zero SPDX, before and after; the two namespace closers kept. No census decision.
+**Stripper cross-check:** removed 249 == 249 violations (no suppression in the file), kept 2 == the
+two tool forms.
+
+**The claims.** 67 blocks: `pre` 3, `post` 27, `invariant` 7, `assert` 10, `note` 16, `refs` 5, with
+28 untagged continuations. `refs:` targets: `ADR-31.D8` twice (the collapse policy's total-order
+tie-break), `DN-43.D10` twice (`Unknown` as a live level value rather than a fold or an omission),
+`DN-42.D17` once (the differential axis's `kind`). **No law block was owed:** every multi-site rule
+in this file already has a registry-form owner, which is the test stated in unit 2's entry.
+
+Held for the interrogation (R): why `populate` subsets only the pinned dims · why an unstable sort
+is admissible under byte-identity · what decides LEVEL versus WHERE at equal gain · which levels can
+never be banded · why the budget is stamped in the caller · what the empty-WHERE residual is for ·
+what the recovery path costs · why the shift pins on one side only · what keeps `signed_shift_label`
+off the NONE band · what makes the border's binary search sound · what a compose seed does to
+precision · whether `categorical` is a downgrade for an ordinal axis.
+
+**Interrogation** — one fresh agent, twelve questions, 27 tool uses, 112 k tokens, 5.3 minutes.
+Transcript checked: `GIT COMMANDS RUN: none`.
+
+**Score: 12 of 12 recovered, 0 not recovered, 0 wrong.** Every answer at high confidence, and five
+of them are strictly sharper than the prose they replaced:
+
+* **Q1** quantified what the deleted prose only asserted: enumerating all `2^kCellDims` masks would
+  emit each generalization `2^s` times where `s` is the tuple's starred count, so counts inflate
+  **non-uniformly** — ×2 for an ordinary stored row, ×4 for an empty-component one — and it named the
+  test that pins it, `CubeBlock.EmptyComponentAggregatesNoWhere`, with the arithmetic (apex reads 2;
+  an all-mask enumeration gives 1×4 + 1×2 = 6). It also bounded the damage: the closure and the
+  distinct-cell set are unaffected, only the counts break.
+* **Q3** corrected the emphasis. At **equal** Δcardinality the LEVEL step wins **on cost**, not on
+  the tie-break: a level step costs its target `band_floor` (2, 3 or 4) against `kWhereDropCost` 100.
+  The strict `>` tie-break only decides an equal **ratio**. The prose ran the two together.
+* **Q4** derived the widest reachable band — `{Trace, Debug, Info, Warn} → Warn` — and observed that
+  `Unknown` (index 6, above `Fatal`) is unreachable by any floor for the same structural reason, then
+  named `CubeCollapse.SeverityFrontierNeverCrossedWhereCollapsesInstead` as the pin.
+* **Q8** derived, rather than repeated, why the shift pins on the current side only: `kThetaWas` is
+  0, so a nonzero previous count kills emergence outright — pinning both sides would leave a declared
+  `latency_shift` axis with nothing ever on the border, and the dual would kill vanishing too.
+* **Q12** found that the question is not even open: `kind`'s enum is closed to
+  `["categorical", "chain"]` in **both** published schemas, so `"ordinal"` is unavailable, and
+  `level` — itself ordinal — is declared `categorical` while carrying `band_floor`.
+
+**Finding 7 — a latent encoding collision the prose never mentioned, for the lane that owns
+`insight-metalog` source.** The cold reader observed, and this lane re-derived at the source, that
+`signed_shift_id` is **total over its argument types and returns a colliding id for a legal input**:
+`OrdinalShift::None` is 0 and `kMagnitudeBands` is 3, so `signed_shift_id(None, Down)` returns 3 —
+the same value-id as `signed_shift_id(High, Up)` — and `signed_shift_label(3)` renders it `up_High`,
+because its `down` test is `band_id > kMagnitudeBands`. Two guards keep it unreachable today, both
+spelled `!= OrdinalShift::None`: the one writing site in `cube_diff_of` (`cube.cpp` line 721) and the
+producing caller `component_latency_shifts` (`diff.cpp` line 508). Verified by reading
+`api/metalog.api.cppm`'s two enums (`OrdinalShift::None = 0 … High = 3`,
+`OrdinalDriftDirection::None = 0`) and both call sites. **What makes this a finding rather than a
+note is the enforcement ladder (`ADR-26.D1`): the property is carried on rung 4, a `pre:` line, when
+rung 1 or 2 could carry it** — reserving 0 for NONE and shifting the bands by one would make the
+encoding total, and an `assert()` or a `std::expected` at `signed_shift_id` would make a future
+caller that drops the guard fail loudly instead of silently emitting `up_High` for a downward
+no-drift. That is a code change and is not this comment-only lane's to make.
+
+**Witnesses.** Comment-only: code token stream byte-identical to `HEAD`. Grammar: `malf format
+--check` over the file — 98 comment lines, forms `pre=3 post=27 invariant=7 assert=10 note=16 refs=5
+continuation=28 tool=2`, **0 would-be violations**. Behaviour: `malf test insight-metalog` with
+units 1-4 in the tree, **297 of 297 on clang-21 and 297 of 297 on gcc-16**, equal to the baseline,
+under a slot held and released correctly (`HELD … ALIVE` at the release check). Comment lines
+251 → 98 (61 % fewer); would-be violations 249 → 0.
