@@ -525,6 +525,97 @@ own comment, not from Glaze's source, which `DN-65.D1` deliberately treats as no
 dependency may change under us"*), so nothing in this workspace independently enumerates
 `glz::write`'s error cases.
 
+## Unit 7 — `src/engine/` · `engine.cpp` (1 file, 361 would-be violations)
+
+The stateful producer: window lifecycle, the hot-path per-event accumulator, the trace-scoped
+n-gram graph, span-edge resolution, the salience reservoir, and every window-close block builder.
+363 comment lines, 361 of them violations (329 bare, 24 trailing, 5 suppression-without-why, 3
+spacer), 2 tool forms. **This is where the repo's `SRC-D-OTEL-*` band lives.**
+
+**Census (`OPS-8.S4`).** `NOLINT` 5 before and 5 after; zero `/*name*/`, zero `clang-format off`,
+zero `wall-clock:`, zero SPDX. No census decision — every suppression was kept, because both checks
+they name are enabled under the one shared `.clang-tidy`: `clang-tidy-21 --list-checks` lists
+`readability-function-cognitive-complexity` and `readability-use-std-min-max`. Each directive now
+sits directly under the `note:` carrying its why, with the directive still immediately above its
+target — the silent-disarm shape `OPS-8.S5` names (a claim landing *between* a kept directive and
+the line it suppresses) was checked for at all five sites and is absent.
+
+**Stripper cross-check (`OPS-8.S5`).** `removed == violations − kept violation classes`:
+356 == 361 − 5. `kept == tool forms + those classes`: 7 == 2 + 5.
+
+**The `SRC-<code>` disposition, and the address census that proves nothing was lost.** Every
+occurrence in this file is a body site past line 40, so `registry_grammar_lint` classes them as
+**citations**, not declarations (`OPS-8.O5`): each became a `refs:` line unchanged in form and none
+was repointed. Measured over the file: **38 occurrences before, 37 after, and a set diff of the
+DISTINCT codes is empty** — the one lost occurrence is a second mention of a code the file still
+cites. `registry_grammar_lint` after the conversion: **0 failures, 95 claimed codes, 95 declared in
+source**.
+
+**The claims.** 97 blocks: `pre` 2, `post` 16, `invariant` 20, `assert` 14, `note` 48, `refs` 42,
+with 32 untagged continuations. The 42 `refs:` lines carry `SRC-D-OTEL-9`, `SRC-D-OTEL-11`,
+`SRC-D-OTEL-13`, `SRC-D-OTEL-20`, `SRC-D-OTEL-21`, `SRC-D-TIR-2`, `SRC-D-TIR-5`,
+`SRC-D-WHERE-2`, `SRC-D-WHERE-4`, `SRC-D-WHERE-5`, `SRC-D-W1-2`, `SRC-D-PROV-1`, `SRC-D-RNK-2`, `SRC-D-OUT-4`,
+`SRC-II-7`, `ADR-9.D2`, `ADR-9.D3`, `ADR-23.D1`, `ADR-29.D1`, `DN-32.D3`, `DN-50.D4` and
+`DN-64.D3`. **No law block was owed:** the file's one unaddressable cross-reference — four sites
+saying *"same shape as the … above"* about the transparent-key copy-on-first-sight idiom — is owned
+by `ADR-9.D2`, and all four now cite it.
+
+**A stale claim deleted, with the evidence.** `MetaLogEngine::HllState` carried *"Key =
+content_template_id + '\x1f' + decimal(param_index)"* — a concatenated string key the code does not
+use and has no trace of. The member one line below is
+`std::unordered_map<std::string, std::vector<HyperLogLog>> sketches`: keyed by content_id and
+**indexed** by param_index, with the per-content vector grown on demand. The line described a design
+its own type contradicts. Replaced by an `invariant:` stating what the code does; the cold reader
+then reconstructed the real key unaided, down to the content_id's `"h:"`-plus-32-hex shape.
+
+**Interrogation** — one fresh agent, twelve questions, 30 tool uses, 117 k tokens, 3.6 minutes.
+Transcript checked: `GIT COMMANDS RUN: none`.
+
+**Score: 12 of 12 recovered, 0 not recovered — and ONE `invariant:` THIS CONVERSION WROTE WAS
+FALSE, caught before the commit.** Every answer at high confidence. Four went beyond the prose they
+replaced: Q3 bounded the drop counter (*observations*, not distinct keys — the distinct count is
+deliberately unknowable, being the unbounded set the cap refuses); Q6 closed the residual case the
+old prose left open (when ratio **and** count are equal, `outgoing` is equal too, so both candidates
+yield the same band and the ambiguity is unobservable); Q8 found `DN-50.D4`'s own record that the
+event-free branch is unreachable from the product's ingest today; and Q9 named both benchmarks that
+measure the copy-on-first-sight shape, with `bench_ordinal_key_alloc`'s pre-fix figure of one
+allocation per observation per event and +7.9 ns/event on the libstdc++ ship leg.
+
+**THE FALSE LINE, AND WHAT IT COST TO FIND.** This conversion wrote, above `open_window`:
+`// invariant: every per-window accumulator is cleared here and the cross-window stability state
+(prev_freq_, prev_window_end_iso_) is left untouched.` The reader answered Q2 correctly and then
+went further than the question asked, reporting that `open_window` does **not** clear
+`pending_link_edges_`, `orphan_link_edges_` or `service_edges_`, although `reset_window_state`
+does. Re-derived here by diffing the two functions' cleared-member sets: **exactly those three are
+in `reset_window_state` and not in `open_window`**. So the universal *"every"* was false. The line
+now reads:
+
+```cpp
+// invariant: the cross-window state -- prev_freq_, prev_window_end_iso_, registry_ -- survives
+// this call and feeds the stability block and the display vocabulary.
+// note: the span-link and service-topology accumulators are cleared at close, not here.
+```
+
+`OPS-8.S7` steps 2 and 3 were re-run after the hand edit: 0 would-be violations, comment-only
+against `HEAD`.
+
+**Finding 8 — the `open_window` / `reset_window_state` asymmetry, for the lane that owns
+`insight-metalog` source.** Three per-window accumulators — `pending_link_edges_`,
+`orphan_link_edges_`, `service_edges_` — are cleared only at close. Today that is harmless because
+`close_window` always runs `reset_window_state`, but it makes `open_window` a partial reset: two
+`open_window` calls without an intervening `close_window` would carry a previous window's span-link
+and service-topology state into the new one, while every other accumulator resets. The other
+seventeen members appear in both functions, so the omission reads as an oversight rather than a
+decision — nothing in the tree states an intent for it. Repairing it is a code change. The reader
+also flagged a smaller sibling: `last_window_ngram_observations_dropped_` is documented as *"valid
+between `close_window()` and the next `open_window()`"* and is cleared by neither.
+
+**Witnesses.** Comment-only: code token stream byte-identical to `HEAD`, re-taken after the hand
+edit. Grammar: `malf format --check` over the file — 181 comment lines, forms `pre=2 post=16
+invariant=20 assert=14 note=48 refs=42 continuation=32 tool=7`, **0 would-be violations**.
+Behaviour: batch C (below) — 297 of 297 on clang-21 and 297 of 297 on gcc-16. Comment lines
+363 → 181 (50 % fewer); would-be violations 361 → 0.
+
 ---
 
 # Sites that need a `D-LSRC-n` law block — STOPPED, for the pilot to issue numbers
@@ -732,11 +823,35 @@ the interrogation did its work as a **truth instrument** throughout; what it mea
 than it should have, for the R claims written early, is **recoverability without the note**. Units 5
 and 6 were drafted after the step changed and hold their R claims out of the tree.
 
+## 9. A LEDGER THAT QUOTES A LAW BLOCK VERBATIM DECLARES IT A SECOND TIME — and the workspace gate is RED on it right now
+
+Measured 2026-09-06, not on this repo: `python3 scripts/registry_grammar_lint.py` from the
+workspace root exits non-zero with three `G15` failures, and every one of them is a law number
+declared more than once because the declaring lane pasted its framed block into its own
+`ccc_migration.md` as evidence. The ledger copy is indistinguishable from the source copy to the
+sweep, which is the single-declaration property `ADR-26.D5` says form 1 exists to have: *"a sweep
+for the declaration returns exactly one line. Two is an ambiguity, and every citation naming it is
+now unresolvable."*
+
+**`OPS-8.S10` walks a lane straight into this.** It requires the ledger entry to carry *"the forms
+written"* and *"every stale claim deleted with the evidence"*, and the natural way to evidence a
+newly minted law is to show the block. `OPS-8.S3.3` already warns *"never spell `D-LSRC-<digits>`
+outside a real law block"* — but it says it about the **claims script**, in a step about `refs:`
+grammar, where a lane writing its ledger four steps later has no reason to look. The rule needs to
+be in `OPS-8.S10` too, phrased for the ledger: **describe what the law says, name it by its citation
+form, and never paste the framed block.** This lane's own law-block section does exactly that, which
+is why `insight-metalog` contributes none of the three failures — but that was luck of habit, not a
+step it was following.
+
+The three live failures are `insight-canon`'s to repair and are named here only because a red
+workspace gate is a fact every lane in the wave needs, and because the runbook gap that produced it
+is the same one the next lane will meet.
+
 ---
 
 # Where this run stopped, and why
 
-**Six units converted, the repo NOT armed.** Arming (`OPS-8.S12`) requires the whole repo at zero,
+**Seven units converted, the repo NOT armed.** Arming (`OPS-8.S12`) requires the whole repo at zero,
 which this run does not reach, so `comment_contract: true` is **not** set and the CCC phase still
 counts `insight-metalog` rather than failing it.
 
@@ -748,13 +863,16 @@ counts `insight-metalog` rather than failing it.
 | 4 | `src/cube/cube.cpp` | 1 | 249 | 251 → 98 | 12 of 12 recovered |
 | 5 | `src/serialization/json_egress.hpp` | 1 | 35 | 36 → 11 | 8 of 8 recovered, one |
 | 6 | `src/operations/metalog.detail.operations.cppm` | 1 | 12 | 13 → 6 | reader over both |
-| | **total** | **10** | **722** | **734 → 246 (66 % fewer)** | **45 of 45 recovered, 0 not recovered** |
+| 7 | `src/engine/engine.cpp` | 1 | 361 | 363 → 181 | 12 of 12 recovered |
+| | **total** | **11** | **1 083** | **1 097 → 427 (61 % fewer)** | **57 of 57 recovered, 0 not recovered** |
 
-**722 of the repo's 6 701 would-be violations, 10.8 %, in six commits.** Every claim held for a
+**1 083 of the repo's 6 701 would-be violations, 16.2 %, in seven commits.** Every claim held for a
 reader was recovered — **45 of 45, 0 not recovered** — so nothing had to be re-homed above the
 comment rung. **Two lines this conversion itself wrote were found defective by the readers and
-corrected before their commits**: the `observability only` note in unit 3, which was false, and the
-`assert:` in unit 5, which dropped the qualifier its premise rested on. **One defect this lane filed
+corrected before their commits**: the `observability only` note in unit 3, which was false, the
+`assert:` in unit 5, which dropped the qualifier its premise rested on, and the `open_window`
+`invariant:` in unit 7, whose universal *"every"* was false for three members. **Three lines, all
+found by the readers, none by a gate.** **One defect this lane filed
 was withdrawn** after unit 2's reader found the figure's authority in the published spec. Every unit comment-only
 against `HEAD` by code-token-stream equality, every unit at zero would-be violations under `malf
 format --check`, and `malf test insight-metalog` **297 of 297 on clang-21 and 297 of 297 on
@@ -777,8 +895,7 @@ violation class and into the recognised tool forms, and the third suppression wa
 measurement that it silences nothing. **Zero law blocks** — one is owed and is recorded
 above for the pilot to number.
 
-**What remains, in the order a next lane should take it.** Source: `src/engine/` 361 ·
-`src/operations/` (compose 223 + diff 196) 419 · `src/serialization/serialize.cpp` 326 ·
+**What remains, in the order a next lane should take it.** Source: `src/operations/` (compose 223 + diff 196) 419 · `src/serialization/serialize.cpp` 326 ·
 `src/stats/wire_format.cpp` 28 (**blocked on the law number**) · `api/` 1 414 (**must be read for
 statement-bearing `SRC-<code>` sites first — 73 declaring-position occurrences across its two
 files**). Harness: `scripts/` 545 · `benchmarks/` 241 · `test_package/` 16. Test tier:
@@ -799,15 +916,15 @@ files**). Harness: `scripts/` 545 · `benchmarks/` 241 · `test_package/` 16. Te
   | baseline | 2026-09-05 23:51 | none — the pre-conversion reference | 297 of 297 clang-21, 297 of 297 gcc-16 |
   | batch A | 2026-09-06 00:16 | units 1-2 | 297 of 297 clang-21; the gcc leg's provenance is void — a sibling reclaimed the slot mid-leg (see verdict item 1) |
   | batch B | 2026-09-06 00:30 | units 1-4, all four in the tree | 297 of 297 clang-21, 297 of 297 gcc-16 |
-  | batch C | owed | units 5-6 | not yet taken — the slot was held continuously by sibling lanes from 00:32 |
+  | batch C | 2026-09-06 00:55 | units 5-7 | 297 of 297 clang-21, 297 of 297 gcc-16 |
 
   Batch B supersedes batch A: it re-ran both legs with units 1-2 still in the tree, so nothing
-  rests on the leg whose provenance was void. **Batch C is owed and this ledger says so rather than
-  implying it was taken** — units 5-6 carry three of the four witnesses, and the fourth is a
-  `malf test insight-metalog` on both toolchains at the next acquisition. If it reds, bisect by
-  unit; detection is unaffected by the batching, because witness 1 proves each file's code token
-  stream byte-identical to `HEAD`, so a comment-only unit can reach behaviour through `__LINE__`
-  and nothing else.
+  rests on the leg whose provenance was void. Batch C was taken at a slot acquired in the
+  FOREGROUND, whose stamp read `anchor 3053 … ALIVE` before the release, so its provenance is
+  clean. Detection is unaffected by the batching: witness 1 proves each file's code token stream
+  byte-identical to `HEAD`, so a comment-only unit can reach behaviour through `__LINE__` and
+  nothing else. Two comment-only repairs landed AFTER their batch — unit 5's dropped qualifier and
+  unit 7's false `invariant:` — and each was re-witnessed against `OPS-8.S7` steps 2 and 3.
 * **Units 5 and 6 landed in one commit** (`OPS-8.S10`'s one-commit-per-unit), 47 violations between
   them. The ledger keeps a separate entry per unit.
 * **Two directories were split by file group** (`OPS-8.S2` allows it): `src/stats/` because
