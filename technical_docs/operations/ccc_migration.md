@@ -296,3 +296,79 @@ defect costs the next reader more than the comment did.
 `malf format --check` over the unit — 80 comment lines, forms `pre=1 post=15 invariant=1 assert=10
 note=21 refs=9 continuation=16 tool=7`, **0 would-be violations**. Comment lines 289 → 80 (72 %
 fewer); would-be violations 284 → 0.
+
+## Unit 3 — `src/cube/` minus `cube.cpp` (2 files, 134 would-be violations)
+
+`metalog.detail.cube.cppm` (122) and `cube_cardinality.cpp` (12). 136 comment lines, 134 of them
+violations (126 bare, 4 spacer, 4 trailing, 1 ruler), 2 tool forms. `cube.cpp` (249 violations) is
+the same directory's second file group and is a unit of its own (`OPS-8.S2`): a reader can answer
+about the module interface and the cardinality compute without it, and 383 violations in one
+questionnaire is two interrogations pretending to be one.
+
+**Census (`OPS-8.S4`).** Zero `NOLINT`, zero `/*name*/`, zero `clang-format off`, zero
+`wall-clock:`, zero SPDX, before and after. Two namespace closers kept. No census decision.
+
+**Stripper cross-check (`OPS-8.S5`).** No suppression in either file, so the equality reduces to
+`removed == violations`: 122 == 122 and 12 == 12, kept 1 and 1.
+
+**The claims.** 30 blocks: `pre` 1, `post` 12, `invariant` 8, `note` 7, `refs` 3, with 14 untagged
+continuations. `refs:` targets: `ADR-3.D4` once and `DN-42.D17` twice — the latter at **both**
+no-axes-equality-gate sites, which is what replaces the unaddressable *"same shape as
+`cube_diff_of` above"* the second site used to carry.
+
+Held for the interrogation (R): the fourth cube dimension and what a stored cube looks like
+because of it · whether the cube judges an up-shift · why `operator==` is written out · whether
+the diff refuses unequal axes · whether compose keeps its inputs' closures · what makes the cube
+bit-identical · what reading the cardinality off the coords buys · why `Unknown` is its own axis
+value · what a DAG WHERE-chain breaks · where the collapse warning is emitted.
+
+**Interrogation** — one fresh agent, ten questions, 39 tool uses, 133 k tokens, 4.4 minutes.
+Transcript checked: `GIT COMMANDS RUN: none`.
+
+**Score: 10 of 10 recovered, 0 not recovered — and ONE LINE THIS CONVERSION WROTE WAS FALSE, caught
+before the commit.**
+
+| Q | verdict | what the agent found |
+|---|---|---|
+| Q1 fourth dimension | recovered, high | pinned in `cube_diff_of` only, on the current side only; a stored cube's slot is uniformly `kStar`, `coord_of` omits the key, and it costs no cells because `populate` subsets the PINNED dims. It confirmed the byte-identity against a committed test vector |
+| Q2 polarity | recovered, high | the cube judges nothing; `insight-eidos`'s `ordinal_polarity` maps Up to Regression and Down to Recovery, and `collect_causal_chains` reads a coord whose `latency_shift` starts with `up_` |
+| Q3 hand-written `operator==` | recovered, medium — **and it bounded the evidence**, see below | it read the `note:` and then reported that nothing else in the tree corroborates it: no bug id, no reproducer, no test, and the API's own types do use `= default` — as MEMBER operators, which it flagged as its own inference rather than the tree's |
+| Q4 axes equality | recovered, high | `DN-42.D17` §4, the `post:` this conversion wrote, the caller's `has_cube` presence check in `diff.cpp`, and SPEC §16.10's mandate to diff at the minimal common collapse |
+| Q5 compose closures | recovered, high | there is nothing to keep — a closure is `populate`'s internal artifact, never on a `CubeBlock` and never on the wire; a cell closed in one input can stop being closed in the merge, which is why compose re-closes |
+| Q6 bit-identity | recovered, high | nine mechanisms, including one this lane had not listed: `-ffp-contract=off` on every target in `CMakeLists.txt` |
+| Q7 cardinality from coords | recovered, high — **and it falsified a `note:` this conversion had just written** | see below |
+| Q8 `Unknown` as its own value | recovered, high | the §3.8 absence-rendered-as-present argument and the §16.4 absent-axis-means-aggregated collision, plus `DN-43.D10`; and the two visible consequences — `level_from_spec` reads an unknown token as `Unknown`, and `kMaxLevelBandFloor` stops below it |
+| Q9 DAG WHERE-chain | recovered, high | roll-up stops being a function, a count is added twice, the aggregate no longer dominates its children, and the order-convex border's parent test is undefined; enforcement is a hard `std::logic_error`, not a degradation |
+| Q10 the collapse warning | recovered, high — **and it corrected the question** | the warning fires in `insight-eidos`'s `insight_pipeline.cpp` from `collapse_note`, and metalog excludes spdlog by a Founder ruling of 2026-06-20 recorded in `metalog.cppm`. It also reported that the *over-cardinality* warning the question presupposed was **retired** — today's warning names the axis that was collapsed |
+
+**THE WRONG LINE, AND HOW IT GOT WRITTEN.** This conversion wrote, above `cube_cardinality`:
+`// note: observability only -- the result never feeds the deterministic content stream.` It was a
+faithful compression of the deleted prose (*"OBSERVABILITY ONLY: a deterministic function of the
+counts that never feeds the deterministic content stream"*), and **both are false.** The reader
+traced it: `engine.cpp`'s `build_acquisition` copies `card.cells`, `card.per_axis[Level]` and
+`card.per_axis[Role]` into `AcquisitionBlock::closed_cells` / `level_cardinality` /
+`role_cardinality`; `serialize.cpp` writes those three fields; and they are visible in the
+committed vectors. Re-derived at the source before acting on it (`MEM:verify-audit-findings`):
+`engine.cpp` lines 1315-1318, `serialize.cpp` lines 292-293 and 1099-1100, and
+`tests/vectors/service_a.vectors.jsonl` carries `closed_cells":3`. The line now reads
+`// note: a deterministic function of the closed cube; its values reach the acquisition block.`
+and `OPS-8.S7` steps 2 and 3 were re-run after the hand edit: 0 would-be violations, comment-only
+against `HEAD`. **This is `OPS-8.O3`'s second lesson firing exactly as written — a claim moved into
+a tagged line is a claim the converter now asserts — and the cold read is what caught it.**
+
+**Finding 6 — an unsourced compiler-defect claim this conversion now asserts, for the lane that owns
+`insight-metalog` source.** `Cell::operator==` is written out by hand, and the `note:` this run wrote
+says *"not `= default`: a defaulted friend `operator==` on an import-std type is a GNU defect"* —
+carried from the deleted prose, which said the same. The cold reader searched and found **no bug id,
+no reproducer, no test and no other mention anywhere in the workspace**, and observed that the API's
+own `CubeCoord` / `CubeCell` / `CubeAxis` all use `= default` — as member operators rather than
+hidden friends. The note is kept because deleting it invites the next reader to "simplify" the
+operator and break a build nobody would expect to break; but it is a claim with no witness, and the
+owning lane should either pin it (a bug id in the `refs:`, or a compile test that fails without the
+hand-written form) or retire it. Recorded here rather than repaired, because settling it needs a
+compile on the gcc leg, which a comment-only commit may not carry.
+
+**Witnesses.** Comment-only: both files, code token stream byte-identical to `HEAD`, re-taken after
+the hand edit. Grammar: `malf format --check` over the unit — 47 comment lines, forms `pre=1 post=12
+invariant=8 note=7 refs=3 continuation=14 tool=2`, **0 would-be violations**. Comment lines 136 → 47
+(65 % fewer); would-be violations 134 → 0.

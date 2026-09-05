@@ -1,20 +1,16 @@
 module;
 
 module insight.metalog;
-import insight.metalog.internal; // std
-import insight.metalog.api;      // CubeBlock / CubeCardinalityStat / CubeAxis / CubeCell
-
-// §13 cardinality monitor — the PURE compute (cube_perf_and_collapse.md C2). Distinct value count
-// per axis (level/component/role) + the closed-cell count, read from the closed cube's coords. Read
-// from the coords, not the retained base, so it is correct for ANY cube (incl. a wire-parsed one
-// with no base). OBSERVABILITY ONLY: a deterministic function of the counts that never feeds the
-// deterministic content stream — the eidos pipeline emits the gated WARN naming the offending axis.
-// metalog excludes spdlog by design, so the compute lives here, the log fires where logging does.
+import insight.metalog.internal;
+import insight.metalog.api;
 
 namespace insight::metalog
 {
 
+// post: the distinct value count per axis plus the closed-cell count, read off the closed cube's
+// coords, so it is correct for a cube that retained no base.
 CubeCardinalityStat cube_cardinality(const CubeBlock& cube)
+// note: a deterministic function of the closed cube; its values reach the acquisition block.
 {
     CubeCardinalityStat stat;
     stat.cells = cube.cell_count;
@@ -35,12 +31,10 @@ CubeCardinalityStat cube_cardinality(const CubeBlock& cube)
     return stat;
 }
 
+// post: nullopt when no axis was collapsed; otherwise one note per collapsed axis, joined with ';
+// '.
 std::optional<std::string> collapse_note(const CubeBlock& cube)
 {
-    // A collapse was applied iff an axis carries a band_floor > 0 (level interval-banding, §C3) or
-    // a floor_depth below its full chain length (WHERE-tree prefix-truncation). stamp_collapse
-    // writes the applied state onto the axes; an uncollapsed axis carries band_floor 0/absent and
-    // floor_depth == full chain length, so neither branch fires.
     std::string note;
     const auto add{[&note](const std::string& part)
                    {
