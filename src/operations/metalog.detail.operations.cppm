@@ -1,7 +1,4 @@
-// insight.metalog.detail.operations — SEALED operations domain (domain decomposition, ADR-3.D4).
-// SPEC §2.4 comparability gate: decides whether two documents may be composed/diffed, and which
-// opaque contract identifier the result may carry. Shared by compose and diff.
-// Never re-exported by the facade and never installed (PRIVATE file set).
+// refs: ADR-3.D4
 export module insight.metalog.detail.operations;
 import insight.metalog.internal;
 import insight.metalog.api;
@@ -9,10 +6,8 @@ import insight.metalog.api;
 export namespace insight::metalog
 {
 
-// §2.4 comparability gate. When both sides carry the identifier, the values MUST
-// be equal; throwing satisfies the spec's "MUST fail" branch. When one side omits
-// it, the operation MAY proceed (the consumer should treat the result with
-// caution); see callers for the carry rule.
+// post: throws std::invalid_argument when both sides carry the identifier and the values differ;
+// one side omitting it is not a failure and the operation may proceed.
 inline void check_processing_identifier_gate(const std::optional<std::string>& lhs,
                                              const std::optional<std::string>& rhs,
                                              std::string_view field, std::string_view operation)
@@ -23,10 +18,8 @@ inline void check_processing_identifier_gate(const std::optional<std::string>& l
                                     "\" vs \"" + *rhs + "\" (SPEC §2.4 comparability gate)"};
 }
 
-// Carry an identifier into a compose() output only when BOTH inputs supplied it
-// (and matched — already checked). When only one side has it, omitting from the
-// output is honest: the merged document covers an input under an unstated
-// contract; consumers see the absence rather than an over-claim.
+// post: carries the identifier only when both inputs supplied it and they matched, so a merged
+// document never states a contract one of its inputs did not.
 [[nodiscard]] inline std::optional<std::string>
 carry_processing_identifier(const std::optional<std::string>& lhs,
                             const std::optional<std::string>& rhs)
