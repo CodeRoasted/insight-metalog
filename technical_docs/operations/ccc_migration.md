@@ -879,20 +879,21 @@ format --check`, and `malf test insight-metalog` **297 of 297 on clang-21 and 29
 gcc-16** after conversion, equal to the baseline taken before the first unit.
 
 **The repo's own gate reading after the run, verbatim, and it matches the per-unit arithmetic
-exactly** — 6 868 - 734 + 246 = 6 380 comment lines, 6 701 - 722 = 5 979 would-be violations:
+exactly** — 6 868 - 1 097 + 427 = 6 198 comment lines, 6 701 - 1 083 = 5 618 would-be violations:
 
 ```
 malf format: CCC SUMMARY · mode=check-paths · files 70 = armed 0 + report-only 70 + NOT CHECKED 0 ·
-armed repos: none · comment lines 6380 · forms pre=5 post=57 invariant=18 assert=21 note=46 refs=21
-continuation=64 tool=169 · violations in armed files 0 (none) · would-be violations in report-only
-files 5979 (bare=5264 tag-mid-line=1 slash3=28 spacer=350 ruler=3 trailing=323
-suppression-without-why=10) · rc=0
+armed repos: none · comment lines 6198 · forms pre=7 post=73 invariant=38 assert=35 note=94 refs=63
+continuation=96 tool=174 · violations in armed files 0 (none) · would-be violations in report-only
+files 5618 (bare=4935 tag-mid-line=1 slash3=28 spacer=347 ruler=3 trailing=299
+suppression-without-why=5) · rc=0
 ```
 
-Tool forms went 167 → **169** and `suppression-without-why` 13 → **10**: the two
-`readability-use-std-min-max` directives this run re-homed under their `note:` moved out of the
-violation class and into the recognised tool forms, and the third suppression was deleted with the
-measurement that it silences nothing. **Zero law blocks** — one is owed and is recorded
+Tool forms went 167 → **174** and `suppression-without-why` 13 → **5**: seven directives this run
+re-homed under their own `note:` moved out of the violation class into the recognised tool forms,
+and one was deleted with the measurement that it silences nothing (its check family is disabled in
+the one shared `.clang-tidy`). The five that remain are all in units this run did not convert.
+**Zero law blocks** — one is owed and is recorded
 above for the pilot to number.
 
 **What remains, in the order a next lane should take it.** Source: `src/operations/` (compose 223 + diff 196) 419 · `src/serialization/serialize.cpp` 326 ·
