@@ -135,7 +135,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: CodeRoasted/malf-toolchain
-          ref: 4a03e3a352b9d779305f9a8e38a129717076bf88
+          ref: 61fc5534e116d8b278f44ccad8845926ae721ff9
           path: malf
           fetch-depth: 1
           persist-credentials: false
@@ -264,7 +264,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: CodeRoasted/malf-toolchain
-          ref: 4a03e3a352b9d779305f9a8e38a129717076bf88
+          ref: 61fc5534e116d8b278f44ccad8845926ae721ff9
           path: malf
           fetch-depth: 1
           persist-credentials: false
