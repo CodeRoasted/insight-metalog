@@ -763,6 +763,77 @@ assert=11 note=44 refs=23 continuation=34 tool=6`, **0 would-be violations**; th
 still sits directly under its `note:` and directly above its target. Comment lines 424 → 154 (64 %
 fewer); would-be violations 419 → 0.
 
+## Unit 10 — `src/serialization/serialize.cpp` (1 file, 326 would-be violations)
+
+The JSON serialiser: the omit-empty glaze DTO mirror of the MetaLog envelope and the `make_*`
+builders behind the two `to_json` overloads. 329 comment lines, 326 of them violations (275 bare,
+42 trailing, 9 spacer), 3 tool forms. Census: zero `NOLINT`, zero `/*name*/`, zero `clang-format
+off`, zero SPDX, before and after. Stripper cross-check: removed 326 == 326 violations (no
+suppression), kept 3 == the three tool forms.
+
+**The claims.** 58 blocks: `pre` 1, `post` 5, `invariant` 27, `assert` 2, `note` 28, `refs` 24,
+with 31 untagged continuations. The `invariant` count is the highest of any unit in this run and
+that is the file's nature: a DTO layer's contracts are almost all structural — *this field is an
+optional so the wire omits it*, *this container is installed only when a member landed*, *this
+member is declared last so the standard's half comes first* — and most of its deleted prose was
+per-field trailing text mirroring `std::optional` plus `skip_null_members`, which the code says
+outright.
+
+**THE LAW MINTED IN UNIT 8 GAINS ITS FIRST TWO CITERS HERE, and they are exactly the shape the
+form exists to replace.** Two sites in this file pointed at the `RunOutcome` argument by prose —
+*"See the argument at spec_run_outcome_of's definition — the two tokens are NOT interchangeable"* —
+which is an unaddressable reference to another file's comment. Both now carry `refs: LSRC-8`. A
+sweep of `src/` returns one declaring line and two citing lines.
+
+**One limit worth stating so it is not mistaken for a defect:** `registry_grammar_lint` still
+reports *"2 citations"* for form 1 after these two landed, because its citation leg walks the DOC
+tier only — the limit `ADR-26.D7` records in its own text. A law cited from source is invisible to
+that count by construction.
+
+**FIVE DISTINCT ADDRESSES WERE LOST AND RESTORED — the failure that produced verdict item 10.**
+The first pass of this unit dropped `SRC-D-OTEL-13`, `SRC-D-OTEL-11`, `SRC-D-OTEL-9`,
+`SRC-D-W1-4` and `SRC-D-WHERE-2`: three rode trailing comments on individual `Acquisition` fields,
+one on the `TopKExtensions` ordinal-histogram member, and one on the `component` field of two DTO
+structs — sites the claims script had no `refs:` line for. **Every witness stayed green while they
+went**: comment-only passed, the grammar gate passed, both toolchains passed, and
+`registry_grammar_lint` passed at 95 claimed and 95 declared, because all five are declared and
+cited elsewhere in the repo so nothing dangled at the workspace level. What was lost is
+addressability at the obeying site, and no instrument in the protocol looks for it. Repaired before
+the commit by adding four `refs:` lines, and the per-file DISTINCT-set census now returns empty.
+**The same census was then re-run over all fifteen files this run has converted: unit 10 was the
+only loss.**
+
+**Interrogation** — one fresh agent, ten questions, 26 tool uses, 111 k tokens, 4.6 minutes.
+Transcript checked: `GIT COMMANDS RUN: none`. **Score: 10 of 10 recovered, 0 not recovered, 0
+wrong**, every answer at high confidence.
+
+**THE LAW BLOCK WAS FOLLOWED, WHICH IS THE FIRST DIRECT TEST OF THE FORM IN THIS REPO.** Q6 asked
+where the reasoning for rendering `run_outcome` through the spec helper rather than
+`insight::to_string` is recorded. The reader followed the `refs:` address to the block in
+`src/stats/wire_format.cpp`, read the argument out of it — the two minted vocabularies, the closed
+schema enum, the governance clause that decides which side moves, and the rejected alternative with
+its cost — and then corroborated it against the schema independently. Before unit 8 that reasoning
+lived in a prose paragraph pointed at by *"see the argument at its definition"*; the reader now
+reaches it by address.
+
+Two answers went past the prose they replaced: Q2 separated the two determinism guarantees
+precisely (same-machine replay yes, cross-machine bit-identity no) and named the float-hardening
+reason the old comment only gestured at; Q7 bounded the emit gate correctly, distinguishing the
+per-row block (nothing lost — the base element is recoverable from the standard members) from the
+document roll-up (not derivable, but a single-window range has no oscillation to report).
+
+**Declared limit on this one measurement:** the four repair `refs:` lines
+landed while the reader was working, so its tree was not frozen for the whole read. The added lines
+are bare registry addresses carrying no prose, and none of the ten questions asks about a `SRC-`
+code, so the exposure is nil in substance — but the run is not reproducible byte-for-byte and this
+ledger says so rather than implying it was.
+
+**Witnesses.** Comment-only: code token stream byte-identical to `HEAD`, re-taken after the repair.
+Grammar: `malf format --check` over the file — 121 comment lines, forms `pre=1 post=5 invariant=27
+assert=2 note=28 refs=24 continuation=31 tool=3`, **0 would-be violations**. Behaviour: batch E —
+297 of 297 on clang-21 and 297 of 297 on gcc-16, at a slot acquired in the foreground whose stamp
+read alive before the release. Comment lines 329 → 121 (63 % fewer); would-be violations 326 → 0.
+
 ---
 
 # The law block: one was owed, one was issued, one is minted
@@ -993,11 +1064,50 @@ The three live failures are `insight-canon`'s to repair and are named here only 
 workspace gate is a fact every lane in the wave needs, and because the runbook gap that produced it
 is the same one the next lane will meet.
 
+## 10. THE PER-FILE ADDRESS CENSUS IS NOT A STEP, AND ITS ABSENCE COST THIS RUN FIVE CODES
+
+**Measured on this run's tenth unit, and it is the most serious thing this lane found in `OPS-8`.**
+Converting `src/serialization/serialize.cpp` dropped **five distinct `SRC-<code>` addresses** —
+three span-native codes carried on trailing comments inside one DTO struct, the ordinal-histogram
+row-identity code, and the WHERE-label code that appeared on two `component` fields. The prose
+carried them; the conversion deleted the prose and the claims script had no `refs:` line at those
+four sites.
+
+**Every witness stayed green.** Comment-only passed (it is comment-only). The grammar gate passed
+(a missing citation is not a violation). Both toolchains passed. And
+`registry_grammar_lint` passed — **95 claimed codes, 95 declared in source, zero failures** —
+because each of the five is declared and cited *elsewhere in the repo*, so nothing dangled at the
+workspace level. The loss is of **addressability at the site that obeys the rule**, which is
+exactly what `SRC-`/`LSRC-` exist to provide, and no instrument in the protocol looks for it.
+
+`OPS-8.O5` asks the lane to "record the code's full citer list in its ledger" — a repo-level
+inventory for the pilot's cross-repo pass. That is not the same measurement and does not catch
+this: a repo-level list is unchanged when a file stops citing a code the file next door still
+cites.
+
+**The check is two lines and belongs in `OPS-8.S7`, beside the code-only diff:**
+
+```sh
+diff <(rg -oP '<the SRC pattern>' <HEAD copy> | sort -u) \
+     <(rg -oP '<the SRC pattern>' <converted file> | sort -u)
+```
+
+Per FILE, on the DISTINCT set, not the occurrence count. The occurrence count legitimately falls —
+unit 7 went 38 → 37 because one code was mentioned twice in prose and once in a `refs:` — so
+comparing counts produces a false alarm every time and trains the operator to ignore it. Comparing
+the distinct SET is exact: it is empty or it names precisely what to repair. Unit 7 and unit 9 were
+re-checked this way and both are clean; unit 10 was repaired to clean before its commit.
+
+**Where it bites hardest is still ahead.** `api/` holds 73 declaring-position occurrences across
+two interface units. There, a dropped address is not a lost citation but a lost DECLARATION, which
+`registry_grammar_lint`'s G5 *would* catch per code — so the api/ unit fails loudly where this one
+failed silently. The silent half is every `.cpp` body site in the repo, which is most of them.
+
 ---
 
 # Where this run stopped, and why
 
-**Nine units converted, one law minted, the repo NOT armed.** Arming (`OPS-8.S12`) requires the whole repo at zero,
+**Ten units converted, one law minted and cited twice, the repo NOT armed.** Arming (`OPS-8.S12`) requires the whole repo at zero,
 which this run does not reach, so `comment_contract: true` is **not** set and the CCC phase still
 counts `insight-metalog` rather than failing it.
 
@@ -1012,9 +1122,10 @@ counts `insight-metalog` rather than failing it.
 | 7 | `src/engine/engine.cpp` | 1 | 361 | 363 → 181 | 12 of 12 recovered |
 | 8 | `src/stats/wire_format.cpp` — the law block | 1 | 28 | 29 → 26 | 6 of 6 recovered |
 | 9 | `src/operations/` compose + diff | 2 | 419 | 424 → 154 | 12 of 12 recovered |
-| | **total** | **14** | **1 530** | **1 550 → 607 (61 % fewer)** | **75 of 75 recovered, 0 not recovered** |
+| 10 | `src/serialization/serialize.cpp` | 1 | 326 | 329 → 121 | 10 of 10 recovered |
+| | **total** | **15** | **1 856** | **1 879 → 728 (61 % fewer)** | **85 of 85 recovered, 0 not recovered** |
 
-**1 530 of the repo's 6 701 would-be violations, 22.8 %, in nine commits.** Every claim held for a
+**1 856 of the repo's 6 701 would-be violations, 27.7 %.** Every claim held for a
 reader was recovered — **45 of 45, 0 not recovered** — so nothing had to be re-homed above the
 comment rung. **Two lines this conversion itself wrote were found defective by the readers and
 corrected**: the `observability only` note in unit 3, which was false; the `assert:` in unit 5,
@@ -1048,8 +1159,7 @@ the one shared `.clang-tidy`). The four that remain are all in units this run di
 **One law block** — one is owed and is recorded
 above for the pilot to number.
 
-**What remains, in the order a next lane should take it.** Source: `src/operations/` (compose 223 + diff 196) 419 · `src/serialization/serialize.cpp` 326 ·
-`src/stats/wire_format.cpp` 28 (**blocked on the law number**) · `api/` 1 414 (**must be read for
+**What remains, in the order a next lane should take it.** Source: `src/operations/` (compose 223 + diff 196) 419 · `src/stats/wire_format.cpp` 28 (**blocked on the law number**) · `api/` 1 414 (**must be read for
 statement-bearing `SRC-<code>` sites first — 73 declaring-position occurrences across its two
 files**). Harness: `scripts/` 545 · `benchmarks/` 241 · `test_package/` 16. Test tier:
 `tests/operations` 1 402 · `tests/engine` 268 · `tests/serialization` 252 · `tests/reservoir` 244 ·
@@ -1071,6 +1181,7 @@ files**). Harness: `scripts/` 545 · `benchmarks/` 241 · `test_package/` 16. Te
   | batch B | 2026-09-06 00:30 | units 1-4, all four in the tree | 297 of 297 clang-21, 297 of 297 gcc-16 |
   | batch C | 2026-09-06 00:55 | units 5-7 | 297 of 297 clang-21, 297 of 297 gcc-16 |
 | batch D | 2026-09-06 01:14 | units 8-9 | 297 of 297 clang-21, 297 of 297 gcc-16 |
+| batch E | 2026-09-06 01:20 | unit 10 | 297 of 297 clang-21, 297 of 297 gcc-16 |
 
   Batch D was taken after units 8 and 9 had landed — the batched rule puts the witness after the
   landing by construction, and it is why those two were committed rather than held in a dirty tree

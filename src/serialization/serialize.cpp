@@ -1,7 +1,8 @@
 module;
 #include <glaze/glaze.hpp>
 
-#include "json_egress.hpp" // the package's ONE Glaze write entry point (DN-65.D2)
+// refs: DN-65.D2
+#include "json_egress.hpp"
 
 module insight.metalog;
 import insight.metalog.internal;
@@ -9,25 +10,13 @@ import insight.metalog.api;
 import insight.canon;
 import insight.metalog.detail.stats;
 
-// MetaLog JSON serialiser (the SPEC envelope at `kMetaLogSpecVersion`). The
-// restrictive, omit-empty glaze DTO layer: a per-wire struct mirror of the domain
-// types + the make_* builders that translate domain -> DTO, behind the two free
-// `to_json` overloads. Single responsibility — serialization only (no producer
-// state, no compose/diff semantics).
-
 namespace insight::metalog
 {
 
-// ── JSON serialiser (glaze, DTO layer) ─────────────────────────
-//
-// Serialization is a thin DTO mirroring the MetaLog envelope: each
-// DTO field name IS the JSON key, so the struct declaration reads as the
-// schema and glaze reflects it with zero stringly-typed mapping. The domain
-// types stay free of any serialization concern.
-//
-// Restrictive/canonical output: every field that the spec omits-when-absent
-// is a std::optional here, populated only when present; glaze's
-// skip_null_members then drops it. One document -> one byte sequence.
+// invariant: each DTO field name IS the JSON key, so the struct declaration reads as the schema and
+// glaze reflects it with no stringly-typed mapping.
+// invariant: every field the spec omits-when-absent is an optional here, populated only when
+// present, so one document yields one byte sequence.
 namespace dto
 {
 
@@ -46,15 +35,14 @@ namespace dto
         std::uint64_t lines_observed{0};
     };
 
-    // All fields optional: each omitted when absent. An all-empty source still
-    // serialises as `{}` (the block itself is always present in a document).
+    // note: an all-empty source still serialises as {} -- the block itself is always present.
     struct Source
     {
         std::optional<std::string> service;
         std::optional<std::string> fleet;
         std::optional<std::uint64_t> host_count;
         std::optional<std::string> host;
-        std::optional<std::map<std::string, std::string>> tags; // omitted when empty
+        std::optional<std::map<std::string, std::string>> tags;
     };
 
     struct TailSummary
@@ -64,34 +52,21 @@ namespace dto
         double tail_max_rate{0.0};
     };
 
-    // Per-wildcard-position value-count histogram (SPEC §3.5). value_counts is a
-    // std::map so glaze emits it KEY-SORTED — the §15.6 replay bit-identity
-    // requirement; the domain FieldHistogram::value_counts is an unordered_map whose
-    // iteration order is not portable across runs/impls, so it is copied into a map
-    // at the serialization boundary. approximate_cardinality is omitted when 0
-    // (== not computed). Reflected (no glaze meta): member names are the wire keys,
-    // matching $defs/param_histogram exactly.
-    //
-    // entropy_bits is intentionally NOT on the wire (§3.5 MUST NOT): it is losslessly
-    // derivable from value_counts, so dropping it keeps the DISTRIBUTION fields
-    // (param_index / value_counts / total) integer and genuinely cross-machine
-    // bit-identical — independent of float-hardening.
-    // approximate_cardinality stays (it is the UNCAPPED distinct count, NOT derivable
-    // from the capped value_counts) but is uint64-typed yet HLL-float-derived: it is
-    // deterministic under same-machine replay (v1's pairwise batch), while
-    // cross-machine bit-identity is a separate guarantee it does NOT carry. Any
-    // cross-build / history signal derived from it is therefore not cross-machine stable.
+    // invariant: value_counts is a std::map so glaze emits it KEY-SORTED; the domain's
+    // unordered_map order is not portable, so it is copied at this boundary.
+    // post: entropy_bits is deliberately NOT on the wire -- it is losslessly derivable, and
+    // dropping it keeps the distribution fields integer and cross-machine bit-identical.
+    // note: approximate_cardinality is HLL-derived: same-machine replay only, not cross-machine.
     struct ParamHistogram
     {
         std::uint32_t param_index{0};
         std::map<std::string, std::uint64_t> value_counts;
         std::uint64_t total{0};
-        std::optional<std::uint64_t> approximate_cardinality; // omit when 0 (not computed)
+        std::optional<std::uint64_t> approximate_cardinality;
     };
 
-    // W1 ordinal histogram (§4A.4 SRC-D-W1-2): the field-keyed binned carrier. `counts` is the
-    // full, uncapped tail over the schedule's frozen log2 ladder; `schedule_id` is the eidos
-    // comparability key. Reflected by member name (no glaze override needed), like ParamHistogram.
+    // note: counts is the full uncapped tail; schedule_id is the consumer's comparability key.
+    // refs: SRC-D-W1-2
     struct OrdinalHistogram
     {
         std::string field_name;
@@ -100,42 +75,11 @@ namespace dto
         std::uint64_t total{0};
     };
 
-    // ── SPEC §7 `extensions` — the ONLY carrier of non-standard members ──
-    //
-    // The reverse-DNS key IS the wire key, and a C++ identifier cannot hold a '.', so every
-    // container spells its keys in a glaze meta instead of being reflected. One struct per
-    // placement, and §7's placement table grants all three this file uses: the MetaLog document
-    // root (v0.1.0), `stats.top_k[]` (v0.8.0), and the `MetaLogDiff` document root (v0.9.0).
-    //
-    // That the table names them is the whole authority. §7 grants the container object by object
-    // and says so deliberately — one granted everywhere in advance could never be withdrawn,
-    // because removing a placement is a BREAKING change. So the openness of a document root
-    // (`additionalProperties: true` on both) is not a licence: it is why a bare vendor member
-    // there validates instead of being rejected, which is exactly the case §7's MUST exists to
-    // cover and the validator reports as legal-but-undescribed. Any FURTHER placement this
-    // producer needs is an issue on `metalog-spec`, never a bare member written here.
-    //
-    // A member the spec later describes leaves its container and becomes a bare member of the
-    // standard object, which is the whole point of keeping the two surfaces apart.
-    //
-    // Each member is an optional and each container is an optional: a row/document with no
-    // vendor data emits no `extensions` key at all, so the omit-when-absent discipline the rest
-    // of this file follows is unbroken and an empty container can never reach the wire.
-    // DN-50.D5 per-retained-row presence churn. Passes the SUBJECT leg of the disposition test
-    // (presence oscillation is a property of the observed window range, not of our pass over it)
-    // and the COMPARABILITY leg as a species-(b): the presence predicate depends on the retention
-    // parameters `retention_profile` names, and section 13 already requires `retention_profile`
-    // equal on both sides of the operations churn is produced by. So this is a PROTOTYPE placement
-    // rather than an exile — eventually standardizable, on the same footing as
-    // `stats.reservoir[].salience`, which the standard already carries.
-    //
-    // `first`/`last` are OPTIONAL and their absence is the DN-50.D4 `not retained here` symbol.
-    // That is unambiguous rather than a collapse of the two absent symbols: this block is emitted
-    // only for `span_windows >= 2`, so the EMPTY-RANGE symbol is unreachable on the wire by
-    // construction, and an omitted boolean can only mean the range's first (or last) window
-    // truncated without retaining this template. A consumer re-folding two adjacent documents reads
-    // an omission exactly as the producer does — the boundary contributes an `indeterminate`, not a
-    // transition.
+    // invariant: a reverse-DNS key cannot be a C++ identifier, so every container spells its keys
+    // in a glaze meta instead of being reflected.
+    // invariant: the spec's placement table grants each container object by object, so a further
+    // placement is an issue on the standard, never a bare member written here.
+    // note: member and container are both optional, so an empty container never reaches the wire.
     struct PresenceChurn
     {
         std::uint32_t span_windows{0};
@@ -145,9 +89,8 @@ namespace dto
         std::optional<bool> last;
     };
 
-    // The document-root roll-up (DN-50.D5). `horizon` names the presence predicate so
-    // `indeterminate` means the same thing across producers; without it the counters are
-    // uncomparable and the block fails its own honesty test.
+    // invariant: horizon names the presence predicate, so indeterminate means the same thing across
+    // producers; without it the counters are uncomparable.
     struct PresenceChurnSummary
     {
         std::uint32_t span_windows{0};
@@ -157,13 +100,11 @@ namespace dto
         std::string horizon;
     };
 
+    // refs: SRC-D-W1-4
     struct TopKExtensions
     {
-        // Fails the comparability leg of the disposition test: the bins ride an unfrozen log2
-        // ladder and `schedule_id` is an engine-side key, so two producers would emit
-        // incomparable bins. It stays namespaced until an RFC freezes the ladder.
+        // note: an unfrozen ladder and an engine-side schedule id make two producers' bins differ.
         std::optional<std::vector<OrdinalHistogram>> ordinal_histograms;
-        // DN-50.D4/D5 — the per-template churn element over the range this document covers.
         std::optional<PresenceChurn> presence_churn;
 
         struct glaze
@@ -175,25 +116,19 @@ namespace dto
         };
     };
 
+    // refs: SRC-D-WHERE-2
     struct TopKEntry
     {
         std::string template_id;
         std::uint64_t count{0};
         double frequency{0.0};
-        std::optional<std::string> tmpl;      // key "template"; omitted when empty
-        std::optional<std::string> level;     // spec level string; omitted when absent
-        std::optional<std::string> component; // WHERE label (SRC-D-WHERE-2); omitted when absent
-        // SPEC §3.5 per-param histograms. Present only when the producer enabled
-        // max_param_histograms (batch / full-fidelity path); omitted otherwise
-        // (skip_null_members), so default and streaming documents are byte-unchanged.
+        std::optional<std::string> tmpl;
+        std::optional<std::string> level;
+        std::optional<std::string> component;
         std::optional<std::vector<ParamHistogram>> param_histograms;
-        // The §7 container (see TopKExtensions). Carries the W1 ordinal histograms, which are
-        // ours and not the standard's; omitted when the row has no vendor data, so a non-ordinal
-        // row is byte-identical to one from a producer that has none (SRC-D-W1-4).
         std::optional<TopKExtensions> extensions;
 
-        // glaze rename: `tmpl` -> "template" (a C++ keyword), every other field by
-        // reflection.
+        // note: glaze renames tmpl to "template", a C++ keyword; every other field reflects.
         struct glaze
         {
             using T = TopKEntry;
@@ -204,31 +139,25 @@ namespace dto
         };
     };
 
-    // Cube coordinate (SPEC §16.4) — an OPEN object keyed by axis name. The §16.2
-    // reference axes are level (categorical), where (chain, prefix-path array), and
-    // structural_role (categorical); skip_null_members omits an absent (aggregated) axis.
-    // A future axis is one more optional field — the wire object stays open over names.
+    // invariant: the coord is an OPEN object keyed by axis name, so an absent (aggregated) axis is
+    // omitted and a future axis is one more optional field.
     struct CubeCoord
     {
         std::optional<std::string> level;
         std::optional<std::vector<std::string>> where;
         std::optional<std::string> structural_role;
-        // Diff-only ordinal differential axis (cube_differential_axes.md §4); present only on a
-        // cube_diff border cell whose component shifted in either direction (a signed up_*/down_*
-        // band), absent on a stored cell (skip_null_members omits it — the wire object stays open
-        // over axis names).
+        // note: the shift axis is present only on a diff border cell, absent on a stored cell.
         std::optional<std::string> latency_shift;
     };
 
-    // Cube axis descriptor (SPEC §16.2). chain + floor_depth present only for kind=="chain".
+    // note: chain and floor_depth are present only for a chain-kind axis.
     struct CubeAxis
     {
         std::string name;
         std::string kind;
         std::optional<std::vector<std::string>> chain;
         std::optional<std::uint32_t> floor_depth;
-        std::optional<std::uint32_t>
-            band_floor; // ordinal collapse depth (level banding, §C3); omit when absent
+        std::optional<std::uint32_t> band_floor;
     };
 
     struct CubeCell
@@ -237,38 +166,35 @@ namespace dto
         std::uint64_t count{0};
     };
 
-    // Closed cube block (SPEC §16.1). floor_saturation is omitted (degenerate at
-    // floor_depth=1; a diff-time concept) — consumers read its absence leniently.
+    // note: floor_saturation is omitted -- degenerate at depth 1 and a diff-time concept.
     struct CubeBlock
     {
         std::vector<CubeAxis> axes;
         std::vector<CubeCell> cells;
         std::uint64_t cell_count{0};
         std::uint64_t raw_cell_count{0};
-        // SPEC §16.10 — the static closed-cell budget. It dominates the §11.3 envelope sum, so a
-        // consumer that cannot read it cannot price the block at all.
+        // invariant: the closed-cell budget dominates the envelope sum, so a consumer that cannot
+        // read it cannot price the block at all.
         std::optional<std::uint64_t> cell_budget;
     };
 
-    // Salience reservoir entry (Tier 2). Self-describing: carries WHY it was kept
-    // (salience + the per-axis bands) so a consumer/explainer can attribute it without
-    // the producer. Emitted under `compose()` and serialise→reparse.
+    // invariant: a reservoir row is self-describing -- it carries WHY it was kept, so a consumer
+    // can attribute it without the producer.
+    // refs: SRC-D-WHERE-2
     struct ReservoirEntry
     {
         std::string template_id;
         std::uint64_t count{0};
         double frequency{0.0};
-        std::optional<std::string> tmpl;      // key "template"; omitted when empty
-        std::optional<std::string> level;     // spec level string; omitted when absent
-        std::optional<std::string> component; // WHERE label (SRC-D-WHERE-2); omitted when absent
-        std::optional<std::string> structural_role; // omitted when None
+        std::optional<std::string> tmpl;
+        std::optional<std::string> level;
+        std::optional<std::string> component;
+        std::optional<std::string> structural_role;
         std::uint32_t structural_surprise{0};
         std::uint32_t novelty{0};
         std::uint32_t salience{0};
-        std::optional<std::uint64_t>
-            within_window_ordinal; // §15.4 sub-coordinate; omit when absent
-        std::optional<CubeCoord>
-            cube_coord; // §16.6 reservoir→cell LOCATION cross; omit when absent
+        std::optional<std::uint64_t> within_window_ordinal;
+        std::optional<CubeCoord> cube_coord;
 
         struct glaze
         {
@@ -282,28 +208,25 @@ namespace dto
         };
     };
 
-    // Per-window acquisition self-assessment (SRC-D-WHERE-4/SRC-D-WHERE-5). The window's raw
-    // structural facts (the `component`-axis coverage seed); a consumer applies its own predicate.
-    // All-integer → genuinely cross-machine bit-identical. Omitted when not emitted.
+    // post: all-integer, so the block is genuinely cross-machine bit-identical.
+    // note: the window's raw structural facts; a consumer applies its own predicate.
+    // refs: SRC-D-WHERE-4, SRC-D-WHERE-5, SRC-D-OTEL-13, SRC-D-OTEL-11, SRC-D-OTEL-9
     struct Acquisition
     {
         std::uint64_t records_with_component{0};
-        std::uint64_t distinct_components{0}; // WHERE (component) axis cardinality
-        std::uint64_t level_cardinality{0};   // per-dimension cardinality: level
-        std::uint64_t role_cardinality{0};    // per-dimension cardinality: role
-        std::vector<std::uint64_t> where_cardinality_per_depth; // coarsest → finest (§6.1.1)
-        std::uint64_t closed_cells{0};                          // P_closed — condensed cell count
-        std::uint64_t span_records{0}; // SRC-D-OTEL-13: span events observed (the licence fact)
-        std::uint64_t orphan_parent_edges{
-            0}; // SRC-D-OTEL-11: declared parents that did not resolve
-        std::uint64_t orphan_link_edges{
-            0}; // O4b (SRC-D-OTEL-9): declared link targets that did not resolve
+        std::uint64_t distinct_components{0};
+        std::uint64_t level_cardinality{0};
+        std::uint64_t role_cardinality{0};
+        std::vector<std::uint64_t> where_cardinality_per_depth;
+        std::uint64_t closed_cells{0};
+        std::uint64_t span_records{0};
+        std::uint64_t orphan_parent_edges{0};
+        std::uint64_t orphan_link_edges{0};
     };
 
-    // O4b distilled service topology (SRC-D-OTEL-21). Reflected (member name == JSON key). A
-    // present-but-empty `edges` (traces existed, no cross-service edges) serialises as `[]` —
-    // meaningful (no topology), NOT absence; block absence (a non-span window) is the std::optional
-    // on Document.
+    // invariant: a present-but-empty edges array means "no topology" and is NOT absence; block
+    // absence is the optional on the document.
+    // refs: SRC-D-OTEL-21
     struct ServiceEdge
     {
         std::string caller;
@@ -317,23 +240,18 @@ namespace dto
         std::uint64_t dropped_edges{0};
     };
 
-    // The per-run transport declaration (ADR-23) as the wire carries it. `names` is the ORDERED
-    // outside-in declaration and `catalog_version` the catalogue it resolves against — a row
-    // rename is a comparability event (ADR-23.D3), so a name without its catalogue version is
-    // unresolvable by a later reader.
-    //
-    // `names` is a plain vector, never an optional: the EMPTY array is the payload for an
-    // undeclared run, and skip_null_members would erase exactly the statement being made.
+    // invariant: names is a plain vector and never an optional -- the EMPTY array is the payload
+    // for an undeclared run, and omitting it would erase the statement being made.
+    // note: a name without its catalogue version is unresolvable by a later reader.
+    // refs: ADR-23.D3
     struct TransportDeclaration
     {
         std::string catalog_version;
         std::vector<std::string> names;
     };
 
-    // Composed-ruleset identity wire shape (SRC-II-7, ADR-17). Reflected INSIDE the block
-    // (member name == JSON key); the whole block rides the document-root §7 container below,
-    // and is omitted for a legacy producer (absence = legacy). `packages` renders in canonical
-    // (package-sorted) order.
+    // note: omitted for a legacy producer, and packages renders in package-sorted order.
+    // refs: SRC-II-7
     struct RulesetPackageRef
     {
         std::string name;
@@ -342,31 +260,18 @@ namespace dto
 
     struct RulesetIdentity
     {
-        std::string semantic_identity; // the composed content hash (hex) — the comparability key
-        std::vector<RulesetPackageRef> packages; // the composed set, for legibility
+        std::string semantic_identity;
+        std::vector<RulesetPackageRef> packages;
     };
 
-    // The document-root §7 container (see TopKExtensions for the mechanism). Every member
-    // describes the observed window, so all pass the subject leg of the disposition test; all
-    // fail the comparability leg, and for different reasons — `acquisition`'s
-    // `where_cardinality_per_depth` and `closed_cells` presuppose OUR depth model and OUR closure
-    // geometry, `service_edges` has one implementer, so standardising it would make the
-    // standard a description of this vendor, `transport`'s names are drawn from CANON's own
-    // catalogue, so a bare `transport` member would plant a vendor vocabulary in a vendor-neutral
-    // standard, and `ruleset`'s comparability role is one the standard already owns through the
-    // §2.4 opaque processing identifiers — everything the block carries beyond an opaque hash
-    // (the `packages[]` name/version list) is one vendor's distribution model, so freezing it
-    // would standardise packaging metadata no other implementer has. Namespacing keeps the
-    // content (it is our declared error model made machine-readable — deleting it would make our
-    // documents LESS falsifiable) while telling a reader which half of the document is the
-    // standard's.
+    // invariant: every member here describes the observed window but fails comparability, so
+    // namespacing keeps the content while telling a reader which half is the standard's.
     struct DocumentExtensions
     {
         std::optional<Acquisition> acquisition;
         std::optional<ServiceEdgeBlock> service_edges;
         std::optional<TransportDeclaration> transport;
         std::optional<RulesetIdentity> ruleset;
-        // DN-50.D4/D5 — the presence-churn roll-up over the DECLARED horizon.
         std::optional<PresenceChurnSummary> presence_churn_summary;
 
         struct glaze
@@ -383,16 +288,14 @@ namespace dto
     {
         std::uint64_t unique_templates{0};
         std::size_t top_k_size{0};
-        // SPEC §3.7 — the reservoir's cap. Declared only on a document that CARRIES a reservoir:
-        // §3.7's SHOULD is conditioned on emitting the block, and a cap declared beside an absent
-        // array prices a term the document does not have.
+        // invariant: the reservoir cap is declared only on a document that CARRIES a reservoir -- a
+        // cap beside an absent array prices a term the document does not have.
         std::optional<std::size_t> reservoir_size;
         std::uint64_t tail_count{0};
         std::uint64_t tail_unique{0};
         std::vector<TopKEntry> top_k;
         std::optional<double> entropy_bits;
         std::optional<TailSummary> tail_summary;
-        // Omitted when the reservoir is empty (disabled / nothing salient below top_k).
         std::optional<std::vector<ReservoirEntry>> reservoir;
     };
 
@@ -416,14 +319,10 @@ namespace dto
         std::size_t ngram_size{2};
         std::vector<NGramEntry> top_ngrams;
         std::size_t top_ngrams_size{0};
-        // SPEC §4 — observations refused at the accounting bound. Key order follows §4's own
-        // example (directly after `top_ngrams_size`). A PASS-THROUGH of the domain optional, never
-        // a second place that decides the omission: the "engaged implies > 0" invariant belongs to
-        // whoever computed the value, and re-deciding it here would make a broken producer emit
-        // correct bytes, which is exactly the laundering that keeps a defect out of a test.
+        // invariant: a PASS-THROUGH of the domain optional, never a second place that decides the
+        // omission -- re-deciding here would let a broken producer emit correct bytes.
         std::optional<std::uint64_t> dropped_ngram_observations;
-        // SPEC §4.2 — the branching cap. Its ABSENCE asserts "no cap", so it travels with the
-        // `branching` array and never alone.
+        // invariant: the branching cap's ABSENCE asserts "no cap", so it travels with its array.
         std::optional<std::size_t> branching_size;
         std::optional<std::uint64_t> graph_edge_count;
         std::optional<std::vector<std::string>> dominant_path;
@@ -440,9 +339,7 @@ namespace dto
         double stability_score{1.0};
     };
 
-    // Re-derivation coordinate wire shape (SPEC §15). Field names == JSON keys via
-    // reflection; optionals + skip_null_members omit guarantee-2 aids / children when
-    // absent. Recursive: a composed coordinate carries the set of child coordinates.
+    // invariant: recursive -- a composed coordinate carries the set of child coordinates.
     struct SourceRef
     {
         std::string resolver_kind;
@@ -457,9 +354,8 @@ namespace dto
 
     struct Coordinate
     {
-        // §15.2 XOR: a raw coordinate has source_ref + bounds (children absent); a
-        // composed coordinate has children only. skip_null_members omits whichever
-        // group is absent — consumers discriminate by the presence of `children`.
+        // invariant: a raw coordinate has source_ref and bounds, a composed one has children only;
+        // consumers discriminate on the presence of children.
         std::optional<SourceRef> source_ref;
         std::optional<Bounds> bounds;
         std::optional<std::string> canonicalization_version;
@@ -476,10 +372,10 @@ namespace dto
     struct Provenance
     {
         ProvenanceWindow window;
-        std::optional<Source> source; // omitted when empty
+        std::optional<Source> source;
         std::uint64_t lines_observed{0};
         std::optional<std::string> document_id;
-        std::optional<Coordinate> coordinate; // §15.5 — the raw child's coordinate
+        std::optional<Coordinate> coordinate;
     };
 
     struct Document
@@ -492,25 +388,19 @@ namespace dto
         std::optional<Behavior> behavior;
         std::optional<Stability> stability;
         std::optional<std::vector<Provenance>> provenance;
-        std::optional<std::string> canonicalization_version; // §2.4 processing identifiers
+        std::optional<std::string> canonicalization_version;
         std::optional<std::string> retention_profile;
-        std::optional<Coordinate> coordinate; // §15 re-derivation coordinate
-        std::optional<CubeBlock> cube;        // §16 intra-window cube; omit when not emitted
-        // SPEC §2.5 (ADR-17) — the run's terminal verdict, in the standard's own LOWER-CASE
-        // minted vocabulary (spec_run_outcome_of); omitted when no verdict was observed.
+        // note: the run verdict is the standard's own LOWER-CASE minted vocabulary.
+        // refs: LSRC-8
+        std::optional<Coordinate> coordinate;
+        std::optional<CubeBlock> cube;
         std::optional<std::string> run_outcome;
-        // DECLARED LAST: the standard's members first, then the §7 container that says "everything
-        // below this key is ours". Carries the SRC-D-WHERE-4 acquisition self-assessment, the
-        // O4b (SRC-D-OTEL-21) service topology, the ADR-23 transport declaration, and the
-        // SRC-II-7 composed-ruleset identity; omitted when a document has none of them.
+        // invariant: the standard's members are declared first and the vendor container last, so
+        // the wire says plainly which half of the document is ours.
         std::optional<DocumentExtensions> extensions;
     };
 
-    // ── Diff DTO (SPEC §13) ──
-
-    // Cube diff border (SPEC §13.6). A border cell = a constraint coord + the (was, now)
-    // counts it bounds; a border = the (lower, upper) pair; the cube_diff = axes + the two
-    // regions (each omitted when empty).
+    // note: a border cell is a constraint coord plus the (was, now) counts it bounds.
     struct CubeBorderCell
     {
         CubeCoord coord;
@@ -531,26 +421,18 @@ namespace dto
         std::optional<CubeBorder> vanishing;
     };
 
-    // Reservoir-delta entry — SPEC §13.7.1, described since v0.9.0 (this member rode the wire
-    // before it had a section; the design that produced it is the streaming chronic-vs-new seam).
-    // A new/vanished rare-salient template snapshot: why it was kept (salience) + how loud
-    // (count) + its severity/role bands. §13.7.1 requires template_id/count/salience and makes
-    // level/structural_role omit-when-absent — field names == JSON keys (glaze reflection);
-    // skip_null_members does the omitting.
+    // note: this member rode the wire before the standard gave it a section.
     struct ReservoirDeltaEntry
     {
         std::string template_id;
-        std::optional<std::string> level;           // omit when absent
-        std::optional<std::string> structural_role; // omit when None
+        std::optional<std::string> level;
+        std::optional<std::string> structural_role;
         std::uint32_t salience{0};
         std::uint64_t count{0};
     };
 
-    // One failure-frontier crossing — SPEC §13.7.2. The frontier is the level SET {ERROR, FATAL},
-    // decided as a set test and never as an ordinal compare against ERROR. direction is "up"
-    // (crossed into the frontier) or "down" (crossed out), oriented previous→current — SIGNED and
-    // polarity-mute: §13.7.2 states the escalation/recovery reading is the consumer's, because a
-    // template leaving ERROR because its code path stopped running is not a repair.
+    // invariant: the frontier is the level SET, decided as a set test and never as an ordinal
+    // compare, and direction is polarity-mute because the reading is the consumer's.
     struct FrontierCrossing
     {
         std::string template_id;
@@ -559,10 +441,8 @@ namespace dto
         std::optional<std::string> current_level;
     };
 
-    // SPEC §13.7. Each list omitted when empty; the whole block is omitted upstream when all
-    // three are — §13.7 states the block MUST be omitted when all three are empty and an emitted
-    // block MUST carry at least one non-empty list, which is the same rule as this producer's
-    // emptiness-as-absence.
+    // invariant: the block is omitted when all three lists are empty, and an emitted block carries
+    // at least one non-empty list.
     struct ReservoirDelta
     {
         std::optional<std::vector<ReservoirDeltaEntry>> new_salient;
@@ -605,14 +485,14 @@ namespace dto
     struct NGramDelta
     {
         std::size_t ngram_size{2};
-        std::optional<std::vector<std::vector<std::string>>> new_ngrams;      // omit when empty
-        std::optional<std::vector<std::vector<std::string>>> vanished_ngrams; // omit when empty
-        std::optional<std::vector<NGramRateChange>> rate_changed;             // omit when empty
+        std::optional<std::vector<std::vector<std::string>>> new_ngrams;
+        std::optional<std::vector<std::vector<std::string>>> vanished_ngrams;
+        std::optional<std::vector<NGramRateChange>> rate_changed;
     };
 
-    // O4b service-topology delta (SRC-D-OTEL-21). Each list omitted when empty; the whole block
-    // present in the Diff DTO iff both documents carried a service_edges block (absent ⇒
-    // *unknown*).
+    // invariant: the whole block is present iff BOTH documents carried a service_edges block;
+    // absence means unknown.
+    // refs: SRC-D-OTEL-21
     struct ServiceEdgeWeightChange
     {
         std::string caller;
@@ -624,16 +504,13 @@ namespace dto
 
     struct ServiceEdgeDelta
     {
-        std::optional<std::vector<ServiceEdge>> emerged;                    // omit when empty
-        std::optional<std::vector<ServiceEdge>> vanished;                   // omit when empty
-        std::optional<std::vector<ServiceEdgeWeightChange>> weight_changed; // omit when empty
+        std::optional<std::vector<ServiceEdge>> emerged;
+        std::optional<std::vector<ServiceEdge>> vanished;
+        std::optional<std::vector<ServiceEdgeWeightChange>> weight_changed;
     };
 
-    // The diff-root §7 container (see TopKExtensions for the mechanism). §7's placement table
-    // GRANTS the `MetaLogDiff` document root from v0.9.0, so this container is the described
-    // carrier here, not merely a form the open root tolerates. `service_edge_delta` is under it
-    // because the block it diffs is itself vendor data — the document-root
-    // `fr.coderoast.service_edges` topology — and a diff of vendor data is vendor data.
+    // note: a diff of vendor data is vendor data, which is why the topology delta sits here.
+    // refs: SRC-D-OTEL-21
     struct DiffExtensions
     {
         std::optional<ServiceEdgeDelta> service_edge_delta;
@@ -664,32 +541,24 @@ namespace dto
         std::string diff_version;
         DocRef previous;
         DocRef current;
-        // SPEC §13.2, REQUIRED: "changed" | "unchanged". Declared with the other three required
-        // members and before every optional signal property, because it is the assertion the
-        // witness rule then judges those properties against. Never defaulted — make_diff fills it
-        // from comparison_outcome_of, which reads the diff's findings.
+        // invariant: comparison_outcome is declared with the required members and before every
+        // optional signal, because it is the assertion the witness rule judges them against.
         std::string comparison_outcome;
         std::optional<double> kl_divergence;
         std::optional<double> js_divergence;
         std::optional<double> stability_score;
-        std::optional<std::vector<TemplateDelta>> template_deltas; // omit when empty
-        std::optional<std::vector<std::string>> new_templates;     // omit when empty
+        std::optional<std::vector<TemplateDelta>> template_deltas;
+        std::optional<std::vector<std::string>> new_templates;
         std::optional<std::vector<std::string>> vanished_templates;
         std::optional<std::vector<BranchingDelta>> branching_delta;
         std::optional<NGramDelta> ngram_delta;
         std::optional<TailDelta> tail_delta;
-        std::optional<CubeDiff> cube_diff; // §13.6 emerging-border cube diff; omit when absent
-        std::optional<ReservoirDelta> reservoir_delta; // §13.7 reservoir delta; omit when empty
-        // §13.2.2, the witness of last resort: the signal properties this comparison found a change
-        // in that this document does not carry. Omitted when empty rather than written as `[]` —
-        // §13.2 lets a producer emit a property's declared vacuous value OR omit it, and omitting
-        // keeps every document that withholds nothing byte-identical to what it was before 0.10.0.
-        // Filled from withheld_signals_of, which reads the diff's findings; never from which
-        // members the block above happens to fill in.
+        // invariant: withheld_signals is omitted when empty rather than written as an empty array,
+        // so a document that withholds nothing stays byte-identical to its pre-0.10.0 self.
+        std::optional<CubeDiff> cube_diff;
+        std::optional<ReservoirDelta> reservoir_delta;
         std::optional<std::vector<std::string>> withheld_signals;
-        // DECLARED LAST: the standard's members first, then the §7 container (the Document
-        // discipline). Carries the O4b (SRC-D-OTEL-21) service-topology delta; omitted when the
-        // diff has no vendor data.
+        // note: the vendor container is declared last, the same discipline as the document.
         std::optional<DiffExtensions> extensions;
     };
 
@@ -698,11 +567,10 @@ namespace dto
 namespace
 {
 
-    // Presentational only. RFC 8259 conformance is NOT settled here: `json_egress::to_string`
-    // forces the escape member, so this option set cannot turn it off (DN-65.D2).
+    // note: presentational only -- the egress wrapper forces the escape member regardless.
+    // refs: DN-65.D2
     constexpr glz::opts kWriteOpts{.skip_null_members = true};
 
-    // Build the serialization Source DTO from the domain SourceBlock.
     dto::Source make_source(const SourceBlock& src)
     {
         dto::Source out;
@@ -720,8 +588,7 @@ namespace
         return !src.service && !src.fleet && !src.host_count && !src.host && src.tags.empty();
     }
 
-    // Map a domain re-derivation coordinate to its wire shape (§15), recursing into
-    // composed children.
+    // post: the wire shape of a re-derivation coordinate, recursing into composed children.
     dto::Coordinate make_coordinate(const ReDerivationCoordinate& coord)
     {
         dto::Coordinate out;
@@ -744,8 +611,6 @@ namespace
         return out;
     }
 
-    // ── Cube (SPEC §16 / §13.6) ── domain → wire, defined before make_reservoir_entry
-    // (the reservoir cube_coord cross) and make_document/make_diff use them.
     dto::CubeCoord make_cube_coord(const CubeCoord& coord)
     {
         dto::CubeCoord out;
@@ -820,9 +685,8 @@ namespace
         return out;
     }
 
-    // SRC-D-TIR-2 render seam: the domain carries TemplateId PODs; the wire carries "h:"+hex
-    // strings. These render an id / id-sequence at exactly this boundary (the only place the
-    // string materialises). render(TemplateId) is canon's.
+    // note: this is the ONLY place a template id materialises as a string.
+    // refs: SRC-D-TIR-2
     [[nodiscard]] std::vector<std::string> render_sequence(const std::vector<TemplateId>& ids)
     {
         std::vector<std::string> out;
@@ -841,24 +705,19 @@ namespace
         return out;
     }
 
-    // SRC-D-TIR-5 field-drop: the display-only `template_str` is resolved by id from the
-    // engine-owned TemplateRegistry at this seam (the field is gone from the document). The
-    // registry holds every template id the engine ingested, so an engine-built document resolves
-    // byte-identically to the old inline field; a hand-built document must seed a registry with its
-    // strings.
+    // pre: the registry holds every template id the document names; a hand-built document must seed
+    // one with its strings.
+    // refs: SRC-D-TIR-5
     [[nodiscard]] std::string resolve_template_str(const TemplateRegistry& registry,
                                                    TemplateId template_id)
     {
         return std::string{registry.lookup(template_id)};
     }
 
-    // One top_k row, incl. the optional §3.5 per-param histograms (value_counts is
-    // copied into a std::map so the wire is key-sorted, §15.6).
-    // DN-50.D4 presence symbol -> the wire's optional boolean. `Present`/`Absent` are the two
-    // definite presence bits; `Unretained` has no boolean to be, and an omitted member is how the
-    // wire says so (see dto::PresenceChurn). `EmptyRange` is unreachable here: the emit gate below
-    // only writes a block whose span is at least `kMinimumInformativeSpan`, and an element of
-    // non-zero span never carries that symbol.
+    // post: Present and Absent are the two definite bits; Unretained has no boolean to be, so an
+    // omitted member is how the wire says so.
+    // assert: EmptyRange is unreachable here -- the emit gate only writes a block whose span is at
+    // least the informative minimum.
     [[nodiscard]] std::optional<bool> wire_presence(PresenceSymbol symbol) noexcept
     {
         switch (symbol)
@@ -874,15 +733,9 @@ namespace
         return std::nullopt;
     }
 
-    // THE EMIT GATE, and its argument. A one-window range cannot carry a transition —
-    // `transitions <= span_windows - 1` forces it to zero and `indeterminate` with it — so a
-    // span-1 block would be five members whose values another member already fixes: bytes on every
-    // single-window document, carrying no claim a reader could not derive. Below the informative
-    // span the block is omitted entirely, which is the omit-when-absent discipline the rest of this
-    // file follows, and it costs a consumer nothing: the base-window element is recoverable from
-    // the STANDARD members (a row in `stats.top_k`/`stats.reservoir` was present; anything else is
-    // `Absent` when `retention_is_exhaustive` holds and `Unretained` when it does not) — the same
-    // rule the producer itself applies.
+    // post: false below the informative span, so a one-window document omits the block rather than
+    // emitting members another member already fixes.
+    // note: the base-window element stays recoverable from the standard members.
     [[nodiscard]] bool churn_is_informative(const PresenceChurn& churn) noexcept
     {
         return churn.span_windows >= PresenceChurnSummary::kMinimumInformativeSpan;
@@ -894,13 +747,12 @@ namespace
         row.template_id = insight::render(entry.template_id);
         row.count = entry.count;
         row.frequency = entry.frequency;
-        // SPEC §3.4: the per-entry `template` is optional on the wire; this producer emits it.
+        // note: the per-entry template is optional on the wire and this producer emits it.
         if (std::string str{resolve_template_str(registry, entry.template_id)}; !str.empty())
             row.tmpl = std::move(str);
-        // DN-32.D3: the WIRE carries the level alone — the provenance half of EventLevel is
-        // domain-only. DN-43.D10: and an ABSENCE is omitted, exactly as the line below already does
-        // for `component`, the member SPEC §3.8 declares the same species. spec_level_of folds the
-        // producer's two absences into the wire's one.
+        // invariant: the wire carries the level alone -- the provenance half is domain-only, and an
+        // absence is omitted rather than rendered.
+        // refs: DN-32.D3, DN-43.D10
         row.level = spec_level_of(entry.dominant_level);
         if (entry.dominant_component)
             row.component = *entry.dominant_component;
@@ -920,11 +772,9 @@ namespace
             }
             row.param_histograms = std::move(hists);
         }
-        // The row's §7 container. Filled member by member and installed only if some member
-        // landed — never assigned per member, which is how a second vendor datum would silently
-        // erase the first (the document-root container carries the same rule and the same scar).
+        // invariant: the row's vendor container is filled member by member and installed only if
+        // some member landed -- assigning per member would silently erase an earlier datum.
         dto::TopKExtensions extensions;
-        // W1 ordinal histograms (§4A.4 SRC-D-W1-2) — emitted only when present (omit-when-empty).
         if (!entry.ordinal_histograms.empty())
         {
             std::vector<dto::OrdinalHistogram> ordinals;
@@ -936,7 +786,8 @@ namespace
                                                          .total = hist.total});
             extensions.ordinal_histograms = std::move(ordinals);
         }
-        // DN-50.D5 presence churn, gated on the range being long enough to carry a claim.
+        // note: the per-row churn block is gated on the range being long enough to carry a claim.
+        // refs: DN-50.D5
         if (churn_is_informative(entry.presence_churn))
             extensions.presence_churn =
                 dto::PresenceChurn{.span_windows = entry.presence_churn.span_windows,
@@ -949,7 +800,6 @@ namespace
         return row;
     }
 
-    // One salience-reservoir row: the rare-salient template plus why it was kept.
     dto::ReservoirEntry make_reservoir_entry(const ReservoirEntry& entry,
                                              const TemplateRegistry& registry)
     {
@@ -959,10 +809,7 @@ namespace
         row.frequency = entry.frequency;
         if (std::string str{resolve_template_str(registry, entry.template_id)}; !str.empty())
             row.tmpl = std::move(str);
-        // DN-32.D3: the WIRE carries the level alone — the provenance half of EventLevel is
-        // domain-only. DN-43.D10: and an ABSENCE is omitted, exactly as the line below already does
-        // for `component`, the member SPEC §3.8 declares the same species. spec_level_of folds the
-        // producer's two absences into the wire's one.
+        // refs: DN-32.D3, DN-43.D10
         row.level = spec_level_of(entry.dominant_level);
         if (entry.dominant_component)
             row.component = *entry.dominant_component;
@@ -993,9 +840,6 @@ namespace
                 dto::TailSummary{.tail_template_count = stats.tail_summary->tail_template_count,
                                  .tail_entropy_bits = stats.tail_summary->tail_entropy_bits,
                                  .tail_max_rate = stats.tail_summary->tail_max_rate};
-        // Salience reservoir: part of the external contract so a serialised metalog
-        // document carries the rare-salient templates (and why they were kept). Omitted
-        // when empty.
         if (!stats.reservoir.empty())
         {
             std::vector<dto::ReservoirEntry> rows;
@@ -1068,8 +912,7 @@ namespace
                       .duration_seconds = doc.window.duration_seconds,
                       .lines_observed = doc.window.lines_observed};
         out.source = make_source(doc.source);
-        // SPEC §3.4: this producer emits the INLINE mode — the per-entry `template`, resolved by
-        // id from the engine-owned registry. The three modes are a producer MAY (ADR-9).
+        // note: this producer emits the INLINE template mode, which the spec makes a producer MAY.
         out.stats = make_stats(doc.stats, registry);
         if (doc.behavior)
             out.behavior = make_behavior(*doc.behavior);
@@ -1103,7 +946,7 @@ namespace
                 .span_records = doc.acquisition->span_records,
                 .orphan_parent_edges = doc.acquisition->orphan_parent_edges,
                 .orphan_link_edges = doc.acquisition->orphan_link_edges};
-        if (doc.service_edges) // O4b (SRC-D-OTEL-21): present iff the window had trace substrate
+        if (doc.service_edges)
         {
             dto::ServiceEdgeBlock block{.edges = {},
                                         .dropped_edges = doc.service_edges->dropped_edges};
@@ -1113,14 +956,13 @@ namespace
                     {.caller = edge.caller, .callee = edge.callee, .weight = edge.weight});
             extensions.service_edges = std::move(block);
         }
-        // ADR-23 per-run declaration. Present on every PRODUCED document (the engine stamps it
-        // unconditionally); absent only on a composed document whose inputs disagreed.
+        // note: present on every produced document; absent only on a disagreeing compose.
+        // refs: ADR-23.D1
         if (doc.transport)
             extensions.transport = dto::TransportDeclaration{
                 .catalog_version = doc.transport->catalog_version, .names = doc.transport->names};
-        // SRC-II-7 composed-ruleset identity — under the §7 container because §2.4's opaque
-        // identifiers already own its comparability role and its `packages[]` list is one
-        // vendor's distribution model (the DocumentExtensions rationale).
+        // note: the opaque identifiers already own the ruleset's comparability role.
+        // refs: SRC-II-7
         if (doc.ruleset)
         {
             dto::RulesetIdentity ruleset{.semantic_identity = doc.ruleset->semantic_identity,
@@ -1130,9 +972,8 @@ namespace
                 ruleset.packages.push_back({.name = pkg.name, .version = pkg.version});
             extensions.ruleset = std::move(ruleset);
         }
-        // DN-50.D5 presence-churn roll-up, under the same emit gate as the per-row blocks: a
-        // one-window document has no oscillation to report and says nothing rather than saying
-        // zero. `horizon` is written from the ONE constant that owns the predicate's spelling.
+        // note: a one-window document has no oscillation to report and says nothing, not zero.
+        // refs: DN-50.D5
         if (doc.presence_churn &&
             doc.presence_churn->span_windows >= PresenceChurnSummary::kMinimumInformativeSpan)
             extensions.presence_churn_summary = dto::PresenceChurnSummary{
@@ -1141,21 +982,13 @@ namespace
                 .total_transitions = doc.presence_churn->total_transitions,
                 .total_indeterminate = doc.presence_churn->total_indeterminate,
                 .horizon = std::string{PresenceChurnSummary::kHorizon}};
-        // The container is emitted when ANY member is present — never gated on a SUBSET of them.
-        // It read `acquisition || service_edges` while those were the only two, which made the
-        // transport member's existence silently conditional on an unrelated sibling riding along:
-        // a document with a declaration and neither sibling would have dropped the whole
-        // container, and a conditionally-present key is indistinguishable from a dead one to any
-        // existence gate.
+        // invariant: the container is emitted when ANY member is present, never gated on a SUBSET
+        // -- a conditionally-present key is indistinguishable from a dead one to any gate.
         if (extensions.acquisition || extensions.service_edges || extensions.transport ||
             extensions.ruleset || extensions.presence_churn_summary)
             out.extensions = std::move(extensions);
-        // The run verdict (ADR-17 / SPEC §2.5): additive, omit-when-Unknown — a verdict-free
-        // document's wire is byte-identical to a pre-outcome producer's (absence = Unknown/legacy,
-        // no version bump). spec_run_outcome_of, never insight::to_string: the standard's minted
-        // vocabulary is lower-case and the schema's enum is closed, while the Sift report keeps the
-        // upper-case spelling its TypeScript consumer already matches. See the argument at
-        // spec_run_outcome_of's definition — the two tokens are NOT interchangeable.
+        // note: spec_run_outcome_of, never insight::to_string -- the two tokens differ.
+        // refs: LSRC-8
         out.run_outcome = spec_run_outcome_of(doc.run_outcome);
         return out;
     }
@@ -1166,13 +999,11 @@ namespace
                 .document_id = ref.document_id};
     }
 
-    // One reservoir-delta membership row: the rare-salient template + why it was kept.
     dto::ReservoirDeltaEntry make_reservoir_delta_entry(const ReservoirDeltaEntry& entry)
     {
         dto::ReservoirDeltaEntry row;
         row.template_id = insight::render(entry.template_id);
-        // DN-32.D3 + DN-43.D10 — see make_top_k_entry: the wire carries the level alone, and an
-        // absence is omitted rather than rendered.
+        // refs: DN-32.D3, DN-43.D10
         row.level = spec_level_of(entry.dominant_level);
         if (entry.structural_role != StructuralRole::None)
             row.structural_role = std::string{to_string(entry.structural_role)};
@@ -1209,8 +1040,7 @@ namespace
                 dto::FrontierCrossing row;
                 row.template_id = insight::render(crossing.template_id);
                 row.direction = crossing.direction == FrontierDirection::Up ? "up" : "down";
-                // DN-32.D3: the wire carries the levels alone — provenance is domain-only.
-                // DN-43.D10: both sides omit on an absence.
+                // refs: DN-32.D3, DN-43.D10
                 row.previous_level = spec_level_of(crossing.previous_level);
                 row.current_level = spec_level_of(crossing.current_level);
                 rows.push_back(std::move(row));
@@ -1280,12 +1110,11 @@ namespace
         out.diff_version = diff.diff_version;
         out.previous = make_doc_ref(diff.previous);
         out.current = make_doc_ref(diff.current);
-        // SPEC §13.2. Derived from the diff's FINDINGS by the one predicate that mirrors the
-        // schema's `x-metalog-vacuous` declarations — never from which members the block below
-        // happens to fill in, which is the vacuity spec 0.10.0 removed.
+        // invariant: the outcome is derived from the diff's FINDINGS by the one predicate that
+        // mirrors the schema's vacuity declarations, never from which members happen to fill.
         out.comparison_outcome = to_string(comparison_outcome_of(diff));
-        // §13.2.2. Written from the same predicate that decided the outcome above, so a document
-        // asserting "changed" on a withheld finding always carries the name that witnesses it.
+        // assert: written from the same predicate that decided the outcome, so a document asserting
+        // changed on a withheld finding always carries the name that witnesses it.
         if (std::vector<std::string> withheld{withheld_signals_of(diff)}; !withheld.empty())
             out.withheld_signals = std::move(withheld);
         out.kl_divergence = diff.kl_divergence;
@@ -1341,11 +1170,9 @@ namespace
         if (!diff.reservoir_delta.empty())
             out.reservoir_delta = make_reservoir_delta(diff.reservoir_delta);
         dto::DiffExtensions extensions;
-        if (diff.service_edge_delta) // O4b (SRC-D-OTEL-21): present iff both sides carried a
-                                     // service_edges block
+        if (diff.service_edge_delta)
             extensions.service_edge_delta = make_service_edge_delta(*diff.service_edge_delta);
-        // Emitted when ANY member is present — the make_document gate discipline, one member so
-        // far.
+        // note: emitted when ANY member is present -- the document gate discipline.
         if (extensions.service_edge_delta)
             out.extensions = std::move(extensions);
         return out;
