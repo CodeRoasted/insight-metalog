@@ -56,7 +56,7 @@ namespace dto
     // unordered_map order is not portable, so it is copied at this boundary.
     // post: entropy_bits is deliberately NOT on the wire -- it is losslessly derivable, and
     // dropping it keeps the distribution fields integer and cross-machine bit-identical.
-    // note: approximate_cardinality is HLL-derived: same-machine replay only, not cross-machine.
+    // note: an HLL estimate, but no libm and no runtime float, so it is bit-identical.
     struct ParamHistogram
     {
         std::uint32_t param_index{0};
@@ -390,10 +390,10 @@ namespace dto
         std::optional<std::vector<Provenance>> provenance;
         std::optional<std::string> canonicalization_version;
         std::optional<std::string> retention_profile;
-        // note: the run verdict is the standard's own LOWER-CASE minted vocabulary.
-        // refs: LSRC-8
         std::optional<Coordinate> coordinate;
         std::optional<CubeBlock> cube;
+        // note: the run verdict is the standard's own LOWER-CASE minted vocabulary.
+        // refs: LSRC-8
         std::optional<std::string> run_outcome;
         // invariant: the standard's members are declared first and the vendor container last, so
         // the wire says plainly which half of the document is ours.

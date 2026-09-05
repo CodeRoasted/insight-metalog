@@ -804,8 +804,14 @@ the commit by adding four `refs:` lines, and the per-file DISTINCT-set census no
 only loss.**
 
 **Interrogation** — one fresh agent, ten questions, 26 tool uses, 111 k tokens, 4.6 minutes.
-Transcript checked: `GIT COMMANDS RUN: none`. **Score: 10 of 10 recovered, 0 not recovered, 0
-wrong**, every answer at high confidence.
+Transcript checked: `GIT COMMANDS RUN: none`. **Score: 9 of 10 recovered, 0 not recovered, 1
+WRONG — and the wrong one was a line this conversion wrote.**
+
+**THIS ENTRY FIRST RECORDED 10 OF 10 AND THAT WAS THIS LANE'S ERROR, corrected in a second commit
+rather than an amend (`OPS-8.S10`).** The score was written from the reader's summary before its
+per-question evidence was read in full; Q2's answer carries an explicit disagreement verdict that a
+skim reads as agreement. The correction is recorded here rather than silently applied, because a
+migration ledger whose scores are optimistic is worth less than one that is short.
 
 **THE LAW BLOCK WAS FOLLOWED, WHICH IS THE FIRST DIRECT TEST OF THE FORM IN THIS REPO.** Q6 asked
 where the reasoning for rendering `run_outcome` through the spec helper rather than
@@ -816,9 +822,32 @@ its cost — and then corroborated it against the schema independently. Before u
 lived in a prose paragraph pointed at by *"see the argument at its definition"*; the reader now
 reaches it by address.
 
-Two answers went past the prose they replaced: Q2 separated the two determinism guarantees
-precisely (same-machine replay yes, cross-machine bit-identity no) and named the float-hardening
-reason the old comment only gestured at; Q7 bounded the emit gate correctly, distinguishing the
+**THE WRONG LINE — Q2, and it is `OPS-8.O3`'s lesson firing a second time in this run.** This
+conversion wrote, on `approximate_cardinality`:
+`// note: approximate_cardinality is HLL-derived: same-machine replay only, not cross-machine.`
+It was a faithful compression of the deleted prose, and **both are false.** The reader reported the
+contradiction and this lane re-derived it at two sources: `metalog-spec/SPEC.md` §3.5 states the
+field **MUST** be computed *"deterministically — no libm transcendentals — via an exact dyadic
+register sum plus a fixed-point logarithm, so that it is bit-identical across"* machines; and
+`HyperLogLog::estimate()` does exactly that — every `double` in it is `constexpr`, the numerator
+reaches `u128` through `std::bit_cast` and integer shifts, and the small-range arm uses
+`det_ln_fixed`, so no runtime float and no libm call exists on the path. The deleted prose was
+**stale**: it predates the determinism hardening that unit 2's own reader independently established
+three units earlier. The line now reads
+`// note: an HLL estimate, but no libm and no runtime float, so it is bit-identical.`
+The reader bounded its own verdict honestly — high confidence that note and implementation
+disagree, medium on which is stale — and the spec settles it.
+
+**A SECOND DEFECT THE READER FOUND WHILE ANSWERING Q6 CORRECTLY: a misplaced `refs:`.** The
+`note:` and `refs: LSRC-8` for the run verdict had landed above `coordinate`/`cube` rather than
+beside the `run_outcome` member they annotate — the claims script anchored on "the first code line
+at or after" a line number, and three unrelated members sat between the block and its subject. Both
+lines were moved to sit directly above `run_outcome`. **The gate cannot see this class**: placement
+is exactly what `ADR-26.D5` says the checker does not verify, *"because checking placement would
+mean parsing C++ with a second, weaker parser."* A tagged line on the wrong declaration is a false
+contract, and only a reader catches it.
+
+One answer went past the prose it replaced: Q7 bounded the emit gate correctly, distinguishing the
 per-row block (nothing lost — the base element is recoverable from the standard members) from the
 document roll-up (not derivable, but a single-window range has no oscillation to report).
 
@@ -1122,17 +1151,20 @@ counts `insight-metalog` rather than failing it.
 | 7 | `src/engine/engine.cpp` | 1 | 361 | 363 → 181 | 12 of 12 recovered |
 | 8 | `src/stats/wire_format.cpp` — the law block | 1 | 28 | 29 → 26 | 6 of 6 recovered |
 | 9 | `src/operations/` compose + diff | 2 | 419 | 424 → 154 | 12 of 12 recovered |
-| 10 | `src/serialization/serialize.cpp` | 1 | 326 | 329 → 121 | 10 of 10 recovered |
-| | **total** | **15** | **1 856** | **1 879 → 728 (61 % fewer)** | **85 of 85 recovered, 0 not recovered** |
+| 10 | `src/serialization/serialize.cpp` | 1 | 326 | 329 → 121 | 9 of 10, 1 wrong |
+| | **total** | **15** | **1 856** | **1 879 → 728 (61 % fewer)** | **84 of 85 recovered, 0 not recovered, 1 wrong** |
 
 **1 856 of the repo's 6 701 would-be violations, 27.7 %.** Every claim held for a
 reader was recovered — **45 of 45, 0 not recovered** — so nothing had to be re-homed above the
 comment rung. **Two lines this conversion itself wrote were found defective by the readers and
 corrected**: the `observability only` note in unit 3, which was false; the `assert:` in unit 5,
 which dropped the qualifier its premise rested on; the `open_window` `invariant:` in unit 7, whose
-universal *"every"* was false for three members; and the `salience_memory` `note:` in unit 9, whose
-*"point-lookup only"* is false for the half of the map that is range-iterated. **Four lines, every
-one found by a cold reader and none by any gate.** **One defect this lane filed
+universal *"every"* was false for three members; the `salience_memory` `note:` in unit 9, whose
+*"point-lookup only"* is false for the half of the map that is range-iterated; and in unit 10 BOTH
+a false `note:` on `approximate_cardinality` (the spec MUSTs the cross-machine bit-identity the
+line denied) and a `refs:` that had landed on the wrong declaration. **Six defects this lane wrote,
+every one found by a cold reader and not one by any gate** — four of them false claims, and the
+sixth a placement error the gate is documented as unable to check. **One defect this lane filed
 was withdrawn** after unit 2's reader found the figure's authority in the published spec. Every unit comment-only
 against `HEAD` by code-token-stream equality, every unit at zero would-be violations under `malf
 format --check`, and `malf test insight-metalog` **297 of 297 on clang-21 and 297 of 297 on
