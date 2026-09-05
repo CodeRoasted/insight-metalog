@@ -6,6 +6,10 @@ Technical reference for the insight-metalog library: MetaLog production, composi
 
 1. [metalog.md](phases/metalog.md) — MetaLog v0.9.0 producer lifecycle, document structure, `compose()`, `diff()`, and the `MetaLogEngine` API.
 
+## Records
+
+* [operations/ccc_migration.md](operations/ccc_migration.md) — the Code & Comment as Contract migration ledger: per unit, the claims the deleted comments carried, the cold-reader score, and where every claim the code did not carry was re-homed.
+
 ## Pipeline Position
 
 ```text
