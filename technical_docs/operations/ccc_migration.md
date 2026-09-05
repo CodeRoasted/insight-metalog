@@ -1139,18 +1139,18 @@ format --check`, and `malf test insight-metalog` **297 of 297 on clang-21 and 29
 gcc-16** after conversion, equal to the baseline taken before the first unit.
 
 **The repo's own gate reading after the run, verbatim, and it matches the per-unit arithmetic
-exactly** — 6 868 - 1 550 + 607 = 5 925 comment lines, 6 701 - 1 530 = 5 171 would-be violations:
+exactly** — 6 868 - 1 879 + 728 = 5 717 comment lines, 6 701 - 1 856 = 4 845 would-be violations:
 
 ```
 malf format: CCC SUMMARY · mode=check-paths · files 70 = armed 0 + report-only 70 + NOT CHECKED 0 ·
-armed repos: none · comment lines 5925 · forms pre=8 post=98 invariant=48 assert=46 note=139
-refs=87 continuation=130 law=1 tool=175 · violations in armed files 0 (none) · would-be violations
-in report-only files 5171 (bare=4522 tag-mid-line=1 slash3=28 spacer=335 ruler=3 trailing=278
+armed repos: none · comment lines 5717 · forms pre=9 post=103 invariant=75 assert=48 note=167
+refs=111 continuation=161 law=1 tool=175 · violations in armed files 0 (none) · would-be violations
+in report-only files 4845 (bare=4247 tag-mid-line=1 slash3=28 spacer=326 ruler=3 trailing=236
 suppression-without-why=4) · rc=0
 ```
 
-**`law=1`** is the block unit 8 minted — the checker classes it as a well-formed law, not
-`law-malformed`, so the frame and its addressed title line both hold after clang-format.
+**`law=1`** is the block unit 8 minted — classed as a well-formed law, not `law-malformed`, so the
+frame and its addressed title line both survive clang-format.
 
 Tool forms went 167 → **175** and `suppression-without-why` 13 → **4**: eight directives this run
 re-homed under their own `note:` moved out of the violation class into the recognised tool forms,
