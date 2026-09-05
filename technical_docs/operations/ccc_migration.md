@@ -169,3 +169,130 @@ block is a code change and is therefore a finding, not this lane's edit.**
 (`code_only_diff.py`). Grammar: `malf format --check` over the two files — 4 comment lines, forms
 `invariant=1 refs=1 continuation=1 tool=1`, **0 would-be violations**. Comment lines 9 → 4;
 would-be violations 8 → 0.
+
+## Unit 2 — `src/stats/` minus `wire_format.cpp` (3 files, 284 would-be violations)
+
+`metalog.detail.stats.cppm` (126), `salience.cpp` (125) and `statistics.cpp` (33). 289 comment
+lines, 284 of them violations (249 bare, 25 trailing, 7 spacer, 3 suppression-without-why), 5 tool
+forms.
+
+**Why `wire_format.cpp` is NOT in this unit — a stopped file, not a skipped one.** Its 28
+violations include one block (lines 60-82) that is a **law**: the same four `insight::RunOutcome`
+classes reach two wires under two spellings, the MetaLog document's lower-case case-sensitive
+vocabulary and Sift's upper-case one, neither routing through the other's renderer, with the
+rejected alternative (align Sift onto the spec's spelling) recorded because it would break a
+published customer-facing format. That rule is obeyed in **three repos**
+(`insight-metalog`, `insight-eidos/sift/src/report/change_report_serialize.cpp`,
+`sift-action/src/types.ts`) and `ADR-26.D1` sends a rejected alternative a rule depends on to a
+law block. **This lane may not mint a law number** (`OPS-8.O4`), so the file is left untouched and
+recorded below under *Sites that need a law block*. Splitting the directory is `OPS-8.S2`'s own
+file-group split; the unit is whole as declared, and no file in it is half-converted.
+
+**The test this run applied for "does this need a law block?", stated once so it is auditable.**
+A rule that a second site obeys needs a `D-LSRC-n` block **only when it has no addressable
+owner**. Where an ADR slot, a design-note slot or a bible already owns the rule, the site carries
+`refs:` to that owner and the rule is addressed without a new declaration. Measured on this repo:
+`src/cube/metalog.detail.cube.cppm`'s two no-axes-equality-gate sites are owned by `DN-42.D17`,
+`src/engine/engine.cpp`'s four *"same shape as the ... above"* transparent-key sites are owned by
+`ADR-9.D2`, and `src/serialization/json_egress.hpp`'s one-JSON-entry-point rule is owned by
+`DN-65.D2` — none of the three needs a block. `wire_format.cpp`'s rule has no owner: no ADR or
+design-note slot in the workspace carries it (searched), and its only written authority is
+`metalog-spec/GOVERNANCE.md` §3, which `.claude/rules/adr-shelf-boundary.md` states is **not
+citable in registry form** from this shelf. That is what makes it, and only it, a block site.
+
+**Census (`OPS-8.S4`).** Before: `NOLINT` 3 (all `NOLINTNEXTLINE`), `/*name*/` 0, `clang-format
+off` 0, `wall-clock:` 0, SPDX 0. After: `NOLINT` **2**. The one decision:
+
+* **`// NOLINTNEXTLINE(clang-analyzer-core.DivideZero)` (`metalog.detail.stats.cppm` line 87) was
+  DELETED, with the evidence that it silences nothing.** The one shared `.clang-tidy` (a symlink to
+  `malf/config/.clang-tidy` from every C++ repo) disables the whole family: `- -clang-analyzer-*`,
+  with its own reason recorded there (redundant with the sanitizers, notes trace through
+  third-party headers). Measured rather than read off the config alone: `clang-tidy-21
+  --list-checks --config-file=<that file>` reports **0** enabled `clang-analyzer` checks and
+  **1** for `readability-use-std-min-max`. `.clangd` is stated in that same file to inherit it
+  verbatim, so the editor has no reader for it either. The claim it carried (`sum_fixed > 0`
+  always) survives as an `assert:` line at the divide.
+* The two `NOLINTNEXTLINE(readability-use-std-min-max)` directives are **kept** — that check is
+  enabled — each now under its own `note:` giving the why, which is what the grammar requires and
+  what neither had (both were classed `suppression-without-why`).
+
+**Stripper cross-check (`OPS-8.S5`).** `removed == violations − (suppression-without-why +
+trailing-nolint)`: `metalog.detail.stats.cppm` 124 == 126 − 2, `salience.cpp` 125 == 125 − 0,
+`statistics.cpp` 32 == 33 − 1. Kept == tool forms + those same classes: 3 == 1 + 2, 2 == 2 + 0,
+3 == 2 + 1.
+
+**The claims, by class.** 56 claim blocks were written: `pre` 1, `post` 15, `invariant` 1,
+`assert` 10, `note` 21, `refs` 9, with 16 untagged continuations. The `refs:` targets are
+`ADR-3.D4`, `BIB:determinism_model`, `DN-32.D3`, `DN-43.D10`, `DN-64.D3` and `SRC-D-PROV-1` — the
+last unchanged in form, because `metalog.detail.stats.cppm`'s site **cites** the code and does not
+declare it (`OPS-8.O5`); the statement lives in `insight-canon`, and the site stays inside the
+`.cppm` position class `registry_grammar_lint` reads as a declaration, so `G5` is unmoved.
+`registry_grammar_lint` re-run after the conversion: **0 failures, 95 claimed codes and 95
+declared in source**.
+
+Held for the interrogation (R): the module's install/re-export seal · the HyperLogLog accuracy
+figure · why the harmonic sum is fixed-point and not `double` · why the float-to-integer cast is
+avoided · what makes a failure cue · whether the Terminator arm is redundant with the level arm ·
+the measured `##[error]` salience · what the `as_i128` detour buys · whether the key sort is
+required for determinism · what a partial `counts` does to the entropy · what `nullopt` means on
+the wire · what checks the exported salience full scale.
+
+**Interrogation** — one fresh agent, twelve questions, 77 tool uses, 181 k tokens, 7.7 minutes.
+Transcript checked: `GIT COMMANDS RUN: none`.
+
+**Score: 12 of 12 recovered, 0 not recovered, 0 wrong.** Nothing was re-homed, because nothing
+had to be. What the reader added is below, because three of its answers are worth more than the
+score.
+
+| Q | verdict | what the agent found |
+|---|---|---|
+| Q1 seal | recovered, high | the repo's `CMakeLists.txt` puts the detail modules in a `PRIVATE FILE_SET cxx_modules_detail` while only three units go into the `PUBLIC FILE_SET cxx_modules` that `install(TARGETS …)` ships; the facade states the seal; `ADR-3.D4` clause 4 and `ADR-3.D5` govern it. It also reported that no lint in this workspace enforces it — the enforcement is the CMake file-set and install seal |
+| Q2 HLL accuracy | recovered, high — **and it refuted this lane's own finding**, see below | `metalog-spec/SPEC.md` §3.5.1: *"Producers SHOULD use a HyperLogLog sketch with standard error ≤ 1.5% (precision `p = 14`, 16 384 registers)"* |
+| Q3 fixed-point sum | recovered, high | the sum over 16 384 registers reaches about 2^66, past `double`'s 53-bit exact-integer range, so it rounds and the rounding depends on the partial-sum tree; and `raw` feeds the `raw < kSmallRangeThreshold` branch, so one ULP could flip which estimator runs. Cited the determinism bible's taxonomy and `ADR-31.D5`/`D6` |
+| Q4 no float-to-int cast | recovered, high | `BIB:determinism_model` (the `refs:` this conversion wrote) plus `CLAUDE.md`; and a mechanical reason the prose never had — on the portable/MSVC leg `insight::det::u128` has no floating-point constructor, so the cast would not compile at all |
+| Q5 failure cue | recovered, high | canon's contract block: a whitespace-delimited, punctuation-trimmed token that is a lexicon word, a CamelCase `…Error`/`…Exception` type, or the `segmentation fault` pair — with collision-prone words firing only when verdict-anchored, and exclusions for substrings in paths, negated type names, pass-led lines, count-register summaries and tokens inside a compiler `note:` message |
+| Q6 Terminator arm | recovered, high — **and it found a vacuous test**, see below | three independent reasons: the bands and the stamped axis differ (90 vs 80, `Terminator` vs `Level`); the GitHub dialect gates the role row `any` and the level lift `self`; and an echoed line loses its level but keeps its role |
+| Q7 `##[error]` salience | recovered, medium | derived `90 × rarity` ∈ {9000, 8100, 5400, 2700}, axis `Terminator`, and that echoed and non-echoed land on the **same** score because `normalize()` strips the SGR before classification. It also bounded the claim: `salience_score` runs only for templates below the top-K cut |
+| Q8 `as_i128` | recovered, high | on the portable leg `i128` has constructors from `u128`, `int64_t` and `int` but **none from `uint64_t`**, so a direct cast would resolve through the sign-extending one and turn any count at or above 2^63 negative |
+| Q9 the key sort | recovered, high | not required — the accumulators are `i128` integers, so the reduction is order-independent by construction; the sort discharges `ADR-31.D2`'s defined-order obligation belt-and-braces |
+| Q10 partial `counts` | recovered, high | the entropy is under-stated: the unlisted mass contributes nothing to the numerator while `total` still divides. It read this off the `post:` this conversion wrote **and** off the engine's own call-site note |
+| Q11 `nullopt` on the wire | recovered, high | omission is the spec's only spelling of *no level observed*; rendering `INFO` would be a positive claim that could manufacture or erase a crossing of the failure frontier `{ERROR, FATAL}` in the diff |
+| Q12 `kSalienceFullScale` | recovered, high | `10000U`, declared in the public API and divided by in `insight-eidos`; checked by the `static_assert` at the end of `salience.cpp`'s anonymous namespace — and it **bounded the check**: it binds only the product of the two maxima, so every intermediate rung is unconstrained and a proportional change would still pass |
+
+**THIS LANE'S OWN PRE-DELETION REASONING WAS WRONG ONCE, AND THE READER IS WHAT CAUGHT IT.** Before
+the strip, the deleted line *"Sketch with p=14 (m=16384 registers, ~1.5% standard error)"* was
+classed as an **unsourced and arithmetically false** measurement, on the ground that the textbook
+HyperLogLog relative standard error is `1.04/√m` = `1.04/128` = **0.81 %** at this precision, not
+1.5 %, and that no document in the repo carried the figure. The first half of that was a
+mis-reading and the second was a search that stopped at the repo boundary: `metalog-spec/SPEC.md`
+§3.5.1 states a **ceiling** — *"standard error ≤ 1.5%"* — which 0.81 % satisfies, and the comment
+was a loose restatement of a spec requirement rather than a false measurement. The deletion still
+stands (the reader recovered the figure and its authority unaided, which is the disposition test),
+but the **finding** is withdrawn and recorded here as withdrawn, because a lane that files a false
+defect costs the next reader more than the comment did.
+
+**Findings for other lanes.**
+
+3. **A `SHOULD` of the published spec has no witness in this repo — for Kleio.** `metalog-spec`
+   §3.5.1 requires `p = 14` / 16 384 registers with standard error ≤ 1.5 %. Nothing binds
+   `kPrecision` to that: the cold reader read `scripts/spec_conformance_gate.sh` and found no arm
+   for it, and `tests/engine/test_hll_cardinality.cpp` asserts only loose ranges (`> 0`, `>= 5` for
+   50 distinct values, `> 50` past a 10-value cap) — a smoke check, not an error-rate measurement.
+   Changing `kPrecision` today reds nothing.
+4. **`ReservoirTest.TerminatorRoleIsSalient` would still pass with the code it names deleted — for
+   Kleio.** The cold reader found that it sets `LogLevel::Error` **and**
+   `StructuralRole::Terminator` together, so the `Error` band alone carries it; no test isolates
+   the `StructuralRole::Terminator` arm of `salience_score`. The arm is the one that stamps
+   `RetentionAxis::Terminator` and outranks the level band 90 to 80, and it is exactly the arm the
+   deleted prose spent twenty-four lines defending.
+5. **Two documents cited from `insight-metalog` source exist only in the attic** — informational,
+   for whoever converts `src/cube/`. `cube_differential_axes.md` and `cube_perf_and_collapse.md`
+   resolve only under `technical_docs/history/architecture-v1/`. Under the Founder's ruling of
+   2026-09-02 the attic is disposable and a pointer into it is ungated best-effort provenance, so
+   the conversion simply drops these pointers; recorded because the sentences that carry them are
+   the ones a later unit must check are still complete without them.
+
+**Witnesses.** Comment-only: all three files, code token stream byte-identical to `HEAD`. Grammar:
+`malf format --check` over the unit — 80 comment lines, forms `pre=1 post=15 invariant=1 assert=10
+note=21 refs=9 continuation=16 tool=7`, **0 would-be violations**. Comment lines 289 → 80 (72 %
+fewer); would-be violations 284 → 0.

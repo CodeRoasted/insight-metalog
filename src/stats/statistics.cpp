@@ -10,15 +10,12 @@ namespace insight::metalog
 
 namespace
 {
-    // Jensen-Shannon is the average of the two directional KL terms: js = ½(D_p + D_q).
     constexpr double kJsSymmetryFactor{0.5};
 
-    // 128-bit accumulators come from canon's det shim: native `__int128` on gcc/clang, a portable
-    // constexpr struct on MSVC (which has no __int128). Same two's-complement semantics, so the
-    // digest is bit-identical cross-OS. as_i128 widens a u64 count VALUE-PRESERVING (every u64 is a
-    // non-negative i128) — matching native widening of a u64, NOT via int64 (which sign-flips
-    // ≥2^63).
+    // note: the 128-bit accumulator is canon's det shim -- two's-complement on every OS.
     using i128 = insight::det::i128;
+    // post: widens a u64 value-preserving, matching native u64 widening and never via int64, which
+    // sign-flips at 2^63.
     [[nodiscard]] constexpr i128 as_i128(std::uint64_t value) noexcept
     {
         return static_cast<i128>(insight::det::u128{value});
@@ -29,9 +26,7 @@ double shannon_entropy_bits(const std::vector<std::uint64_t>& counts, std::uint6
 {
     if (total == 0)
         return 0.0;
-    // H = (Σ cᵢ·(log2(total) − log2(cᵢ))) / total, accumulated as an
-    // exact __int128 over the integer/count domain (no libm, order-independent),
-    // converted to double by one exact divide. Deterministic cross-machine.
+    // assert: the accumulation is exact over the integer domain and order-independent, no libm.
     insight::det::FixedReducer reducer;
     const std::int64_t log2_total{insight::det::det_log2_fixed(total)};
     for (auto count : counts)
@@ -48,10 +43,7 @@ DivergenceResult divergences(const std::unordered_map<TemplateId, std::uint64_t>
                              const std::unordered_map<TemplateId, std::uint64_t>& prev,
                              std::uint64_t prev_total)
 {
-    // Union of keys, in a defined (sorted) order. Pointers into the maps
-    // (no copies). Integer accumulation below is order-invariant anyway,
-    // but the explicit order keeps the contract clear and avoids iterating an
-    // unordered container for output.
+    // note: the sort fixes an output order; the integer accumulation is order-invariant anyway.
     std::vector<const TemplateId*> keys;
     keys.reserve(cur.size() + prev.size());
     for (const auto& entry : cur)
@@ -64,17 +56,8 @@ DivergenceResult divergences(const std::unordered_map<TemplateId, std::uint64_t>
     std::ranges::sort(keys,
                       [](const TemplateId* lhs, const TemplateId* rhs) { return *lhs < *rhs; });
 
-    // Laplace smoothing (alpha = 1): with key_count = |union|, the smoothed
-    // frequencies p = (cn+1)/cur_denom and q = (pn+1)/prev_denom are ratios of
-    // INTEGERS (cur_denom = cur_total + key_count, prev_denom = prev_total +
-    // key_count are integers), so every log2 is a det_log2_fixed difference and the
-    // reductions stay exact in the integer/fixed-point domain. One exact
-    // divide per output.
-    //   KL = (1/cur_denom)·Σ (cn+1)·[log2((cn+1)·prev_denom) − log2((pn+1)·cur_denom)]
-    //   JS = ½·[ (1/cur_denom)·Σ(cn+1)·L_p + (1/prev_denom)·Σ(pn+1)·L_q ], where
-    //        D   = (cn+1)·prev_denom + (pn+1)·cur_denom   (= 2·cur_denom·prev_denom·m)
-    //        L_p = log2(2·(cn+1)·prev_denom) − log2(D)     (= log2(p/m))
-    //        L_q = log2(2·(pn+1)·cur_denom)  − log2(D)     (= log2(q/m))
+    // assert: the smoothed p and q are ratios of integers, so every log2 is a det_log2_fixed
+    // difference and the reduction stays exact.
     const std::uint64_t key_count{keys.size()};
     const std::uint64_t cur_denom{cur_total + key_count};
     const std::uint64_t prev_denom{prev_total + key_count};
@@ -86,8 +69,8 @@ DivergenceResult divergences(const std::unordered_map<TemplateId, std::uint64_t>
     {
         const auto cur_it{cur.find(*keyp)};
         const auto prev_it{prev.find(*keyp)};
-        const std::uint64_t pnum{(cur_it == cur.end() ? 0U : cur_it->second) + 1U};    // cn + alpha
-        const std::uint64_t qnum{(prev_it == prev.end() ? 0U : prev_it->second) + 1U}; // pn + alpha
+        const std::uint64_t pnum{(cur_it == cur.end() ? 0U : cur_it->second) + 1U};
+        const std::uint64_t qnum{(prev_it == prev.end() ? 0U : prev_it->second) + 1U};
         const std::uint64_t p_arg{pnum * prev_denom};
         const std::uint64_t q_arg{qnum * cur_denom};
         const std::uint64_t divergence_d{p_arg + q_arg};
@@ -104,6 +87,7 @@ DivergenceResult divergences(const std::unordered_map<TemplateId, std::uint64_t>
     const std::int64_t js_q_q{
         insight::det::round_div(js_q_acc, static_cast<std::int64_t>(prev_denom))};
     double js_value{kJsSymmetryFactor * insight::det::fixed_to_double(js_p_q + js_q_q)};
+    // note: NOLINT: the clamp guards a computed value; std::max would store unconditionally.
     // NOLINTNEXTLINE(readability-use-std-min-max)
     if (kl_value < 0.0)
         kl_value = 0.0;
@@ -134,8 +118,7 @@ double histogram_js(const std::unordered_map<std::string, std::uint64_t>& prev,
     if (prev_total == 0 || curr_total == 0)
         return 0.0;
 
-    // Union keys in sorted order; integer-domain JS via det_log2_fixed,
-    // identical Laplace-smoothed convention as divergences().
+    // note: the same Laplace-smoothed convention as divergences, over the union of keys.
     std::vector<const std::string*> keys;
     keys.reserve(prev.size() + curr.size());
     for (const auto& [key, _sink] : prev)
@@ -152,10 +135,6 @@ double histogram_js(const std::unordered_map<std::string, std::uint64_t>& prev,
     const std::uint64_t p_denom{prev_total + key_count};
     const std::uint64_t c_denom{curr_total + key_count};
 
-    // js = ½·[ (1/p_denom)·Σ(pn+1)·L_p + (1/c_denom)·Σ(cn+1)·L_c ], with
-    //   D   = (pn+1)·c_denom + (cn+1)·p_denom
-    //   L_p = log2(2·(pn+1)·c_denom) − log2(D)
-    //   L_c = log2(2·(cn+1)·p_denom) − log2(D)
     i128 prev_acc{0};
     i128 curr_acc{0};
     for (const std::string* keyp : keys)
