@@ -1007,21 +1007,24 @@ format --check`, and `malf test insight-metalog` **297 of 297 on clang-21 and 29
 gcc-16** after conversion, equal to the baseline taken before the first unit.
 
 **The repo's own gate reading after the run, verbatim, and it matches the per-unit arithmetic
-exactly** — 6 868 - 1 097 + 427 = 6 198 comment lines, 6 701 - 1 083 = 5 618 would-be violations:
+exactly** — 6 868 - 1 550 + 607 = 5 925 comment lines, 6 701 - 1 530 = 5 171 would-be violations:
 
 ```
 malf format: CCC SUMMARY · mode=check-paths · files 70 = armed 0 + report-only 70 + NOT CHECKED 0 ·
-armed repos: none · comment lines 6198 · forms pre=7 post=73 invariant=38 assert=35 note=94 refs=63
-continuation=96 tool=174 · violations in armed files 0 (none) · would-be violations in report-only
-files 5618 (bare=4935 tag-mid-line=1 slash3=28 spacer=347 ruler=3 trailing=299
-suppression-without-why=5) · rc=0
+armed repos: none · comment lines 5925 · forms pre=8 post=98 invariant=48 assert=46 note=139
+refs=87 continuation=130 law=1 tool=175 · violations in armed files 0 (none) · would-be violations
+in report-only files 5171 (bare=4522 tag-mid-line=1 slash3=28 spacer=335 ruler=3 trailing=278
+suppression-without-why=4) · rc=0
 ```
 
-Tool forms went 167 → **174** and `suppression-without-why` 13 → **5**: seven directives this run
+**`law=1`** is the block unit 8 minted — the checker classes it as a well-formed law, not
+`law-malformed`, so the frame and its addressed title line both hold after clang-format.
+
+Tool forms went 167 → **175** and `suppression-without-why` 13 → **4**: eight directives this run
 re-homed under their own `note:` moved out of the violation class into the recognised tool forms,
 and one was deleted with the measurement that it silences nothing (its check family is disabled in
-the one shared `.clang-tidy`). The five that remain are all in units this run did not convert.
-**Zero law blocks** — one is owed and is recorded
+the one shared `.clang-tidy`). The four that remain are all in units this run did not convert.
+**One law block** — one is owed and is recorded
 above for the pilot to number.
 
 **What remains, in the order a next lane should take it.** Source: `src/operations/` (compose 223 + diff 196) 419 · `src/serialization/serialize.cpp` 326 ·
