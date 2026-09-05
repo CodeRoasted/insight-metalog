@@ -616,44 +616,170 @@ invariant=20 assert=14 note=48 refs=42 continuation=32 tool=7`, **0 would-be vio
 Behaviour: batch C (below) — 297 of 297 on clang-21 and 297 of 297 on gcc-16. Comment lines
 363 → 181 (50 % fewer); would-be violations 361 → 0.
 
+## Unit 8 — `src/stats/wire_format.cpp` (1 file, 28 would-be violations) — THE LAW BLOCK LANDS
+
+The file unit 2 stopped on. The pilot issued the law number on 2026-09-06 and this unit mints it.
+29 comment lines, 28 of them violations (24 bare, 3 spacer, 1 trailing), 1 tool form. Census: zero
+`NOLINT`, zero `/*name*/`, zero `clang-format off`, zero SPDX, before and after. Stripper
+cross-check: removed 28 == 28 violations (no suppression), kept 1 == the one tool form.
+
+**The law is cited here as `LSRC-8` and its framed `D-` line is deliberately NOT reproduced in this
+ledger.** A spelled declaration token is read by `registry_grammar_lint` as a declaration wherever
+it appears, so quoting the frame here would declare the law a second time and break the
+single-declaration property that is the whole point of form 1 — the failure mode currently live on
+`main` from a sibling repo (verdict item 9). The block sits at `spec_run_outcome_of`, in
+`src/stats/wire_format.cpp`, and that site is its one declaration.
+
+**What the law says**, paraphrased: the same four `insight::RunOutcome` classes reach two wires
+under two spellings that are not interchangeable, and a consumer takes its spelling from the
+boundary it reads rather than from `RunOutcome`, which has no wire spelling of its own. The MetaLog
+document side is minted by a vendor-neutral standard as lower-case and case-sensitive and pinned as
+a closed schema enum; the Sift change-report side is this product's own upper-case format with a
+live TypeScript consumer. The rejected alternative — unify by moving Sift onto the spec's spelling
+— is named with its cost: it breaks a published customer-facing format to buy a symmetry no
+consumer asked for. The block closes on why the MetaLog mapping is partial by construction.
+
+**Why this one needed a block when three other candidates did not.** The test stated in unit 2's
+entry: a block is owed only where the rule has **no addressable owner**. Its authority is
+`metalog-spec/GOVERNANCE.md` §3, a different owner's shelf with no registry form in this workspace,
+so no `refs:` line can reach it. The pilot issued the number on that reasoning and refused blocks
+for the three candidates that resolve to `DN-42.D17`, `ADR-9.D2` and `DN-65.D2`.
+
+**The other claims.** One `note:` plus one `refs: ADR-3.D4` above the `#include <ctime>` in the
+global module fragment, carrying why the header stays textual. Everything else in the file was
+either a mirror of the code or a duplicate of a contract the module interface already carries after
+unit 2.
+
+**Interrogation** — one fresh agent, six questions, 40 tool uses, 97 k tokens, 3.3 minutes.
+Transcript checked: `GIT COMMANDS RUN: none`. **Score: 6 of 6 recovered, 0 not recovered, 0 wrong**,
+every answer at high confidence.
+
+**The law block was not merely readable — the reader independently re-derived its content and then
+found where it had been living.** Q1 and Q4 were answered from the published `SPEC.md` §2.5 and the
+schema's closed `enum`; Q2 from `insight-canon`'s `to_string(RunOutcome)`, which the reader checked
+is upper-case AND total (it renders `Unknown`, which this wire has no value for) — two independent
+reasons the seam cannot route through it, one of which the deleted prose never stated. Q3 recovered
+the rejected alternative from the block and then corroborated it against the live consumer
+`sift-action/src/types.ts` and the mirror comment in
+`insight-eidos/sift/src/report/change_report_serialize.cpp`.
+
+**AND IT FOUND THE ARGUMENT'S ONLY PREVIOUS HOME, WHICH IS THE CASE FOR THE BLOCK.** The reader
+reported that the Founder's ruling on this subject — the MetaLog standard and Sift's product format
+keep different spellings — survived in `technical_docs/history/1.10.0.md`, and correctly flagged
+that shelf as disposable provenance rather than authority. That is exactly the LEANING failure
+`CLAUDE.md` names: a sentence whose completeness depends on a pointer into an attic that could be
+wiped tomorrow. Before this unit the rule's only written home outside the deleted source prose was
+that frozen record. It now has a durable address at the site it governs.
+
+**A zero-citer law is legal and this is one.** The reader's own sweep for the citation form returned
+exactly the declaring line and no citing site. `ADR-26.D5` rules that a law owes no citer — *"a rule
+with exactly one obeying site is complete without one"* — and no gate reds on it, which
+`registry_grammar_lint` confirms: **FORM 1: 8 declarations, 2 citations, single-declaration checked
+BOTH ways and numbering checked DENSE**, with zero failures naming this repo.
+
+**Witnesses.** Comment-only: code token stream byte-identical to `HEAD`. Grammar: `malf format
+--check` over the file — 26 comment lines, forms `note=1 refs=1 law=1 tool=1`, **0 would-be
+violations**; the checker classes the frame as `law`, not `law-malformed`, and the 100-byte rule
+lines survive clang-format unchanged. Comment lines 29 → 26; would-be violations 28 → 0.
+
+## Unit 9 — `src/operations/` · `compose.cpp` + `diff.cpp` (2 files, 419 would-be violations)
+
+The compose and diff semantics: the §12 merge with its cap algebra and re-derived reservoir, and
+the §13 pairwise delta with the latency-shift axis and the comparison-outcome evaluation. 424
+comment lines, 419 of them violations (389 bare, 20 trailing, 9 spacer, 1 suppression-without-why),
+5 tool forms. `metalog.detail.operations.cppm`, the third file of these two directories, converted
+as unit 6.
+
+**Census (`OPS-8.S4`).** `NOLINT` 1 before and 1 after; zero `/*name*/`, zero `clang-format off`,
+zero SPDX. **Stripper cross-check:** removed 418 == 419 − 1 kept suppression; kept 6 == 5 tool
+forms + 1.
+
+**The claims.** 76 blocks: `pre` 1, `post` 25, `invariant` 10, `assert` 11, `note` 44, `refs` 23,
+with 34 untagged continuations. `refs:` targets: `DN-56.D2`, `DN-56.D3`, `DN-56.D6`, `DN-56.D7`,
+`DN-50.D4`, `DN-64.D3`, `DN-42.D17`, `ADR-16.D1`, `ADR-17.D8`, `ADR-23.D4`, `ADR-31.D8`,
+`STU-3.A1`, `SRC-II-7`, `SRC-D-TIR-4`, `SRC-D-TIR-5`, `SRC-D-PROV-1`, `SRC-D-W1-1`, `SRC-D-W1-4`,
+`SRC-D-OTEL-20`, `SRC-D-OTEL-21`. Every `SRC-` site is a body citation past line 40; none is a
+declaration. **No law block owed:** the two rules here that a second site obeys — the composed cap
+algebra and the non-associativity it buys — are owned by `DN-56`, and the no-axes-equality-gate
+rule by `DN-42.D17`.
+
+**A measurement this unit produced rather than carried: `STU-3.A1` is what backs the
+sample floor.** The `kShiftSampleFloor` prose carried a corpus-picked number with its false-actionable
+rates. Rather than re-assert the figures in a `note:`, the claim is a `refs: STU-3.A1` plus an
+`invariant:` stating the property that matters — the floor is an ABSOLUTE paired-event count and not
+a ratio, precisely because the W1 thresholds are scale-relative and that is what lets a tiny sample
+read HIGH.
+
+**Interrogation** — one fresh agent, twelve questions, 44 tool uses, 128 k tokens, 5.7 minutes.
+Transcript checked: `GIT COMMANDS RUN: none`. **Score: 12 of 12 recovered, 0 not recovered, 0
+wrong**, every answer at high confidence.
+
+Four answers went past the prose they replaced. Q2 recovered the non-associativity ruling AND named
+the test that asserts the scope-dependence from both sides — the divergence under a binding cap and
+the equality when none binds — which is the evidence the old prose only referred to. Q3 derived
+that dropping the residual bucket over-states concentration while attributing it invents an
+attribution, from the arithmetic rather than from the comment. Q7 found `STU-3.A1`'s pre-registered
+scan, its three measured null rates and both guard tests, and then bounded the claim correctly: the
+number was picked against one binding shape, a bimodal cache. Q10 confirmed both point-lookup maps
+are never iterated into content and named the sorted output that makes each safe.
+
+**Finding 9 — a malformed suppression that silences everything, and the reader derived it
+independently.** `compose.cpp` carries
+`// NOLINTNEXTLINE (readability-use-std-min-max) defensive clamp (hot path)` — with a **space**
+before the check list. Measured here with a purpose-built clang-tidy fixture before the unit was
+written: a spaced directive is parsed as a **bare** `NOLINTNEXTLINE` and suppresses **every** check
+on the next line, while the tight spelling scopes correctly. The probe ran three functions past
+`clang-tidy-21` with two checks enabled — the spaced site reported neither diagnostic, the tight
+site reported the un-named one, and the unsuppressed site reported both. The cold reader, given no
+hint beyond the question, reached the same verdict from clang-tidy's own directive grammar. **The
+directive is left byte-identical** and re-homed under a `note:` that states the measured scope:
+narrowing it would change what the linter checks, which is not a comment-only act. Repairing it —
+and deciding whether the line has a second finding the over-broad directive was hiding — is a
+finding for the lane that owns this source.
+
+**Witnesses.** Comment-only: both files, code token stream byte-identical to `HEAD`. Grammar:
+`malf format --check` over the unit — 154 comment lines, forms `pre=1 post=25 invariant=10
+assert=11 note=44 refs=23 continuation=34 tool=6`, **0 would-be violations**; the kept suppression
+still sits directly under its `note:` and directly above its target. Comment lines 424 → 154 (64 %
+fewer); would-be violations 419 → 0.
+
 ---
 
-# Sites that need a `D-LSRC-n` law block — STOPPED, for the pilot to issue numbers
+# The law block: one was owed, one was issued, one is minted
 
-This lane was instructed not to mint a law number: they are workspace-global, append-only and
-checked **dense**, so a lane that picks one collides with a sibling holding the open range
-(`OPS-8.O4`). Each site below is left **untouched** — no placeholder, no invented number, and the
-claim was not re-homed as prose. One number is needed per row.
+This lane was instructed not to pick a law number — they are workspace-global, append-only and
+checked **dense**, so a lane that picks its own collides with a sibling holding the open range
+(`OPS-8.O4`). One site in this repo was found to owe a block. It was recorded here as stopped, the
+pilot issued the number on 2026-09-06, and unit 8 minted it at
+`src/stats/wire_format.cpp`, above `spec_run_outcome_of`. The subject is the two
+non-interchangeable wire spellings of `insight::RunOutcome`; unit 8's entry above paraphrases what
+the block says and explains why the frame is not reproduced on this shelf.
 
-### 1. `src/stats/wire_format.cpp` lines 60-82 — the two wire spellings of `insight::RunOutcome`
+**The census the pilot supplied, recorded so the next lane does not re-derive it:** `1` and `2` are
+declared in `malf/malf`, `3` in `insight-eidos`, `4` in `malf-toolchain`, and the `insight-canon`
+lane consumed the next three at sites in its conformance module. This repo took the one after
+those. Numbering is dense and append-only, so **a lane asks the pilot and never picks** — and the
+next number may already be promised to another lane.
 
-**What the law would say.** The same four `insight::RunOutcome` classes are serialised under two
-different, non-interchangeable spellings, and neither side routes through the other's renderer.
-On the **MetaLog document** wire (SPEC §2.5) they are `success` / `failure` / `unstable` /
-`aborted`: a vendor-neutral standard mints that vocabulary, states it is lower-case and
-case-sensitive, and `schema/metalog.v0.schema.json` pins it as a closed enum, so an upper-case
-token there is a §8 clause-1 schema violation and `metalog-spec/GOVERNANCE.md` §3 decides which
-side moves — the spec wins and the reference implementation is the bug. On the **Sift change
-report** wire (`insight-eidos/sift/src/report/change_report_serialize.cpp`, rendered by
-`insight::to_string`) they are `SUCCESS` / `FAILURE` / `UNSTABLE` / `ABORTED`, and
-`sift-action/src/types.ts` matches those four literals exactly. **Rejected alternative:** align
-them by moving Sift onto the spec's spelling — it breaks a published customer-facing format to buy
-a symmetry no consumer asked for. **The rule:** a consumer takes its spelling from the boundary it
-actually reads, never from `RunOutcome`, which has no wire spelling of its own; `insight::to_string`
-also renders `Unknown` as a token and this wire has none, so the MetaLog mapping is partial by
-construction and `nullopt` means the member is omitted.
+**The test that decided it, and the three sites it refused.** A rule that a second site obeys needs
+a block **only when it has no addressable owner**; where an ADR slot, a design-note slot or a bible
+already owns the rule, the site carries `refs:` and the rule is addressed without a new
+declaration. Measured on this repo:
 
-**Why a block and not a `refs:`.** Searched: no ADR slot and no design-note slot in
-`technical_docs/` owns this subject (`ADR-24` is document facets, `DN-65` is egress encoding).
-Its only written authority is `metalog-spec/GOVERNANCE.md` §3, and
-`.claude/rules/adr-shelf-boundary.md` rules that `metalog-spec` is a **different owner** whose
-numbering is *"NOT citable from here"* and must be named in prose — which a `refs:` line may not
-carry. So the rule has no address, three repos obey it, and a rejected alternative depends on it:
-`ADR-26.D1`'s law-block criterion, exactly.
+| site | the rule | owner | verdict |
+|---|---|---|---|
+| `src/cube/metalog.detail.cube.cppm`, two sites | no axes-equality gate on a cube pair | `DN-42.D17` | `refs:`, no block |
+| `src/engine/engine.cpp`, four sites | the transparent-key copy-on-first-sight idiom | `ADR-9.D2` | `refs:`, no block |
+| `src/serialization/json_egress.hpp` | one JSON write entry point per package | `DN-65.D2` + `DN-65.O4` | `refs:`, no block |
+| `src/stats/wire_format.cpp` | the two wire spellings of `RunOutcome` | **none reachable** | **block minted** |
 
-**Consequence for the plan.** `src/stats/wire_format.cpp` (28 would-be violations) is the only file
-of `src/stats/` this run did not convert, and `src/serialization/` and `api/` are not yet read for
-block sites.
+Only the last has no owner, and the reason is structural: its authority is
+`metalog-spec/GOVERNANCE.md` §3, which `.claude/rules/adr-shelf-boundary.md` rules is a **different
+owner** whose numbering is not citable from this shelf — so no `refs:` line can reach it. One
+block, not four. The pilot ratified the test when issuing the number.
+
+**Nothing else in the converted surface owes a block.** `api/` and the test tier are unread for
+declaring `SRC-<code>` sites and may owe more; that read is the next lane's first step.
 
 ---
 
@@ -851,7 +977,7 @@ is the same one the next lane will meet.
 
 # Where this run stopped, and why
 
-**Seven units converted, the repo NOT armed.** Arming (`OPS-8.S12`) requires the whole repo at zero,
+**Nine units converted, one law minted, the repo NOT armed.** Arming (`OPS-8.S12`) requires the whole repo at zero,
 which this run does not reach, so `comment_contract: true` is **not** set and the CCC phase still
 counts `insight-metalog` rather than failing it.
 
@@ -864,9 +990,11 @@ counts `insight-metalog` rather than failing it.
 | 5 | `src/serialization/json_egress.hpp` | 1 | 35 | 36 → 11 | 8 of 8 recovered, one |
 | 6 | `src/operations/metalog.detail.operations.cppm` | 1 | 12 | 13 → 6 | reader over both |
 | 7 | `src/engine/engine.cpp` | 1 | 361 | 363 → 181 | 12 of 12 recovered |
-| | **total** | **11** | **1 083** | **1 097 → 427 (61 % fewer)** | **57 of 57 recovered, 0 not recovered** |
+| 8 | `src/stats/wire_format.cpp` — the law block | 1 | 28 | 29 → 26 | 6 of 6 recovered |
+| 9 | `src/operations/` compose + diff | 2 | 419 | 424 → 154 | 12 of 12 recovered |
+| | **total** | **14** | **1 530** | **1 550 → 607 (61 % fewer)** | **75 of 75 recovered, 0 not recovered** |
 
-**1 083 of the repo's 6 701 would-be violations, 16.2 %, in seven commits.** Every claim held for a
+**1 530 of the repo's 6 701 would-be violations, 22.8 %, in nine commits.** Every claim held for a
 reader was recovered — **45 of 45, 0 not recovered** — so nothing had to be re-homed above the
 comment rung. **Two lines this conversion itself wrote were found defective by the readers and
 corrected before their commits**: the `observability only` note in unit 3, which was false, the
@@ -918,6 +1046,14 @@ files**). Harness: `scripts/` 545 · `benchmarks/` 241 · `test_package/` 16. Te
   | batch A | 2026-09-06 00:16 | units 1-2 | 297 of 297 clang-21; the gcc leg's provenance is void — a sibling reclaimed the slot mid-leg (see verdict item 1) |
   | batch B | 2026-09-06 00:30 | units 1-4, all four in the tree | 297 of 297 clang-21, 297 of 297 gcc-16 |
   | batch C | 2026-09-06 00:55 | units 5-7 | 297 of 297 clang-21, 297 of 297 gcc-16 |
+| batch D | **owed** | units 8-9 | NOT TAKEN — the slot was held continuously by sibling lanes from 01:09 |
+
+  **Batch D is OWED and this ledger says so rather than implying it was taken.** Units 8 and 9
+  carry three of the four witnesses — comment-only, grammar at zero, and readers at 6 of 6 and 12
+  of 12 — and the fourth is a `malf test insight-metalog` on both toolchains at the next
+  acquisition. They are landed rather than held back because a shared worktree with uncommitted
+  work is the state this programme does not tolerate, and the batched rule puts the witness AFTER
+  the landing by construction. If batch D reds, bisect by unit.
 
   Batch B supersedes batch A: it re-ran both legs with units 1-2 still in the tree, so nothing
   rests on the leg whose provenance was void. Batch C was taken at a slot acquired in the
