@@ -1744,16 +1744,21 @@ all restored in their own commit, and two deliberate deletions with their eviden
 have not been censused; that is the next lane's cheapest first act, one command per unit against
 each unit's own pre-unit revision.
 
-**The repo's own gate reading after this session, verbatim, and it matches the per-unit arithmetic
-exactly** — 6 868 − 3 026 + 1 161 = 5 003 comment lines, 6 701 − 2 984 = 3 717 would-be violations:
+**The repo's own gate reading at the close of this session, verbatim:**
 
 ```
 malf format: CCC SUMMARY · mode=check-paths · files 70 = armed 0 + report-only 70 + NOT CHECKED 0 ·
-armed repos: none · comment lines 5003 · forms pre=22 post=158 invariant=214 assert=51 note=198
-refs=159 continuation=288 law=1 tool=173 · violations in armed files 0 (none) · would-be violations
+armed repos: none · comment lines 5007 · forms pre=22 post=158 invariant=214 assert=51 note=198
+refs=163 continuation=288 law=1 tool=173 · violations in armed files 0 (none) · would-be violations
 in report-only files 3717 (bare=3265 tag-mid-line=1 slash3=28 spacer=243 ruler=2 trailing=178) ·
 rc=0
 ```
+
+**It matches the per-unit arithmetic, and the residue is accounted for rather than rounded away.**
+The units alone give 6 868 − 3 026 + 1 161 = **5 003** comment lines, and the address-census commit
+then added **four** `refs:` lines at the sites whose addresses it restored, which is the 5 007 above
+and the `refs=163` against the units' 159. Would-be violations are untouched by that commit:
+6 701 − 2 984 = **3 717**, as read.
 
 **`suppression-without-why` has reached 0** (13 at the baseline, 4 after the first ten units): three
 file-wide directive pairs in `benchmarks/` were deleted with the measurement that they silence
