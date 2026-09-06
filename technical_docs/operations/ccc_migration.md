@@ -3222,15 +3222,81 @@ clang-format discovers its style by walking UP from the file, so a draft outside
 to LLVM's default `ColumnLimit: 80` against a repo that sets 100. The expensive part is the remedy
 it suggests: shortening 55 claims to fit would have degraded 55 true statements to buy nothing.
 
+## Unit 21 — `tests/operations/test_compose_algebra.cpp`
+
+One file, **439 would-be violations to 0**, comment lines **470 -> 161**. The densest argument
+surface in the repo: eleven arms over SPEC 12.2's algebra, most of whose prose is owned upstream by
+`DN-56`, so the conversion is mostly a citation plus a short residual rather than a re-homing.
+
+### The five witnesses
+
+* **Comment-only** — code token stream byte-identical to the pre-unit blob, re-taken after each of
+  the three in-flight repairs below.
+* **Grammar** — the file reads **0**; the repo moves **1 402 -> 963**, which is exactly -439.
+* **Behaviour** — **297 of 297 on clang-21 and 297 of 297 on gcc-16**, equal to baseline, under one
+  slot acquire and one release.
+* **Addressability** — three addresses added (`DN-57.O1`, `F-SRC-metalog-spec:SPEC.md`,
+  `F-SRC-metalog-spec:GOVERNANCE.md`) and one reported LOST, dispositioned below.
+* **Knowledge** — one fresh cold reader, **40 questions, 40 recovered, 0 not recovered, 0 wrong,
+  0 convictions**, `GIT COMMANDS RUN: none`, 40 tool uses, 165 k tokens, 7.0 minutes, **and no
+  contamination** — the first clean disclosure since `OPS-8.S8`'s glob exclusion became mandatory.
+
+### The `DN-056` disposition — a LOST address that is a legitimate deletion
+
+The census reports `DN-056` lost. Re-derived at the artifact: the pre-conversion file used it twice,
+both times as PROSE (*"which DN-056's prose does not say"*). **`DN-056` is the design note's FILENAME
+padding, not a registry address** — the citable forms are `DN-56` and `DN-56.Dn`. Both sites now
+carry `DN-56` / `DN-56.D3`, so the reference survives in the form the registry can resolve and
+nothing is lost. Recorded here rather than restored.
+
+### Three repairs made before the commit, two of them to lines this conversion wrote
+
+* **A mis-attributed section, caught by reading `SPEC.md` rather than by any gate.** The
+  pre-conversion prose said *"§12.1 truncates a SORTED array"* and the first draft carried that
+  faithfully. §12.1 says *"truncated to `top_k_size`"* and never says sorted; the ordering is
+  declared in **§3** (*`"top_k": … ordered by count desc`*). The line now cites both sections for
+  what each actually says, and the reader's Q5 came back citing exactly that pair.
+* **SPEC 12.2's associativity clause is NOT uniformly SHOULD, and both the prose and the first draft
+  said it was.** The clause reads: required fields **SHOULD** agree exactly; behavior fields' ordering
+  **MAY** differ in tie-breaking; **the underlying counts MUST agree**. Three modal verbs in one
+  bullet. Found by the reader answering Q1 from the specification instead of from the file, and the
+  header now carries the nuance.
+* **An anchor that resolved successfully and landed WRONG**, which is `OPS-8.S6`'s named hazard and
+  the reason that step says to read placements rather than count errors. `anchor_collide.py` flagged
+  ten ambiguous anchors; nine were resolved correctly by cursor order, and the tenth put a `note:`
+  above the identity test's closing `}` — the block sat at the END of a test, so the first code line
+  after it was the brace. Moved onto the load-bearing assertion.
+
+Also caught pre-commit by the gate itself: **five `note-run` violations** — two consecutive `note:`
+lines are illegal, and the section preambles had stacked three at once. Repaired by reordering the
+specs so a `note:` never adjoins another and by promoting two arithmetic derivations to `invariant:`,
+which is what they were: the values the arms rest on, not asides.
+
+### Finding — `DN-57.O1` problem (e) rests on TWO worked examples and only ONE has a falsifier
+
+**Addressee: Daidalos, with Kleio.** `DN-57.O1` is *THE BODY, verbatim* — text destined for a public,
+vendor-neutral standard and addressed to external implementers. Its problem (e) claims that
+`unique_templates`, `tail_count`, `tail_unique` **and a `top_k` entry's `count`** all diverge under
+the `top_k` bound alone, and it supports the claim with two worked examples:
+
+1. `A = {a:10, b:1}`, `B = {c:9}`, `C = {d:8}` — `unique_templates` **3 vs 4**.
+2. `A = {x:5, y:4}`, `B = {z:6}`, `C = {y:10}` — `y` at count **10 vs 14**, `tail_count` **9 vs 5**.
+
+`TopKTruncationAloneBreaksAssociativityWithNoReservoirAnywhere` implements **example 1 only** —
+verified at the fixture, whose seeds are `{"assoc alpha", 10}, {"assoc beta", 1}` / `{"assoc gamma",
+9}` / `{"assoc delta", 8}`. **Example 2 has no test anywhere in the repo**, and no arm in this file
+asserts a `top_k` entry's COUNT diverging between bracketings. That is the sharper half of the
+claim: a diverging count on a RETAINED template is stronger than a diverging cardinality, and it is
+the half that carries `tail_count`, which example 1 shows AGREEING. The RFC's summary sentence is
+true across the pair and unfalsified on one side of it.
+
 ## The resume point
 
-**`OPS-8.S1` preflight, then unit 21. Everything left in this repo is ONE directory —
-`tests/operations/`, 15 files, 1 402 would-be violations**, and the counts below are the gate's own
-as of 2026-09-06, not an estimate:
+**`OPS-8.S1` preflight, then unit 22. What is left is 14 files in `tests/operations/`, 963 would-be
+violations**, the gate's own counts as of 2026-09-06:
 
 | file | violations |
 |---|---|
-| `test_compose_algebra.cpp` | 439 |
 | `test_golden_vectors.cpp` | 196 |
 | `test_canonicalization_version_ruleset_coverage.cpp` | 136 |
 | `test_presence_churn_property.cpp` | 98 |
@@ -3246,10 +3312,13 @@ as of 2026-09-06, not an estimate:
 | `test_param_histograms_compose.cpp` | 25 |
 | `test_processing_identifiers.cpp` | 9 |
 
-**Take it as four units, not one** — a 15-file unit is one questionnaire over 1 402 violations, and
-a reader handles about fifty questions. The `presence_churn` trio (229) belongs together because the
-three tests share one algebraic subject. **`test_compose_algebra.cpp` (439) is a unit on its own**,
-and it is the file the `insight-eidos` warning below points at.
+**Take it as THREE units, not one** — a 14-file unit is one questionnaire over 963 violations, and a
+reader handles about fifty questions. Unit 21 spent 40 questions on 439 violations in one file, so
+budget roughly that density. The `presence_churn` trio (229) belongs together because the three
+tests share one algebraic subject; `test_golden_vectors.cpp` (196) and
+`test_canonicalization_version_ruleset_coverage.cpp` (136) are both about the frozen ruleset and
+compose naturally; the remaining nine files (402) are small and unrelated, so split them by size
+rather than by subject.
 
 Take the build slot only around the behaviour witness; the reading, stripping and drafting need
 none. **Arming is one `packages.yml` line away once this directory reads 0** — nothing else in the
