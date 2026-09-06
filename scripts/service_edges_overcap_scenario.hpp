@@ -1,7 +1,7 @@
 // invariant: one span window that forces the over-cap top-K select and cuts the cap THROUGH a
 // weight tie, so the surviving edge rides the canonical-key tie-break alone.
 // invariant: ingested identically by the in-suite guard and the cross-compiler fixture.
-// refs: ADR-29.D2, SRC-D-OTEL-21
+// refs: ADR-29.D2, ADR-31.D8, SRC-D-OTEL-21
 #ifndef INSIGHT_METALOG_SERVICE_EDGES_OVERCAP_SCENARIO_HPP
 #define INSIGHT_METALOG_SERVICE_EDGES_OVERCAP_SCENARIO_HPP
 

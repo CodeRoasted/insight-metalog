@@ -336,7 +336,7 @@ class MetaLogEngine
 // yields one byte sequence.
 // pre: `registry` contains every id the document references; engine.registry() does.
 // note: this seam emits the per-entry inline template mode; the others were never wired.
-// refs: DN-65.D1, DN-65.D5, SRC-D-TIR-5
+// refs: ADR-9.D4, DN-65.D1, DN-65.D5, SRC-D-TIR-5
 [[nodiscard]] std::string to_json(const MetaLogDocument& doc, const TemplateRegistry& registry);
 
 // post: the same omit-empty discipline and the same RFC 8259 guarantee as the document overload,

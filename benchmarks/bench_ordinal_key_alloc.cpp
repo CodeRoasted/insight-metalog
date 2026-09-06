@@ -3,7 +3,7 @@
 // invariant: every arm carries exactly ONE ordinal observation per event, so the key LENGTH is the
 // only variable across arms.
 // note: the 23-char arm proves the instrument sees an allocation on the dev leg too.
-// refs: ADR-9.D2
+// refs: ADR-3.D4, ADR-9.D2
 #include "heap_probe.hpp"
 
 #include <benchmark/benchmark.h>

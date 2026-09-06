@@ -52,6 +52,7 @@ int main(int argc, char** argv)
     }
 
     // post: emits the collapsed document from the cardinality-explosion window.
+    // refs: ADR-31.D8
     if (std::string{argv[1]} == "--cube-collapse")
     {
         namespace ml = insight::metalog;
@@ -67,6 +68,7 @@ int main(int argc, char** argv)
     }
 
     // post: emits the near-full reservoir document at the batch retention tuple.
+    // refs: ADR-31.D8
     if (std::string{argv[1]} == "--reservoir-nearfull")
     {
         namespace ml = insight::metalog;
@@ -82,6 +84,7 @@ int main(int argc, char** argv)
     }
 
     // post: emits the near-full reservoir document at the shipped streaming tuple.
+    // refs: ADR-31.D8
     if (std::string{argv[1]} == "--reservoir-streaming")
     {
         namespace ml = insight::metalog;
@@ -179,6 +182,7 @@ int main(int argc, char** argv)
         engine.open_window(t1);
         ml::collapse_depths::emit_current(engine);
         const auto current{engine.close_window(t2)};
+        // refs: DN-56.D2
         // invariant: composing two cubes at different collapse depths is the one compose clause no
         // corpus pair reaches, since a corpus pair bands both windows alike or neither.
         std::cout << ml::to_json(previous, engine.registry()) << "\n"
