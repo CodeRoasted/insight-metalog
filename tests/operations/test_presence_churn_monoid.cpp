@@ -1,29 +1,18 @@
-// Unit tests: allow short identifiers and test-specific patterns.
-//
-// test_presence_churn_monoid.cpp — the DN-50.D4 presence-churn monoid and its fold through
-// `compose()`.
-//
-// WHAT THE MEASURAND IS, once, because every assertion below is only meaningful against it. For a
-// template over base windows w_1..w_n with presence p_i in {0,1}, churn is #{ i : p_i != p_{i+1} }.
-// The composable element is C(B) = (first, transitions, indeterminate, last) and the product adds a
-// boundary term that depends only on (last(A), first(B)). It answers "the presence of CONTENT
-// oscillates" — a fact about the observed window range, computed on the document — and deliberately
-// not "the set of detectors that fire oscillates", whose value is a function of every threshold
-// upstream of it.
-//
-// WHERE THIS FILE STOPS, and who owns the rest. DN-50.D8 specifies `G-T3` (a PROPERTY test: the
-// fold equals the product at EVERY split point, over random presence sequences, with associativity
-// over every pair of split points) and `G-T4` (a planted template oscillating around the `top_k`
-// rank boundary with constant presence). Both are QA's, and neither is written here. What is here
-// is the set of witnesses this implementation needs to be shippable rather than asserted: each law
-// on ONE named witness, each rule at the seam where the producer and the composer meet, and the two
-// negative arms that would otherwise be comments. A witness suite says the code does what it says;
-// the property suite says it does so everywhere, and the second is not a reason to ship without the
-// first.
-//
-// Determinism: no RNG, no threads, no wall clock. Every window uses a literal epoch-offset
-// time_point. Single-threaded by construction.
 
+// refs: DN-50.D4, DN-50.D8
+// invariant: the measurand: churn is the count of base-window boundaries where the presence bit
+// differs, over a template's presence sequence.
+// invariant: the composable element is (span_windows, transitions, indeterminate, first, last),
+// and a span_windows of 0 IS the identity.
+// invariant: the product adds a boundary term reading only (last(A), first(B)), never either
+// operand's interior.
+// invariant: it answers that the presence of CONTENT oscillates, a fact about the observed window
+// range and computed on the document.
+// invariant: deliberately NOT that the set of firing detectors oscillates, whose value would be a
+// function of every threshold upstream of it.
+// invariant: this file is the WITNESS suite: each law on one named witness, each rule at the
+// producer/composer seam, and the two negative arms. G-T3 and G-T4 are QA's and live elsewhere.
+// note: no RNG, no threads, no wall clock; every window uses a literal epoch-offset time_point.
 #include <gtest/gtest.h>
 
 import insight.metalog.test;
@@ -66,16 +55,15 @@ constexpr Clock::time_point kT2{std::chrono::seconds{1700000120}};
            " span_windows=" + std::to_string(churn.span_windows) + ")";
 }
 
-// One base window, from its presence symbol — the shape every element in this file is built from.
+// note: one base window from its presence symbol -- the shape every element here is built from.
 [[nodiscard]] constexpr PresenceChurn window(PresenceSymbol symbol)
 {
     return {
         .span_windows = 1, .transitions = 0, .indeterminate = 0, .first = symbol, .last = symbol};
 }
 
-// Fold a whole presence sequence left to right — the reference the product is checked against.
-// `std::array` with CTAD rather than an initializer_list: the sequence length is a compile-time
-// property of each witness, and nothing here needs a heap.
+// invariant: the left-to-right reference the product is checked against; std::array with CTAD
+// because each witness's length is a compile-time property and nothing here needs a heap.
 template <std::size_t kLength>
 [[nodiscard]] PresenceChurn fold(const std::array<PresenceSymbol, kLength>& sequence)
 {
@@ -85,7 +73,7 @@ template <std::size_t kLength>
     return accumulated;
 }
 
-// The composed retained set's element for one template, by id, over top_k then reservoir.
+// note: the composed retained set's element for one template, by id, over top_k then reservoir.
 [[nodiscard]] std::optional<PresenceChurn> churn_of(const meta::MetaLogDocument& doc,
                                                     const insight::TemplateId& tid)
 {
@@ -109,10 +97,7 @@ template <std::size_t kLength>
     return out;
 }
 
-// ── The algebra, on elements alone ────────────────────────────────────────────
-
-// The definition itself: transitions count the boundaries where the presence bit CHANGED, and
-// nothing else. Present-Absent-Present-Present over four windows has two of them.
+// invariant: transitions count the boundaries where the presence bit CHANGED and nothing else.
 TEST(PresenceChurnMonoid, TransitionsCountOnlyTheBoundariesWherePresenceChanged)
 {
     const PresenceChurn folded{fold(std::array{PresenceSymbol::Present, PresenceSymbol::Absent,
@@ -127,7 +112,8 @@ TEST(PresenceChurnMonoid, TransitionsCountOnlyTheBoundariesWherePresenceChanged)
     EXPECT_EQ(folded.last, PresenceSymbol::Present) << render(folded);
 }
 
-// The identity law, from BOTH sides, because the product's two short circuits are separate code.
+// invariant: the identity law from BOTH sides, because the product's two short circuits are
+// separate code.
 TEST(PresenceChurnMonoid, TheEmptyRangeIsTheIdentityFromBothSides)
 {
     const PresenceChurn subject{fold(std::array{PresenceSymbol::Present, PresenceSymbol::Absent})};
@@ -142,12 +128,11 @@ TEST(PresenceChurnMonoid, TheEmptyRangeIsTheIdentityFromBothSides)
         << " got=" << render(meta::compose_presence_churn(subject, identity));
 }
 
-// THE NEGATIVE ARM THE TWO-SYMBOL RULE EXISTS FOR. `optional<bool>` is the obvious representation
-// and it is the wrong one: it has ONE absent state, so the empty range and the not-retained-here
-// range become the same value. This arm shows they cannot be, by measuring what the collapse would
-// cost — an empty range contributes NO boundary term, an unretained one contributes an
-// indeterminate. If a future edit merged the two symbols, this comparison goes from unequal to
-// equal and the arm reds.
+// refs: DN-50.D4
+// invariant: optional<bool> has ONE absent state, so the empty range and the not-retained-here
+// range would become one value; this arm measures what the collapse would cost.
+// invariant: an empty range contributes NO boundary term and an unretained one contributes an
+// indeterminate, so merging the two symbols turns this comparison from unequal to equal.
 TEST(PresenceChurnMonoid, CollapsingTheTwoAbsentSymbolsWouldBreakTheIdentityLaw)
 {
     const PresenceChurn subject{fold(std::array{PresenceSymbol::Present, PresenceSymbol::Present})};
@@ -173,9 +158,8 @@ TEST(PresenceChurnMonoid, CollapsingTheTwoAbsentSymbolsWouldBreakTheIdentityLaw)
         << "and it must never be counted as a transition. Got " << render(via_unretained);
 }
 
-// THE ORDER ARM. The boundary term reads (last(A), first(B)), so the product is orientation-
-// sensitive. A fold applied in the wrong order is deterministic and WRONG — which is why the
-// witness matters: no determinism gate can see it.
+// invariant: the boundary term reads (last(A), first(B)), so the product is orientation-sensitive
+// and a fold applied in the wrong order is deterministic and WRONG -- invisible to any gate.
 TEST(PresenceChurnMonoid, TheProductIsNotCommutativeOnAWitnessPair)
 {
     const PresenceChurn present_then_absent{
@@ -192,8 +176,8 @@ TEST(PresenceChurnMonoid, TheProductIsNotCommutativeOnAWitnessPair)
     EXPECT_EQ(backward.transitions, 2U) << "0,1,0 changes twice. Got " << render(backward);
 }
 
-// Associativity on one witness triple — the property that lets a single element per block fold at
-// every ladder level with no re-scan of the base windows. The exhaustive sweep is `G-T3`.
+// invariant: associativity on one witness triple is what lets a single element per block fold at
+// every ladder level with no re-scan of the base windows; the exhaustive sweep is G-T3.
 TEST(PresenceChurnMonoid, AssociativityHoldsOnAWitnessTriple)
 {
     const PresenceChurn a{fold(std::array{PresenceSymbol::Present, PresenceSymbol::Absent})};
@@ -210,22 +194,21 @@ TEST(PresenceChurnMonoid, AssociativityHoldsOnAWitnessTriple)
         << "and both must equal the flat left fold of the same six windows. Got " << render(left);
 }
 
-// ── The producer and the composer ─────────────────────────────────────────────
-
 [[nodiscard]] meta::MetaLogConfig churn_config(std::size_t top_k_size)
 {
     return meta::MetaLogConfig{
         .top_k_size = top_k_size,
         .reservoir_size = 0,
-        .top_ngrams_size = 0, // no behavior block: every arm here is about `stats`
+        .top_ngrams_size = 0,
         .emit_stability = false,
         .max_param_histograms = 0,
     };
 }
 
-// The base case: one observed window stamps the one-window element on every retained row and opens
-// the roll-up at span 1. `transitions <= span_windows - 1` makes that roll-up all-zero by
-// construction, which is exactly why the wire omits it (asserted further down).
+// invariant: the base case stamps the one-window element on every retained row and opens the
+// roll-up at span 1.
+// invariant: transitions cannot exceed span_windows - 1, so that roll-up is all-zero by
+// construction, which is why the wire omits it.
 TEST(PresenceChurnProducer, AnObservedWindowStampsTheOneWindowElementOnEveryRetainedRow)
 {
     meta::MetaLogEngine engine{churn_config(8)};
@@ -255,9 +238,9 @@ TEST(PresenceChurnProducer, AnObservedWindowStampsTheOneWindowElementOnEveryReta
         << render_top_k(doc);
 }
 
-// SPEC §12.2's ZERO — `lines_observed = 0` and empty stats — is DN-50.D4's empty block. Mapping the
-// two onto one state is what makes the monoid's identity law and the standard's identity MUST the
-// same law, and this arm is where that identification is checked rather than asserted in a comment.
+// refs: DN-50.D4
+// invariant: SPEC 12.2's ZERO is DN-50.D4's empty block, and mapping the two onto one state is what
+// makes the monoid's identity law and the standard's identity MUST the same law.
 TEST(PresenceChurnProducer, AnEventFreeWindowIsTheMonoidIdentityAndComposeIdentityHolds)
 {
     const auto cfg{churn_config(8)};
@@ -288,12 +271,9 @@ TEST(PresenceChurnProducer, AnEventFreeWindowIsTheMonoidIdentityAndComposeIdenti
         << " composed=" << render(composed.stats.top_k.front().presence_churn);
 }
 
-// THE WINDOW-ORDER MUST AT THE SEAM. `compose()` derives the orientation from the two documents'
-// own window envelopes, so an argument order that disagrees with time order cannot change the
-// result. The witness is asymmetric on purpose: a template present in the EARLIER window and absent
-// from the later one folds to first=Present/last=Absent, and a backwards fold would produce the
-// mirror — the same transition COUNT with the projections swapped, which is precisely what makes a
-// consumer's re-fold of two adjacent documents wrong.
+// invariant: compose() derives the orientation from the two documents' own window envelopes, so an
+// argument order disagreeing with time order cannot change the result.
+// note: the witness is asymmetric on purpose: a backwards fold gives the same count, mirrored.
 TEST(PresenceChurnCompose, TheFoldFollowsTheWindowEnvelopeAndNotTheArgumentOrder)
 {
     const auto cfg{churn_config(8)};
@@ -347,12 +327,10 @@ TEST(PresenceChurnCompose, TheFoldFollowsTheWindowEnvelopeAndNotTheArgumentOrder
         << render(*forward_beta) << " compose(later, earlier)=" << render(*backward_beta);
 }
 
-// THE INVENTED-CHURN RULE, at the seam. `top_k` truncates by COUNT, so absence from the retained
-// set of a TRUNCATED window is not absence from the window. This fixture puts both readings in one
-// composition: `alpha` leaves a window that truncated (unknowable -> indeterminate) while `gamma`
-// enters from a window that retained everything (knowable -> a real transition). A composer that
-// named retained-set membership AS presence would report a transition for `alpha` too, and that is
-// the defect the fourth symbol exists to prevent.
+// refs: DN-50.D4
+// invariant: top_k truncates by COUNT, so absence from a TRUNCATED window's retained set is not
+// absence from the window; this fixture puts both readings in one composition.
+// note: a composer naming retained-set membership AS presence invents a transition for alpha.
 TEST(PresenceChurnCompose, AbsenceFromATruncatedWindowIsIndeterminateNotATransition)
 {
     meta::MetaLogEngine engine_a{churn_config(2)};
@@ -412,9 +390,8 @@ TEST(PresenceChurnCompose, AbsenceFromATruncatedWindowIsIndeterminateNotATransit
     EXPECT_EQ(composed.presence_churn->total_indeterminate, 1U);
 }
 
-// THE EMIT GATE. A one-window range cannot carry a transition, so its block would be members whose
-// values another member already fixes; the composed document is the first range that can say
-// anything, and it must.
+// invariant: a one-window range cannot carry a transition, so its block would be members another
+// member already fixes; the composed document is the first range that can say anything, and must.
 TEST(PresenceChurnWire, TheSpanOneBlockIsOmittedAndTheComposedOneIsEmitted)
 {
     const auto cfg{churn_config(8)};

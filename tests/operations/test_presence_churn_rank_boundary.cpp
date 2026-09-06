@@ -1,30 +1,15 @@
-// Unit tests: allow short identifiers and test-specific patterns.
-//
-// test_presence_churn_rank_boundary.cpp — `DN-50.D8`'s `G-T4`: the INVENTED-CHURN arm.
-//
-// THE DEFECT THIS GATE EXISTS TO CATCH, stated before any assertion. `top_k` truncates by COUNT, so
-// "absent from the retained set" is not "absent from the window". A template whose rank oscillates
-// around the k-th position flips its retained-set membership with the world unchanged. An
-// implementation that read membership AS presence would then report a content claim — "this
-// template's presence oscillated" — whose value is a function of one of OUR retention parameters.
-// That is the precise defect the whole subject change exists to remove (DN-50.D4), and it would
-// arrive INSIDE the document, where a consumer has no way to see it.
-//
-// THE PRE-REGISTERED OUTCOME, fixed by DN-50.D8 before the fixture was written and not adjusted to
-// what the code produced: `transitions == 0` and `indeterminate > 0`. Zero alone is not the bar —
-// a statistic that never fires is zero everywhere — so the arms below pin the second half too, and
-// `TheNaiveMembershipReadingWouldHaveInventedThreeTransitions` computes what the rejected
-// implementation would have reported over the SAME windows. Without that number the gate cannot
-// distinguish "the trap was avoided" from "there was no trap here".
-//
-// AND THE VACUITY ANTIDOTE IS IN THIS FILE ON PURPOSE. `ARealPresenceOscillationIsStillCounted`
-// runs a genuinely oscillating template through an EXHAUSTIVE retained set and requires
-// transitions > 0. Together the two arms say the statistic discriminates: it is silent where
-// presence is constant and loud where presence moves. Either arm alone is satisfied by a broken
-// implementation — the first by a dead counter, the second by a naive one.
-//
-// Determinism: no RNG, no threads, no wall clock; literal epoch-offset window stamps throughout.
 
+// refs: DN-50.D4, DN-50.D8
+// invariant: this is G-T4, the invented-churn arm: top_k truncates by COUNT, so a template whose
+// rank oscillates around the k-th position flips retained-set membership with the world unchanged.
+// invariant: reading membership AS presence would then publish a content claim whose value is a
+// function of one of OUR retention parameters, and it would arrive inside the document.
+// invariant: the outcome is PRE-REGISTERED by DN-50.D8 before the fixture was written and not
+// adjusted to what the code produced: transitions == 0 and indeterminate > 0.
+// note: zero alone is not the bar, because a statistic that never fires is zero everywhere.
+// invariant: the vacuity antidote is in this file on purpose: one arm requires silence where
+// presence is constant, the other noise where presence moves.
+// note: either arm alone is satisfied by a broken implementation, a dead counter or a naive one.
 #include <gtest/gtest.h>
 
 import insight.metalog.test;
@@ -46,10 +31,10 @@ constexpr std::chrono::seconds kWindowWidth{60};
     return kEpoch + kWindowWidth * index;
 }
 
-// Three windows' worth of retained set at k=3 with FOUR live templates: the retained set can never
-// be exhaustive, which is what makes `Unretained` — rather than `Absent` — the symbol on the side
-// where the planted template is truncated. The gate depends on that distinction: `Absent` would
-// make the boundary readable and the transition real.
+// invariant: the retained set holds k=3 while FOUR templates are live, so it can never be
+// exhaustive.
+// invariant: that is what makes Unretained rather than Absent the symbol on the truncated side;
+// Absent would make the boundary readable and the transition real.
 constexpr std::size_t kTopK{3};
 constexpr std::size_t kOscillatingWindows{4};
 
@@ -107,8 +92,8 @@ constexpr std::size_t kOscillatingWindows{4};
 {
     return meta::MetaLogConfig{
         .top_k_size = kTopK,
-        .reservoir_size = 0, // the reservoir would RESCUE the planted template from the tail and
-                             // dissolve the trap; the horizon under test is top_k truncation alone
+        .reservoir_size = 0,
+        // note: the horizon under test is top_k truncation alone.
         .top_ngrams_size = 0,
         .emit_stability = false,
         .max_param_histograms = 0,
@@ -120,11 +105,9 @@ constexpr std::string_view kAnchorMid{"anchor mid volume event"};
 constexpr std::string_view kOscillator{"planted rank boundary event"};
 constexpr std::string_view kRival{"rival for the third slot event"};
 
-// ONE WINDOW OF THE PLANTED STREAM. `oscillator_retained` chooses which side of the k-th rank the
-// planted template lands on — and NOTHING ELSE changes: the planted template is emitted in EVERY
-// window, so its PRESENCE is constant by construction and only its RANK moves. That is the
-// do-operator this gate needs; a fixture that dropped the template from the alternate windows would
-// be testing real churn and would pass while the defect stood.
+// invariant: the planted template is emitted in EVERY window, so its PRESENCE is constant by
+// construction and only its RANK moves -- the do-operator this gate needs.
+// note: a fixture that dropped it from alternate windows would test real churn and still pass.
 [[nodiscard]] meta::MetaLogDocument planted_window(int index, bool oscillator_retained)
 {
     meta::MetaLogEngine engine{rank_boundary_config()};
@@ -136,17 +119,15 @@ constexpr std::string_view kRival{"rival for the third slot event"};
                     }};
     emit(kAnchorHigh, 100);
     emit(kAnchorMid, 90);
-    // The two arrangements differ only in which of the two contenders takes the third slot. Counts
-    // are distinct on both sides of every comparison, so the producer's count-desc / id-asc order
-    // never falls back to the id tiebreak and the arrangement is a property of the fixture rather
-    // than of a hash.
+    // invariant: counts are distinct on both sides of every comparison, so the count-desc / id-asc
+    // order never reaches the id tiebreak.
+    // note: so the arrangement is a property of the fixture rather than of a content hash.
     emit(kOscillator, oscillator_retained ? 85 : 35);
     emit(kRival, oscillator_retained ? 5 : 40);
     return engine.close_window(window_edge(index + 1));
 }
 
-// The composed range over `kOscillatingWindows` alternating arrangements, folded in window order
-// exactly as the pyramid's ladder folds a block.
+// note: folded in window order exactly as the pyramid's ladder folds a block.
 [[nodiscard]] meta::MetaLogDocument planted_range()
 {
     std::optional<meta::MetaLogDocument> composed;
@@ -167,12 +148,8 @@ constexpr std::string_view kRival{"rival for the third slot event"};
     return doc.stats.top_k.front().template_id;
 }
 
-// ── The fixture's own premises, asserted rather than assumed ─────────────────────
-
-// The trap only exists if the rank actually oscillates and the retained set is actually truncated.
-// Both are properties of the counts chosen above, and a later edit to those counts could dissolve
-// the trap while leaving every arm below green. So they are checked first, and a failure here is a
-// statement about the FIXTURE, not about the monoid.
+// pre: the trap exists only if the rank really oscillates and the retained set is really truncated;
+// both are properties of the counts above, so a failure here is about the FIXTURE.
 TEST(PresenceChurnRankBoundary, ThePlantedTemplateIsAlwaysPresentAndItsRankOscillates)
 {
     const insight::TemplateId oscillator{template_id_of(kOscillator)};
@@ -198,9 +175,8 @@ TEST(PresenceChurnRankBoundary, ThePlantedTemplateIsAlwaysPresentAndItsRankOscil
     }
 }
 
-// ── DN-50.D8's G-T4 proper ──────────────────────────────────────────────────────
-
-// THE GATE. Pre-registered by DN-50.D8: `transitions = 0` and `indeterminate > 0`.
+// refs: DN-50.D8
+// invariant: the gate proper, pre-registered: transitions == 0 and indeterminate > 0.
 TEST(PresenceChurnRankBoundary, ConstantPresenceAcrossTheRankBoundaryInventsNoTransition)
 {
     const insight::TemplateId oscillator{template_id_of(kOscillator)};
@@ -228,9 +204,8 @@ TEST(PresenceChurnRankBoundary, ConstantPresenceAcrossTheRankBoundaryInventsNoTr
     EXPECT_EQ(churn->span_windows, kOscillatingWindows) << render(*churn);
 }
 
-// The roll-up must agree with the row: a template with no readable transition is not a template
-// with churn, and the residue it produced must be visible at the document root. A consumer reading
-// only the summary must reach the same conclusion as one reading the row.
+// invariant: the roll-up must agree with the row, so a consumer reading only the summary reaches
+// the same conclusion as one reading the row.
 TEST(PresenceChurnRankBoundary, TheRollUpCountsTheResidueAndNotTheTemplate)
 {
     const auto composed{planted_range()};
@@ -248,10 +223,9 @@ TEST(PresenceChurnRankBoundary, TheRollUpCountsTheResidueAndNotTheTemplate)
            "alone.";
 }
 
-// THE MEASUREMENT THAT MAKES THE ZERO ABOVE MEAN SOMETHING. The rejected implementation — presence
-// defined as retained-set membership — is computed here over the SAME windows. It reports three
-// transitions where the world did not move. Without this number, `transitions == 0` is equally
-// consistent with a counter that never fires.
+// invariant: the rejected implementation is computed here over the SAME windows and reports three
+// transitions where the world did not move.
+// note: without that number, a zero is equally consistent with a counter that never fires.
 TEST(PresenceChurnRankBoundary, TheNaiveMembershipReadingWouldHaveInventedThreeTransitions)
 {
     const insight::TemplateId oscillator{template_id_of(kOscillator)};
@@ -280,16 +254,13 @@ TEST(PresenceChurnRankBoundary, TheNaiveMembershipReadingWouldHaveInventedThreeT
         << render(*churn) << " naive_transitions=" << naive_transitions;
 }
 
-// ── The vacuity antidote ────────────────────────────────────────────────────────
-
-// A statistic that is silent everywhere passes every arm above. This one moves a template's real
-// presence — emitted in windows 0 and 2, absent from windows 1 and 3 — inside a retained set that
-// is EXHAUSTIVE, so every absence is a definite `Absent` and every boundary is readable. The same
-// four-window shape as the planted range, with presence rather than rank as the thing that moves.
+// invariant: the antidote moves a template's REAL presence inside an EXHAUSTIVE retained set, so
+// every absence is a definite Absent and every boundary is readable.
+// note: the same four-window shape as the planted range, with presence rather than rank moving.
 TEST(PresenceChurnRankBoundary, ARealPresenceOscillationIsStillCounted)
 {
     const meta::MetaLogConfig cfg{
-        .top_k_size = 8, // strictly above the live template count: nothing is ever truncated
+        .top_k_size = 8,
         .reservoir_size = 0,
         .top_ngrams_size = 0,
         .emit_stability = false,

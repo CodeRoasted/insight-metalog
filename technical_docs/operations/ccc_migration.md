@@ -3290,20 +3290,75 @@ claim: a diverging count on a RETAINED template is stronger than a diverging car
 the half that carries `tail_count`, which example 1 shows AGREEING. The RFC's summary sentence is
 true across the pair and unfalsified on one side of it.
 
+## Unit 22 — the presence-churn trio in `tests/operations/`
+
+Three files — `test_presence_churn_property.cpp` (98), `test_presence_churn_monoid.cpp` (68),
+`test_presence_churn_rank_boundary.cpp` (63) — **229 would-be violations to 0**, comment lines
+**229 -> 144**. Taken together because they are one subject: `DN-50.D4`'s presence-churn monoid, its
+population proof (`G-T3`) and its invented-churn gate (`G-T4`).
+
+### The five witnesses
+
+* **Comment-only** — all three byte-identical in code tokens, re-taken after each repair below.
+* **Grammar** — the unit reads **0**; the repo moves **963 -> 734**, exactly -229.
+* **Behaviour** — **297 of 297 on clang-21 and 297 of 297 on gcc-16**, one slot acquire and release.
+* **Addressability** — nothing lost; one address ADDED and it is cross-repo:
+  `F-SRC-insight-eidos:detection.api.cppm:PyramidLadderConfig`, which `registry_grammar_lint`
+  resolves for repo, file spelling and scope.
+* **Knowledge** — one fresh cold reader, **35 questions, 35 recovered, 0 not recovered, 0 wrong,
+  ONE CONVICTION**, `GIT COMMANDS RUN: none`, 20 tool uses, 98 k tokens, 3.2 minutes, and **no
+  contamination**.
+
+### The conviction — the four-tuple was never the element
+
+**`OPS-8.S9` class (c): the reader answered correctly from the tree and thereby contradicted a line
+this conversion wrote.** The header said *"the composable element is `(first, transitions,
+indeterminate, last)`"* — carried faithfully from the pre-conversion prose, which said the same. The
+reader read `struct PresenceChurn` in `api/metalog.api.cppm` and reported a **fifth** member the
+four-tuple omits: **`span_windows`**, whose own `invariant:` reads *"base windows this element
+covers; 0 is the identity"*.
+
+That omission is not cosmetic, and the reader's other answers are what show it. `span_windows` is
+the member the identity law is DEFINED on — `compose_presence_churn`'s two short circuits are
+`earlier.span_windows == 0` and `later.span_windows == 0` (Q5) — and the member the emit gate's
+bound `transitions <= span_windows - 1` is written over (Q8). **So the four-tuple is not the
+composable element; it is four of the five members, missing the one that makes the thing a monoid.**
+Verified at `api/metalog.api.cppm` before the line changed. The tree carried the knowledge while the
+residual line was the weak link, which is the form succeeding rather than failing.
+
+### Two repairs made BEFORE the reader, and the reader independently confirmed both
+
+Both were carried faithfully from the prose and both were false at the artifact:
+
+* ***"64 windows is four times the deepest shipped ladder block, which composes to 12."*** The
+  ladder is not in this repo at all. `DN-50` names it at
+  `F-SRC-insight-eidos:detection.api.cppm:PyramidLadderConfig`, whose defaults (`levels 3`,
+  `base_fan_in 3`, `fan_in 2`) give `{3, 6, 12}` — so the deepest block composes 12 and
+  `kSeededMaxLength` of 64 is **more than five times** it, not four. The line now says so and
+  carries the address. **The reader followed that address into `insight-eidos` and re-derived
+  3 x 2 x 2 = 12 for itself** (Q23), which is the citation doing its job.
+* ***"three windows at k=3 with FOUR live templates"*** — **a defect the conversion INTRODUCED by
+  compressing.** The prose read *"Three windows' worth of retained set at k=3"*, meaning the set
+  holds three; `kOscillatingWindows` is **4**. The compression asserted three windows where there
+  are four. Now: *"the retained set holds k=3 while FOUR templates are live."* The reader's Q28
+  answers in exactly those terms.
+
+The second is the one worth keeping: the first was inherited, the second was manufactured here. **A
+compression that drops a qualifier can turn a true sentence into a false one, and neither the
+comment-only witness nor the grammar gate can see it** — only a reader, or a re-derivation at the
+artifact.
+
 ## The resume point
 
-**`OPS-8.S1` preflight, then unit 22. What is left is 14 files in `tests/operations/`, 963 would-be
+**`OPS-8.S1` preflight, then unit 23. What is left is 11 files in `tests/operations/`, 734 would-be
 violations**, the gate's own counts as of 2026-09-06:
 
 | file | violations |
 |---|---|
 | `test_golden_vectors.cpp` | 196 |
 | `test_canonicalization_version_ruleset_coverage.cpp` | 136 |
-| `test_presence_churn_property.cpp` | 98 |
 | `test_comparison_outcome.cpp` | 98 |
 | `test_stability_vs_diff_divergence.cpp` | 95 |
-| `test_presence_churn_monoid.cpp` | 68 |
-| `test_presence_churn_rank_boundary.cpp` | 63 |
 | `test_shift_sample_floor.cpp` | 45 |
 | `test_retention_profile_name.cpp` | 41 |
 | `test_ruleset_identity.cpp` | 31 |
@@ -3312,13 +3367,13 @@ violations**, the gate's own counts as of 2026-09-06:
 | `test_param_histograms_compose.cpp` | 25 |
 | `test_processing_identifiers.cpp` | 9 |
 
-**Take it as THREE units, not one** — a 14-file unit is one questionnaire over 963 violations, and a
-reader handles about fifty questions. Unit 21 spent 40 questions on 439 violations in one file, so
-budget roughly that density. The `presence_churn` trio (229) belongs together because the three
-tests share one algebraic subject; `test_golden_vectors.cpp` (196) and
+**Take it as TWO units.** `test_golden_vectors.cpp` (196) and
 `test_canonicalization_version_ruleset_coverage.cpp` (136) are both about the frozen ruleset and
-compose naturally; the remaining nine files (402) are small and unrelated, so split them by size
-rather than by subject.
+compose naturally into one unit of 332. The remaining nine files (402) are small and unrelated;
+split them by size, not by subject. **Question density, measured over three units: 38 questions for
+245 violations, 40 for 439, 35 for 229** — so budget roughly 35-40 questions per unit whatever its
+violation count, because what a reader is paced by is the number of distinct claims, not the number
+of deleted lines.
 
 Take the build slot only around the behaviour witness; the reading, stripping and drafting need
 none. **Arming is one `packages.yml` line away once this directory reads 0** — nothing else in the
