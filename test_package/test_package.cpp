@@ -1,14 +1,13 @@
-// Smoke test: consumes insight::metalog as if external.
 #include <chrono>
 #include <string>
 
 #include <glaze/glaze.hpp>
 #include <gtest/gtest.h>
 
-// Black-box consumer: the package's only public surface is its named modules — there are no
-// textual public headers.
-// insight.metalog re-exports the MetaLog DTOs + engine + to_json; canon types (Timestamp/LogLevel/
-// CanonicalEvent) are reachable-not-visible through it, so the consumer imports insight.canon too.
+// invariant: the package's only public surface is its named modules; there are no textual public
+// headers, so this consumer imports and includes nothing of the package's.
+// invariant: canon's types are reachable-not-visible through insight.metalog, which is why the
+// consumer imports insight.canon as well.
 import insight.metalog;
 import insight.canon;
 
@@ -36,12 +35,10 @@ TEST(InsightMetaLogPackage, ProducesSpecConformantDocument)
 
     auto doc{engine.close_window(start + std::chrono::minutes(5))};
     EXPECT_EQ(doc.metalog_version, "0.10.0");
-    // The package version, not the spec version (SPEC §2.1) — the two moved apart when producer
-    // 0.6.0 stayed frozen through the whole 1.x line. This is the only gate outside the cut
-    // checklist that reads the emitted value, and it is the reason `kProducerVersion` cannot sit
-    // stale: the expectation is the RELEASED REFERENCE's version, handed to CMake by whichever
-    // producer configured this directory, so the two authorities are independent and the check
-    // follows every bump on its own.
+    // assert: this is the PACKAGE version, not the spec version, and the two moved apart.
+    // invariant: the expectation is the released reference's version, handed to CMake by whichever
+    // producer configured this directory, so the two authorities stay independent.
+    // refs: F-SRC-metalog-spec:SPEC.md
     EXPECT_EQ(doc.producer.version, INSIGHT_METALOG_TESTED_VERSION);
     EXPECT_EQ(doc.window.lines_observed, 3U);
     EXPECT_EQ(doc.stats.unique_templates, 2U);
@@ -50,16 +47,16 @@ TEST(InsightMetaLogPackage, ProducesSpecConformantDocument)
     ASSERT_TRUE(doc.stats.entropy_bits.has_value());
     EXPECT_GT(*doc.stats.entropy_bits, 0.0);
 
-    // 2 of A then 1 of B => bigrams A->A (1) and A->B (1).
+    // assert: two of A then one of B, so the bigrams are A->A once and A->B once.
     ASSERT_TRUE(doc.behavior.has_value());
     EXPECT_EQ(doc.behavior->ngram_size, 2U);
     EXPECT_EQ(doc.behavior->top_ngrams.size(), 2U);
 
-    // First window in a session => no stability block.
+    // assert: the first window of a session has no prior, so it carries no stability block.
     EXPECT_FALSE(doc.stability.has_value());
 
-    // to_json() now emits a serialised glaze string; re-parse it generically to
-    // assert the on-the-wire contract (keys/values), as an external consumer would.
+    // invariant: the serialised string is re-parsed generically rather than compared to the
+    // document, so what is asserted is the on-the-wire contract an external consumer reads.
     const std::string serialized = to_json(doc, engine.registry());
     auto parsed = glz::read_json<glz::generic>(serialized);
     ASSERT_TRUE(parsed.has_value()) << "serialised output did not parse: " << serialized;
@@ -71,7 +68,8 @@ TEST(InsightMetaLogPackage, ProducesSpecConformantDocument)
     EXPECT_TRUE(json["stats"].contains("entropy_bits")) << serialized;
     EXPECT_TRUE(json.contains("behavior")) << serialized;
     EXPECT_FALSE(json.contains("stability")) << serialized;
-    EXPECT_FALSE(json.contains("attribution")) << serialized; // reserved by spec for v1.0
+    // note: the attribution key is reserved by the specification and no producer emits it.
+    EXPECT_FALSE(json.contains("attribution")) << serialized;
 }
 
 TEST(InsightMetaLogPackage, SecondWindowEmitsStability)
