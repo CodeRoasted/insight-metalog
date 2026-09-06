@@ -1,23 +1,12 @@
-// Unit tests: allow short identifiers and test-specific patterns
-// test_ruleset_identity.cpp — the composed-ruleset identity: the semantic packages in force are
-// content-hashed into one `semantic_identity` that rides every artifact, and two artifacts are
-// comparable only when it matches.
-// The RulesetIdentity block on MetaLogDocument + its comparability enforcement, which is
-// CENTRALIZED in the processing-identifier gate shared by compose()/diff()
-// (metalog.detail.operations).
-// semantic_identity is just another processing identifier through that one gate, so the enforcement
-// tests mirror test_processing_identifiers. Three faces:
-//   1. ROUND-TRIP — the block serialises under the SPEC §7 container
-//      (`extensions["fr.coderoast.ruleset"]` — vendor-shaped, so namespaced, never a bare root
-//      member) and reads back via glz::generic (there is no typed parser; the wire is read
-//      generically); inside the block, member-name == JSON key.
-//   2. ABSENCE — a legacy producer (config.ruleset unset) emits NO block; the consumer is
-//   absence-tolerant.
-//   3. MISMATCH — two documents with DIFFERENT semantic_identity are NOT comparable:
-//   compose()/diff()
-//      fail closed on the gate's "MUST fail" branch — re-segment or refuse, never a silent compare.
-// A diff here is a comparability-contract break — fix the code, never the assertion.
 
+// refs: F-SRC-metalog-spec:SPEC.md
+// invariant: the semantic packages in force are content-hashed into one semantic_identity that
+// rides every artifact, and two artifacts are comparable only when it matches.
+// invariant: enforcement is CENTRALIZED in the processing-identifier gate shared by compose() and
+// diff(), so semantic_identity is just another processing identifier through that one gate.
+// invariant: three faces -- ROUND-TRIP through the vendor-namespaced extensions container read back
+// generically, ABSENCE tolerated for a legacy producer, and MISMATCH failing closed.
+// note: a diff here is a comparability-contract break: fix the code, never the assertion.
 #include <glaze/glaze.hpp>
 #include <gtest/gtest.h>
 
@@ -33,13 +22,13 @@ const meta::RulesetIdentity kRulesetA{
     .packages = {{.name = "github", .version = "1.0.0"},
                  {.name = "test_frameworks", .version = "1.0.0"}}};
 const meta::RulesetIdentity kRulesetB{
-    // a DIFFERENT composition — a bumped github package
+    // note: a DIFFERENT composition, standing for a bumped package.
     .semantic_identity = "ffffffffffffffff",
     .packages = {{.name = "github", .version = "2.0.0"},
                  {.name = "test_frameworks", .version = "1.0.0"}}};
 
-// Build a closed MetaLogDocument stamped with `ruleset` (nullopt = a legacy producer). Every other
-// processing identifier stays at its default so `ruleset` is the isolated variable across the gate.
+// invariant: every other processing identifier stays at its default, so ruleset is the isolated
+// variable across the gate.
 [[nodiscard]] meta::MetaLogDocument
 build_doc_with_ruleset(std::optional<meta::RulesetIdentity> ruleset,
                        meta::TemplateRegistry* out_registry = nullptr)
@@ -57,7 +46,7 @@ build_doc_with_ruleset(std::optional<meta::RulesetIdentity> ruleset,
 }
 } // namespace
 
-// ── Stamping: config.ruleset rides onto the document ──────────────
+// note: stamping -- config.ruleset rides onto the document.
 TEST(RulesetIdentity, StampedFromConfigOnDocument)
 {
     const auto doc{build_doc_with_ruleset(kRulesetA)};
@@ -68,7 +57,8 @@ TEST(RulesetIdentity, StampedFromConfigOnDocument)
     EXPECT_EQ(doc.ruleset->packages[1].name, "test_frameworks");
 }
 
-// ── 1. ROUND-TRIP via glz::generic (no typed parser) — the block rides the §7 container ──
+// invariant: the block rides the SPEC 7 container and reads back via a generic parser, there being
+// no typed one; inside the block the member name IS the JSON key.
 TEST(RulesetIdentity, RoundTripsThroughGenericJson)
 {
     meta::TemplateRegistry registry;
@@ -99,7 +89,7 @@ TEST(RulesetIdentity, RoundTripsThroughGenericJson)
     EXPECT_EQ(packages[1]["name"].get<std::string>(), "test_frameworks") << json;
 }
 
-// ── 2. ABSENCE = legacy producer: config.ruleset unset ⇒ NO block on the wire ──
+// invariant: a legacy producer with ruleset unset emits NO block, and the consumer tolerates it.
 TEST(RulesetIdentity, LegacyProducerEmitsNoBlock)
 {
     meta::TemplateRegistry registry;
@@ -111,15 +101,16 @@ TEST(RulesetIdentity, LegacyProducerEmitsNoBlock)
     ASSERT_TRUE(parsed.has_value()) << json;
     EXPECT_FALSE((*parsed).contains("ruleset"))
         << "a legacy producer (no composition injected) must emit NO ruleset block: " << json;
-    // The §7 container itself may exist (the engine stamps the transport declaration on every
-    // produced document) — the assertion is on the ruleset KEY, not the container.
+    // invariant: the container itself may exist, the engine stamping a transport declaration on
+    // every document, so the assertion is on the ruleset KEY and not on the container.
     if ((*parsed).contains("extensions"))
         EXPECT_FALSE((*parsed)["extensions"].contains("fr.coderoast.ruleset"))
             << "a legacy producer must emit NO ruleset block under the §7 container either: "
             << json;
 }
 
-// ── 3. MISMATCH — compose across DIFFERENT semantic_identity fails closed ───────────────────
+// invariant: two documents with DIFFERENT semantic_identity are not comparable and the gate fails
+// closed -- re-segment or refuse, never a silent compare.
 TEST(RulesetIdentity, ComposeMismatchedSemanticIdentityThrows)
 {
     const auto lhs{build_doc_with_ruleset(kRulesetA)};
@@ -139,7 +130,7 @@ TEST(RulesetIdentity, DiffMismatchedSemanticIdentityThrows)
            "refuse upstream)";
 }
 
-// ── Matching identity is comparable, and carried into the compose() output ──
+// note: matching identity is comparable and is carried into the compose() output.
 TEST(RulesetIdentity, ComposeMatchingCarriesIdentity)
 {
     const auto lhs{build_doc_with_ruleset(kRulesetA)};
@@ -156,8 +147,8 @@ TEST(RulesetIdentity, DiffMatchingSemanticIdentitySucceeds)
     EXPECT_NO_THROW((void)meta::diff(previous, current));
 }
 
-// ── Asymmetric (one legacy side): the operation MAY proceed, but the output OMITS the identifier
-// rather than over-claim a contract the merged document only half-covers ──
+// invariant: with one legacy side the operation MAY proceed, but the output OMITS the identifier
+// rather than over-claim a contract the merged document only half-covers.
 TEST(RulesetIdentity, ComposeAsymmetricProceedsButOmitsIdentity)
 {
     const auto stamped{build_doc_with_ruleset(kRulesetA)};

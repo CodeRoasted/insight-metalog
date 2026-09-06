@@ -1,16 +1,10 @@
-// Unit tests: allow short identifiers and test-specific patterns
-//
-// retention_profile_name() — the DERIVATION of SPEC §2.4's `retention_profile` from the producer
-// configuration in force. The gate that consumes the value is measured next door
-// (test_processing_identifiers.cpp); this file measures the two properties the gate silently
-// assumes of whatever string it is handed.
-//
-// HOMING — unit grain. The subject is a pure function of a config struct: no window, no engine, no
-// seam. Whether the SHIPPING pipeline actually calls it is a different property with a different
-// oracle, and it is measured where the pipeline lives
-// (insight-eidos/engine/tests/pipeline/retention_profile_gate_test.cpp) — a unit test here cannot
-// see a caller and must not pretend to.
 
+// refs: F-SRC-metalog-spec:SPEC.md
+// invariant: the DERIVATION of retention_profile from the producer configuration; the gate that
+// CONSUMES the value is measured in test_processing_identifiers.cpp next door.
+// invariant: this file measures the two properties that gate silently assumes of whatever string it
+// is handed -- determinism and injectivity.
+// note: homed at unit grain: the subject is a pure function of a config struct, with no caller.
 #include <gtest/gtest.h>
 
 import insight.metalog.test;
@@ -33,30 +27,22 @@ namespace meta = insight::metalog;
 
 } // namespace
 
-// ── The spelling, pinned once ──────────────────────────────────────────────────────────────────
-//
-// One literal, so the shape is reviewable and a reader can check the doc comment against a fact.
-// It also makes an accidental reformatting (a separator swap, a dropped axis) a red rather than a
-// silent re-mint of every profile name in the fleet — which would refuse every existing baseline
-// on the next deploy.
+// invariant: the spelling is pinned as ONE literal, so the shape is reviewable and an accidental
+// reformat reds rather than silently re-minting every profile name in the fleet.
 TEST(RetentionProfileName, SpellsTheGenerationThenTheFourAxes)
 {
     EXPECT_EQ(meta::retention_profile_name(tuple_of(128, 64, 0, 16)), "salience-1/k128-m64-c0-e16");
     EXPECT_EQ(meta::retention_profile_name(tuple_of(0, 0, 0, 0)), "salience-1/k0-m0-c0-e0");
 }
 
-// ── DETERMINISM — the same tuple always derives the same name ──────────────────────────────────
-//
-// Not a tautology about a pure function: the derivation could have reached for a hash with an
-// unseeded engine, a locale-sensitive integer formatter, or a pointer/address ordering. Two
-// independently built configs, compared byte-for-byte.
+// invariant: determinism is not a tautology about a pure function -- the derivation could have
+// reached for an unseeded hash, a locale-sensitive formatter or a pointer ordering.
 TEST(RetentionProfileName, TheSameTupleAlwaysDerivesTheSameName)
 {
     const auto first{meta::retention_profile_name(tuple_of(128, 64, 4, 16))};
     const auto second{meta::retention_profile_name(tuple_of(128, 64, 4, 16))};
     EXPECT_EQ(first, second);
-    // Also stable against a config that reached the same tuple by a different route (defaults
-    // partly untouched vs. every member assigned).
+    // note: also stable against a config reaching the same tuple by a different route.
     meta::MetaLogConfig assembled;
     assembled.reservoir_error_reserve = 16;
     assembled.reservoir_per_kind_cap = 4;
@@ -65,12 +51,10 @@ TEST(RetentionProfileName, TheSameTupleAlwaysDerivesTheSameName)
     EXPECT_EQ(meta::retention_profile_name(assembled), first);
 }
 
-// ── INJECTIVITY — moving ANY axis moves the name ───────────────────────────────────────────────
-//
-// The property the §2.4 gate rests on: two different retention tuples must never collide onto one
-// name, or the gate certifies a comparability that does not hold. Each axis is moved on its own,
-// so a derivation that forgot one member (the shape of DN-52's original defect, one level down)
-// is caught by the arm naming that member rather than by an aggregate.
+// refs: DN-52
+// invariant: injectivity is what the comparability gate rests on: two different retention tuples
+// must never collide onto one name, or the gate certifies a comparability that does not hold.
+// note: each axis moves on its own, so a forgotten member is named by its own arm.
 TEST(RetentionProfileName, EveryAxisIsPartOfTheName)
 {
     const auto base{tuple_of(128, 64, 4, 16)};
@@ -94,11 +78,8 @@ TEST(RetentionProfileName, EveryAxisIsPartOfTheName)
                "under the old, which is exactly what §2.4's gate exists to refuse.";
 }
 
-// ── INJECTIVITY, the adversarial arm — digits must not run together ────────────────────────────
-//
-// The failure this arm exists for: a derivation that concatenated the numbers without separators
-// (or with an ambiguous one) maps (k=1, m=28) and (k=12, m=8) onto the same string. That is not a
-// hypothetical shape — it is what "just join the values" produces.
+// invariant: the adversarial arm -- a derivation that joined the numbers without a separator maps
+// (k=1, m=28) and (k=12, m=8) onto one string, which is what just-join-the-values produces.
 TEST(RetentionProfileName, AdjacentAxesCannotBorrowEachOthersDigits)
 {
     EXPECT_NE(meta::retention_profile_name(tuple_of(1, 28, 0, 0)),
@@ -107,11 +88,8 @@ TEST(RetentionProfileName, AdjacentAxesCannotBorrowEachOthersDigits)
               meta::retention_profile_name(tuple_of(0, 0, 12, 8)));
 }
 
-// ── The arithmetic generation is IN the name ───────────────────────────────────────────────────
-//
-// §2.4 requires the profile to cover the salience arithmetic, which no config member expresses. If
-// the generation ever dropped out of the derivation, two binaries with different band ladders
-// would publish the same profile at the same tuple and compare as comparable.
+// invariant: the salience arithmetic generation is IN the name because no config member expresses
+// it; without it two binaries with different band ladders would compare as comparable.
 TEST(RetentionProfileName, CarriesTheSalienceArithmeticGeneration)
 {
     const auto name{meta::retention_profile_name(tuple_of(128, 64, 4, 16))};

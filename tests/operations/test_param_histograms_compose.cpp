@@ -1,11 +1,9 @@
-// Unit tests: allow short identifiers and test-specific patterns
-// compose(): param_histograms carry/merge/truncation. The rule under test: per-slot histograms are
-// CARRIED through compose(), not dropped, so per-slot distribution shifts stay visible in a diff
-// against a composed (pyramid) baseline. For a (template_id, param_index) slot present in BOTH
-// inputs the composer unions value_counts and sums the counts, truncates to the producer's cap
-// (top-N by count), sets total = lhs.total + rhs.total and recomputes entropy over the merged
-// counts. A slot present in only ONE input may be carried unchanged.
 
+// invariant: per-slot histograms are CARRIED through compose() and not dropped, so a per-slot
+// distribution shift stays visible in a diff against a composed baseline.
+// invariant: for a slot present in BOTH inputs the composer unions value_counts, sums the counts,
+// truncates to the producer's cap by count, sums the totals and recomputes entropy over the merge.
+// note: a slot present in only ONE input may be carried unchanged.
 #include <gtest/gtest.h>
 
 import insight.metalog.test;
@@ -15,8 +13,6 @@ namespace
 
 namespace tok = insight::tokenization;
 namespace meta = insight::metalog;
-
-// ── param_histograms compose-carry ────────────────────────────────────────────
 
 namespace
 {
@@ -66,8 +62,8 @@ TEST(ParamHistogramsCompose, MergesValueCountsAndTotalForSharedSlot)
     EXPECT_GT(fh.entropy_bits, 0.0) << "entropy recomputed from merged counts";
 }
 
-// Cardinality fallback: HLL sketches are not carried in the document, so the composer cannot
-// union them — max(A, B) is the conservative lower-bound estimate it can defend.
+// invariant: HLL sketches are not carried in the document, so the composer cannot union them and
+// takes the max as the conservative lower-bound estimate it can defend.
 TEST(ParamHistogramsCompose, ApproximateCardinalityIsMaxAcrossInputs)
 {
     const auto lhs{make_doc_with_histogram("h:abc", 0, {{"x", 10}}, 10, /*card=*/1847, 100)};
@@ -76,9 +72,8 @@ TEST(ParamHistogramsCompose, ApproximateCardinalityIsMaxAcrossInputs)
     EXPECT_EQ(composed.stats.top_k[0].field_histograms[0].approximate_cardinality, 1847U);
 }
 
-// A slot present in only ONE input MAY be carried unchanged or omitted. We carry
-// (preserves more information than omitting) so the composed FieldDrift/FieldShift
-// can still see the asymmetric distribution.
+// invariant: a one-sided slot is CARRIED rather than omitted, preserving more information, so the
+// composed drift and shift can still see the asymmetric distribution.
 TEST(ParamHistogramsCompose, CarriesOneSidedHistogramUnchanged)
 {
     const auto lhs{make_doc_with_histogram("h:abc", 0, {{"x", 10}}, 10, /*card=*/100, 100)};
@@ -89,7 +84,7 @@ TEST(ParamHistogramsCompose, CarriesOneSidedHistogramUnchanged)
     meta::TopKEntry rhs_entry;
     rhs_entry.template_id = insight::parse_template_id("h:abc");
     rhs_entry.count = 50;
-    rhs.stats.top_k.push_back(std::move(rhs_entry)); // template present, NO histogram
+    rhs.stats.top_k.push_back(std::move(rhs_entry));
 
     const auto composed{meta::compose(lhs, rhs)};
     ASSERT_EQ(composed.stats.top_k[0].field_histograms.size(), 1U);
@@ -98,20 +93,19 @@ TEST(ParamHistogramsCompose, CarriesOneSidedHistogramUnchanged)
     EXPECT_EQ(fh.total, 10U) << "total reflects only the input that had the histogram";
 }
 
-// Merged value_counts is truncated to the producer's max_param_histograms cap,
-// keeping the top-N by count (deterministic tie-break by key) — the bound is what
-// keeps a composed document's size independent of input cardinality.
+// invariant: the merged value_counts is truncated to the producer's cap, keeping the top-N by count
+// with a deterministic key tie-break.
+// note: that bound keeps a composed document's size independent of input cardinality.
 TEST(ParamHistogramsCompose, TruncatesMergedValueCountsToCap)
 {
-    constexpr std::size_t kCap{meta::MetaLogConfig::kDefaultMaxHistogramValues}; // 64
+    constexpr std::size_t kCap{meta::MetaLogConfig::kDefaultMaxHistogramValues};
     std::unordered_map<std::string, std::uint64_t> a;
     std::unordered_map<std::string, std::uint64_t> b;
-    // 50 lhs + 50 rhs → 100 distinct (disjoint key spaces, no overlap), exceeds cap.
-    // Counts ascending so a stable top-N has the highest indices win.
+    // note: fifty per side over disjoint keys gives a hundred, exceeding the cap.
     for (std::uint64_t i = 0; i < 50; ++i)
-        a["a" + std::to_string(i)] = i + 1; // 1..50
+        a["a" + std::to_string(i)] = i + 1;
     for (std::uint64_t i = 0; i < 50; ++i)
-        b["b" + std::to_string(i)] = 100 + i; // 100..149
+        b["b" + std::to_string(i)] = 100 + i;
     const auto lhs{make_doc_with_histogram("h:abc", 0, std::move(a), 1275, 0, 5000)};
     const auto rhs{make_doc_with_histogram("h:abc", 0, std::move(b), 6225, 0, 5000)};
 
@@ -122,8 +116,8 @@ TEST(ParamHistogramsCompose, TruncatesMergedValueCountsToCap)
            "an untruncated merge makes composed document size grow with input cardinality";
 }
 
-// When neither input emits histograms (a degenerate case), the composed entry's
-// field_histograms stays empty — no spurious empty histogram introduced.
+// invariant: when neither input emits histograms the composed entry stays empty, with no spurious
+// empty histogram introduced.
 TEST(ParamHistogramsCompose, NoHistogramsWhenInputsHaveNone)
 {
     meta::MetaLogDocument lhs;
@@ -133,7 +127,7 @@ TEST(ParamHistogramsCompose, NoHistogramsWhenInputsHaveNone)
     lhs_e.template_id = insight::parse_template_id("h:abc");
     lhs_e.count = 50;
     lhs.stats.top_k.push_back(std::move(lhs_e));
-    const meta::MetaLogDocument rhs{lhs}; // same shape; no histograms anywhere
+    const meta::MetaLogDocument rhs{lhs};
 
     const auto composed{meta::compose(lhs, rhs)};
     ASSERT_EQ(composed.stats.top_k.size(), 1U);

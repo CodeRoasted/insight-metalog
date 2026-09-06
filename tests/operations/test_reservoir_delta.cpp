@@ -1,9 +1,10 @@
-// Unit tests: allow short identifiers and test-specific patterns.
-// diff(): MetaLogDiff::reservoir_delta — the chronic-vs-new streaming seam, without which a
-// chronic rare-fatal and a genuinely new one fire identically every window. Set-difference
-// over the two documents' salience memory (top_k ∪ reservoir): new_salient / vanished_salient +
-// the ERROR/FATAL failure-frontier crossings. Additive, sorted by template_id, no version bump.
 
+// refs: ADR-31.D8
+// invariant: reservoir_delta is the chronic-versus-new streaming seam, without which a chronic rare
+// fatal and a genuinely new one fire identically every window.
+// invariant: it is a set difference over the two documents' salience memory, top_k union reservoir,
+// yielding new and vanished salients plus the failure-frontier crossings.
+// note: additive, sorted by template_id, and no version bump.
 #include <gtest/gtest.h>
 
 import insight.metalog.test;
@@ -16,7 +17,7 @@ using insight::LogLevel;
 using insight::StructuralRole;
 using insight::template_id_of;
 
-// A reservoir entry for `tmpl` at `level`, salience/count carried for the snapshot assertions.
+// note: a reservoir entry, salience and count carried for the snapshot assertions.
 [[nodiscard]] meta::ReservoirEntry reservoir_entry(std::string_view tmpl, LogLevel level,
                                                    std::uint32_t salience, std::uint64_t count)
 {
@@ -28,8 +29,8 @@ using insight::template_id_of;
     return entry;
 }
 
-// A top_k entry for `tmpl` at `level` — a salience-memory member that does NOT draw from the
-// reservoir (so it suppresses "new" without ever appearing as a new/vanished snapshot).
+// invariant: a top_k entry is a salience-memory member that does NOT draw from the reservoir, so it
+// suppresses new without ever appearing as a new or vanished snapshot.
 [[nodiscard]] meta::TopKEntry top_k_entry(std::string_view tmpl, LogLevel level,
                                           std::uint64_t count)
 {
@@ -40,8 +41,8 @@ using insight::template_id_of;
     return entry;
 }
 
-// A minimal comparable document: default canonicalization_version / retention_profile (so the
-// diff() comparability gate passes), carrying the given top_k + reservoir memory.
+// invariant: default processing identifiers, so the comparability gate passes and the salience
+// memory is the only variable.
 [[nodiscard]] meta::MetaLogDocument doc_with(std::vector<meta::TopKEntry> top_k,
                                              std::vector<meta::ReservoirEntry> reservoir)
 {
@@ -58,7 +59,7 @@ using insight::template_id_of;
     return std::ranges::any_of(list, [&](const auto& e) { return e.template_id == id; });
 }
 
-// Membership snapshots must be sorted ascending by template_id — the sole output order.
+// invariant: membership snapshots are sorted ascending by template_id -- the sole output order.
 template <class Entry> [[nodiscard]] bool sorted_by_id(const std::vector<Entry>& list)
 {
     return std::ranges::is_sorted(list, [](const Entry& lhs, const Entry& rhs)
@@ -67,8 +68,8 @@ template <class Entry> [[nodiscard]] bool sorted_by_id(const std::vector<Entry>&
 
 } // namespace
 
-// A rare-salient template present in current.reservoir but absent from the previous window's
-// salience memory is `new_salient`; a chronic one already in that memory is NOT.
+// invariant: a rare salient in the current reservoir and absent from the previous window's salience
+// memory is new; one already in that memory is not.
 TEST(ReservoirDeltaTest, NewSalientIsAbsentFromPreviousMemory)
 {
     const auto prev{
@@ -87,15 +88,14 @@ TEST(ReservoirDeltaTest, NewSalientIsAbsentFromPreviousMemory)
     EXPECT_FALSE(contains_id(delta.new_salient, "chronic db timeout"))
         << "a template already in the previous reservoir is chronic, never new";
 
-    // Snapshot carries the current-side entry's severity + loudness.
+    // note: the snapshot carries the current-side entry's severity and loudness.
     const auto& snap{delta.new_salient.front()};
     EXPECT_EQ(snap.dominant_level, LogLevel::Fatal);
     EXPECT_EQ(snap.salience, 9500u);
     EXPECT_EQ(snap.count, 1u);
 }
 
-// A previous.reservoir template gone from the current window's salience memory is
-// `vanished_salient`.
+// invariant: a previous reservoir template gone from the current window's memory is vanished.
 TEST(ReservoirDeltaTest, VanishedSalientIsAbsentFromCurrentMemory)
 {
     const auto prev{doc_with({}, {reservoir_entry("held error", LogLevel::Error, 8000, 1),
@@ -113,8 +113,8 @@ TEST(ReservoirDeltaTest, VanishedSalientIsAbsentFromCurrentMemory)
     EXPECT_TRUE(delta.new_salient.empty());
 }
 
-// The absence set is top_k ∪ reservoir: a template held in the PREVIOUS top_k (not its reservoir)
-// still suppresses "new" — memory is memory regardless of which tier holds it.
+// invariant: the absence set is top_k union reservoir, so a template held in the previous top_k
+// still suppresses new -- memory is memory regardless of which tier holds it.
 TEST(ReservoirDeltaTest, TopKMembershipSuppressesNew)
 {
     const auto prev{doc_with({top_k_entry("frequent path", LogLevel::Info, 5000)}, {})};
@@ -131,8 +131,8 @@ TEST(ReservoirDeltaTest, TopKMembershipSuppressesNew)
     EXPECT_EQ(delta.new_salient.size(), 1u);
 }
 
-// A template in BOTH sides' memory whose dominant_level crosses the ERROR/FATAL failure frontier
-// is a signed, polarity-mute frontier crossing (up = into failure, down = out).
+// invariant: a template in BOTH sides' memory whose dominant level crosses the failure frontier is
+// a signed, polarity-mute crossing, up meaning into failure.
 TEST(ReservoirDeltaTest, FrontierCrossingsAreSignedAndPolarityMute)
 {
     const auto prev{doc_with({top_k_entry("escalating call", LogLevel::Warn, 100)},
@@ -162,8 +162,7 @@ TEST(ReservoirDeltaTest, FrontierCrossingsAreSignedAndPolarityMute)
         << "Fatal→Info crosses OUT of the failure band";
 }
 
-// A level change that does NOT change failure-membership (Error→Fatal, both in-band) is not a
-// crossing.
+// invariant: a level change that does not change failure membership is not a crossing.
 TEST(ReservoirDeltaTest, WithinBandLevelChangeIsNotACrossing)
 {
     const auto prev{doc_with({}, {reservoir_entry("severe", LogLevel::Error, 8000, 1)})};
@@ -174,11 +173,11 @@ TEST(ReservoirDeltaTest, WithinBandLevelChangeIsNotACrossing)
         << "Error→Fatal stays inside the failure band — no frontier crossing";
 }
 
-// Every output list is sorted by template_id regardless of reservoir insertion order (ADR-31.D8:
-// the unordered membership lookups must never leak into output order).
+// invariant: every output list is sorted by template_id regardless of insertion order, so the
+// unordered membership lookups never leak into output order.
 TEST(ReservoirDeltaTest, OutputListsSortedByTemplateId)
 {
-    // Insert in deliberately non-id order.
+    // note: inserted in deliberately non-id order.
     const auto prev{doc_with({}, {})};
     const auto curr{doc_with({}, {reservoir_entry("zeta", LogLevel::Error, 8000, 1),
                                   reservoir_entry("alpha", LogLevel::Error, 8000, 1),
@@ -190,8 +189,8 @@ TEST(ReservoirDeltaTest, OutputListsSortedByTemplateId)
         << "new_salient must be sorted by template_id, not reservoir order";
 }
 
-// Byte-additive guard: when neither side carries any salience memory, the block is empty AND the
-// serialized diff carries no `reservoir_delta` key at all (emptiness-as-absence).
+// invariant: with no salience memory on either side the block is empty AND the serialized diff
+// carries no reservoir_delta key at all -- emptiness as absence.
 TEST(ReservoirDeltaTest, OmittedFromJsonWhenBothMemoriesEmpty)
 {
     const auto prev{doc_with({}, {})};

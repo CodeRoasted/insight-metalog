@@ -3436,39 +3436,82 @@ ladder factor and unit 23's corpora claim — and each of those was found the sa
 artifact, before the reader ran. **The reader's value shifts as the converter's discipline improves:
 it is the backstop, not the first line.**
 
-## The resume point
+## Unit 25 — the last six files, and the repo ARMS
 
-**`OPS-8.S1` preflight, then unit 25 — the LAST unit in this repo. 6 files in `tests/operations/`,
-164 would-be violations**, the gate's own counts as of 2026-09-06:
+Six files — `test_retention_profile_name.cpp` (41), `test_ruleset_identity.cpp` (31),
+`test_diff_blocks.cpp` (31), `test_reservoir_delta.cpp` (27), `test_param_histograms_compose.cpp`
+(25), `test_processing_identifiers.cpp` (9) — **164 would-be violations to 0**, stripper cross-check
+exact, comment lines **164 -> 130**, 26 tool forms kept.
 
-| file | violations |
-|---|---|
-| `test_retention_profile_name.cpp` | 41 |
-| `test_ruleset_identity.cpp` | 31 |
-| `test_diff_blocks.cpp` | 31 |
-| `test_reservoir_delta.cpp` | 27 |
-| `test_param_histograms_compose.cpp` | 25 |
-| `test_processing_identifiers.cpp` | 9 |
+### The five witnesses
 
-**Unit 25 is the whole remainder, and the repo ARMS behind it** — 6 small unrelated files at 164,
-which is one questionnaire. **Then set `comment_contract: true` for `insight-metalog` in
-`packages.yml` and it is the fourth armed repo**, after `logcraft`, `coderoast-ipc` and
-`insight-twin`. Nothing outside `tests/operations/` carries a violation.
+* **Comment-only** — 6 of 6 byte-identical in code tokens, re-taken after the repair below.
+* **Grammar** — the unit reads 0, and so does **the whole repo**: 70 files, 2 847 comment lines,
+  **0 would-be violations**, down from the 2026-09-05 baseline of 6 701 over 6 868 comment lines.
+* **Behaviour** — **297 of 297 on clang-21 and 297 of 297 on gcc-16**, taken twice: once for the
+  unit and once again after `packages.yml` changed, since arming edits a file the build graph reads.
+* **Addressability** — nothing lost, three added. `SRC-II-7` survives in
+  `test_ruleset_identity.cpp` because it lives in assertion-message STRINGS, which are code and were
+  never in the stripper's domain.
+* **Knowledge** — one fresh cold reader, **36 questions, 36 recovered, 0 not recovered, 0 wrong,
+  ONE CONVICTION**, `GIT COMMANDS RUN: none`, 32 tool uses, 107 k tokens, 3.5 minutes, no
+  contamination.
 
-**Question density, measured over five units: 38 questions for 245 violations, 40 for 439, 35 for
-229, 36 for 332, 37 for 238** — a reader is paced by the number of distinct CLAIMS, not by deleted
-lines, so budget 35-40 questions per unit whatever its violation count.
+### The conviction — an `invariant:` that overstated what the arm pins
 
-**AND RUN `budget_precheck.py` BEFORE the first `DRY=1` placement.** `Placer.B` reports at most one
-overrun per BLOCK, so unit 23's script read 15 overruns, then 5, then 2, then 2, then 2 across five
-re-strip-and-re-place cycles; the pre-check listed all of them in one pass over 96 specs. Unit 24
-used it first and cleared 8 overruns in a single edit.
+The line said an identical distribution *"gives exactly zero JS divergence."* The reader confirmed
+the MATHEMATICS — Laplace smoothing adds one to every key over the same key union and the same
+`key_count` to both denominators, so with equal `value_counts` and equal totals the smoothed
+distributions are identical and the divergence is exactly zero — **and then read the assertion,
+which is `EXPECT_LT(fhd.js_divergence, 0.01)`.** The test's own name is
+`JSDivergenceNearZeroForSameDistribution`.
 
-Take the build slot only around the behaviour witness; the reading, stripping and drafting need
-none. **Arming is one `packages.yml` line away once this directory reads 0** — nothing else in the
-repo carries a violation.
+So the comment stated a true fact about the mathematics as though it were the thing the arm CHECKS.
+An `invariant:` at a test site is read as what that site pins, and this one claimed an equality the
+site does not assert. Repaired to state both halves.
 
----
+**Kleio, and it follows directly:** if the divergence is exactly zero by construction, the assertion
+that matches both the name and the mathematics is `EXPECT_DOUBLE_EQ(fhd.js_divergence, 0.0)`. The
+0.01 bound is two orders of magnitude of slack over a quantity with no rounding freedom, and it
+would pass on a real divergence of 0.009 — which is the same false-witness class `SPEC` §13.2 names
+by value when it says a divergence serialised as `1e-17` between identical distributions is a
+witness and the defect is the producer's.
+
+## THE REPO IS ARMED — 2026-09-06
+
+`comment_contract: true` is the first line of `packages.yml`, matching `logcraft`, `coderoast-ipc`
+and `insight-twin`. The gate confirms the transition rather than the edit:
+
+* before: `files 70 = armed 0 + report-only 70 · armed repos: none`
+* after: `files 70 = armed 70 + report-only 0 · armed repos: insight-metalog · violations in armed
+  files 0 (none) · rc=0`
+
+Whole-workspace sweep on the same day: **903 files, armed 290, armed repos `coderoast-ipc,
+insight-metalog, insight-twin, logcraft`, 0 violations in armed files, rc=0.**
+
+**From here a violation in this repo FAILS the gate rather than being counted.** 6 701 to 0 over
+twenty-five units.
+
+### The whole-repo arc, for whoever reads this next
+
+| | baseline 2026-09-05 | armed 2026-09-06 |
+|---|---|---|
+| would-be violations | 6 701 | **0** |
+| comment lines | 6 868 | 2 847 |
+| files | 191 -> 70 checked | 70, all armed |
+
+**Nine false sentences were carried out of the prose and repaired at the artifact, and three
+convictions came from readers.** None was visible to any mechanical witness: comment-only, grammar,
+behaviour and the address census are all blind to a sentence that is well-formed and untrue. The
+readers scored 38/38, 40/40, 35/35, 36/36, 37/37 and 36/36 across units 20-25.
+
+## The resume point — NONE. THIS REPO IS DONE.
+
+Every file is converted and the repo is armed. There is no next unit here. **The programme's next
+repo is `coderoast-server`**, whose own ledger carries its resume marker: the source tier is flat,
+54 test-tier files remain at 3 076 would-be violations, and its marker says to take
+`server/tests/{system,llm,util}` first because unit 15 had to declare an answer key it could not
+remove.
 
 ## THE UNIT-19 LANDING: WHY THE COMMIT MESSAGE SAYS WITNESS 4 IS OWED, AND WHY IT IS NOT
 

@@ -1,9 +1,9 @@
-// Unit tests: allow short identifiers and test-specific patterns
-// The two opaque processing identifiers a document carries — canonicalization_version (the
-// masking/tokenization/classification rules) and retention_profile (top_k size, reservoir weights
-// and caps, the salience arithmetic) — and the comparability gate they arm on compose()/diff():
-// when both inputs carry an identifier the values MUST be equal, else the operation MUST fail.
 
+// refs: F-SRC-metalog-spec:SPEC.md
+// invariant: a document carries two opaque processing identifiers: the masking, tokenization and
+// classification rules, and the retention profile with its sizes, caps and arithmetic.
+// invariant: they arm a comparability gate on compose() and diff(): when both inputs carry an
+// identifier the values MUST be equal, and otherwise the operation MUST fail.
 #include <glaze/glaze.hpp>
 #include <gtest/gtest.h>
 
@@ -15,8 +15,6 @@ namespace
 namespace tok = insight::tokenization;
 namespace meta = insight::metalog;
 using insight::metalog::test::make_event;
-
-// ── Processing identifiers + comparability gate ──────────────────────────────
 
 namespace
 {
@@ -55,9 +53,9 @@ TEST(ProcessingIdentifiers, ComposeCarriesWhenBothMatch)
     EXPECT_EQ(out.retention_profile, "retention-A");
 }
 
-// When an input OMITS an identifier the operation may proceed — the gate only bites on
-// two present-and-unequal values. We proceed but OMIT the asymmetric identifier on the
-// output: synthesizing one would over-claim a contract only one input actually declared.
+// invariant: when an input OMITS an identifier the operation may proceed, the gate biting only on
+// two present-and-unequal values.
+// note: the output omits the asymmetric identifier, since synthesizing one would over-claim.
 TEST(ProcessingIdentifiers, ComposeAsymmetricProceedsButOmitsIdentifier)
 {
     const auto lhs{build_doc_with_identifiers("canon-1", std::nullopt)};
