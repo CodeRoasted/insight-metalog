@@ -865,6 +865,362 @@ read alive before the release. Comment lines 329 → 121 (63 % fewer); would-be 
 
 ---
 
+## Unit 11 — `api/` · `metalog.cppm` (1 file, 326 would-be violations)
+
+The facade module: the `MetaLogEngine` class with its whole private state, and the free
+`to_json` / `compose` / `diff` / `comparison_outcome_of` / `withheld_signals_of` /
+`cube_cardinality` / `collapse_note` declarations. 327 comment lines, 326 of them violations
+(301 bare, 17 spacer, 8 trailing), 1 tool form. Split from `api/metalog.api.cppm` by file group
+(`OPS-8.S2`): 1 416 comment lines across the two is one questionnaire pretending to be two.
+
+**Census (`OPS-8.S4`).** Zero `NOLINT` of any spelling, zero `/*name*/` or `/*name=*/`, zero
+`clang-format off`, zero `wall-clock:`, zero `SPDX-License-Identifier:`; one
+`} // namespace insight::metalog` closer. Identical after the strip. No census decision needed.
+
+**Stripper cross-check (`OPS-8.S5`).** No suppression in the file, so
+`removed == violations − (suppression-without-why + trailing-nolint)` reduces to
+`removed == violations`: 326 == 326, kept 1 == the one tool form.
+
+**The `SRC-<code>` read this unit was blocked on, and its answer (`OPS-8.O5`).** The previous run
+left `api/` marked *"must be read for statement-bearing `SRC-<code>` sites first"*. It was read.
+`api/metalog.cppm` carries 13 distinct codes over 22 occurrences, and **every one of them is a
+CITATION, not a declaration** — so this unit owes no law block and was not blocked:
+
+| code | where its statement actually is | how that was established |
+|---|---|---|
+| `SRC-D-TIR-5` (×4) | `api/metalog.api.cppm`, at `TemplateRegistry` | the deleted prose said so itself, at all four sites |
+| `SRC-D-OTEL-11` (×4) | `insight-canon/core/api/canon.api.cppm` and `core/src/strategy/json.cpp` | `ADR-29.D6` rules that the `SRC-D-OTEL-*` statements live in canon's interface; the sites are there |
+| `SRC-D-OTEL-21` (×3), `SRC-D-OTEL-9` (×2), `SRC-D-OTEL-1`, `SRC-D-OTEL-13` | design-note slots (`DN-029`, `DN-014`, `DN-008`) plus, for `-9`/`-21`, `insight-canon/core/api/canon.spi.cppm` | doc-tier sweep + the canon sites |
+| `SRC-D-TIR-2` (×2), `SRC-D-WHERE-2`, `-4`, `-5`, `SRC-D-W1-2`, `-5`, `SRC-D-PROV-1` | design-note slots (`DN-001`, `DN-002`, `DN-054`, `DN-029`) | doc-tier sweep |
+
+Every code stays in a `refs:` line **in the same `.cppm`**, so the position class
+`registry_grammar_lint` reads a declaration by is unchanged: after the conversion it reports
+**95 claimed codes, 95 declared in source, 0 failures**, the same as before.
+
+**A NEAR-MISS ON `OPS-8.O3`'s MIRROR LESSON, recorded because the search that nearly failed is the
+interesting half.** A first sweep for `SRC-D-OTEL-11` truncated its per-code output at twelve lines,
+all twelve from `insight-metalog`, and the draft finding was *"`ADR-29.D6` claims the `SRC-D-OTEL-*`
+statements live in `insight-canon`'s interface and for `-11` there is no canon site at all"* — which
+would have been a false defect filed against a true ADR slot. Re-running the sweep scoped to
+`insight-canon` alone returned `core/api/canon.api.cppm:335`, `:361` and
+`core/src/strategy/json.cpp:541`. The finding was never filed. The lesson generalises past the
+truncation: **a per-code sweep whose output is capped reads as a complete population**, and the
+repo-boundary rule `OPS-8.O3` states does not save you if the sweep that crosses the boundary is
+itself truncated.
+
+**The address census, before and after (`OPS-8.S10`).** Every registry address the deleted prose
+carried survives: `ADR-16.D5`, `ADR-9.D2` ×3, `ADR-9.D3` ×2, `DN-32.D3`, `DN-50.D4`, `DN-56.D2`,
+`DN-56.D3`, `DN-64.D3`, `DN-65.D1`, `DN-65.D5` and the 13 `SRC-` codes at their original counts.
+`ADR-3.D4` went 2 → 1: both occurrences were in the one file-header block and one `refs:` carries
+it. **`ADR-29.D2` was ADDED** (0 → 2) — the declared-edge rule the span sites obey has an owner,
+and naming it is what makes those two sites cite a statement rather than a code alone.
+
+**The claims.** 57 blocks: `pre` 4, `post` 27, `invariant` 41, `note` 10, `refs` 30, with 41
+untagged continuations. `refs:` targets: `ADR-3.D4`, `ADR-9.D2`, `ADR-9.D3`, `ADR-16.D5`,
+`ADR-29.D2`, `DN-32.D3`, `DN-50.D4`, `DN-56.D2`, `DN-56.D3`, `DN-64.D3`, `DN-65.D1`, `DN-65.D5`,
+`SRC-D-OTEL-1`, `SRC-D-OTEL-9`, `SRC-D-OTEL-11`, `SRC-D-OTEL-13`, `SRC-D-OTEL-21`, `SRC-D-PROV-1`,
+`SRC-D-TIR-2`, `SRC-D-TIR-5`, `SRC-D-W1-2`, `SRC-D-W1-5`, `SRC-D-WHERE-2`, `SRC-D-WHERE-4`,
+`SRC-D-WHERE-5`, `F-SRC-insight-metalog:test_golden_vectors.cpp`,
+`F-SRC-insight-metalog:spec_conformance_gate.sh`. **No law block owed** — see the table above.
+
+**Four determinism claims were verified at source before being asserted**, because unit 9's reader
+had caught exactly this shape ("point-lookup only") false for half of one map. `declared_level_counts`
+is read only by `declared_levels.find(*dominant)` in `dominant_event_level_of` (`src/stats/salience.cpp`)
+— never iterated, so the `invariant:` stands. `trace_rings_` and `span_templates_` take only
+`clear`/`find`/`contains`/`size`/`erase`/`emplace` in `src/engine/engine.cpp` — no range-for anywhere,
+so both `point-lookup only` lines stand. `component_counts` **IS** range-iterated
+(`engine.cpp:1146`, into a sum and a `distinct` set), so no never-iterated line was written for it;
+what was written is the `always populated` invariant and the WHERE-label fact.
+
+**Interrogation** — one fresh agent, fifteen questions, 67 tool uses, 205 k tokens, 8.1 minutes.
+Exclusions given: `OPS-8`, `ADR-26`, any `ccc_migration.md` in any repo including this one, any
+`ccc_migration_tools` directory. Transcript checked: `GIT COMMANDS RUN: none`, and no `git`
+invocation appears in its tool calls. **Score: 15 of 15 recovered, 0 not recovered — and ONE
+`refs:` THIS CONVERSION WROTE NAMED THE WRONG WITNESS.**
+
+Five answers went past the prose they replaced. Q6 named the failure-cue band constant
+(`kBandFailureCue` = 70) and the test that shows one genuine runtime occurrence restores the tier.
+Q7 found that `Terminator` is the only structural role that scores at all, at 90. Q8 read the
+committed benchmark results and quoted `allocs_per_event = 1.0` with 47.48 ns/event on the 16-char
+arm against 39.49 and zero allocations on the 15-char control. Q10 found the fixture that measures
+the trace-scoping claim — 4 real within-trace transitions and 0 noise edges scoped, against 0 real
+and 6 noise on one global ring. Q12 found the cap-probe window that refuses 1 903 observations,
+which is the number that makes "a per-drop warning is a log flood" a fact rather than an opinion.
+
+**THE WRONG WITNESS.** This conversion wrote, at the `close_window` orchestration block:
+`// refs: F-SRC-insight-metalog:test_determinism_gate.cpp`, beside the `invariant:` about the
+const and non-const steps. The reader answered Q11 by refusing the premise — nothing in the tree
+proves equivalence with the pre-split code, which is right, that claim was history and was deleted
+— and then named what WOULD catch a difference: `tests/operations/test_golden_vectors.cpp`, four
+byte-exact records per corpus compared record-for-record. **Confirmed at source**, and the
+confirming sentence is in the file this conversion had cited: `test_determinism_gate.cpp`'s own
+header says *"There is NO committed golden hash here (or anywhere) — determinism is proven by
+cross-leg AGREEMENT … These tests keep the SCENARIOS non-hollow and pin the derived field
+VALUES."* The `refs:` now names `test_golden_vectors.cpp`, whose header says it pins the wire
+bytes with no free field at compare time. `OPS-8.S7` steps 2 and 3 were re-run after the edit:
+0 would-be violations, comment-only against `HEAD`, and `registry_grammar_lint` 0 failures with the
+new address resolved on its source leg.
+
+**A defect in this run's own QUESTION, not in the tree.** Q4 asked about
+`TemplateBucket::first_seen_index`. The reader opened its answer by correcting the name — the type
+is `MetaLogEngine::Bucket` and no `TemplateBucket` exists anywhere — and then answered the question
+that was meant. A questionnaire that names a symbol wrongly invites a *"the code does not say"*
+that would be scored as a knowledge loss; the reader read the tree instead of the question, which
+is the behaviour the prompt is asking for, but the next lane should spell symbols from the file.
+
+**An inconsistency between the two `api/` files, recorded rather than repaired.** The deleted prose
+in `metalog.cppm` said the transparent-hash fix removed **1** general-heap allocation per event for
+an over-SSO component; `api/metalog.api.cppm` — not converted by this unit — says **2**, with
+~19 ns/event on gcc-15 = 28 % of `ingest_event`. Both can be true at different scopes: two hot-path
+maps take a key per event, and the `metalog.cppm` site spoke about `component_counts` alone. No
+number was carried into a tagged line, so this conversion asserts neither. The `api/metalog.api.cppm`
+unit should resolve which scope its "2" is stated at.
+
+**Witnesses.** Comment-only: code token stream byte-identical to `HEAD`, re-taken after the `refs:`
+repair. Grammar: `malf format --check` over the unit — 154 comment lines, forms
+`pre=4 post=27 invariant=41 note=10 refs=30 continuation=41 tool=1`, **0 would-be violations**.
+Comment lines 327 → 154 (53 % fewer); would-be violations 326 → 0. Behaviour: batch A below.
+
+---
+
+## Unit 12 — `benchmarks/` (8 files, 241 would-be violations)
+
+The whole benchmark harness: the shared module (`metalog.bench.cppm`), the custom entry point
+(`bench_main.cpp`), the global-heap counting probe (`heap_probe.hpp`/`.cpp`), the two
+key-allocation arms (`bench_cube_key_alloc.cpp`, `bench_ordinal_key_alloc.cpp`), the compression
+and ingest-cost benchmark (`bench_metalog.cpp`) and the stage-level cube benchmark
+(`bench_compose_diff_cube.cpp`). 250 comment lines, 241 of them violations (202 bare, 22 spacer,
+14 trailing, 3 suppression-without-why), 9 tool forms.
+
+**Census (`OPS-8.S4`), and the one census DECISION of this run.** `NOLINT` 6 before, **0 after**;
+zero `/*name*/` or `/*name=*/`, zero `clang-format off`, zero `wall-clock:`, zero SPDX, before and
+after. The six were three file-wide `NOLINTBEGIN`/`NOLINTEND` pairs and **all three were deleted
+with the measurement that they silence nothing.** Two suppress `readability-magic-numbers`
+(`bench_cube_key_alloc.cpp`, `bench_ordinal_key_alloc.cpp`) and one `cppcoreguidelines-owning-memory`
+(`heap_probe.cpp`); both check families are disabled in `malf/config/.clang-tidy`, which is the one
+file `malf lint` and `.clangd` both read. **The measurement, not the config read alone**: a fixture
+carrying three magic numbers and a raw `malloc` return produced **zero** diagnostics of either
+family under that config, and **3 magic-number plus 1 owning-memory** diagnostics on the same bytes
+with the two checks explicitly enabled. **Caveat recorded rather than discovered later:**
+`cppcoreguidelines-owning-memory` is disabled because it crashes clang-tidy on module code, not
+because it is unwanted, and `heap_probe.cpp` — which replaces the global allocation functions — is
+exactly the site that would fire if it is ever re-enabled.
+
+**Stripper cross-check (`OPS-8.S5`).** `removed == violations − (suppression-without-why +
+trailing-nolint)`. In aggregate: **238 removed against 241 would-be violations, the difference being
+exactly the three kept `NOLINTBEGIN` lines**. Per file — `metalog.bench.cppm` 5 == 5, `bench_main.cpp` 10 == 10, `heap_probe.hpp` 12 == 12, `heap_probe.cpp`
+6 == 7 − 1, `bench_cube_key_alloc.cpp` 31 == 32 − 1, `bench_ordinal_key_alloc.cpp` 52 == 53 − 1,
+`bench_metalog.cpp` 62 == 62, `bench_compose_diff_cube.cpp` 60 == 60.
+
+**Two claims deleted as MIRRORS of a compile-time check, which is the repair the grammar asks for.**
+`bench_ordinal_key_alloc.cpp` carried *"the catalog membership of each real key is PINNED, so the arm
+names stay true if the catalog is ever edited"* — five `static_assert`s directly below say exactly
+that, three on the key lengths (15, 16, 23) and two on catalog membership, each with its own message.
+A comment carrying a value the compiler checks is a mirror and goes.
+
+**One stale pointer deleted, and where the search went before condemning it.**
+`bench_main.cpp` opened with *"Mirrors tokenization/benchmarks/bench_main.cpp"*. There is no
+`tokenization/` directory anywhere in the workspace; `find` for `*/benchmarks/bench_main.cpp` returns
+four files, in `insight-metalog`, `insight-eidos/detection`, `insight-eidos/engine` and
+`logcraft/core`, and none in `insight-canon`, which is what `tokenization` was renamed to. The claim
+is a history pointer with no residual contract, so it goes on both counts.
+
+**The claims.** 40 blocks: `pre` 1, `post` 8, `invariant` 37, `note` 8, `refs` 6, with 31 untagged
+continuations. `refs:` targets: `ADR-3.D4`, `ADR-9.D2` ×2, `ADR-19.D1`, `DN-53.D7`,
+`F-SRC-metalog-spec:SPEC.md`. **No law block owed:** the transparent-hash idiom is `ADR-9.D2`'s, the
+always-on cube `ADR-19.D1`'s, the logging silence `DN-53.D7`'s, and the byte budget the published
+specification's.
+
+**Interrogation** — one fresh agent, thirteen questions, 40 tool uses, 127 k tokens, 6.3 minutes.
+Same exclusion list as unit 11, plus `technical_docs/DONE.md` (it records this benchmark's own
+measured figures and would read as an answer key). Transcript checked: `GIT COMMANDS RUN: none`.
+**Score: 13 of 13 recovered, 0 not recovered — and THIS CONVERSION HAD DELETED A TRUE CLAIM, which
+the reader restored.**
+
+**THE WRONGLY-CONDEMNED CLAIM, and it is the finding of the unit.** `bench_metalog.cpp` carried
+*"The '≤ 4 KB per million lines' architectural target lives in technical_docs/overview/architecture.md
+§6 and is aspirational"*. This lane filed it as stale: there is no `technical_docs/overview/`
+directory, and the figure appears nowhere in the live doc tier. **Where the search went, so the gap
+is nameable:** the full `technical_docs/` top-level listing, an `rg` over `technical_docs/`,
+`insight-metalog/technical_docs/` and `insight-metalog/benchmarks/` for
+`4 ?KB per million|bytes per million|BytesPerMillion`, `DN-024` opened directly, and an `rg -l` over
+`technical_docs/adr`, `product` and `bibles` for `byte budget|BytesPerMillion|compression budget`.
+Every one of those is inside the superproject's own doc tier or this repo. **The reader crossed the
+repo boundary and found it alive**: `metalog-spec/SPEC.md` § 11.5, *"the headline '≤ 4 KB per MetaLog
+covering ≥ 1 M log lines' target is a statement about the `stats`-only document — no `reservoir`, no
+`behavior`, no `cube`"*, reached at `top_k_size ≤ 32` inline or `≤ 64` id-only; named again in
+`metalog-spec/README.md` and restated in `technical_docs/LEXICON.md`. Verified here at the source.
+
+This is `OPS-8.O3`'s mirror lesson firing on the lane that wrote the runbook amendment. **A deletion
+leaves no witness**, so without the question the pointer would have gone silently and the benchmark
+would carry no address for the budget it exists to track. The line is re-homed as a `note:` naming
+the SCOPE — the target is stats-only and this arm carries the behavior block and the cube, so it is
+**not** measured against it — with `refs: F-SRC-metalog-spec:SPEC.md`. The reader also priced the
+gap: the published 100 000-line arm reads `per_million=160280`, about **156 KB per million lines**,
+roughly forty times the headline, against a scope the headline does not govern.
+
+**A second line strengthened on the reader's evidence.** `bench_main.cpp`'s `pre:` said *"nothing
+else in main has run yet"* — true, but not the mechanism. The reader found the load-bearing one: the
+ASLR re-exec must precede `benchmark::Initialize`, **which consumes and rewrites `argc` and `argv`**.
+The `pre:` now names that. `OPS-8.S7` steps 2 and 3 re-run after both edits.
+
+**Findings for other lanes.**
+* **`bench_metalog.cpp` breaks the rule its sibling benchmark states — for Kleio, with Argos to say
+  whether the published numbers move.** `bench_compose_diff_cube.cpp` refuses a
+  `std::*_distribution` by name because its draw sequence is unspecified and differs across standard
+  libraries. `bench_metalog.cpp` uses one at **three** sites on `std::mt19937` —
+  `std::uniform_real_distribution<double>` in `run_once`, `std::uniform_int_distribution<int>` in the
+  field-histogram arm and `std::uniform_int_distribution<std::size_t>` in the WHERE arm — and
+  `BM_MetaLogCompress` additionally advances its seed per iteration, so its corpus is not fixed even
+  within one run. Its figures are therefore not comparable across the two toolchains they are
+  measured on, and `coderoast-hub/benchmarks/` publishes them.
+* **A standing guard that nothing enforces — for Kleio.** `bench_ordinal_key_alloc.cpp` is described
+  as the regression guard for zero allocations per event, and the reader confirmed that **nothing in
+  the tree compares `allocs_per_event` to a threshold**: a run reading 1 again blocks nothing and has
+  to be noticed by a human. A search over `insight-metalog`, `coderoast-hub`, `.github` and `malf`
+  finds the identifier only in the two benchmark sources and one published column header.
+* **A gap in `heap_probe`'s own statement — for whoever next touches it.** The reader observed that
+  the nothrow allocation forms are named nowhere, so the tree does not say whether they are counted.
+  The old prose did not say either, so nothing was lost; the gap is pre-existing.
+
+**A trap this unit hit that `OPS-8` does not name.** Stripping a file-leading comment block leaves
+the blank line that followed it, so six of the eight files came out of the strip with a **leading
+blank line**. `malf format --check` reports 0 misformatted on it and the CCC phase counts no
+violation, so nothing catches it; the code-token witness is blind to it by construction. Removed by
+hand and re-witnessed; a repo-wide sweep confirms zero leading blanks in any C++ file.
+
+**Witnesses.** Comment-only: all eight files, code token stream byte-identical to `HEAD`, re-taken
+after both repairs and after the blank-line removal. Grammar: 97 comment lines, forms
+`pre=1 post=8 invariant=37 note=8 refs=6 continuation=31 tool=6`, **0 would-be violations**.
+Resolution: `registry_grammar_lint` 0 failures, `F-SRC-metalog-spec:SPEC.md` resolved on its source
+leg and proven non-vacuous by a negative control — substituting a repo name that does not exist
+makes the arm report it, substituting it back makes the report go. Comment lines 250 → 97 (61 %
+fewer); would-be violations 241 → 0. Behaviour: batch A.
+
+---
+
+## Unit 13 — `scripts/` (9 files, 545 would-be violations)
+
+The determinism harness: the eight shared `*_scenario.hpp` windows and `determinism_fixture.cpp`,
+the binary `scripts/determinism_bitidentity.sh` builds across the compiler × optimisation ×
+floating-contraction matrix. 554 comment lines, 545 of them violations (464 bare, 44 spacer, 35
+trailing, 1 ruler, 1 suppression-without-why), 9 tool forms.
+
+**Census (`OPS-8.S4`), and the decision it forced.** `NOLINT` 2 before, 2 after and byte-identical;
+zero `/*name*/` or `/*name=*/`, zero `clang-format off`, zero `wall-clock:`, zero SPDX, before and
+after. The two are `determinism_fixture.cpp`'s `// NOLINTBEGIN Test` and `// NOLINTEND Test` — **a
+directive with no parenthesis at all**, which clang-tidy parses as bare, so it suppresses every
+check over the whole file. It is re-homed under a `note:` stating the measured scope and **left
+byte-identical**: narrowing it changes what the linter checks and is not a comment-only act. The
+repair is a finding below.
+
+**What the bare directive hides, measured rather than reasoned.** `clang-tidy-21` over the file with
+and without the pair, under the one shared `malf/config/.clang-tidy` and the file's own compile
+command from the clang build's database, differ by **exactly 9 diagnostics**: 1
+`bugprone-exception-escape` on `main` — and `bugprone-*` is in `WarningsAsErrors`, so this file would
+FAIL rather than warn — 6 `readability-identifier-length` on `t0`/`t1`/`t2` at two sites, and 2
+`readability-use-concise-preprocessor-directives`. **`scripts/` is not in `malf lint`'s prune list**
+(that list is `tests/`, `benchmarks/`, `test_package/`, `technical_docs/`), so the file is walked and
+the blanket is live. A first run of the same comparison reported a tenth diagnostic, a
+`clang-diagnostic-error` for a header not found; that was an artifact of running over a scratchpad
+copy whose quoted include could not resolve, and it disappears once the real `scripts/` directory is
+on the include path. It is named here so the number 9 is not later read as 10.
+
+**Stripper cross-check (`OPS-8.S5`).** removed 544 == 545 − 1 kept suppression; kept 10 == 9 tool
+forms + 1.
+
+**The claims.** 58 blocks: `pre` 8, `post` 20, `invariant` 57, `note` 12, `refs` 11, with 51
+untagged continuations. `refs:` targets: `ADR-9.D3`, `ADR-17.D8`, `ADR-29.D2`, `ADR-31.D8` ×3,
+`ADR-20.D7`, `DN-42.D18` ×2, `DN-53.D3`, `DN-82.D2`, `SRC-D-OTEL-21` ×2. Both `SRC-` sites are
+citations, not declarations: the code's statement is in `insight-canon`'s interface
+(`ADR-29.D6`), and `service_edges_overcap_scenario.hpp` — a declaring-POSITION file — keeps the code
+in a `refs:` line in the same header, so the position class does not move. **No law block owed.**
+
+**Interrogation** — one fresh agent, thirteen questions, 74 tool uses, 178 k tokens, 7.4 minutes.
+Same exclusion list as the other units. Transcript checked: `GIT COMMANDS RUN: none`.
+**Score: 13 of 13 recovered, 0 not recovered — and ONE CLAIM THE OLD PROSE MADE WAS FALSIFIED, after
+this conversion had already asserted it.**
+
+**THE FALSE CLAIM.** `collapse_depths_scenario.hpp` said its pair is read at the minimal common
+collapse and *"the diff's axes equal NEITHER input's"*. The conversion carried that into an
+`invariant:` at the header and a `post:` in the fixture — a claim it now asserted. The reader read
+`min_common_collapse` in `src/cube/cube.cpp` — `max` of the band floors, `min` of the where depths —
+and observed that with one side un-collapsed it returns the collapsed side's state **exactly**, so
+the diff's axes equal the **collapsed** input's. **Verified here at the source, and the confirming
+sentence sits in the test that pins the case**:
+`tests/determinism/test_determinism_gate.cpp`'s `CollapseDepthsPairIsReadAtTheMinimalCommonCollapse`
+says *"the diff is read at the COARSER of the two — the max band floor — so its axes equal the
+COLLAPSED input's and not the un-collapsed one's"*, and it asserts `EXPECT_NE` against the current
+window alone, deliberately asserting no equality. Both lines now say the collapsed input's axes.
+`OPS-8.S7` steps 2 and 3 re-run after the edit.
+
+**A second line corrected.** `corpus_windows_scenario.hpp`'s `invariant:` named **two** callers; the
+reader found **three** — `scripts/determinism_fixture.cpp`, `tests/operations/test_golden_vectors.cpp`
+and `tests/operations/test_stability_vs_diff_divergence.cpp`. The line no longer enumerates.
+
+**Four answers went past the prose they replaced.** The reader named the exact canon mask rule that
+makes the n-gram scenario's already-canonical feed load-bearing — a digit-leading whole token masks
+to a wildcard, so all 6 000 templates would collapse into one, the stream would form one self-loop
+bigram, nothing would be refused and the section would go silently hollow. It reproduced the
+streaming reservoir's measured mutation from the in-suite guard — inverting the edge tie-break moves
+`ambiguous` 8 → 0 and `error_class` 16 → 24 while `reservoir.size()` stays at M, which is the whole
+reason a size assertion is blind. It byte-scanned the seven committed corpus files and found **zero**
+CR bytes, so the carriage-return strip is a general-case guard and not a live one. And it placed the
+collapse-depths pair between the two spec clauses it exists to arbitrate — § 13.6's unbolded
+equality comment against § 16.10's compare-at-min mandate.
+
+**A finding the reader produced that no prose carried — for the lane that owns the corpus sections.**
+`corpus_windows_scenario.hpp`'s `configure()` never sets `cfg.ruleset`, so the emitted document omits
+the `ruleset` block entirely. The empty composition is a deliberate choice with a stated reason, but
+its `semantic_identity` is not declared on the wire, and a consumer reads that absence as *legacy
+producer*, not as *composed against nothing*. Recorded, not acted on: it is a producer decision, not
+a comment.
+
+**Witnesses.** Comment-only: all nine files, code token stream byte-identical to `HEAD`, re-taken
+after the three repairs. Grammar: 169 comment lines, forms
+`pre=8 post=20 invariant=57 note=12 refs=11 continuation=51 tool=10`, **0 would-be violations**.
+Comment lines 554 → 169 (69 % fewer); would-be violations 545 → 0. Behaviour: batch B.
+
+---
+
+## Unit 14 — `test_package/` · `test_package.cpp` (1 file, 16 would-be violations)
+
+The external-consumer smoke test: two gtest cases that build a document through the package's
+public module surface and assert the wire contract as an outside consumer would see it. 16 comment
+lines, all 16 violations (15 bare, 1 trailing), zero tool forms.
+
+**Census (`OPS-8.S4`).** Zero `NOLINT`, zero `/*name*/` or `/*name=*/`, zero `clang-format off`,
+zero `wall-clock:`, zero SPDX, before and after. No census decision needed. **Stripper
+cross-check:** removed 16 == 16 violations (no suppression), kept 0 == zero tool forms.
+
+**The claims.** 6 blocks: `invariant` 4, `assert` 3, `note` 1, `refs` 1, with 4 untagged
+continuations. `refs:` target: `F-SRC-metalog-spec:SPEC.md`. **No law block owed.** One history
+claim deleted: *"the two moved apart when producer 0.6.0 stayed frozen through the whole 1.x line"*
+— the FACT that the package version and the specification version are two different things is kept
+as an `assert:`; the episode that made them diverge is history and belongs to the record tier.
+
+**Interrogation** — one fresh agent, five questions, 31 tool uses, 95 k tokens, 2.6 minutes. Same
+exclusion list as the other units. Transcript checked: `GIT COMMANDS RUN: none`. **Score: 5 of 5
+recovered, 0 not recovered, no line corrected.**
+
+The reader traced `INSIGHT_METALOG_TESTED_VERSION` back through **both** of its producers — the
+recipe's `generate()` under `conan create`, and `malf` passing `-DMALF_TESTED_VERSION` when it
+configures the directory for the editor index — and named the CMake `FATAL_ERROR` that refuses a
+default rather than inventing one. It then answered the claim this unit had held out of the tree.
+The deleted prose said this was *"the only gate outside the cut checklist that reads the emitted
+value"*; the reader found a second, `tests/operations/test_golden_vectors.cpp`'s
+`ProducerVersionIsStampedFromTheOnePackageConstant`. **The two are not the same check**: that one
+compares the emitted value against the package's OWN constant, so it proves the engine stamps it and
+by construction cannot see the constant go stale — which is exactly the gap the macro covers. No
+claim was carried into a tagged line on this point, so nothing was asserted and nothing needed
+repair; the held claim is recovered in its true, narrower form.
+
+**Witnesses.** Comment-only: code token stream byte-identical to `HEAD`. Grammar: 13 comment lines,
+forms `invariant=4 assert=3 note=1 refs=1 continuation=4`, **0 would-be violations**. Comment lines
+16 → 13; would-be violations 16 → 0. Behaviour: batch B.
+
+---
+
 # The law block: one was owed, one was issued, one is minted
 
 This lane was instructed not to pick a law number — they are workspace-global, append-only and
@@ -878,7 +1234,10 @@ the block says and explains why the frame is not reproduced on this shelf.
 **The census the pilot supplied, recorded so the next lane does not re-derive it:** `1` and `2` are
 declared in `malf/malf`, `3` in `insight-eidos`, `4` in `malf-toolchain`, and the `insight-canon`
 lane consumed the next three at sites in its conformance module. This repo took the one after
-those. Numbering is dense and append-only, so **a lane asks the pilot and never picks** — and the
+those. **Updated 2026-09-06 at the close of the second session: the next two have since been
+consumed by sibling lanes and the numbering past them is issued elsewhere, so this repo's number is
+still the one it minted and no other.** The workspace gate reads the declaration count directly —
+`registry_grammar_lint`'s form-1 line — which is the figure to trust over any list. Numbering is dense and append-only, so **a lane asks the pilot and never picks** — and the
 next number may already be promised to another lane.
 
 **The test that decided it, and the three sites it refused.** A rule that a second site obeys needs
@@ -898,8 +1257,13 @@ Only the last has no owner, and the reason is structural: its authority is
 owner** whose numbering is not citable from this shelf — so no `refs:` line can reach it. One
 block, not four. The pilot ratified the test when issuing the number.
 
-**Nothing else in the converted surface owes a block.** `api/` and the test tier are unread for
-declaring `SRC-<code>` sites and may owe more; that read is the next lane's first step.
+**Nothing else in the converted surface owes a block, and `api/` has since been READ.** The
+2026-09-06 session read both `api/` files for statement-bearing codes: `api/metalog.cppm` carries
+citations only (unit 11), and `api/metalog.api.cppm` holds the statements of three codes, each of
+which has an addressable owner — `SRC-D-TIR-5` is `ADR-16.D3`'s subject, and the two W1 codes resolve
+to `STU-3` and to `insight-canon`'s interface. So the last source unit is NOT blocked on a number.
+The test tier's three leading-block `SRC-` sites are still unread; that is the test tier's own first
+step.
 
 ---
 
@@ -908,7 +1272,10 @@ declaring `SRC-<code>` sites and may owe more; that read is the next lane's firs
 Recorded because `OPS-8.O5` makes the citer list the lane's deliverable and the repointing itself
 the pilot's single cross-repo pass. Measured 2026-09-06 over `api/ src/ scripts/ benchmarks/
 tests/ test_package/` with `registry_grammar_lint`'s own decider pattern: **26 distinct codes,
-169 occurrences.**
+169 occurrences.** **Re-derived after units 11-14 of the same date: the same 26 codes, 158
+occurrences** — eleven fewer because a prose block that named one code twice becomes a single
+`refs:` line. No code was lost, and `registry_grammar_lint` reports 95 claimed codes with 95
+declared in source and 0 failures both before and after.
 
 `SRC-D-OTEL-21` 28 · `SRC-D-TIR-5` 20 · `SRC-D-OTEL-11` 15 · `SRC-II-7` 13 · `SRC-D-WHERE-2` 9 ·
 `SRC-D-W1-4` 9 · `SRC-D-W1-2` 9 · `SRC-D-PROV-1` 9 · `SRC-D-OTEL-9` 9 · `SRC-D-WHERE-4` 7 ·
@@ -932,7 +1299,8 @@ and a workspace design note owns the subject. The conversion carried it into a
 `refs:` line **in the same `.cppm`**, so the position class is unchanged and `G5` is unmoved:
 `registry_grammar_lint` after the conversion reports **95 claimed codes, 95 declared in source, 0
 failures**. `api/metalog.api.cppm` and `api/metalog.cppm` were NOT read for statement-bearing
-codes by this run and must be before the `api/` unit converts.
+codes by that run; the 2026-09-06 session read both, and the resume marker at the foot of this file
+records what each holds.
 
 ---
 
@@ -1134,11 +1502,198 @@ failed silently. The silent half is every `.cpp` body site in the repo, which is
 
 ---
 
+---
+
+# The address census (`OPS-8.O1` witness 5), run retroactively over units 11-14
+
+The per-file registry-address census did not exist when units 11-14 landed; the instrument
+(`technical_docs/operations/ccc_migration_tools/address_census.py`) was committed on 2026-09-06 and
+this section is its retroactive run, one unit at a time against that unit's own pre-unit revision.
+It compares the DISTINCT SET of addresses per file, so a conversion that folds two citations of one
+code into a single `refs:` line moves no verdict.
+
+**Five addresses were lost and are restored**, each re-derived at the artifact first, as the
+instrument's output demands. They landed in their own commit.
+
+| file | lost | disposition |
+|---|---|---|
+| `api/metalog.cppm` | `ADR-9` | restored as `refs: ADR-9.D4`, a document-to-slot refinement: that slot owns the ruling the note states — *"producers emit template strings inline only — SPEC-conformant because the emission modes are a producer MAY"* |
+| `scripts/determinism_fixture.cpp` | `ADR-31.D8` | restored at three branches — the two reservoir oracles and the cube-collapse oracle — each of which obeys that rule; a `post:` describing what a branch emits does not carry it |
+| `scripts/determinism_fixture.cpp` | `DN-056` | restored as `refs: DN-56.D2` at the compose record, the canonical form of a non-registry spelling |
+| `scripts/service_edges_overcap_scenario.hpp` | `ADR-31.D8` | restored: the scenario names that hazard class as the reason its tie-break must be replayed cross-leg |
+
+**Two losses are deliberate and are recorded with their evidence, not repaired.** Both are
+memory-store citations — `MEM:toolchain-clang21-dev-gcc16-ship` in
+`benchmarks/bench_ordinal_key_alloc.cpp` and `MEM:naming-a-class-does-not-immunize-you-against-it` in
+`scripts/reservoir_streaming_scenario.hpp`. `ADR-26.D5` enumerates what a `refs:` may carry —
+`ADR-n.Dm`, `DN-n.Dm`, `LSRC-n`, `SRC-<code>`, `F-SRC-<repo>:<file>`, `STU-n.Am`, `OPS-n.Sm`,
+`BIB:<name>` — and a memory slug is not among them; the memory store's own index says it holds
+neither project description nor decisions. **Both rules have durable owners, and those are now cited
+at the sites**: `ADR-9.D2` carries the small-string trap with its 15- and 22-character bands,
+`ADR-3.D4` the compiler-to-stdlib pairing, and `ADR-31.D8` with `ADR-20.D7` the reservoir arm's
+subject. What was deleted is a pointer to a weaker authority; the claims themselves stand as tagged
+lines.
+
+**Three refinements the instrument reports and that must NOT be repaired**, since restoring them
+would put back the weaker citation: `ADR-19` → `ADR-19.D1` (`bench_compose_diff_cube.cpp`),
+`ADR-17` → `ADR-17.D8` (`corpus_windows_scenario.hpp`), `ADR-29` → `ADR-29.D2`
+(`service_edges_overcap_scenario.hpp`).
+
+**Additions, which the instrument reports and never fails**: `ADR-29.D2`,
+`F-SRC-insight-metalog:test_golden_vectors.cpp` and `F-SRC-insight-metalog:spec_conformance_gate.sh`
+in `api/metalog.cppm`; `F-SRC-metalog-spec:SPEC.md` in `bench_metalog.cpp` and in
+`test_package.cpp`; `ADR-9.D2` and `ADR-3.D4` in `bench_ordinal_key_alloc.cpp`; `ADR-9.D3` in
+`ngram_cap_scenario.hpp`.
+
+**Two observations about the instrument itself, for whoever maintains it.**
+
+* **It cannot see that a padded spelling and its slot are the same note.** `DN-056` was replaced by
+  `DN-56.D2` at the same site; the census still reports `DN-056` as LOST, because it compares literal
+  address tokens. That is the right default — normalising would risk calling a real loss a
+  refinement — but the residue has to be dispositioned by hand, and a lane that trusts a clean exit
+  code will not notice.
+* **A hand-rolled census misses the bare document form.** This unit ran its own address comparison at
+  unit 11 with a pattern that required a `.Dn` slot, and it reported *"no address lost"*. The
+  committed instrument, whose pattern admits a bare `ADR-n`, found `ADR-9` gone from the same file.
+  The two disagreed because one of them was written by the lane whose work it was checking.
+
+---
+
+# Findings this session raised, with their addressees
+
+Recorded here because `OPS-8.S10` makes the findings-for-other-lanes list part of the ledger entry,
+and gathered in one place because four of the six cross a lane boundary.
+
+**1. A bare, file-wide `NOLINT` directive over a linted file — for the lane that owns
+`insight-metalog` source, and it is READY TO EXECUTE.** `scripts/determinism_fixture.cpp` opens with
+`// NOLINTBEGIN Test` and closes with `// NOLINTEND Test`. There is no parenthesis, so clang-tidy
+reads a **bare** directive and suppresses every check between them. `scripts/` is not in `malf lint`'s
+prune list, so the file is walked. Measured with `clang-tidy-21` under the one shared
+`malf/config/.clang-tidy` and the file's own compile command, with and without the pair: **exactly 9
+diagnostics differ** —
+
+| check | count | class |
+|---|---|---|
+| `bugprone-exception-escape` on `main` | 1 | **`WarningsAsErrors`** — this file would FAIL, not warn |
+| `readability-identifier-length` on `t0`, `t1`, `t2` | 6 | warning; the identifiers are at lines 213-215 and 264-266 |
+| `readability-use-concise-preprocessor-directives` | 2 | warning; the two `#if defined(_WIN32)` sites |
+
+The eight style diagnostics are trivially fixable at root — rename the three timestamps in both
+blocks, and spell the two preprocessor tests `#ifdef`. The ninth is a design point rather than a
+typo: a standing-gate fixture whose `main` lets an exception escape terminates the process, which is
+arguably the intended failure mode, and that is the only suppression that should survive. **A
+half-measure is available and was deliberately not taken**: narrowing the directive to the three
+named checks fits no single line under the 100-byte column limit, and it would bless bypassing two
+classes that a two-character edit removes. This unit therefore left the bytes alone and states the
+scope in a `note:`.
+
+**2. A census of malformed suppressions that searches for a SPACE cannot see the whole class — for
+Argos.** The workspace's malformed-`NOLINT` population has so far been taken as the sites spelled
+`NOLINTNEXTLINE (check)`, with a space before the parenthesis. **That search cannot find
+`NOLINTBEGIN Test`**, which has no parenthesis at all and is the identical defect — clang-tidy reads
+both as bare and suppresses everything — reached by another door. The pattern that finds both is
+`NOLINT(NEXTLINE|BEGIN|END)?(?!\()`: every directive token not immediately followed by `(`. Over
+`insight-metalog` it returns 18 lines, 16 of them the tight sites' own `note:` prefaces and 2 the
+one bare pair in `scripts/determinism_fixture.cpp`. The workspace-wide number is unmeasured here.
+Whoever tightens `malf/comment_contract_lint.py`'s recogniser should tighten it against BOTH
+spellings, or the second class stays invisible to the instrument after the first is fixed.
+
+**3. A benchmark that breaks the rule its sibling states — for Kleio, with Argos to say whether the
+published numbers move.** `benchmarks/bench_compose_diff_cube.cpp` refuses a `std::*_distribution`
+by name, because the engine-bits-to-value mapping is implementation-defined and the draw sequence
+therefore differs between libstdc++ and libc++. `benchmarks/bench_metalog.cpp` uses one at three
+sites on `std::mt19937` — `std::uniform_real_distribution<double>` at line 49 in `run_once`,
+`std::uniform_int_distribution<int>` at line 134 in the field-histogram arm, and
+`std::uniform_int_distribution<std::size_t>` at line 188 in the WHERE arm — and `BM_MetaLogCompress`
+additionally advances its seed per iteration (`seed++` at line 86), so its corpus is not fixed even
+within one run. The engine is portable; the distributions are not. Its figures are therefore not
+comparable across the two toolchains they are measured on, and `coderoast-hub/benchmarks/` publishes
+them.
+
+**4. A standing regression guard that nothing enforces — for Kleio.**
+`benchmarks/bench_ordinal_key_alloc.cpp` is the regression guard for zero allocations per event on
+both toolchains. Nothing in the tree compares `allocs_per_event` to a threshold: a run reading 1
+again blocks nothing and has to be noticed by a person. A search over `insight-metalog`,
+`coderoast-hub`, `.github` and `malf` finds the identifier only in the two benchmark sources and one
+published column header.
+
+**5. The `≤ 4 KB per million lines` target has a live home and this repo's benchmark is outside its
+scope — for Eqya.** `metalog-spec/SPEC.md` § 11.5 scopes the headline to a `stats`-only document, no
+`reservoir`, no `behavior`, no `cube`, reached at `top_k_size ≤ 32` inline or `≤ 64` id-only.
+`benchmarks/bench_metalog.cpp`'s `BM_MetaLogCompress` sets `top_ngrams_size = 32` and
+`max_ngram_keys = 4096` with the cube always on, and the published 100 000-line arm reads about
+**156 KB per million lines** — roughly forty times the headline, against a scope the headline does
+not govern. Whether the repo wants an arm that IS in scope is a plan-tier question, not a comment.
+
+**6. An empty composition is not declared on the wire — for the lane that owns the producer.**
+`scripts/corpus_windows_scenario.hpp` composes against an empty semantic set on purpose, so the
+emitted document is a function of the corpus bytes plus canon core and the engine alone. But
+`configure()` never sets `cfg.ruleset`, so the document omits the `ruleset` block entirely, and a
+consumer reads that absence as *legacy producer* rather than as *composed against nothing*. Raised
+by the `scripts/` cold reader from the code, not from any prose.
+
+---
+
+# What this session adds to the `OPS-8` verdict
+
+Read against the runbook as it stood at 02:00 on 2026-09-06; the earlier items in the verdict above
+are the previous run's and are not restated.
+
+## 10. A COMMENT-ONLY STRIP LEAVES A LEADING BLANK LINE, AND NO GATE SEES IT
+
+Stripping a file-leading comment block removes the comment lines but not the blank line that
+followed the block, so a file whose first construct was a header comment comes out of `OPS-8.S5`
+starting with an empty line. **Six of the eight files in the `benchmarks/` unit did.** Nothing
+catches it: `malf format --check` reports 0 misformatted, the CCC phase counts no violation, and the
+comment-only witness drops all whitespace by construction, so it is invisible to every arm
+`OPS-8.O1` lists. Removed by hand here and confirmed by a repo-wide sweep that now returns zero.
+The one-line addition `OPS-8.S7` wants: after copying the draft over the unit, strip a leading blank
+line, because the strip creates one wherever the file opened with a comment.
+
+## 11. `claims_lib`'s ANCHOR PARSER MIS-READS A C++ DIGIT SEPARATOR, AND THE SYMPTOM POINTS AT THE WRONG THING
+
+The shared claims placer decides what a line's code part is by walking it and tracking string and
+character literals. A C++ digit separator — `0x5EED'0003` — is an apostrophe, so the walk enters a
+"character literal" it never leaves, a trailing `//` comment on that line is never stripped, and the
+original and the stripped draft disagree about that line's code text. The failure is LOUD, which is
+why it costs little: the placer refuses with *"draft code lines differ from original — strip is not
+comment-only"*. **But the message names the STRIPPER**, and the stripper is innocent; a lane that
+believes it will go looking for a comment-only violation that does not exist. Hit once here, on
+`benchmarks/bench_compose_diff_cube.cpp`, whose seeds are all written with separators. The fix is
+three lines: an apostrophe between two alphanumeric characters is a separator, not a quote. Note
+that the committed per-unit claims scripts in the LogCraft tools directory carry a different parser
+(`re.sub(r"\s*//.*$", "", line)`) with a different bug of the same family — it would strip a `//`
+inside a string literal — so neither is a safe base without a look.
+
+## 12. THE MIRROR LESSON FIRED ON THE LANE THAT WROTE IT, AND THE BOUNDARY THAT MATTERED WAS A SIBLING REPO
+
+`OPS-8.O3` gained its third bullet from this repo's previous run: *"before filing carried prose as
+false, widen the search past the repo boundary — the sibling repos, the spec, the ADR shelf — and
+record where you looked."* This run then condemned `bench_metalog.cpp`'s *"≤ 4 KB per million
+lines"* target as unsourced after searching the full `technical_docs/` listing, an `rg` over the
+superproject doc tier and this repo's own, `DN-024` opened directly, and an `rg -l` over `adr/`,
+`product/` and `bibles/`. **Every one of those is inside the superproject or this repo.** The
+cold reader found the target alive in `metalog-spec/SPEC.md` § 11.5. The rule is right and was not
+followed; what makes it hard to follow is that the search felt exhaustive because it enumerated
+several surfaces. The sharper form: **name the sibling repos you searched, by name, or you did not
+search them** — a list of surfaces inside one repository is not a widened search.
+
+## 13. A PER-CODE SWEEP WHOSE OUTPUT IS CAPPED READS AS A COMPLETE POPULATION
+
+Establishing where a retired `SRC-<code>`'s statement lives means sweeping the workspace per code.
+A sweep that pipes each code's hits through `head -12` returns twelve lines that all happen to come
+from the migrating repo, and the conclusion *"there is no site outside this repo"* follows and is
+false. Caught here before a finding was filed against `ADR-29.D6`; re-running the sweep scoped to
+`insight-canon` alone returned three sites. The cap is the hazard, not the pattern.
+
+---
+
 # Where this run stopped, and why
 
-**Ten units converted, one law minted and cited twice, the repo NOT armed.** Arming (`OPS-8.S12`) requires the whole repo at zero,
-which this run does not reach, so `comment_contract: true` is **not** set and the CCC phase still
-counts `insight-metalog` rather than failing it.
+**Fourteen units converted, one law minted, one lint-surface repair landed, the repo NOT armed.**
+Arming (`OPS-8.S12`) requires the whole repo at zero, which this run does not reach, so
+`comment_contract: true` is **not** set and the CCC phase still counts `insight-metalog` rather than
+failing it.
 
 | unit | surface | files | would-be violations | comment lines | reader |
 |---|---|---|---|---|---|
@@ -1152,83 +1707,128 @@ counts `insight-metalog` rather than failing it.
 | 8 | `src/stats/wire_format.cpp` — the law block | 1 | 28 | 29 → 26 | 6 of 6 recovered |
 | 9 | `src/operations/` compose + diff | 2 | 419 | 424 → 154 | 12 of 12 recovered |
 | 10 | `src/serialization/serialize.cpp` | 1 | 326 | 329 → 121 | 9 of 10, 1 wrong |
-| | **total** | **15** | **1 856** | **1 879 → 728 (61 % fewer)** | **84 of 85 recovered, 0 not recovered, 1 wrong** |
+| 11 | `api/metalog.cppm` | 1 | 326 | 327 → 154 | 15 of 15 recovered |
+| 12 | `benchmarks/` | 8 | 241 | 250 → 97 | 13 of 13 recovered |
+| 13 | `scripts/` | 9 | 545 | 554 → 169 | 13 of 13 recovered |
+| 14 | `test_package/test_package.cpp` | 1 | 16 | 16 → 13 | 5 of 5 recovered |
+| | **total** | **34** | **2 984** | **3 026 → 1 161 (62 % fewer)** | **130 of 131 recovered, 0 not recovered, 1 wrong** |
 
-**1 856 of the repo's 6 701 would-be violations, 27.7 %.** Every claim held for a
-reader was recovered — **45 of 45, 0 not recovered** — so nothing had to be re-homed above the
-comment rung. **Two lines this conversion itself wrote were found defective by the readers and
-corrected**: the `observability only` note in unit 3, which was false; the `assert:` in unit 5,
-which dropped the qualifier its premise rested on; the `open_window` `invariant:` in unit 7, whose
-universal *"every"* was false for three members; the `salience_memory` `note:` in unit 9, whose
-*"point-lookup only"* is false for the half of the map that is range-iterated; and in unit 10 BOTH
-a false `note:` on `approximate_cardinality` (the spec MUSTs the cross-machine bit-identity the
-line denied) and a `refs:` that had landed on the wrong declaration. **Six defects this lane wrote,
-every one found by a cold reader and not one by any gate** — four of them false claims, and the
-sixth a placement error the gate is documented as unable to check. **One defect this lane filed
-was withdrawn** after unit 2's reader found the figure's authority in the published spec. Every unit comment-only
-against `HEAD` by code-token-stream equality, every unit at zero would-be violations under `malf
-format --check`, and `malf test insight-metalog` **297 of 297 on clang-21 and 297 of 297 on
-gcc-16** after conversion, equal to the baseline taken before the first unit.
+**2 984 of the repo's 6 701 would-be violations, 44.5 %, in fourteen commits.** Every claim held for
+a reader was recovered; nothing had to be re-homed above the comment rung, and no claim was lost.
 
-**The repo's own gate reading after the run, verbatim, and it matches the per-unit arithmetic
-exactly** — 6 868 - 1 879 + 728 = 5 717 comment lines, 6 701 - 1 856 = 4 845 would-be violations:
+**NINE LINES THESE CONVERSIONS THEMSELVES WROTE WERE FOUND DEFECTIVE BY A COLD READER AND CORRECTED
+BEFORE OR JUST AFTER THEIR WITNESS — AND NOT ONE BY ANY GATE.** In order: the `observability only`
+note in unit 3, false; the `assert:` in unit 5, which dropped the qualifier its premise rested on;
+the `open_window` `invariant:` in unit 7, whose universal *every* was false for three members; the
+`salience_memory` `note:` in unit 9, false for the half of the map that is range-iterated; in unit
+10 both a false `note:` on `approximate_cardinality` and a `refs:` that had landed on the wrong
+declaration; in unit 11 a `refs:` naming the weaker of two witnesses — the derived-value pins rather
+than the byte-exact golden vectors; in unit 13 an `invariant:` and its `post:` twin asserting that a
+compare-at-min diff's axes equal *neither* input's, where the arithmetic makes them equal the
+collapsed input's. Seven of the nine are false CLAIMS; two are placement or reference errors the
+gate is documented as unable to check.
+
+**AND ONE CLAIM THE CONVERSION WRONGLY DELETED WAS RESTORED BY A READER, which is the failure mode
+that leaves no witness.** Unit 12 filed the *"≤ 4 KB per million lines"* target as unsourced after
+searching the superproject's doc tier and this repo; the reader found it alive in
+`metalog-spec/SPEC.md` § 11.5, scoped to a `stats`-only document. Re-homed with the scope stated and
+the specification cited. This is the second time the mirror direction has fired in this repo — the
+first was withdrawn before it reached a commit, this one was already in the tree.
+
+Every unit comment-only against `HEAD` by code-token-stream equality, every unit at zero would-be
+violations under `malf format --check`, and `malf test insight-metalog` **297 of 297 on clang-21 and
+297 of 297 on gcc-16** after conversion, equal to the baseline taken before the first unit. **The
+fifth witness — the per-file address census — did not exist for units 1-14 and was run
+retroactively over units 11-14** once its instrument was committed; it found five lost addresses,
+all restored in their own commit, and two deliberate deletions with their evidence. Units 1-10
+have not been censused; that is the next lane's cheapest first act, one command per unit against
+each unit's own pre-unit revision.
+
+**The repo's own gate reading after this session, verbatim, and it matches the per-unit arithmetic
+exactly** — 6 868 − 3 026 + 1 161 = 5 003 comment lines, 6 701 − 2 984 = 3 717 would-be violations:
 
 ```
 malf format: CCC SUMMARY · mode=check-paths · files 70 = armed 0 + report-only 70 + NOT CHECKED 0 ·
-armed repos: none · comment lines 5717 · forms pre=9 post=103 invariant=75 assert=48 note=167
-refs=111 continuation=161 law=1 tool=175 · violations in armed files 0 (none) · would-be violations
-in report-only files 4845 (bare=4247 tag-mid-line=1 slash3=28 spacer=326 ruler=3 trailing=236
-suppression-without-why=4) · rc=0
+armed repos: none · comment lines 5003 · forms pre=22 post=158 invariant=214 assert=51 note=198
+refs=159 continuation=288 law=1 tool=173 · violations in armed files 0 (none) · would-be violations
+in report-only files 3717 (bare=3265 tag-mid-line=1 slash3=28 spacer=243 ruler=2 trailing=178) ·
+rc=0
 ```
 
-**`law=1`** is the block unit 8 minted — classed as a well-formed law, not `law-malformed`, so the
-frame and its addressed title line both survive clang-format.
+**`suppression-without-why` has reached 0** (13 at the baseline, 4 after the first ten units): three
+file-wide directive pairs in `benchmarks/` were deleted with the measurement that they silence
+nothing, and the one in `scripts/` was re-homed under its `note:`. `law=1` is unit 8's block. Tool
+forms 175 → 173, the three deleted `NOLINTEND` lines less the one `scripts/` retained.
 
-Tool forms went 167 → **175** and `suppression-without-why` 13 → **4**: eight directives this run
-re-homed under their own `note:` moved out of the violation class into the recognised tool forms,
-and one was deleted with the measurement that it silences nothing (its check family is disabled in
-the one shared `.clang-tidy`). The four that remain are all in units this run did not convert.
-**One law block** — one is owed and is recorded
-above for the pilot to number.
+**What remains, and it is now exactly two surfaces.** `api/metalog.api.cppm` **1 088** — the public
+DTO surface, and the last source unit — and the **test tier, 2 629** over 34 files, largest first:
+`tests/operations/test_compose_algebra.cpp` 439, `test_golden_vectors.cpp` 196,
+`tests/determinism/test_determinism_gate.cpp` 173, `tests/cube/test_cube.cpp` 170,
+`tests/reservoir/test_reservoir.cpp` 144, `test_canonicalization_version_ruleset_coverage.cpp` 136,
+`tests/reservoir/test_retention_axis_census.cpp` 100, then 27 files under 100 each.
 
-**What remains, in the order a next lane should take it.** Source: `src/operations/` (compose 223 + diff 196) 419 · `src/stats/wire_format.cpp` 28 (**blocked on the law number**) · `api/` 1 414 (**must be read for
-statement-bearing `SRC-<code>` sites first — 73 declaring-position occurrences across its two
-files**). Harness: `scripts/` 545 · `benchmarks/` 241 · `test_package/` 16. Test tier:
-`tests/operations` 1 402 · `tests/engine` 268 · `tests/serialization` 252 · `tests/reservoir` 244 ·
-`tests/cube` 218 · `tests/determinism` 173 · `tests/stats` 61 · `tests/metalog.test.cppm` 11.
+**THE `api/metalog.api.cppm` UNIT IS NOT BLOCKED ON A LAW NUMBER, and the read that establishes it
+is done.** The previous run left `api/` marked *"must be read for statement-bearing `SRC-<code>`
+sites first"*. Both files were read. `api/metalog.cppm` converted as unit 11 and carries citations
+only. `api/metalog.api.cppm` holds the statements of three codes, and **each has an addressable
+owner**, so the next lane cites rather than mints:
 
-**Declared departures from `OPS-8` in this run.**
+| code | statement site in `api/metalog.api.cppm` | owner to cite |
+|---|---|---|
+| `SRC-D-TIR-5` | the `TemplateRegistry` class block | **`ADR-16.D3`** — *"the engine-owned `TemplateRegistry` is the single id → str home … display-only by construction: it never feeds a decision path, intern order never affects content, and it is append-only"* |
+| `SRC-D-W1-1` | the `ordinal_w1` function block | `STU-3` for the pre-registered thresholds, `insight-canon/core/api/canon.api.cppm` for the catalog |
+| `SRC-D-W1-4` | the schedule-id comparability gate | `insight-canon/core/api/canon.api.cppm`, which states the versioned catalog's stable id IS the comparability key |
+
+The test-tier files with a leading-block `SRC-` site — `tests/engine/test_ordinal_histograms.cpp`,
+`tests/engine/test_span_edges.cpp`, `tests/stats/test_stats.cpp` — were not read for statement
+bearing; that is the test tier's own first step.
+
+**Declared departures from `OPS-8` in this session.**
 
 * **The build slot was held per build, not for the whole run** (`OPS-8.S1.1`, and the pilot's brief
-  instructed it): four CCC lanes shared one global slot in this session. Three acquisitions, 4
-  minutes blocked in total.
-* **The behaviour witness is per BATCH, one per slot acquisition** — `OPS-8.S7.4` as amended on
-  2026-09-06, with this lane's 40-minute block as the measurement that forced it. **The grain, named
-  so a later reader does not assume a finer one:**
+  instructed it): four CCC lanes shared one global slot. Two acquisitions, **24 minutes 2 seconds
+  blocked in total** — 8 minutes 16 seconds for batch A and 15 minutes 46 seconds for batch B, both
+  taken by a background poller with `MALF_BUILD_SLOT_ANCHOR` pinned to the session pid, whose stamp
+  read `ALIVE` at every check and at the pre-release check.
+* **The behaviour witness is per BATCH, one per slot acquisition** (`OPS-8.S7.4`). The grain, named
+  so a later reader does not assume a finer one:
 
   | behaviour witness | slot acquired | units it covers | result |
   |---|---|---|---|
-  | baseline | 2026-09-05 23:51 | none — the pre-conversion reference | 297 of 297 clang-21, 297 of 297 gcc-16 |
-  | batch A | 2026-09-06 00:16 | units 1-2 | 297 of 297 clang-21; the gcc leg's provenance is void — a sibling reclaimed the slot mid-leg (see verdict item 1) |
-  | batch B | 2026-09-06 00:30 | units 1-4, all four in the tree | 297 of 297 clang-21, 297 of 297 gcc-16 |
-  | batch C | 2026-09-06 00:55 | units 5-7 | 297 of 297 clang-21, 297 of 297 gcc-16 |
-| batch D | 2026-09-06 01:14 | units 8-9 | 297 of 297 clang-21, 297 of 297 gcc-16 |
-| batch E | 2026-09-06 01:20 | unit 10 | 297 of 297 clang-21, 297 of 297 gcc-16 |
+  | batch A | 2026-09-06 01:51 | units 11 and 12 | 297 of 297 clang-21, 297 of 297 gcc-16 |
+  | batch B | 2026-09-06 02:19 | units 13 and 14 | 297 of 297 clang-21, 297 of 297 gcc-16 |
 
-  Batch D was taken after units 8 and 9 had landed — the batched rule puts the witness after the
-  landing by construction, and it is why those two were committed rather than held in a dirty tree
-  while the slot was contended. It was acquired in the FOREGROUND and its stamp read
-  `anchor 3053 … ALIVE` before the release.
-
-  Batch B supersedes batch A: it re-ran both legs with units 1-2 still in the tree, so nothing
-  rests on the leg whose provenance was void. Batch C was taken at a slot acquired in the
-  FOREGROUND, whose stamp read `anchor 3053 … ALIVE` before the release, so its provenance is
-  clean. Detection is unaffected by the batching: witness 1 proves each file's code token stream
+  Detection is unaffected by the batching: witness 1 proves each file's code token stream
   byte-identical to `HEAD`, so a comment-only unit can reach behaviour through `__LINE__` and
-  nothing else. Two comment-only repairs landed AFTER their batch — unit 5's dropped qualifier and
-  unit 7's false `invariant:` — and each was re-witnessed against `OPS-8.S7` steps 2 and 3.
-* **Units 5 and 6 landed in one commit** (`OPS-8.S10`'s one-commit-per-unit), 47 violations between
-  them. The ledger keeps a separate entry per unit.
-* **Two directories were split by file group** (`OPS-8.S2` allows it): `src/stats/` because
-  `wire_format.cpp` is blocked on a law number, and `src/cube/` because 383 violations in one
-  questionnaire is two interrogations pretending to be one.
+  nothing else. Five comment-only repairs landed AFTER their batch — unit 11's `refs:`, unit 12's
+  restored target and strengthened `pre:`, unit 13's false `invariant:`/`post:` pair and its caller
+  enumeration — and each was re-witnessed against `OPS-8.S7` steps 2 and 3.
+* **One commit in this session is NOT a CCC unit and says so in its subject.** `fix(lint)` repairs
+  `src/operations/compose.cpp`'s spaced `NOLINTNEXTLINE`, which unit 9 had measured and deliberately
+  left. Both changed lines are comments and the file's line count is unchanged at 719, so the object
+  code cannot move and no behaviour witness is owed; what changes is the lint surface, which is why
+  it is separate. The narrowing surfaced **nothing new** — the diagnostic set over the file is
+  byte-identical before and after, one `readability-avoid-nested-conditional-operator` at line 509
+  in both — and removing the directive entirely surfaces exactly one more, the
+  `readability-use-std-min-max` on the clamp, so the suppression is not one that silences nothing.
+  The site was tightened rather than removed because it is a copy of `src/engine/engine.cpp`'s twin,
+  which already carries the tight spelling, and the repo has three sibling suppressions of the same
+  check all stating the same conditional-store why. Whether that house idiom is worth its four
+  suppressions is a design question with four sites and was not settled here.
+* **THE TREE WAS NOT FROZEN FOR ONE COLD READER, and it is declared rather than hoped over.**
+  `test_package/test_package.cpp` was converted and formatted in the working tree at about 02:04
+  while the `scripts/` reader was live (spawned 02:02, finished about 02:09). The file is outside
+  that reader's unit and its answers cite no `test_package` path, so no contamination is visible —
+  but a harness notice carrying pre-conversion bytes cannot be ruled out from here, and **a
+  contaminated reader that does not notice scores as a clean one**. The rule the wave adopted the
+  same evening is right and was not followed: freeze the tree for the reader's whole window,
+  including files outside its unit.
+* **`OPS-8.S2`'s source-before-tests order was kept, with one file-group split.** `api/` was split
+  into its two files: 1 416 comment lines across them is one questionnaire pretending to be two, and
+  the two halves have disjoint subjects — the facade's engine state against the DTO surface.
+* **The harness tier was taken before the last source unit.** `benchmarks/`, `scripts/` and
+  `test_package/` are three completable units against `api/metalog.api.cppm`'s 200 comment blocks;
+  taking them first banked 802 violations and left the last source unit whole for a lane that can
+  give it one session. The ordering rule's own reason — that a test's `refs:` cites slots the source
+  unit names — does not bind here: the harness cites `ADR`/`DN` slots and the specification, not
+  slots this repo's `api/` unit would have minted.
