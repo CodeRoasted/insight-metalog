@@ -1,100 +1,37 @@
-// Unit tests: allow short identifiers and test-specific patterns.
-//
-// test_golden_vectors.cpp — the committed GOLDEN VECTORS for `compose()` (SPEC §12) and `diff()`
-// (SPEC §13). Until this file, this repo had none: `rg` over `tests/` for a committed expected
-// artifact returned the cube-border corpus and nothing else, and every operations suite beside it
-// asserts a PROPERTY (§12.2's algebra, §13.2's outcome, §13.6's border recall). A property suite
-// says the code is self-consistent. A vector says the code agrees with the DOCUMENT — MetaLog is a
-// published, vendor-neutral specification with an owner outside this repo, and only the second of
-// those two claims is the product.
-//
-// ── WHAT A VECTOR PINS: THE WIRE BYTES, WITH NO FREE FIELD AT COMPARE TIME
-//
-// Each `tests/vectors/<corpus>.vectors.jsonl` holds FOUR records, one per line, byte-for-byte as
-// `to_json` emits them:
-//
-//   line 1  to_json(previous)                      the earlier window
-//   line 2  to_json(current)                       the later window
-//   line 3  to_json(diff(previous, current))       SPEC §13
-//   line 4  to_json(compose(previous, current))    SPEC §12
-//
-// The two inputs sit beside the two derived artifacts on purpose: a reader holding only the vector
-// file can re-derive lines 3 and 4 from lines 1 and 2 with no external oracle. That is the same
-// self-containment `scripts/determinism_bitidentity.sh` gives its digest sections, and for the same
-// reason — an expectation whose input lives somewhere else is an expectation nobody can check.
-//
-// The comparison is over the EXACT bytes and declares no free field, which is a deliberate
-// departure from the showcase honesty gate next door (`scripts/build_showcase_samples.py`
-// `_content_key`: template ids are free there, everything else pinned). The two rulings differ
-// because the input does. That gate redacts a runner path INSIDE the log text, so a template id —
-// a hash of that text (§3.2) — moves for a reason the claim is not about, and freeing it is the
-// only way to keep the rest pinned. Here the input is a log file frozen in git, so the id is a
-// deterministic function of committed bytes: pinning it is not churn, it is the ONE thing
-// `scripts/spec_conformance_gate.sh` states in as many words that it cannot check —
-// *"clause 3 (template_id computed per §3.2) has no pinned cross-implementation vector to check
-// against"*. Arm 2 below is that vector.
-//
-// EXACTLY ONE VALUE IN THE DOCUMENT MOVES FOR A REASON THE CLAIM IS NOT ABOUT: `producer.version`,
-// bumped mechanically at every release cut (operations/001 OPS-1.S15). Pinning it would red three
-// vector files on a version bump and the repair would be *regenerate the golden* — the reflex that
-// destroys goldens, since it is indistinguishable from the repair for a real defect. It is
-// therefore removed from the vector's domain AT PRODUCE TIME rather than declared free at compare
-// time: the harness stamps `kVectorProducerVersion`, the committed bytes stay exact, and there is
-// no free-field policy to maintain or to leak. What that costs is named and paid back below:
-// `ProducerVersionIsStampedFromTheOnePackageConstant` witnesses the field the vectors froze.
-//
-// Everything else is pinned INCLUDING `metalog_version` and `canonicalization_version`, and both
-// are load-bearing rather than incidental. A spec bump SHOULD have to re-bless these files — that
-// is what makes them a conformance record. And `canonicalization_version` is canon's processing
-// contract (§2.4): when it moves, every document here is addressable to a different contract and a
-// silent green would be the wrong answer.
-//
-// ── WHERE THE INPUTS COME FROM: REAL LOG TEXT, AND THE SAME BYTES THE RELEASE GATES REPLAY
-//
-// Not hand-authored. A vector whose input a test author wrote by hand tests that author's reading
-// of the format; these read `scripts/determinism_corpus/*.log` — real committed log lines, already
-// the subject of the cross-compiler bit-identity matrix (`determinism_bitidentity.sh`) and of the
-// SPEC §8 schema gate (`spec_conformance_gate.sh`) — through the shipped canon tokenizer and
-// `MetaLogEngine`. The tokenize-and-split construction is `scripts/corpus_windows_scenario.hpp`,
-// shared with `scripts/determinism_fixture.cpp`, so this suite and those two gates judge ONE
-// artifact rather than three look-alikes. Three orthogonal claims over the same bytes: the matrix
-// says they are STABLE, the schema gate says they are WELL-FORMED, these vectors say they are
-// RIGHT.
-//
-// ── WHY A BYTE COMPARE IS NOT A SELF-REFERENTIAL COMPARE
-//
-// Arm 1 alone would be: regenerate the file from a broken producer and it goes green. So every
-// vector carries a second arm whose ORACLE IS NOT THIS CODE.
-//
-//   Arm 2 (§3.2) recomputes each `template_id` with **picosha2** — a second SHA-256, not canon's
-//          `template_id_of`, which is the implementation under test — and asserts the resulting
-//          `"h:" + 32 hex` string is present verbatim in the committed record. picosha2 was already
-//          a declared test-only dependency of this package, annotated *"golden doc-digest
-//          hashing"*, and had no reader anywhere in the suite; this is the job it was declared for.
-//   Arm 3 (§12.1) recomputes compose()'s window arithmetic, its cap minima and its unique-template
-//          union FROM THE TWO INPUTS, and asserts §12.1's `stability` MUST-omit.
-//   Arm 4 (§13.3) recomputes `delta = current - previous` per template delta and asserts the
-//          direction is the one the standard fixes, not the one that happened to be emitted.
-//
-// A regeneration from a defective producer reds arms 2–4 even when arm 1 is green.
-//
-// ── AND THE MUTATIONS, BECAUSE A GOLDEN NOBODY HAS SEEN RED IS A GOLDEN NOBODY HAS TESTED
-//
-// Three per corpus, each pre-registered with its acceptable outcome:
-//   M1  drop the corpus's last line          → the four records MUST NOT all match the vector
-//   M2  diff(current, previous)              → MUST NOT match line 3   (§13.3 direction is pinned)
-//   M3  compose(previous, previous)          → MUST NOT match line 4   (the operands are pinned)
-// M2 and M3 are the sharp ones: they mutate nothing about the bytes' SIZE or SHAPE, so a vector
-// that passed them by accident would have to be pinning the actual computed content.
-//
-// Determinism: no RNG, no threads, no wall clock — the window bounds are literal epoch offsets
-// owned by the shared construction. Single-threaded by construction.
 
+// refs: F-SRC-metalog-spec:SPEC.md, OPS-1.S15
+// invariant: these are the committed GOLDEN VECTORS for compose() and diff(); every other suite
+// here asserts a PROPERTY, and a property says only that the code is self-consistent.
+// invariant: a vector says the code agrees with the published DOCUMENT, and only that is product.
+// invariant: each vectors.jsonl holds FOUR records byte-for-byte as to_json emits them: the two
+// input windows, then diff(previous, current), then compose(previous, current).
+// note: the inputs sit beside the derived artifacts so a reader can re-derive 3 and 4 from 1 and 2.
+// invariant: the compare is over EXACT bytes and declares NO free field, unlike the showcase
+// honesty gate next door.
+// invariant: the two rulings differ because the input does -- here the input is a log frozen in
+// git, so a template id is a deterministic function of committed bytes.
+// invariant: exactly one value is removed from the vector's domain AT PRODUCE TIME rather than
+// freed at compare time: producer.version, which the cut bumps mechanically.
+// invariant: the harness stamps a frozen stand-in, so the committed bytes stay exact and there is
+// no free-field policy to maintain or to leak.
+// invariant: metalog_version and canonicalization_version stay pinned on purpose, because a spec
+// bump SHOULD have to re-bless these files.
+// invariant: a moved canon contract makes every document here addressable to a different contract,
+// so a silent green would be the wrong answer.
+// invariant: the inputs are real committed log text read through the shipped tokenizer, never hand
+// authored, and the construction is shared with the cross-leg fixture.
+// note: three gates judge ONE artifact: STABLE, WELL-FORMED, and RIGHT.
+// invariant: arm 1 alone would go green on a regenerated file from a broken producer, so every
+// vector carries a second arm whose ORACLE IS NOT THIS CODE.
+// note: arm 2 recomputes each template_id with picosha2, a second SHA-256 and not the code here.
+// invariant: arm 3 recomputes compose()'s window arithmetic, cap minima and template union from the
+// two inputs; arm 4 recomputes the diff delta direction the standard fixes.
+// invariant: three mutations per corpus, each pre-registered: drop the corpus's last line, swap the
+// diff operands, compose a document with itself -- none may still match the vector.
+// note: M2 and M3 change neither size nor shape, so passing them by accident is not available.
 #include <gtest/gtest.h>
 
-// The umbrella, not <glaze/json/{prettify,minify}.hpp> directly: those two are NOT self-contained
-// in glaze 7.4 (they call `read_iterators` without declaring it), so including either alone is a
-// compile error. Same include the production serialiser uses (src/serialization/json_egress.hpp).
+// note: the umbrella header, because prettify and minify are not self-contained in glaze 7.4.
 #include <glaze/glaze.hpp>
 #include <picosha2.h>
 
@@ -111,8 +48,7 @@
 
 import insight.metalog.test;
 
-// AFTER the imports (plain TU): the corpus tokenize-and-split construction shared with
-// scripts/determinism_fixture.cpp.
+// note: after the imports, plain TU: the construction shared with the cross-leg fixture.
 #include "corpus_windows_scenario.hpp"
 
 namespace
@@ -121,18 +57,13 @@ namespace
 namespace meta = insight::metalog;
 namespace cw = insight::metalog::corpus_windows;
 
-// The frozen stand-in for `producer.version`. Any non-empty string satisfies the schema
-// (metalog.v0.schema.json: `version` is `type: string, minLength: 1`); this one is chosen to be
-// unmistakably not a release, so a vector line can never be read as evidence about a shipped
-// version.
+// invariant: the frozen stand-in for producer.version, chosen to be unmistakably not a release so a
+// vector line can never be read as evidence about a shipped version.
 constexpr std::string_view kVectorProducerVersion{"0.0.0-vector"};
 
-// ── The corpora, and why each is in the set ───────────────────────────────────────────────────
-//
-// Three of the seven committed corpus files, chosen for the SHAPE of the diff they produce rather
-// than for size. Adding the other four would quadruple the committed bytes and add no shape: they
-// are the same document blocks over different line counts. Each entry's `why` is the reason it
-// would be missed if it were dropped.
+// invariant: three of the seven committed corpora, chosen for the SHAPE of the diff they produce
+// rather than for size.
+// note: the other four differ in input FORMAT, which the determinism and schema gates cover.
 struct Corpus
 {
     std::string_view name;
@@ -153,16 +84,13 @@ constexpr std::array<Corpus, 3> kCorpora{{
      "output, which is what a consumer sees most often"},
 }};
 
-// Without this gtest prints `where GetParam() = 32-byte object <09-00 ...>` on every failure —
-// a hex dump of two string_views, which tells a reader nothing. The corpus name is the one thing a
-// failure has to carry.
+// note: without this, gtest prints a hex dump of two string_views on every failure.
 void PrintTo(const Corpus& corpus, std::ostream* os)
 {
     *os << corpus.name;
 }
 
-// Line indices into a vector file. Named, because `records[2]` in an assertion message tells a
-// reader nothing about which artifact failed.
+// note: named line indices, because records[2] in a message names no artifact.
 enum Record : std::size_t
 {
     kPreviousDocument = 0,
@@ -189,15 +117,13 @@ enum Record : std::size_t
     }
 }
 
-// ── Producing the four records ────────────────────────────────────────────────────────────────
-
-// One template the vectors reference, carried out of the producing scope because the registry that
-// resolves it lives on the engine (SRC-D-TIR-5: the wire is id-only + inline, and the string
-// resolves by id from the engine-owned registry).
+// refs: SRC-D-TIR-5
+// invariant: the wire is id-only plus inline, so a template string resolves by id from the
+// engine-owned registry and must be carried out of the producing scope.
 struct TemplateBinding
 {
-    std::string rendered_id; // "h:" + 32 lowercase hex, exactly as it appears on the wire
-    std::string canonical;   // the canonical (masked) template string SPEC 3.2 hashes
+    std::string rendered_id;
+    std::string canonical;
 };
 
 struct Produced
@@ -206,7 +132,7 @@ struct Produced
     meta::MetaLogDocument current;
     meta::MetaLogDiff diffed;
     meta::MetaLogDocument composed;
-    std::vector<std::string> records; // exactly kRecordCount, wire bytes
+    std::vector<std::string> records;
     std::vector<TemplateBinding> templates;
 };
 
@@ -221,8 +147,7 @@ struct Produced
            (std::string{name} + ".vectors.jsonl");
 }
 
-// Collect every template a document's top_k references, resolved through the registry. Called once
-// per document; duplicates across documents are folded by the caller.
+// note: called once per document; duplicates across documents are folded by the caller.
 void collect_templates(const meta::MetaLogDocument& doc, const meta::TemplateRegistry& registry,
                        std::vector<TemplateBinding>& out)
 {
@@ -234,13 +159,13 @@ void collect_templates(const meta::MetaLogDocument& doc, const meta::TemplateReg
         if (already)
             continue;
         if (!registry.contains(entry.template_id))
-            continue; // an id with no interned string cannot be checked against 3.2 here
+            continue;
         out.push_back({.rendered_id = std::move(rendered),
                        .canonical = std::string{registry.lookup(entry.template_id)}});
     }
 }
 
-// `lines` is passed in rather than read here, so the mutation arms can hand in a perturbed corpus
+// invariant: lines are passed in rather than read here, so a mutation arm hands a perturbed corpus
 // through the identical path the unperturbed one takes.
 [[nodiscard]] Produced produce_from(const std::vector<std::string>& lines)
 {
@@ -269,13 +194,8 @@ void collect_templates(const meta::MetaLogDocument& doc, const meta::TemplateReg
     return produced;
 }
 
-// ── Failure reporting ─────────────────────────────────────────────────────────────────────────
-//
-// A wire record is one JSON line of up to ~10 KB. `EXPECT_EQ` over two such strings prints both in
-// full and leaves the reader to find the difference by eye, which is not a diagnosis. So the
-// report prettifies both sides — a purely TEXTUAL reformat, asserted lossless by
-// `PrettifiedDiffReportingIsLossless` below — and names the differing LINES.
-
+// invariant: a wire record is one JSON line of up to about 10 KB, so the report prettifies both
+// sides -- a purely TEXTUAL reformat, asserted lossless below -- and names the differing LINES.
 [[nodiscard]] std::vector<std::string> split_lines(std::string_view text)
 {
     std::vector<std::string> lines;
@@ -338,17 +258,11 @@ constexpr std::size_t kMaxReportedLines{8};
     return report;
 }
 
-// ── The reader for a committed vector file, and the red-only actual dump ──────────────────────
-//
-// On a RED — an absent golden, a wrong record count, or any record that differs — the four records
-// this build produced are written beside the golden as `<name>.vectors.jsonl.actual` and the path
-// is named in the failure. That is a diagnostic, not a regeneration affordance, and the boundary is
-// the whole point: it NEVER writes the golden itself, it fires only when an assertion has already
-// failed, and the reviewer's next step is `diff` between two files rather than a 10 KB gtest
-// message. Repairing a red by copying the dump over the golden is still a deliberate act by a
-// human who has read the diff — which is the act that must stay deliberate.
-// `.gitignore` carries `tests/vectors/*.actual` so a dump cannot be committed by accident.
-
+// invariant: on a RED the four records this build produced are written beside the golden as a
+// .actual file and the path is named in the failure.
+// invariant: that is a diagnostic and never a regeneration affordance -- it never writes the
+// golden, it fires only after an assertion has failed, and .gitignore keeps the dump uncommittable.
+// note: repairing a red by copying the dump over the golden stays a deliberate human act.
 [[nodiscard]] std::optional<std::vector<std::string>> read_vector_file(std::string_view name)
 {
     std::ifstream input(vector_path(name), std::ios::binary);
@@ -368,9 +282,8 @@ constexpr std::size_t kMaxReportedLines{8};
     return records;
 }
 
-// Returns the path written, or a bracketed reason it could not be — the return value is streamed
-// straight into a gtest failure, and a dump that silently did not happen would leave the reader
-// chasing a file that is not there.
+// invariant: returns the path written or a bracketed reason it could not be, because the value is
+// streamed into a failure and a silent no-op would send the reader after a file that is not there.
 [[nodiscard]] std::string dump_actual(std::string_view name,
                                       const std::vector<std::string>& records)
 {
@@ -386,14 +299,12 @@ constexpr std::size_t kMaxReportedLines{8};
     return path;
 }
 
-// ── The suite ─────────────────────────────────────────────────────────────────────────────────
-
 class GoldenVector : public ::testing::TestWithParam<Corpus>
 {
 };
 
-// ARM 1 — the vector itself. The four records this producer emits today MUST be byte-identical to
-// the four committed for this corpus.
+// invariant: arm 1 -- the four records this producer emits today must be byte-identical to the four
+// committed for this corpus.
 TEST_P(GoldenVector, ReproducesTheCommittedVector)
 {
     const auto& corpus{GetParam()};
@@ -436,11 +347,9 @@ TEST_P(GoldenVector, ReproducesTheCommittedVector)
                          << vector_path(corpus.name).string();
 }
 
-// ARM 2 — SPEC 3.2, against an oracle that is NOT this code. `template_id = "h:" +
-// lower_hex(SHA-256(template_string)[0:16])`, recomputed with picosha2 and asserted to appear
-// verbatim in the committed bytes. The second half of that sentence is what ties the derivation to
-// the FILE: a green here says the golden carries an id that a second SHA-256 agrees with, not
-// merely that two calls into canon agreed with each other.
+// refs: F-SRC-metalog-spec:SPEC.md
+// invariant: arm 2 -- the template id is recomputed with picosha2 and asserted to appear VERBATIM
+// in the committed bytes, so a green says the golden carries an id a second SHA-256 agrees with.
 TEST_P(GoldenVector, TemplateIdsInTheVectorAreSha256OfTheirTemplate)
 {
     const auto& corpus{GetParam()};
@@ -459,7 +368,7 @@ TEST_P(GoldenVector, TemplateIdsInTheVectorAreSha256OfTheirTemplate)
            "vector set whose 3.2 arm has no subject is the vacuous green this arm exists to "
            "prevent.";
 
-    // 32 bytes -> 64 hex; SPEC 3.2 truncates the digest to its first 16 bytes = 32 hex.
+    // note: 32 bytes gives 64 hex; the spec truncates the digest to its first 16 bytes, so 32 hex.
     constexpr std::size_t kIdHexChars{32};
     for (const auto& binding : produced.templates)
     {
@@ -487,8 +396,8 @@ TEST_P(GoldenVector, TemplateIdsInTheVectorAreSha256OfTheirTemplate)
     }
 }
 
-// ARM 3 — SPEC 12.1, recomputed from the two inputs. Every clause here is a sentence of the
-// standard evaluated over A and B, never a second call into compose().
+// invariant: arm 3 -- every clause here is a sentence of the standard evaluated over A and B, never
+// a second call into compose().
 TEST_P(GoldenVector, ComposedRecordObeysSection12Arithmetic)
 {
     const auto& corpus{GetParam()};
@@ -501,16 +410,14 @@ TEST_P(GoldenVector, ComposedRecordObeysSection12Arithmetic)
     const auto& b{produced.current};
     const auto& c{produced.composed};
 
-    // "C.window.lines_observed = A.window.lines_observed + B.window.lines_observed", and 12.3's
-    // stronger restatement: no lines are invented or lost.
+    // invariant: composed lines_observed is the sum of the inputs': no lines are invented or lost.
     EXPECT_EQ(c.window.lines_observed, a.window.lines_observed + b.window.lines_observed)
         << "[" << corpus.name << "] SPEC 12.1/12.3: composed lines_observed "
         << c.window.lines_observed << " != " << a.window.lines_observed << " + "
         << b.window.lines_observed << " = " << (a.window.lines_observed + b.window.lines_observed);
 
-    // "C.window.start = min(...)" / "C.window.end = max(...)". The bounds are fixed-width RFC 3339
-    // UTC strings ("2023-11-14T22:13:20Z"), so lexicographic order IS chronological order; that is
-    // a property of the emitted spelling, not an assumption about strings in general.
+    // invariant: the window bounds are fixed-width RFC 3339 UTC strings, so lexicographic order IS
+    // chronological order -- a property of the emitted spelling, not of strings in general.
     EXPECT_EQ(c.window.start_iso, std::min(a.window.start_iso, b.window.start_iso))
         << "[" << corpus.name << "] SPEC 12.1: composed window.start " << c.window.start_iso
         << " != min(" << a.window.start_iso << ", " << b.window.start_iso << ")";
@@ -518,9 +425,8 @@ TEST_P(GoldenVector, ComposedRecordObeysSection12Arithmetic)
         << "[" << corpus.name << "] SPEC 12.1: composed window.end " << c.window.end_iso
         << " != max(" << a.window.end_iso << ", " << b.window.end_iso << ")";
 
-    // "C.window.duration_seconds = C.window.end - C.window.start (real time, NOT the sum of the
-    // inputs)". Derived from the frozen window axis rather than from either input's own duration,
-    // which is precisely the value the clause warns against summing.
+    // invariant: the composed duration is derived from the frozen window axis and NOT summed from
+    // the inputs' own durations, which is the value the clause warns against summing.
     constexpr std::uint64_t kSpannedSeconds{
         static_cast<std::uint64_t>(cw::kWindowEndEpochSeconds - cw::kWindowStartEpochSeconds)};
     EXPECT_EQ(c.window.duration_seconds, kSpannedSeconds)
@@ -531,9 +437,8 @@ TEST_P(GoldenVector, ComposedRecordObeysSection12Arithmetic)
         << "s, and summing them (= " << (a.window.duration_seconds + b.window.duration_seconds)
         << "s) is the mistake the clause names.";
 
-    // "C.stability MUST be omitted (it is meaningless across composed inputs)". The current window
-    // carries one, so this is a real removal and not a vacuous absence — asserted, so the arm goes
-    // red rather than quiet if the corpus ever stops producing one.
+    // invariant: composed stability MUST be omitted, and the current window carries one, so this is
+    // a real removal and goes red rather than quiet if the corpus stops producing one.
     ASSERT_TRUE(b.stability.has_value())
         << "[" << corpus.name
         << "] the later window carries no stability block, so the MUST-omit clause below would be "
@@ -542,24 +447,22 @@ TEST_P(GoldenVector, ComposedRecordObeysSection12Arithmetic)
         << "[" << corpus.name
         << "] SPEC 12.1: a composed document MUST omit `stability`; one was emitted.";
 
-    // DN-56.D2 / SPEC 12.1: a composed document declares its own caps as the MINIMUM over the caps
-    // the inputs actually declared. Both inputs here come from one config, so the minimum is that
-    // config's value — which is exactly why an inequality would be a real defect and not a
-    // scope-dependence artifact.
+    // refs: DN-56.D2
+    // invariant: a composed document declares its caps as the MINIMUM over the caps the inputs
+    // declared, and both inputs share one config, so an inequality is a defect.
     EXPECT_EQ(c.stats.top_k_size, std::min(a.stats.top_k_size, b.stats.top_k_size))
         << "[" << corpus.name << "] SPEC 12.1: composed top_k_size " << c.stats.top_k_size
         << " != min(" << a.stats.top_k_size << ", " << b.stats.top_k_size << ")";
 
-    // SPEC 8 clause 4: a DECLARED cap bounds its array.
+    // note: a DECLARED cap bounds its array.
     EXPECT_LE(c.stats.top_k.size(), c.stats.top_k_size)
         << "[" << corpus.name << "] SPEC 8 clause 4: composed top_k holds " << c.stats.top_k.size()
         << " entr(ies) against a declared top_k_size of " << c.stats.top_k_size;
 
-    // "C.stats.unique_templates is recomputed from the union". The union is only computable here
-    // because BOTH inputs have an empty tail — with a non-empty tail the per-template counts of the
-    // tail members are unknown (12.3) and the union is not derivable from the documents. The
-    // precondition is ASSERTED, so a corpus that grows a tail reds this arm instead of silently
-    // weakening it.
+    // invariant: the union is computable only because BOTH inputs have an empty tail, a tailed
+    // input's per-template counts being unknown.
+    // invariant: that precondition is ASSERTED, so a corpus growing a tail reds this arm rather
+    // than silently weakening it.
     ASSERT_EQ(a.stats.tail_unique, 0U)
         << "[" << corpus.name
         << "] the earlier window grew a tail (tail_unique=" << a.stats.tail_unique
@@ -583,8 +486,8 @@ TEST_P(GoldenVector, ComposedRecordObeysSection12Arithmetic)
         << ", both tails empty)";
 }
 
-// ARM 4 — SPEC 13.3. "previous is the earlier document; current is the later document;
-// delta = current - previous. Positive = grew; negative = shrank."
+// invariant: arm 4 -- previous is the earlier document and current the later, so the delta is
+// current minus previous, positive meaning grew.
 TEST_P(GoldenVector, DiffRecordObeysSection133DirectionAndSign)
 {
     const auto& corpus{GetParam()};
@@ -608,8 +511,8 @@ TEST_P(GoldenVector, DiffRecordObeysSection133DirectionAndSign)
             << delta.previous_count << ") = " << expected;
     }
 
-    // The counts themselves must be the two windows' own counts, in that order — otherwise the
-    // clause above holds over a pair of numbers that are not the documents'.
+    // invariant: the counts must be the two windows' own counts in that order, or the clause holds
+    // over a pair of numbers that are not the documents'.
     const auto count_in{[](const meta::MetaLogDocument& doc, const insight::TemplateId& id)
                         {
                             for (const auto& entry : doc.stats.top_k)
@@ -634,8 +537,8 @@ TEST_P(GoldenVector, DiffRecordObeysSection133DirectionAndSign)
     }
 }
 
-// MUTATION M1 — the input. Drop the corpus's last line and the four records MUST NOT all still
-// match. A vector that survives a change to its own input is pinning nothing.
+// invariant: mutation M1 -- drop the corpus's last line and the four records must not all still
+// match, because a vector that survives a change to its own input is pinning nothing.
 TEST_P(GoldenVector, MutatedCorpusDoesNotReproduceTheVector)
 {
     const auto& corpus{GetParam()};
@@ -666,22 +569,22 @@ TEST_P(GoldenVector, MutatedCorpusDoesNotReproduceTheVector)
             moved_names += "\n    " + std::string{record_name(i)};
         }
     }
-    // The pre-registered acceptable outcome: STRICTLY fewer than all four records survive.
+    // note: the pre-registered outcome: strictly fewer than all four records survive.
     EXPECT_LT(survived, static_cast<std::size_t>(kRecordCount))
         << "[" << corpus.name
         << "] dropping the corpus's LAST line left EVERY record byte-identical to the golden, so "
            "the vector is insensitive to its own input and pins nothing. Either the corpus's last "
            "line does not reach the engine (an unparsed line is silently dropped by the tokenizer) "
            "or the records are not a function of the input at all.";
-    // Reported, never asserted: WHICH records a one-line drop leaves alone depends on where the
-    // midpoint split lands, and pinning that would pin the mutation instead of the artifact.
+    // invariant: WHICH records a one-line drop leaves alone depends on where the midpoint split
+    // lands, so it is reported and never asserted -- pinning it would pin the mutation.
     GTEST_LOG_(INFO) << "[" << corpus.name << "] last-line drop moved " << (kRecordCount - survived)
                      << " of " << kRecordCount << " record(s)."
                      << (moved_names.empty() ? "" : "\n  moved:") << moved_names
                      << (survivor_names.empty() ? "" : "\n  unchanged:") << survivor_names;
 }
 
-// MUTATION M2 — SPEC 13.3's direction. Swapping the operands MUST NOT reproduce line 3.
+// invariant: mutation M2 -- swapping the diff operands must not reproduce the diff record.
 TEST_P(GoldenVector, ReversedDiffDoesNotReproduceTheVector)
 {
     const auto& corpus{GetParam()};
@@ -701,7 +604,7 @@ TEST_P(GoldenVector, ReversedDiffDoesNotReproduceTheVector)
            "cannot tell the two apart pins no direction at all.";
 }
 
-// MUTATION M3 — the compose operands. Composing a document with ITSELF MUST NOT reproduce line 4.
+// invariant: mutation M3 -- composing a document with itself must not reproduce the compose record.
 TEST_P(GoldenVector, SelfComposeDoesNotReproduceTheVector)
 {
     const auto& corpus{GetParam()};
@@ -725,10 +628,9 @@ TEST_P(GoldenVector, SelfComposeDoesNotReproduceTheVector)
            "compose(previous, current). The vector does not pin which documents were merged.";
 }
 
-// The licence for the failure reporter above: prettify is a purely textual reformat, so the lines
-// it prints are the record's own bytes rearranged and not a re-encoding. Asserted rather than
-// assumed — a prettifier that normalised a number token would make every diff report a plausible
-// lie about the wire.
+// invariant: the licence for the failure reporter: prettify is a purely textual reformat, so the
+// lines it prints are the record's own bytes rearranged and not a re-encoding.
+// note: a prettifier that normalised a number token would make every diff report a plausible lie.
 TEST_P(GoldenVector, PrettifiedDiffReportingIsLossless)
 {
     const auto& corpus{GetParam()};
@@ -739,8 +641,7 @@ TEST_P(GoldenVector, PrettifiedDiffReportingIsLossless)
 
     for (std::size_t i = 0; i < kRecordCount; ++i)
     {
-        // `glz::minify_json` takes a resizable lvalue (it pads the buffer in place and restores
-        // it), so the prettified form is materialised into a named string first.
+        // note: minify_json takes a resizable lvalue, so the prettified form is materialised first.
         std::string prettified{glz::prettify_json((*golden)[i])};
         const auto round_tripped{glz::minify_json(prettified)};
         EXPECT_EQ((*golden)[i], round_tripped)
@@ -756,17 +657,16 @@ INSTANTIATE_TEST_SUITE_P(Corpora, GoldenVector, ::testing::ValuesIn(kCorpora),
                          [](const ::testing::TestParamInfo<Corpus>& info)
                          { return std::string{info.param.name}; });
 
-// The one value the vectors froze out of their domain, witnessed here so the freeze costs no
-// coverage: with the DEFAULT config the engine stamps this package's single version constant into
-// `producer.version` (SPEC 2.1). kProducerVersion is hand-carried and its bump rides the cut
-// ceremony, so this arm is what fails if the two spellings ever diverge again.
+// invariant: the one value the vectors froze out of their domain, witnessed here so the freeze
+// costs no coverage: at the default config the engine stamps one version constant.
+// note: this arm is what fails if the two spellings of that constant ever diverge again.
 TEST(GoldenVectorProducerEnvelope, ProducerVersionIsStampedFromTheOnePackageConstant)
 {
     const auto lines{cw::read_lines(corpus_path(kCorpora.front().name).string())};
     ASSERT_TRUE(lines.has_value())
         << "corpus file is missing: " << corpus_path(kCorpora.front().name).string();
 
-    meta::MetaLogConfig config; // DEFAULT producer_version — the point of this arm
+    meta::MetaLogConfig config;
     cw::configure(config);
     meta::MetaLogEngine engine{config};
     const auto pair{cw::build(engine, *lines)};

@@ -3348,15 +3348,62 @@ compression that drops a qualifier can turn a true sentence into a false one, an
 comment-only witness nor the grammar gate can see it** — only a reader, or a re-derivation at the
 artifact.
 
+## Unit 23 — `test_golden_vectors.cpp` + `test_canonicalization_version_ruleset_coverage.cpp`
+
+Two files, **332 would-be violations to 0** (196 + 136, stripper cross-check exact), comment lines
+**348 -> 172**, 12 tool forms kept. Paired because both are conformance surfaces against the
+published specification rather than property suites.
+
+### The five witnesses
+
+* **Comment-only** — both byte-identical in code tokens, re-taken after each repair.
+* **Grammar** — the unit reads **0**; the repo moves **734 -> 402**, exactly -332.
+* **Behaviour** — **297 of 297 on clang-21 and 297 of 297 on gcc-16**, one acquire, one release.
+* **Addressability** — nothing lost, two added (`F-SRC-metalog-spec:SPEC.md` in each).
+* **Knowledge** — one fresh cold reader, **36 questions, 36 recovered, 0 not recovered, 0 wrong,
+  TWO CONVICTIONS**, `GIT COMMANDS RUN: none`, 41 tool uses, 124 k tokens, 5.4 minutes.
+
+### The two convictions, both inherited from the prose and both false at the tree
+
+* **The unused corpora.** The line said *"the other four are the same document blocks over
+  different line counts."* The reader read the corpus directory and reported four DIFFERENT INPUT
+  FORMATS. Verified at the artifact: `chromium_nested_json.log` is a Chromium bracket log,
+  `untimestamped_lines.log` carries no stamps at all, `worker.log` is a bracketed application log
+  and `yearless_bsd_syslog.log` is BSD syslog with no year. The claim that adding them "would add no
+  shape" is true only about DIFF shape; it is false about input format, and format breadth is
+  covered by the determinism and schema gates over the same directory. The line now says so.
+* **The skip that does not exist.** The line said arms ③ and ④ *"would skip because there was
+  nothing to detect, and the skip message would be a lie."* **`GTEST_SKIP` appears ZERO times in
+  that file.** Arm ③ is `ASSERT_NE` and arm ④ is `ASSERT_TRUE(refuses(...))` — both ABORT. The
+  hazard is real and the mechanism was named wrong: without arm ①, those two would fail against the
+  wrong defect rather than skip. Corrected.
+
+**Both were carried faithfully from prose that was already false, which is the same shape as unit
+22's ladder claim and unit 21's SORTED attribution.** A conversion that transcribes accurately
+inherits every false sentence intact; only a re-derivation at the artifact or a reader breaks that.
+
+### One repair the gate caught after the conviction repair
+
+Fixing the corpora line introduced a `note:` that wrapped to two lines, and `note:` takes exactly
+one — the repo read **403** instead of 402 for one run. Caught by re-running the grammar witness
+after the repair rather than by trusting the first green. **Re-take the witnesses after EVERY
+in-flight edit, including edits that are themselves repairs.**
+
+### Reported, not landed — the sibling gate's free set is wider than this file said
+
+The deleted prose described the showcase honesty gate as freeing template ids with *"everything else
+pinned"*. The reader read `scripts/build_showcase_samples.py` and reports that `count` is ALSO free
+inside `reservoir_delta` rows. That clause was not carried into any converted line, so nothing false
+is in the tree — but **Argos or whoever owns that gate should know the two-tier description was
+understated**, because the same sentence may sit in its own docs.
+
 ## The resume point
 
-**`OPS-8.S1` preflight, then unit 23. What is left is 11 files in `tests/operations/`, 734 would-be
+**`OPS-8.S1` preflight, then unit 24. What is left is 9 files in `tests/operations/`, 402 would-be
 violations**, the gate's own counts as of 2026-09-06:
 
 | file | violations |
 |---|---|
-| `test_golden_vectors.cpp` | 196 |
-| `test_canonicalization_version_ruleset_coverage.cpp` | 136 |
 | `test_comparison_outcome.cpp` | 98 |
 | `test_stability_vs_diff_divergence.cpp` | 95 |
 | `test_shift_sample_floor.cpp` | 45 |
@@ -3367,13 +3414,14 @@ violations**, the gate's own counts as of 2026-09-06:
 | `test_param_histograms_compose.cpp` | 25 |
 | `test_processing_identifiers.cpp` | 9 |
 
-**Take it as TWO units.** `test_golden_vectors.cpp` (196) and
-`test_canonicalization_version_ruleset_coverage.cpp` (136) are both about the frozen ruleset and
-compose naturally into one unit of 332. The remaining nine files (402) are small and unrelated;
-split them by size, not by subject. **Question density, measured over three units: 38 questions for
-245 violations, 40 for 439, 35 for 229** — so budget roughly 35-40 questions per unit whatever its
-violation count, because what a reader is paced by is the number of distinct claims, not the number
-of deleted lines.
+**Take the nine as TWO units, split by size** — they are small and unrelated, so no subject
+grouping is available. **Question density, measured over four units: 38 questions for 245
+violations, 40 for 439, 35 for 229, 36 for 332** — a reader is paced by the number of distinct
+CLAIMS, not by deleted lines, so budget 35-40 questions per unit whatever its violation count.
+
+**AND RUN `budget_precheck.py` BEFORE the first `DRY=1` placement.** `Placer.B` reports at most one
+overrun per BLOCK, so unit 23's script read 15 overruns, then 5, then 2, then 2, then 2 across five
+re-strip-and-re-place cycles; the pre-check listed all of them in one pass over 96 specs.
 
 Take the build slot only around the behaviour witness; the reading, stripping and drafting need
 none. **Arming is one `packages.yml` line away once this directory reads 0** — nothing else in the
