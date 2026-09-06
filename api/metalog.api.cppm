@@ -1351,9 +1351,9 @@ struct CubeBorder
 // what GREW, and the dual for what vanished.
 // invariant: the emerging region is defined by two ABSOLUTE thresholds and never a ratio, so it is
 // order-convex and bounded by a (lower, upper) border pair.
-// invariant: emitted only when BOTH documents carried a cube AND their axes are equal; axes equals
-// both inputs' cube axes.
-// refs: F-SRC-metalog-spec:SPEC.md
+// invariant: emitted whenever BOTH documents carried a cube; unequal collapse stamps are the
+// mandated case and the pair is read at its minimal common collapse.
+// refs: F-SRC-metalog-spec:SPEC.md, DN-42.D17
 struct CubeDiffBlock
 {
     std::vector<CubeAxis> axes;
@@ -1505,7 +1505,7 @@ struct MetaLogDiff
     std::vector<OrdinalHistogramDelta> ordinal_histogram_deltas;
     // invariant: present only when both documents carried a tail_summary.
     std::optional<TailDelta> tail_delta;
-    // invariant: present only when both documents carried a cube and their axes are equal.
+    // invariant: present whenever both documents carried a cube -- there is no axes-equality gate.
     // invariant: structured evidence -- the upper border is the deterministic headline, and it is
     // not an alert on its own.
     // invariant: a presence bool plus an inline value for MetaLogDocument::cube's reason, and
