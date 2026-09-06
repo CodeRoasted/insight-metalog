@@ -1,8 +1,3 @@
-// Unit tests for insight.metalog.detail.stats:
-//   statistics.cpp — shannon_entropy_bits, divergences, new_and_vanished, histogram_js
-//   salience.cpp   — dominant_level_of, dominant_role_of, surprise_band, novelty_band,
-//   salience_score wire_format.cpp — format_rfc3339_utc, level_to_spec_string
-
 #include <gtest/gtest.h>
 
 import insight.metalog.test;
@@ -14,10 +9,9 @@ namespace meta = insight::metalog;
 using insight::LogLevel;
 using insight::StructuralRole;
 
-// divergences/new_and_vanished are TemplateId-keyed (SRC-D-TIR-2). These primitives depend
-// only on the count distribution + which keys match across cur/prev, so mapping each
-// label → template_id_of(label) preserves every asserted value (distinct labels →
-// distinct ids; same label → same id).
+// refs: SRC-D-TIR-2
+// invariant: label -> template_id_of(label) is injective over these fixtures, so keying by
+// TemplateId preserves every asserted value: distinct labels give distinct ids.
 [[nodiscard]] std::unordered_map<insight::TemplateId, std::uint64_t>
 counts(std::initializer_list<std::pair<std::string_view, std::uint64_t>> items)
 {
@@ -27,8 +21,6 @@ counts(std::initializer_list<std::pair<std::string_view, std::uint64_t>> items)
     return out;
 }
 
-// ── shannon_entropy_bits ──────────────────────────────────────────────────────
-
 TEST(ShannonEntropy, ZeroTotalReturnsZero)
 {
     EXPECT_EQ(meta::shannon_entropy_bits({}, 0), 0.0);
@@ -37,7 +29,6 @@ TEST(ShannonEntropy, ZeroTotalReturnsZero)
 
 TEST(ShannonEntropy, SingleBucketIsZeroBits)
 {
-    // One bucket with all the mass — no uncertainty.
     EXPECT_NEAR(meta::shannon_entropy_bits({42}, 42), 0.0, 1e-9);
 }
 
@@ -53,7 +44,6 @@ TEST(ShannonEntropy, FourEqualBucketsIsTwoBits)
 
 TEST(ShannonEntropy, HighlySkewedIsLowEntropy)
 {
-    // 999 in one bucket, 1 in another — very low entropy.
     const double val = meta::shannon_entropy_bits({999, 1}, 1000);
     EXPECT_GT(val, 0.0);
     EXPECT_LT(val, 0.02);
@@ -61,13 +51,10 @@ TEST(ShannonEntropy, HighlySkewedIsLowEntropy)
 
 TEST(ShannonEntropy, ZeroBucketsAreSkipped)
 {
-    // Sparse: zeros should not affect result vs. the same non-zero buckets.
     const double with_zeros = meta::shannon_entropy_bits({50, 0, 50, 0}, 100);
     const double without_zeros = meta::shannon_entropy_bits({50, 50}, 100);
     EXPECT_NEAR(with_zeros, without_zeros, 1e-9);
 }
-
-// ── divergences ──────────────────────────────────────────────────────────────
 
 TEST(Divergences, ZeroTotalReturnsZero)
 {
@@ -105,8 +92,6 @@ TEST(Divergences, JsIsInUnitInterval)
     EXPECT_GE(result.kl, 0.0);
 }
 
-// ── new_and_vanished ──────────────────────────────────────────────────────────
-
 TEST(NewAndVanished, IdenticalSetsHaveZeroCounts)
 {
     const auto m{counts({{"a", 1}, {"b", 2}})};
@@ -129,8 +114,8 @@ TEST(NewAndVanished, PartialOverlap)
     const auto cur{counts({{"a", 1}, {"b", 1}, {"c", 1}})};
     const auto prev{counts({{"a", 1}, {"d", 1}})};
     const auto [added, gone] = meta::new_and_vanished(cur, prev);
-    EXPECT_EQ(added, 2u); // b, c are new
-    EXPECT_EQ(gone, 1u);  // d vanished
+    EXPECT_EQ(added, 2u);
+    EXPECT_EQ(gone, 1u);
 }
 
 TEST(NewAndVanished, EmptyCurrent)
@@ -140,8 +125,6 @@ TEST(NewAndVanished, EmptyCurrent)
     EXPECT_EQ(added, 0u);
     EXPECT_EQ(gone, 2u);
 }
-
-// ── histogram_js ─────────────────────────────────────────────────────────────
 
 TEST(HistogramJs, ZeroTotalReturnsZero)
 {
@@ -174,8 +157,6 @@ TEST(HistogramJs, ResultIsInUnitInterval)
     EXPECT_LE(val, 1.0);
 }
 
-// ── dominant_level_of ─────────────────────────────────────────────────────────
-
 TEST(DominantLevel, EmptyReturnsNullopt)
 {
     EXPECT_EQ(meta::dominant_level_of({}), std::nullopt);
@@ -194,7 +175,8 @@ TEST(DominantLevel, HighestCountWins)
 
 TEST(DominantLevel, TieBreakBySeverityErrorBeatsInfo)
 {
-    // Tied count — higher severity must win, not map iteration order.
+    // invariant: at equal counts the tie breaks on severity, never on unordered_map iteration
+    // order.
     std::unordered_map<LogLevel, std::uint64_t> levels{{LogLevel::Info, 10}, {LogLevel::Error, 10}};
     EXPECT_EQ(meta::dominant_level_of(levels), LogLevel::Error);
 }
@@ -213,8 +195,6 @@ TEST(DominantLevel, FatalBeatsAllAtSameCount)
     EXPECT_EQ(meta::dominant_level_of(levels), LogLevel::Fatal);
 }
 
-// ── dominant_role_of ─────────────────────────────────────────────────────────
-
 TEST(DominantRole, EmptyReturnsNone)
 {
     EXPECT_EQ(meta::dominant_role_of({}), StructuralRole::None);
@@ -229,14 +209,12 @@ TEST(DominantRole, HighestCountWins)
 
 TEST(DominantRole, TieBreakByEnumValueIsStable)
 {
-    // Tie: higher enum value must win regardless of iteration order.
+    // invariant: at equal counts the tie breaks on the higher StructuralRole enum value, never on
+    // iteration order.
     std::unordered_map<StructuralRole, std::uint64_t> roles{{StructuralRole::None, 10},
                                                             {StructuralRole::GroupBegin, 10}};
-    // Milestone > None in enum value — Milestone must win.
     EXPECT_NE(meta::dominant_role_of(roles), StructuralRole::None);
 }
-
-// ── surprise_band ─────────────────────────────────────────────────────────────
 
 TEST(SurpriseBand, ZeroEdgeCountIsNotSurprising)
 {
@@ -245,7 +223,7 @@ TEST(SurpriseBand, ZeroEdgeCountIsNotSurprising)
 
 TEST(SurpriseBand, SingleObservationBelowMinFloor)
 {
-    // kMinSurpriseEdgeObservations = 2; one observation must not score.
+    // note: kMinSurpriseEdgeObservations is 2, so a single observation cannot score.
     EXPECT_EQ(meta::surprise_band(1, 100), 0u);
 }
 
@@ -256,35 +234,30 @@ TEST(SurpriseBand, ZeroSourceOutgoingIsNotSurprising)
 
 TEST(SurpriseBand, CommonTransitionScoresZero)
 {
-    // p = 50/100 = 50% — well above every threshold.
+    // refs: F-SRC-insight-metalog:salience.cpp:surprise_band
     EXPECT_EQ(meta::surprise_band(50, 100), 0u);
 }
 
 TEST(SurpriseBand, RareBelowTwoPctScoresStrongOffPath)
 {
-    // p = 1/100 = 1% → kBandStrongOffPath = 90.
+    // note: 2/200 not 1/100: a single observation is below the floor and cannot score.
     EXPECT_EQ(meta::surprise_band(2, 200), 90u);
 }
 
 TEST(SurpriseBand, RareBelowFivePctScoresOffPath)
 {
-    // p = 4/100 = 4% → kBandOffPath = 75.
     EXPECT_EQ(meta::surprise_band(4, 100), 75u);
 }
 
 TEST(SurpriseBand, RareBelowTenPctScoresUncommon)
 {
-    // p = 9/100 = 9% → kBandUncommon = 50.
     EXPECT_EQ(meta::surprise_band(9, 100), 50u);
 }
 
 TEST(SurpriseBand, RareBelowTwentyPctScoresSomewhatRare)
 {
-    // p = 15/100 = 15% → kBandSomewhatRare = 25.
     EXPECT_EQ(meta::surprise_band(15, 100), 25u);
 }
-
-// ── novelty_band ─────────────────────────────────────────────────────────────
 
 TEST(NoveltyBand, ZeroLinesIsNotNovel)
 {
@@ -298,43 +271,37 @@ TEST(NoveltyBand, SingleObservationBelowMinFloor)
 
 TEST(NoveltyBand, PresentFromStartScoresZero)
 {
-    // first_seen = 0, lines = 100 → position 0% — not an emergence.
+    // refs: F-SRC-insight-metalog:salience.cpp:novelty_band
     EXPECT_EQ(meta::novelty_band(0, 100, 5), 0u);
 }
 
 TEST(NoveltyBand, FirstHalfScoresZero)
 {
-    // first_seen = 40, lines = 100 → position 40% — not in the late window.
     EXPECT_EQ(meta::novelty_band(40, 100, 5), 0u);
 }
 
 TEST(NoveltyBand, LastFiftyPctScoresEarly)
 {
-    // first_seen = 60, lines = 100 → position 60% → kBandNoveltyEarly = 20.
     EXPECT_EQ(meta::novelty_band(60, 100, 5), 20u);
 }
 
 TEST(NoveltyBand, LastTwentyFivePctScoresMid)
 {
-    // first_seen = 80, lines = 100 → position 80% → kBandNoveltyMid = 40.
     EXPECT_EQ(meta::novelty_band(80, 100, 5), 40u);
 }
 
 TEST(NoveltyBand, LastTenPctScoresLate)
 {
-    // first_seen = 95, lines = 100 → position 95% → kBandNoveltyLate = 60.
     EXPECT_EQ(meta::novelty_band(95, 100, 5), 60u);
 }
 
-// ── salience_score ────────────────────────────────────────────────────────────
-
 TEST(SalienceScore, ZeroSeverityReturnsZero)
 {
-    // Info level, no failure cue, no surprise, no novelty → 0.
     const auto verdict{meta::salience_score(LogLevel::Info, StructuralRole::None, "conn accepted",
                                             /*echoed_source=*/false, 50, 100, 0, 0)};
     EXPECT_EQ(verdict.score, 0u);
-    // A template with no salient axis has no argmax to report — the absence IS the answer.
+    // post: a zero-score verdict reports NO axis: with no salient axis there is no argmax, and the
+    // disengaged optional is itself the answer.
     EXPECT_FALSE(verdict.axis.has_value());
 }
 
@@ -343,7 +310,7 @@ TEST(SalienceScore, FatalLevelScoresHigh)
     const auto verdict{meta::salience_score(LogLevel::Fatal, StructuralRole::None, "process died",
                                             /*echoed_source=*/false, 1, 1000, 0, 0)};
     EXPECT_GT(verdict.score, 0u);
-    // fatal band (100) × uncommon (90, count·100 < lines) = 9000.
+    // note: 9000 = fatal band 100 x uncommon rarity 90, that tier taken because count*100 < lines.
     EXPECT_EQ(verdict.score, 9000u);
     EXPECT_EQ(verdict.axis, meta::RetentionAxis::Level);
 }
@@ -364,7 +331,7 @@ TEST(SalienceScore, ErrorLevelScoresLowerThanFatal)
 
 TEST(SalienceScore, FrequentTemplateIsDamped)
 {
-    // Same level but frequent (count >= 10% of lines) → lower rarity modulator.
+    // note: rarity is a 4-tier ladder on count/lines; 1/10000 is the top tier, 5000/10000 the last.
     const std::uint32_t rare_score =
         meta::salience_score(LogLevel::Error, StructuralRole::None, "err", /*echoed_source=*/false,
                              1, 10000, 0, 0)
@@ -378,7 +345,6 @@ TEST(SalienceScore, FrequentTemplateIsDamped)
 
 TEST(SalienceScore, StructuralSurpriseAloneCanMakeNonZero)
 {
-    // Info template, no failure cue — but strong surprise lifts it.
     const auto verdict{meta::salience_score(LogLevel::Info, StructuralRole::None, "query ok",
                                             /*echoed_source=*/false, 1, 1000, 90, 0)};
     EXPECT_GT(verdict.score, 0u);
@@ -395,10 +361,10 @@ TEST(SalienceScore, NoveltyAloneCanMakeNonZero)
 
 TEST(SalienceScore, EchoedSourceSkipsFailureCueTier)
 {
-    // SRC-D-PROV-1: an all-echoed `…failed…` template (level already demoted to Unknown by
-    // A1) must NOT be re-promoted by the LEVEL-BLIND failure-cue tier. With echoed_source=true and
-    // no other axis, the template scores 0 (not salient); a non-echoed peer keeps the failure-cue
-    // band. (The Unknown level contributes no severity itself — only the cue tier could fire.)
+    // refs: SRC-D-PROV-1, DN-64.D3
+    // invariant: the failure-cue tier is LEVEL-BLIND, so an echoed-source line already demoted to
+    // Unknown must not be re-promoted by it; its runtime peer keeps the cue band.
+    // note: the runtime peer's only severity is the token lexicon, so its axis is FailureCue.
     const auto echoed{meta::salience_score(std::nullopt, StructuralRole::None,
                                            "Download failed after 3 attempts",
                                            /*echoed_source=*/true, 1, 1000, 0, 0)};
@@ -407,12 +373,8 @@ TEST(SalienceScore, EchoedSourceSkipsFailureCueTier)
                                             "Download failed after 3 attempts",
                                             /*echoed_source=*/false, 1, 1000, 0, 0)};
     EXPECT_GT(runtime.score, 0u) << "a real runtime failure template keeps the failure-cue tier";
-    // The arm the two published ordinals could never name: this template's only severity is the
-    // token lexicon, and the verdict says so (DN-64.D3 row 3).
     EXPECT_EQ(runtime.axis, meta::RetentionAxis::FailureCue);
 }
-
-// ── format_rfc3339_utc ────────────────────────────────────────────────────────
 
 TEST(WireFormat, EpochFormatsCorrectly)
 {
@@ -422,7 +384,6 @@ TEST(WireFormat, EpochFormatsCorrectly)
 
 TEST(WireFormat, KnownTimestampFormatsCorrectly)
 {
-    // 2025-04-24T10:00:00Z = 1745488800 seconds since epoch.
     constexpr std::int64_t kSeconds{1745488800};
     const insight::Timestamp ts{std::chrono::seconds{kSeconds}};
     EXPECT_EQ(meta::format_rfc3339_utc(ts), "2025-04-24T10:00:00Z");
@@ -430,12 +391,9 @@ TEST(WireFormat, KnownTimestampFormatsCorrectly)
 
 TEST(WireFormat, SubSecondTruncatedToSeconds)
 {
-    // 500ms past epoch should still render as 00:00:00Z.
     const insight::Timestamp ts{std::chrono::milliseconds{500}};
     EXPECT_EQ(meta::format_rfc3339_utc(ts), "1970-01-01T00:00:00Z");
 }
-
-// ── level_to_spec_string ──────────────────────────────────────────────────────
 
 TEST(WireFormat, AllLevelsMapToSpecStrings)
 {
@@ -447,15 +405,12 @@ TEST(WireFormat, AllLevelsMapToSpecStrings)
     EXPECT_EQ(meta::level_to_spec_string(LogLevel::Fatal), "FATAL");
 }
 
-// DN-43.D10. This assertion used to read `"INFO"` under the comment "the wire vocabulary has no
-// UNKNOWN member, so Unknown falls back to INFO" — true about the vocabulary and no licence for the
-// fabrication: an ABSENCE was published as the FACT `INFO`. The two acts have DIFFERENT mechanics
-// and the pair below is what stops them being collapsed into one.
+// refs: DN-43.D10, F-SRC-metalog-spec:SPEC.md
+// invariant: the two tests below are a PAIR -- the cube's need for a distinct token and the row's
+// need to omit are different acts and must never collapse into one.
 TEST(WireFormat, UnknownGetsItsOwnCubeAxisTokenRatherThanBorrowingInfo)
 {
-    // The CUBE's need. §16.4 makes an ABSENT axis mean AGGREGATED (`*`), so a cell whose level was
-    // never observed cannot omit — it would publish "summed over every level". Only a distinct
-    // string is legal, and only "MUST be a string" is required of it.
+    // note: SPEC 16.4 reads an ABSENT axis as AGGREGATED, so an unobserved level cannot omit.
     EXPECT_EQ(meta::level_to_spec_string(LogLevel::Unknown), "UNKNOWN");
     EXPECT_NE(meta::level_to_spec_string(LogLevel::Unknown),
               meta::level_to_spec_string(LogLevel::Info));
@@ -463,7 +418,7 @@ TEST(WireFormat, UnknownGetsItsOwnCubeAxisTokenRatherThanBorrowingInfo)
 
 TEST(WireFormat, EveryProducerAbsenceOmitsTheRowLevelMember)
 {
-    // The ROW's need, and the producer holds TWO spellings of the one wire absence.
+    // note: three call spellings collapse to two absences: disengaged, and engaged-but-Unknown.
     EXPECT_FALSE(meta::spec_level_of(std::nullopt).has_value()) << "disengaged optional";
     EXPECT_FALSE(meta::spec_level_of(std::optional{insight::EventLevel{}}).has_value())
         << "engaged optional carrying EventLevel{} — the same fact, the same omission";
@@ -471,8 +426,6 @@ TEST(WireFormat, EveryProducerAbsenceOmitsTheRowLevelMember)
         meta::spec_level_of(std::optional{insight::EventLevel::inferred(LogLevel::Unknown)})
             .has_value());
 
-    // …and an observed level still renders, on both provenance species: the wire carries the level
-    // alone, so a declared and an inferred ERROR produce the same member.
     EXPECT_EQ(meta::spec_level_of(std::optional{insight::EventLevel::inferred(LogLevel::Error)}),
               std::optional<std::string>{"ERROR"});
     EXPECT_EQ(meta::spec_level_of(std::optional{insight::EventLevel::declared(LogLevel::Error)}),

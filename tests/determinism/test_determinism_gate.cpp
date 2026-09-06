@@ -1,37 +1,24 @@
-// Unit tests: allow short identifiers and test-specific patterns.
-//
-// BEHAVIORAL coverage for the metalog document (the ADR-31.D8 reservoir regime, the always-on
-// cube/WHERE/acquisition fields, the ordinal carrier). The cross-machine BYTE-IDENTITY
-// determinism proof is a CUT/GATE-TIME assertion, NOT a unit test: the 5-leg cross-toolchain/
-// ISA/OS `Determinism Golden Proof` workflow (.github/workflows/golden.yaml) rebuilds the
-// canon+metalog tower from source and asserts all legs are byte-identical over the committed
-// corpus + the shared ADR-31.D8 reservoir scenario (scripts/determinism_bitidentity.sh). There is
-// NO committed golden hash here (or anywhere) — determinism is proven by cross-leg AGREEMENT,
-// emitted as a per-release artifact only. These tests keep the SCENARIOS non-hollow (they exercise
-// the regimes the gate replays) and pin the derived field VALUES.
-
+// refs: ADR-31.D8, F-SRC-insight-metalog:golden.yaml
+// invariant: there is NO committed golden hash here or anywhere -- determinism is proven by
+// cross-leg AGREEMENT over 5 legs, emitted as a per-release artifact only.
+// note: these tests keep the replayed scenarios non-hollow and pin derived VALUES, never bytes.
 #include <gtest/gtest.h>
 
 import insight.metalog.test;
 
-// The shared ADR-31.D8 near-full reservoir scenario, shared with scripts/determinism_fixture.cpp so
-// this behavioral coverage and the cross-leg gate exercise the identical M=128 admit/evict
-// boundary.
+// refs: F-SRC-insight-metalog:determinism_fixture.cpp
+// invariant: every scenario header below is shared with the cross-leg fixture, so this coverage and
+// the gate replay the identical window; the near-full arm is the M=128 admit/evict boundary.
 #include "reservoir_nearfull_scenario.hpp"
-// The SECOND ADR-31.D8 reservoir arm — the tuple the streaming surface ships
-// (`salience-1/k128-m64-c0-e16`), where the error-class RESERVE is live and the batch arm has no
-// opinion. Same sharing contract as above.
+// note: the second ADR-31.D8 arm, at the shipped streaming tuple, where the error RESERVE is live.
 #include "reservoir_streaming_scenario.hpp"
-// The shared O4b service-topology over-cap scenario, shared with the fixture so this guard and the
-// cross-leg gate exercise the identical over-cap top-K select (the canonical-key tie-break).
+// note: the over-cap top-K select, cut on a weight tie so the canonical-key tie-break decides.
 #include "service_edges_overcap_scenario.hpp"
-// The SPEC §4 accounting-bound scenario — the ONE window in the whole determinism digest whose
-// emitted document CARRIES `behavior.dropped_ngram_observations`. Same sharing contract as above.
+// note: the ONE window in the digest whose document carries behavior.dropped_ngram_observations.
 #include "ngram_cap_scenario.hpp"
-// The §13.6 latency-drift window PAIR — the only scenario here whose replayed artifact is a
-// MetaLogDiff rather than a MetaLogDocument. Same sharing contract as above.
+// note: the only scenario here whose replayed artifact is a MetaLogDiff and not a document.
 #include "latency_shift_scenario.hpp"
-// The §16.10 compare-at-min PAIR — two cubes at different collapse depths. Same contract.
+// note: two cubes at different collapse depths.
 #include "collapse_depths_scenario.hpp"
 
 namespace
@@ -40,9 +27,8 @@ namespace
 namespace tok = insight::tokenization;
 namespace meta = insight::metalog;
 
-// The near-full reservoir MUST fill to the full production M and its admit/evict boundary MUST be
-// structural-surprise-driven — the guard that keeps the ADR-31.D8 regime exercised. The cross-leg
-// gate replays the same scenario; if it silently stopped filling, that proof would go hollow.
+// invariant: the near-full scenario must fill to the production M and its admit/evict boundary must
+// be structural-surprise-driven, or the proof the gate replays goes hollow.
 TEST(MetaLogDocument, ReservoirNearFullExercisesTheF5M8Regime)
 {
     meta::MetaLogConfig cfg;
@@ -72,17 +58,10 @@ TEST(MetaLogDocument, ReservoirNearFullExercisesTheF5M8Regime)
            "(a non-deterministic surprise score) flips bag membership; none were.";
 }
 
-// The SECOND ADR-31.D8 arm, at the tuple the STREAMING surface ships
-// (`salience-1/k128-m64-c0-e16`). The arm above is anchored at `top_k 64 / M 128 / cap 0 /
-// reserve 0` — the Sift batch diff — so without this one the flagship determinism proof never runs
-// at the configuration we deploy, and the error-class RESERVE (live only here) is never driven at
-// all. This guard keeps the scenario NON-HOLLOW; the bit-identity assertion itself is the cross-leg
-// gate's (determinism_bitidentity.sh + golden.yaml), which replays the identical window.
-//
-// Every expectation below is a property the cross-leg gate would go blind without, and each one can
-// FAIL — measured, by inverting engine.cpp's most-likely-edge tie-break to prefer the FEWER-
-// observation edge: `error_class` 16 -> 24 and `ambiguous` 8 -> 0, two reds, while
-// `reservoir.size()` stayed at 64. A size-only guard would have called that regression green.
+// refs: ADR-31.D8
+// invariant: without this arm the determinism proof never runs at the tuple we deploy and the
+// error-class reserve, live only here, is never driven at all.
+// note: inverting the edge tie-break reds two counts while reservoir.size() holds: size is blind.
 TEST(MetaLogDocument, ReservoirStreamingExercisesTheShippedTupleReserveAndEdgeTie)
 {
     namespace streaming = meta::streaming_nearfull;
@@ -98,8 +77,7 @@ TEST(MetaLogDocument, ReservoirStreamingExercisesTheShippedTupleReserveAndEdgeTi
     streaming::emit_window(engine);
     const auto doc{engine.close_window(t1)};
 
-    // Group membership is read off the interned template text, not off a derived band, so a failure
-    // names the population that moved rather than a number.
+    // note: membership is read off interned template text, so a failure names a population.
     std::size_t error_class{0};
     std::size_t ambiguous{0};
     std::size_t ambiguous_at_full_surprise{0};
@@ -138,11 +116,9 @@ TEST(MetaLogDocument, ReservoirStreamingExercisesTheShippedTupleReserveAndEdgeTi
            "reached and the arm proves nothing.\n"
         << census();
 
-    // ADR-20.D7, measured. The general pool is over-subscribed at the 8100 band by 64 candidates
-    // for 48 slots, so with `reservoir_error_reserve = 0` NOT ONE error-class template survives.
-    // Exactly kErrorReserve says both halves at once: the reserve admits, and it BOUNDS (24
-    // error-class candidates compete for 16 slots, and the 8 that lose do not sneak in through the
-    // general pool).
+    // refs: ADR-20.D7
+    // invariant: with reservoir_error_reserve = 0 no error-class template survives the
+    // over-subscribed band, so this count IS the reserve: it says admits and bounds at once.
     EXPECT_EQ(error_class, streaming::kErrorReserve)
         << "the error-class reserve is the ONLY reason a failure is retained in this window, so "
            "this count is the reserve itself. Anything else means the reserve stopped binding "
@@ -150,11 +126,8 @@ TEST(MetaLogDocument, ReservoirStreamingExercisesTheShippedTupleReserveAndEdgeTi
            "by anything.\n"
         << census();
 
-    // The equal-ratio edge tie-break, at the boundary. 40 solid + 24 ambiguous share the 8100 band
-    // for 48 free slots, so at least (48 - 40) ambiguous MUST be admitted and at least 16 of the
-    // band MUST be rejected. Lose the tie-break and every ambiguous spoke falls to 3600 and the
-    // error class's reserve overflow takes those seats — which is exactly what the cross-leg gate
-    // would then see as moved bytes.
+    // invariant: 40 solid and 24 ambiguous share the band for 48 free slots, so at least 8
+    // ambiguous must be admitted and at least 16 of the band must be rejected.
     ASSERT_GE(ambiguous,
               streaming::kGeneralSlots - static_cast<std::size_t>(streaming::kSolidSpokes))
         << "the ambiguous equal-ratio spokes lost their seats at the reservoir boundary: the "
@@ -170,9 +143,7 @@ TEST(MetaLogDocument, ReservoirStreamingExercisesTheShippedTupleReserveAndEdgeTi
            "resolved to the single-observation edge, which is the ADR-31.D8 defect itself.\n"
         << census();
 
-    // The general pool is filled by the 8100 band ALONE — which is what makes the two statements
-    // above compose into one fact: every retained failure is there because of the reserve, and
-    // every general slot is decided at the equal-ratio boundary.
+    // note: the general pool is filled by that band ALONE, which composes the two into one fact.
     EXPECT_EQ(solid + ambiguous, streaming::kGeneralSlots)
         << "a template from below the 8100 band reached the general pool, so the pool is no longer "
            "saturated by the solid/ambiguous tie group and the boundary has drifted off the "
@@ -180,12 +151,9 @@ TEST(MetaLogDocument, ReservoirStreamingExercisesTheShippedTupleReserveAndEdgeTi
         << census();
 }
 
-// O4b service-topology (SRC-D-OTEL-21): the over-cap top-K select MUST stay non-hollow — the
-// emitted block must be OVER the cap (dropped_edges > 0) AND the cut must fall on a weight tie, so
-// the surviving last edge is decided by the canonical-key tie-break alone (the branch the cross-leg
-// gate proves bit-identical). If the scenario silently stopped over-subscribing, or the tie
-// collapsed, that proof would go hollow. Also pins the derived edge VALUES (order, weights, dropped
-// count).
+// refs: SRC-D-OTEL-21
+// invariant: the emitted block must be OVER the cap and the cut must fall on a weight tie, so the
+// last surviving edge is decided by the canonical-key tie-break alone.
 TEST(MetaLogDocument, ServiceEdgesOverCapExercisesTheTieBreak)
 {
     meta::MetaLogConfig cfg;
@@ -202,16 +170,13 @@ TEST(MetaLogDocument, ServiceEdgesOverCapExercisesTheTieBreak)
     ASSERT_TRUE(doc.service_edges.has_value())
         << "a span window with cross-service edges must emit the service_edges block";
     const auto& block{*doc.service_edges};
-    // Non-hollowness: the block is truncated (over-cap select taken) and the cut fell on a tie.
     ASSERT_EQ(block.edges.size(), cfg.max_service_edges)
         << "the block must be capped at max_service_edges=" << cfg.max_service_edges << " (got "
         << block.edges.size() << ") — else the over-cap select path is not exercised";
     EXPECT_EQ(block.dropped_edges, 2U)
         << "5 distinct edges built, 3 kept → 2 dropped; a 0 here means the scenario went hollow";
-    // The surviving wire, in canonical (caller, callee) order. The 3rd edge — {gateway,auth} — is
-    // the load-bearing one: it beat {gateway,billing} and {worker,queue} (all weight 2) on the
-    // canonical-key tie-break alone. A stdlib-order-dependent select would surface a DIFFERENT 3rd
-    // edge here, and this expectation would fail on that leg.
+    // invariant: {gateway,auth} beat {gateway,billing} and {worker,queue} at weight 2 on the
+    // canonical key alone; a stdlib-order-dependent select surfaces a different 3rd edge.
     const auto row = [&](std::size_t i)
     {
         return std::tuple{block.edges.at(i).caller, block.edges.at(i).callee,
@@ -225,21 +190,11 @@ TEST(MetaLogDocument, ServiceEdgesOverCapExercisesTheTieBreak)
            "3rd edge means the top-K select is stdlib-order-dependent (non-deterministic).";
 }
 
-// SPEC §4 accounting bound: the `--ngram-cap` scenario MUST stay non-hollow — the window's bigram
-// stream must genuinely OVERRUN `max_ngram_keys`, so the emitted document CARRIES
-// `behavior.dropped_ngram_observations` rather than omitting it. That carrying is the entire
-// reason the section exists: every other section of the digest (the committed corpus and the four
-// sibling scenarios) stays under the bound, and §4 reads an absent key in a 0.7.0+ document as an
-// affirmative "nothing was dropped" — so if this scenario stopped binding, the digest would go
-// back to containing zero documents with the key, the cross-leg compare and the §8 validator would
-// both stay green, and the coverage would be gone with nothing red.
-//
-// THE COUNT IS DERIVED, NOT COPIED. `expected_dropped_observations(cfg)` recomputes
-// `kDistinctTemplates - 1 - max_ngram_keys` from the config in hand, so a moved producer default
-// reds here with its arithmetic instead of reding on a stale literal. The one literal kept is the
-// SHIPPED value (1903 at ngram 2 / cap 4096, hand-checked), asserted beside it — a derivation that
-// agrees with itself proves nothing, and this pair is what separates "the formula still holds"
-// from "the cut Sift embeds still produces this number".
+// refs: F-SRC-metalog-spec:SPEC.md
+// invariant: SPEC 4 reads an absent key in a 0.7.0+ document as an affirmative nothing-was-dropped,
+// so a scenario that stopped binding would lose the coverage with nothing red.
+// invariant: the count is DERIVED from the config in hand and the shipped literal is asserted
+// beside it, because a derivation that agrees with itself proves nothing.
 TEST(MetaLogDocument, NgramCapBindsSoTheDigestCarriesTheDroppedObservationCount)
 {
     meta::MetaLogConfig cfg;
@@ -253,15 +208,15 @@ TEST(MetaLogDocument, NgramCapBindsSoTheDigestCarriesTheDroppedObservationCount)
     meta::ngram_cap::emit_window(engine);
     const auto doc{engine.close_window(t1)};
 
-    // The scenario precondition, not the property: if the templates collapsed into fewer shapes
-    // the bigram arithmetic below is arbitrary rather than wrong.
+    // pre: the precondition, not the property: if the templates collapsed into fewer shapes the
+    // bigram arithmetic below is arbitrary rather than wrong.
     ASSERT_EQ(doc.stats.unique_templates, meta::ngram_cap::kDistinctTemplates)
         << "each of the " << meta::ngram_cap::kDistinctTemplates
         << " one-shot strings must form its OWN template for the bigram count to hold; got "
         << doc.stats.unique_templates;
 
-    // The block must EXIST before its member can be read — a block-absent document would satisfy a
-    // naive "the field is not what I expected" reading while testing nothing.
+    // pre: the block must exist before its member is read; a block-absent document would satisfy a
+    // naive not-what-I-expected reading while testing nothing.
     ASSERT_TRUE(doc.behavior.has_value())
         << "top_ngrams_size is non-zero and the stream formed n-grams, so the §4 block is owed";
     ASSERT_FALSE(doc.behavior->top_ngrams.empty())
@@ -281,8 +236,7 @@ TEST(MetaLogDocument, NgramCapBindsSoTheDigestCarriesTheDroppedObservationCount)
            "reds while the derived assertion above stays green, a producer default moved and the "
            "scenario is no longer anchored on the configuration that ships.";
 
-    // The admitted table filled exactly to its bound, which is what makes the refusal count a
-    // statement about the CAP rather than about a stream that ran short.
+    // note: the table filled to its bound, so the refusal count is a claim about the CAP.
     EXPECT_EQ(doc.behavior->top_ngrams.size(), cfg.top_ngrams_size)
         << "every admitted bigram is at count 1, so the top-N select runs entirely on its "
            "`sequence` tie-break over "
@@ -291,14 +245,11 @@ TEST(MetaLogDocument, NgramCapBindsSoTheDigestCarriesTheDroppedObservationCount)
            "byte difference and nowhere else in this corpus";
 }
 
-// The always-on document (1.7.2): cube + WHERE + acquisition are unconditional. Pins the
-// per-template dominant_component tie-break (ties → component string ascending, a pure content
-// function) and the acquisition dimension-metadata VALUES (Piece 2). The bytes' cross-machine
-// identity is the cross-leg gate's job; here we pin the values.
+// note: cube, WHERE and acquisition are unconditional; this pins values, never bytes.
 TEST(MetaLogDocument, AlwaysOnCubeWhereAndAcquisitionFields)
 {
-    // component is a string_view INTO the event; string literals have static storage, so the views
-    // stay valid for the whole test. Empty component → a free-text line carrying no WHERE.
+    // invariant: component is a string_view INTO the event and the literals have static storage, so
+    // the views outlive the test; an empty component is a free-text line carrying no WHERE.
     const auto ev = [](std::string_view tmpl, insight::LogLevel level, std::string_view component)
     {
         tok::CanonicalEvent e;
@@ -308,7 +259,7 @@ TEST(MetaLogDocument, AlwaysOnCubeWhereAndAcquisitionFields)
         return e;
     };
 
-    meta::MetaLogConfig cfg; // cube + WHERE + acquisition are all always-on now
+    meta::MetaLogConfig cfg;
     meta::MetaLogEngine engine{cfg};
 
     using Clock = std::chrono::system_clock;
@@ -316,8 +267,7 @@ TEST(MetaLogDocument, AlwaysOnCubeWhereAndAcquisitionFields)
     const Clock::time_point t1{std::chrono::seconds{1700000060}};
     const Clock::time_point t2{std::chrono::seconds{1700000120}};
 
-    // Window 1: PARTIAL coverage (a free-text template carries no component) over four distinct
-    // components — one a per-template TIE (ping: zebra×2, alpha×2) → ascending picks "alpha".
+    // note: window 1 is PARTIAL coverage over four components, one a tie broken ascending.
     engine.open_window(t0);
     for (int i = 0; i < 6; ++i)
         engine.ingest_event(ev("login ok", insight::LogLevel::Info, "auth"));
@@ -331,7 +281,7 @@ TEST(MetaLogDocument, AlwaysOnCubeWhereAndAcquisitionFields)
         engine.ingest_event(ev("starting up", insight::LogLevel::Info, ""));
     const auto doc1{engine.close_window(t1)};
 
-    // Window 2: a db ERROR burst over steady auth traffic; FULL coverage.
+    // note: window 2 is a db ERROR burst over steady auth traffic, at FULL coverage.
     engine.open_window(t1);
     for (int i = 0; i < 6; ++i)
         engine.ingest_event(ev("login ok", insight::LogLevel::Info, "auth"));
@@ -349,13 +299,13 @@ TEST(MetaLogDocument, AlwaysOnCubeWhereAndAcquisitionFields)
     EXPECT_EQ(doc1.acquisition->distinct_components, 4U) << "auth, db, alpha, zebra";
     EXPECT_EQ(doc2.acquisition->records_with_component, 11U) << "6 auth + 5 db (all located)";
     EXPECT_EQ(doc2.acquisition->distinct_components, 2U) << "auth, db";
-    // Dimension-metadata (Piece 2): the collapse guardrail's raw trigger inputs.
+    // note: dimension-metadata: the collapse guardrail's raw trigger inputs.
     EXPECT_EQ(doc1.acquisition->where_cardinality_per_depth,
               (std::vector<std::uint64_t>{doc1.acquisition->distinct_components}))
         << "depth-1 WHERE tree → one per-depth entry == distinct_components";
     EXPECT_EQ(doc1.acquisition->closed_cells, doc1.cube.cell_count)
         << "P_closed == the closed cube's cell count";
-    // Per-dimension cardinality (the mandatory cardinality signal): distinct count per cube axis.
+    // note: the mandatory cardinality signal: distinct count per cube axis.
     EXPECT_EQ(doc1.acquisition->level_cardinality, 2U) << "distinct levels observed: INFO, WARN";
     EXPECT_EQ(doc1.acquisition->role_cardinality, 1U) << "distinct roles observed: None only";
     std::set<std::string> labels;
@@ -367,17 +317,17 @@ TEST(MetaLogDocument, AlwaysOnCubeWhereAndAcquisitionFields)
            "carries no label (disengaged, never \"\")";
 }
 
-// The W1 ordinal binned-carrier must be populated (the carrier the eidos W1 distance rides).
+// note: the W1 ordinal binned-carrier must be populated; the eidos W1 distance rides it.
 TEST(MetaLogDocument, OrdinalCarrierPopulated)
 {
     meta::MetaLogConfig cfg;
-    cfg.max_param_histograms = 2; // the batch / full-fidelity gate the ordinal carrier rides
+    cfg.max_param_histograms = 2;
     meta::MetaLogEngine engine{cfg};
     using Clock = std::chrono::system_clock;
     const Clock::time_point t0{std::chrono::seconds{1700000000}};
     const Clock::time_point t1{std::chrono::seconds{1700000060}};
 
-    // A deterministic latency spread across several octaves on one template (ms → ns by ×1e6).
+    // note: a deterministic latency spread over several octaves on one template, ms to ns by x1e6.
     constexpr std::array<std::int64_t, 6> kLatenciesMs{12, 45, 130, 480, 1100, 6000};
     constexpr std::int64_t kNanosPerMilli{1'000'000};
     engine.open_window(t0);
@@ -390,7 +340,7 @@ TEST(MetaLogDocument, OrdinalCarrierPopulated)
                        kNanosPerMilli}}};
         tok::CanonicalEvent ev;
         ev.template_str = "db query completed";
-        ev.ordinals = obs; // span valid through ingest
+        ev.ordinals = obs;
         engine.ingest_event(ev);
     }
     const auto doc{engine.close_window(t1)};
@@ -404,28 +354,14 @@ TEST(MetaLogDocument, OrdinalCarrierPopulated)
     EXPECT_EQ(entry.ordinal_histograms.front().total, 120U);
 }
 
-// ── --latency-shift: the digest's SECOND artifact species ──────────────────────────────
-//
-// The other scenarios here guard a window; this one guards a PAIR, because the artifact the
-// cross-leg gate replays for it is a MetaLogDiff. Two things can go hollow independently and
-// each would leave the digest section looking exactly as healthy as a working one:
-//
-//   1. The DRIFT stops being admissible. `component_latency_shifts` skips a component whose
-//      paired sample is under kShiftSampleFloor (32) — correctly, and SILENTLY: the axis is
-//      projected away and the section emits a plain 3-D border. So the "did the mechanism
-//      run" assertion comes first, on the ordinal carrier both sides must carry.
-//   2. The SERIALIZER stops emitting the block. A domain object that holds `cube_diff` is not
-//      a digest that carries it, and the two are checked in different places. This producer
-//      already has one member that is computed every diff and reaches no wire at all
-//      (`field_histogram_deltas`, SPEC §3.5.2's declared wire-emission status), so "computed
-//      but dropped at the DTO" is a live failure mode here, not a hypothetical one — which is
-//      why the last assertion reads the JSON and not the struct.
-//
-// What this deliberately does NOT assert: `axes[].kind`. The scenario's job is to PRODUCE the
-// differential axis; how the standard spells its kind is metalog-spec's to decide, and
-// pinning today's spelling here would make this guard red at the moment that decision lands.
-// The conformance gate (scripts/spec_conformance_gate.sh) is what judges the spelling, against
-// the published schema rather than against our own belief about it.
+// refs: STU-3, F-SRC-insight-metalog:diff.cpp
+// invariant: this guards a PAIR and not a window, because the artifact the cross-leg gate replays
+// for it is a MetaLogDiff; two things can go hollow here independently.
+// invariant: a drift under kShiftSampleFloor is projected away SILENTLY, so the
+// did-the-mechanism-run assertion comes first, on the ordinal carrier both sides must carry.
+// invariant: computed-but-dropped-at-the-DTO is live here, field_histogram_deltas reaching no wire,
+// which is why the last assertion reads the JSON and not the struct.
+// note: axes[].kind is deliberately NOT asserted -- that spelling is metalog-spec's to decide.
 TEST(MetaLogDocument, LatencyShiftPairEmitsTheDifferentialAxisOnTheWire)
 {
     meta::MetaLogConfig cfg;
@@ -443,9 +379,8 @@ TEST(MetaLogDocument, LatencyShiftPairEmitsTheDifferentialAxisOnTheWire)
     meta::latency_shift::emit_window(engine, meta::latency_shift::kCurrentLatencyMs);
     const auto current{engine.close_window(t2)};
 
-    // (1) Did the mechanism run? Both sides must carry a duration ladder on `payments` with at
-    // least kShiftSampleFloor paired observations, or every assertion below is about a window
-    // where the axis was correctly, invisibly, projected away.
+    // pre: both sides must carry a duration ladder on payments with at least kShiftSampleFloor
+    // paired observations, or every assertion below is about a projected-away axis.
     const auto duration_total{[](const meta::MetaLogDocument& doc)
                               {
                                   std::uint64_t total{0};
@@ -458,7 +393,7 @@ TEST(MetaLogDocument, LatencyShiftPairEmitsTheDifferentialAxisOnTheWire)
                               }};
     const std::uint64_t previous_total{duration_total(previous)};
     const std::uint64_t current_total{duration_total(current)};
-    constexpr std::uint64_t kShiftSampleFloor{32}; // diff.cpp ComponentOrdinal, studies/003
+    constexpr std::uint64_t kShiftSampleFloor{32};
     ASSERT_GE(std::min(previous_total, current_total), kShiftSampleFloor)
         << "the shift is INADMISSIBLE below the floor and the axis is silently projected away, "
            "so this scenario would emit a plain 3-D border while still looking healthy.\n"
@@ -470,8 +405,8 @@ TEST(MetaLogDocument, LatencyShiftPairEmitsTheDifferentialAxisOnTheWire)
         << "both windows carry a cube, so the pair must produce a cube_diff — without one the "
            "digest's --latency-shift section carries no differential axis at all";
 
-    // (2) The differential axis is declared, by NAME. It is emergent-at-diff: no stored cube
-    // ever carries it, so its presence here is the whole reason this section exists.
+    // invariant: the latency_shift axis is emergent-at-diff: no stored cube ever carries it, so its
+    // presence here is the whole reason this section exists.
     std::vector<std::string> axis_names;
     for (const auto& axis : delta.cube_diff.axes)
         axis_names.push_back(axis.name);
@@ -486,9 +421,7 @@ TEST(MetaLogDocument, LatencyShiftPairEmitsTheDifferentialAxisOnTheWire)
         return out;
     }();
 
-    // (3) The band, pinned by VALUE. 100 ms → 100 s is 10 octaves on the frozen log2-ns ladder,
-    // deep inside HIGH; a ladder or threshold retune that moved this scenario onto a different
-    // band would otherwise change the digest's bytes with nothing here to say why.
+    // note: 100 ms to 100 s is 10 octaves on the frozen log2-ns ladder, deep inside HIGH.
     const meta::CubeBorderCell* shifted{nullptr};
     if (delta.cube_diff.has_emerging)
         for (const auto* region :
@@ -503,8 +436,7 @@ TEST(MetaLogDocument, LatencyShiftPairEmitsTheDifferentialAxisOnTheWire)
     EXPECT_EQ(*shifted->coord.latency_shift, "up_high")
         << "a 10-octave UP move must land in the HIGH band; got " << *shifted->coord.latency_shift;
 
-    // (4) The WIRE, not the struct. This is the assertion that separates "the engine computed a
-    // cube_diff" from "the digest carries one".
+    // note: the WIRE, not the struct: this separates engine computed one from digest carries one.
     const std::string wire{meta::to_json(delta)};
     EXPECT_NE(wire.find("\"cube_diff\""), std::string::npos)
         << "to_json(MetaLogDiff) dropped the cube_diff block — the domain object has it and the "
@@ -515,19 +447,12 @@ TEST(MetaLogDocument, LatencyShiftPairEmitsTheDifferentialAxisOnTheWire)
         << wire;
 }
 
-// ── --collapse-depths: the pair whose diff axes equal NEITHER input's ──────────────────
-//
-// §16.10 mandates that a diff of two cubes be read at the COARSER of the two on each axis.
-// §13.6's example text carries an unbolded comment saying `cube_diff.axes` equals both inputs'
-// `cube.axes` — which is not normative in any of §13.6's bullets, and which this pair refutes by
-// construction. So this guard asserts CONTAINMENT and the collapse arithmetic, and deliberately
-// asserts no equality: writing the equality arm would pin a claim the standard does not make and
-// would red the day §16.10 is exercised, which is here.
-//
-// It goes hollow the moment the previous window stops firing the banding guardrail — the two
-// cubes would then share a collapse state, `min_common_collapse` would be a no-op, and the pair
-// would silently become an ordinary same-depth diff that still emits a healthy-looking cube_diff.
-// That is why the collapse states are read off the two documents FIRST.
+// refs: F-SRC-metalog-spec:SPEC.md
+// invariant: SPEC 16.10 reads a diff of two cubes at the COARSER of the two on each axis, and this
+// pair refutes 13.6's unbolded axes-equality comment by construction.
+// invariant: no equality arm is written -- it would pin a claim the standard does not make and
+// would red the day 16.10 is exercised, which is here.
+// note: it goes hollow if the previous window stops banding, so the collapse states are read FIRST.
 TEST(MetaLogDocument, CollapseDepthsPairIsReadAtTheMinimalCommonCollapse)
 {
     meta::MetaLogConfig cfg;
@@ -553,8 +478,8 @@ TEST(MetaLogDocument, CollapseDepthsPairIsReadAtTheMinimalCommonCollapse)
                                  return std::nullopt;
                              }};
 
-    // (1) Did the mechanism run? The two windows must sit at DIFFERENT collapse depths, or this
-    // pair is an ordinary same-depth diff wearing the name of a compare-at-min.
+    // pre: the two windows must sit at DIFFERENT collapse depths, or this pair is an ordinary
+    // same-depth diff wearing the name of a compare-at-min.
     ASSERT_TRUE(previous.has_cube);
     ASSERT_TRUE(current.has_cube);
     const auto previous_floor{band_floor_of(previous.cube)};
@@ -574,9 +499,8 @@ TEST(MetaLogDocument, CollapseDepthsPairIsReadAtTheMinimalCommonCollapse)
     const meta::MetaLogDiff delta{meta::diff(previous, current)};
     ASSERT_TRUE(delta.has_cube_diff);
 
-    // (2) The diff is read at the COARSER of the two — the max band floor — so its axes equal the
-    // COLLAPSED input's and not the un-collapsed one's. This is the §16.10 arithmetic, pinned by
-    // value; it is also the whole falsifier for §13.6's unbolded equality comment.
+    // invariant: compare-at-min takes the MAX band floor, so the diff's axes equal the COLLAPSED
+    // input's and not the un-collapsed one's.
     const auto diff_floor{[&delta]() -> std::optional<std::uint64_t>
                           {
                               for (const auto& axis : delta.cube_diff.axes)
@@ -593,9 +517,8 @@ TEST(MetaLogDocument, CollapseDepthsPairIsReadAtTheMinimalCommonCollapse)
         << "this pair exists precisely because the diff's axes CANNOT equal both inputs'; if they "
            "now equal the un-collapsed input's, the collapse stamp was lost";
 
-    // (3) CONTAINMENT, which is the obligation that survives §13.6's non-normative equality
-    // comment: every axis either input's cube declares must still be present in the diff, by name.
-    // A diff that silently dropped an axis would describe a different space than its inputs.
+    // invariant: containment is the obligation that survives 13.6 -- every axis either input's cube
+    // declares is still present in the diff, by name.
     const auto names_of{[](const std::vector<meta::CubeAxis>& axes)
                         {
                             std::set<std::string> out;
@@ -610,20 +533,11 @@ TEST(MetaLogDocument, CollapseDepthsPairIsReadAtTheMinimalCommonCollapse)
                 << "an axis an input cube declares (" << name << ") is absent from cube_diff.axes";
 }
 
-// ── The differential-axis falsifier, held over BOTH pairs ─────────────────────────────
-//
-// A differential axis is EMERGENT-AT-DIFF: it has no stored-cube domain, its baseline projection
-// is uniformly the mute star, and it is only ever pinned on the CURRENT side. Two consequences are
-// document-local and therefore checkable without any cross-document oracle: a border cell pinning
-// one MUST carry previous_count == 0, and it MUST appear under `emerging` — never `vanishing`.
-// This is the falsifiable obligation that replaces §13.6's non-normative axes-equality comment.
-//
-// It is written as a predicate over the whole cube_diff rather than a lookup of the one cell the
-// latency_shift scenario produces, so a SECOND differential axis added later is judged the day it
-// appears rather than the day someone remembers to extend this. The identification predicate is
-// CONTAINMENT — an axis in cube_diff.axes whose name neither input's cube declares — and not the
-// axis's `kind`: `kind` is a value-shape discriminator the standard owns, and keying on it would
-// make this arm decay silently the moment that spelling changes.
+// invariant: a differential axis is emergent-at-diff, so a border cell pinning one carries
+// previous_count == 0 and appears under emerging, never vanishing.
+// invariant: the identification predicate is CONTAINMENT and never the axis kind: latency_shift is
+// categorical exactly like level and structural_role, so kind cannot separate them at all.
+// note: it is a predicate over the whole cube_diff, so a second such axis is judged as it appears.
 TEST(MetaLogDocument, ADifferentialAxisOnlyEverPinsAnEmergingCellFromZero)
 {
     const auto check{[](std::string_view what, const meta::MetaLogDocument& previous,
@@ -676,7 +590,7 @@ TEST(MetaLogDocument, ADifferentialAxisOnlyEverPinsAnEmergingCellFromZero)
     const Clock::time_point t1{std::chrono::seconds{1700000060}};
     const Clock::time_point t2{std::chrono::seconds{1700000120}};
 
-    // The pair that HAS a differential axis. Its counts are the positive population.
+    // note: the pair that HAS a differential axis; its counts are the positive population.
     meta::MetaLogConfig shift_cfg;
     meta::latency_shift::configure(shift_cfg);
     meta::MetaLogEngine shift_engine{shift_cfg};
@@ -695,9 +609,7 @@ TEST(MetaLogDocument, ADifferentialAxisOnlyEverPinsAnEmergingCellFromZero)
         << "the population is EMPTY: no border cell pins the differential axis, so both assertions "
            "above passed for free. That is the shape this test exists to refuse.";
 
-    // The CONTROL: a pair with no differential axis at all. Its differential set must be empty —
-    // without it, "the predicate found nothing" and "the predicate cannot find anything" are the
-    // same green.
+    // note: the CONTROL: without it, found nothing and cannot find anything are the same green.
     meta::MetaLogConfig depth_cfg;
     meta::collapse_depths::configure(depth_cfg);
     meta::MetaLogEngine depth_engine{depth_cfg};

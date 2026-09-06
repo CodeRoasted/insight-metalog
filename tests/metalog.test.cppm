@@ -1,8 +1,5 @@
-// insight.metalog.test — shared white-box test infrastructure: a single test-only named module.
-// All test TUs import this instead of spelling out the full import block. Re-exports the
-// complete metalog module surface (public facade + the sealed detail module + canon), so a test TU
-// needs no further imports beyond gtest (textual, third-party).
-// Exports: make_event(), ParamEvent — the shared event fixtures the suites build windows from.
+// post: importing this module gives a test TU the whole metalog surface -- public facade, the
+// sealed detail modules and canon; gtest stays textual and is included separately.
 export module insight.metalog.test;
 export import std;
 export import insight.metalog;
@@ -14,7 +11,6 @@ export import insight.canon;
 export namespace insight::metalog::test
 {
 
-/// Minimal CanonicalEvent carrying just a template string and a level.
 [[nodiscard]] inline insight::tokenization::CanonicalEvent
 make_event(std::string_view tmpl, insight::LogLevel level = insight::LogLevel::Info)
 {
@@ -24,11 +20,8 @@ make_event(std::string_view tmpl, insight::LogLevel level = insight::LogLevel::I
     return ev;
 }
 
-// ── Helper: CanonicalEvent with owned param values ────────────────────────────
-//
-// CanonicalEvent::params is a span<const string_view> into arena-stable storage.
-// In tests (no arena) we own the strings here; the views and span stay valid
-// for the lifetime of ParamEvent.
+// invariant: views point into owned_values, which is reserved to its final size before any view is
+// taken; a ParamEvent must outlive every use of its event and must never be copied.
 struct ParamEvent
 {
     std::vector<std::string> owned_values;

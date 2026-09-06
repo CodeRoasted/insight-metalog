@@ -3134,12 +3134,126 @@ statement of what was checked, not as a deliverable to recover.
   ADR number with the slots it names reads as a LOSS. Both such lines in unit 18 were legitimate,
   and the disposition belongs in the ledger with its evidence rather than in a restored address.
 
+## Unit 20 — `tests/determinism/`, `tests/stats/`, `tests/metalog.test.cppm`
+
+Three files, **245 would-be violations to 0**, comment lines **258 -> 123**. Converted by the pilot
+working alone (the Founder ended lane delegation for conversion on 2026-09-06 and ruled in the same
+breath that the `OPS-8.S8` cold reader is NOT what that ends — *keep the reader, kill everything
+else*). Stripper cross-check exact, file by file: 173 / 61 / 11 removed, 13 tool forms kept (10
+`/*name=*/` in `test_stats.cpp`, one namespace closer each).
+
+### The five witnesses
+
+* **Comment-only** — all three files' code token streams byte-identical to their pre-unit blob,
+  re-taken after each of the three in-flight repairs below.
+* **Grammar** — the unit reads **0** would-be violations; the repo moves **1 647 -> 1 402** over
+  70 files, which is exactly -245.
+* **Behaviour** — `malf test insight-metalog` **297 of 297 on clang-21 and 297 of 297 on gcc-16**,
+  equal to the recorded baseline, under one slot acquire and one release.
+* **Addressability** — the outbound census against `HEAD` exits 0: **no address lost**, 8 added
+  (`STU-3`, `F-SRC-metalog-spec:SPEC.md`, `F-SRC-insight-metalog:` for `golden.yaml`,
+  `determinism_fixture.cpp`, `diff.cpp`, and `salience.cpp` at both `surprise_band` and
+  `novelty_band`). `registry_grammar_lint` reads **0 failures**, so every new form-3 address
+  resolves for repo, file spelling and scope.
+* **Knowledge** — one fresh cold reader, **38 questions, 38 recovered, 0 not recovered, 0 wrong,
+  0 convictions**, `GIT COMMANDS RUN: none`, 55 tool uses, 161 k tokens, 7.8 minutes.
+
+### What the reader actually bought, since a clean score reads like a formality
+
+**Nothing this conversion wrote was contradicted. Two lines it wrote were OUT-ARGUED, and both were
+repaired before the commit.**
+
+* **Q38, and this is the one worth the reader's whole cost.** The line said the identification
+  predicate is containment *"and never the axis kind, which is a value-shape discriminator the
+  standard owns and would decay silently"* — the reason the deleted prose gave, faithfully carried.
+  The reader answered from the tree that `kind` cannot separate a differential axis **at all**:
+  `cube.cpp`'s `latency_shift_axis()` returns `kind = "categorical"`, identical to the stored `level`
+  and `structural_role` axes. So the original argument stated the CONTINGENT reason and omitted the
+  categorical one, and a reader could conclude that freezing the spec's spelling would make `kind`
+  usable. It would not. Verified at `src/cube/cube.cpp` before the line was changed.
+* **Q15.** The line said the producer holds *"two spellings of one wire absence"*. The reader
+  observed the test passes **three** arguments and that two of them compare equal under
+  `EventLevel::operator==` — three call spellings, two absences. The line now says so.
+* **Q5 is a finding about the TEST, not about a converted line** (see below), and the reader
+  reached it unprompted by reading `dominant_role_of`.
+
+Six answers were materially richer than any comment in the file and are left in the code's own
+reach rather than re-homed: macros cannot cross a module boundary (Q1); `event.params` is a span
+over the ORIGINAL's `views` array, so a copy dangles for a second reason (Q3); `RetentionAxis` has
+no `None` member and every enumerator names a reason a template WAS retained (Q8); `counts()` uses
+`emplace`, which does not overwrite, so an id collision would silently SHRINK the map (Q16); each
+Linux leg additionally sweeps `O3`/`O0` cells (Q18); dereferencing a disengaged `optional` is UB,
+which is why the block check is `ASSERT` and not `EXPECT` (Q28).
+
+### Contamination, disclosed by the reader and recorded rather than discounted
+
+One repo-scoped `rg` for the scenario-header filenames, excluded only with `--glob '!build*'`,
+returned **two matching lines out of this ledger** (its lines 1144 and 2530) into the reader's
+context; the file was never opened and every later search was scoped or excluded. **This is exactly
+the channel `OPS-8.S8` gained on this same day** — an exclusion list phrased *do not open* cannot
+stop a recursive grep — and it recurred because that prompt offered the glob exclusion as an
+alternative to scoping rather than requiring it. One leaked fragment concerns
+`collapse_depths_scenario.hpp`, which touches Q35 and Q36; **both answers rest independently on
+`SPEC.md` §16.10 / §13.6 and on `CubeAxis::operator==` being defaulted**, and the fragment asserts a
+claim was FALSE, so it could only have misled. Neither answer is discounted, and the exposure is on
+the record so a later reader of this entry can judge that for themselves.
+
+### Findings
+
+* **Kleio — `DominantRole.TieBreakByEnumValueIsStable` does not assert what its name says.** The
+  fixture is {`None`:10, `GroupBegin`:10} and the assertion is `EXPECT_NE(dominant_role_of(roles),
+  StructuralRole::None)`. `None` is also the seed value of `best` in `dominant_role_of`, so the
+  assertion excludes *the seed* and would pass for any non-`None` return; it does not pin
+  `GroupBegin`, and it does not distinguish "the tie broke upward" from "the loop ran at all".
+  `EXPECT_EQ(..., StructuralRole::GroupBegin)` is the assertion the name claims. Found by the reader
+  from the production source, not from the test.
+* **Every unit in the test tier — the file header `// Unit tests: allow short identifiers and
+  test-specific patterns.` is FALSE, on 27 files across two repos.** It claims an allowance from a
+  tool that never opens the file, because the test tier is outside the clang-tidy surface
+  unconditionally and by law (`LSRC-1`, on the Founder's ruling of 2026-08-31). Population measured
+  2026-09-06: **15 in `insight-metalog/tests/operations/` and 12 across `insight-canon/core/tests/`**.
+  Unit 20 deleted its one. **Delete the rest; never re-home one as a residual `note:`.**
+
+### One trap this unit paid for, landed in `OPS-8.S6`
+
+Gating the draft with `malf format --check <scratchpad dir>` instead of the invocation that step
+specifies reported **55 violations, every one false**. The gate reads POST-FORMAT text and
+clang-format discovers its style by walking UP from the file, so a draft outside the repo falls back
+to LLVM's default `ColumnLimit: 80` against a repo that sets 100. The expensive part is the remedy
+it suggests: shortening 55 claims to fit would have degraded 55 true statements to buy nothing.
+
 ## The resume point
 
-**`OPS-8.S1` preflight, then unit 20 — `tests/determinism/test_determinism_gate.cpp` (173),
-`tests/stats/test_stats.cpp` (61) and `tests/metalog.test.cppm` (11), 245 would-be violations over
-3 files.** Take the build slot only around the behaviour witness; the reading, stripping and
-drafting need none.
+**`OPS-8.S1` preflight, then unit 21. Everything left in this repo is ONE directory —
+`tests/operations/`, 15 files, 1 402 would-be violations**, and the counts below are the gate's own
+as of 2026-09-06, not an estimate:
+
+| file | violations |
+|---|---|
+| `test_compose_algebra.cpp` | 439 |
+| `test_golden_vectors.cpp` | 196 |
+| `test_canonicalization_version_ruleset_coverage.cpp` | 136 |
+| `test_presence_churn_property.cpp` | 98 |
+| `test_comparison_outcome.cpp` | 98 |
+| `test_stability_vs_diff_divergence.cpp` | 95 |
+| `test_presence_churn_monoid.cpp` | 68 |
+| `test_presence_churn_rank_boundary.cpp` | 63 |
+| `test_shift_sample_floor.cpp` | 45 |
+| `test_retention_profile_name.cpp` | 41 |
+| `test_ruleset_identity.cpp` | 31 |
+| `test_diff_blocks.cpp` | 31 |
+| `test_reservoir_delta.cpp` | 27 |
+| `test_param_histograms_compose.cpp` | 25 |
+| `test_processing_identifiers.cpp` | 9 |
+
+**Take it as four units, not one** — a 15-file unit is one questionnaire over 1 402 violations, and
+a reader handles about fifty questions. The `presence_churn` trio (229) belongs together because the
+three tests share one algebraic subject. **`test_compose_algebra.cpp` (439) is a unit on its own**,
+and it is the file the `insight-eidos` warning below points at.
+
+Take the build slot only around the behaviour witness; the reading, stripping and drafting need
+none. **Arming is one `packages.yml` line away once this directory reads 0** — nothing else in the
+repo carries a violation.
 
 ---
 
