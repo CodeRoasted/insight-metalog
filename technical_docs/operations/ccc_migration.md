@@ -1221,6 +1221,280 @@ forms `invariant=4 assert=3 note=1 refs=1 continuation=4`, **0 would-be violatio
 
 ---
 
+## Unit 15 — `api/metalog.api.cppm` (1 file, 1 088 would-be violations)
+
+The public DTO surface and the last source unit: 1 910 lines, 200 comment blocks, 1 089 comment
+lines. Converted as ONE unit because the grammar witness is per file — half a converted file still
+reads violations — and interrogated by **two** cold readers over disjoint question sets, because
+one questionnaire over 200 blocks is two interrogations pretending to be one.
+
+**Census (`OPS-8.S4`), derived rather than taken from the written list.** The gates that read a
+comment token in this repo were enumerated first: `malf/comment_contract_lint.py` (the CCC tool
+forms), clang-tidy (`NOLINT` in all spellings, `/*name*/`, `/*name=*/`), clang-format
+(`clang-format off`/`on`, the namespace closer), `scripts/wallclock_lint.py` and
+`scripts/random_determinism_lint.py` (`DETERMINISM-ALLOW`), `scripts/log_seat_routing_lint.py`
+(`LOG-SEAT-ALLOW`), `scripts/retired_structure_lint.py` (its `allow` marker, whose regex does not
+require an HTML comment and can therefore sit in C++), plus `wall-clock:` and
+`SPDX-License-Identifier:`. Two scope facts fell out of that walk and are recorded because they
+bound what the census can mean here: `wallclock_lint.py`'s `SCOPE` covers `insight-canon` and
+`insight-eidos` only, so its token has **no reader in this repo**, while
+`random_determinism_lint.py`'s `SCOPE` **does** name `insight-metalog` (6 module interface units),
+so `DETERMINISM-ALLOW` does have one. Counted in this file: every token above at **0**, one
+namespace closer at **1**. After the strip: identical. No census decision was needed.
+
+**Stripper cross-check (`OPS-8.S5`).** The file carries no suppression of any kind, so
+`removed == violations - (suppression-without-why + trailing-nolint)` reduces to
+`removed == violations`: the stripper removed **1 088** and the whole-repo gate moved
+**3 717 -> 2 629**, which is 1 088 exactly. Per class: bare 3 265 -> 2 301, spacer 243 -> 197,
+trailing 178 -> 102, ruler 2 -> 0.
+
+**The `SRC-<code>` boundary at this site, and where the previous run's census was short
+(`OPS-8.O5`).** The previous session left a table of **three** codes whose STATEMENT lives in this
+file, each with an addressable owner to cite instead of a law block. Two of the three verify:
+
+| code | the rule stated here | owner, verified by reading it |
+|---|---|---|
+| `SRC-D-TIR-5` | `TemplateRegistry` is the single id -> string home, display-only, append-only | **`ADR-16.D3`** states it verbatim: *"the engine-owned `TemplateRegistry` is the single `id -> str` home … display-only by construction: it never feeds a decision path, intern order never affects content, and it is append-only"*. TRUE. |
+| `SRC-D-W1-4` | the schedule id is the diff's comparability key | **`insight-canon/core/api/canon.api.cppm`**: *"The schedule is a versioned catalog (`SRC-D-W1-4`): its stable string id is the eidos diff's comparability key."* TRUE. |
+| `SRC-D-W1-1` | the exact-integer W1 distance and its frozen octave thresholds | **`STU-3.A1`** pre-registers the bands (*"a MED (>= 2 octaves) or HIGH (>= 5)"*, *"the LOW half-octave band"*) and names them pre-registered. TRUE for the THRESHOLDS. The *distance* half — exact integer, 128-bit reducer, no float, no division — is stated **only here**, and no slot owns it. |
+
+**Two more codes are statement-bearing in this file and the previous table did not list them.**
+`SRC-D-W1-5` (*a field is ordinal XOR categorical, so the two never collide*) declares at two
+sites here — `DN-1` verified that independently and records it — and canon's mention of it is a
+citation (*"the `SRC-D-W1-5` mis-route hazard"*), not the statement. `SRC-D-OTEL-21` (the distilled
+service-edge block: its own additive flag-gated block with its own diff, not a cube dimension, not
+folded into `top_ngrams`) declares here across nine occurrences, and **`ADR-29.D6` explicitly
+refuses to own it**: *"the comment at the declaring site … IS the statement … This ADR owns the
+subject … and deliberately does not mirror that enumeration."*
+
+**What this unit did with them, and what it did NOT do.** Every rule above is written AT its site
+as tagged contract lines, which is what the closed grammar asks of a statement, and every code
+keeps its `refs: SRC-<code>` — so `registry_grammar_lint`'s position-based declaration check still
+sees a declaring site in this interface unit and G5 stays green. **No law was minted**: numbering is
+workspace-global and this lane may not pick one (`OPS-8.O4`). What remains owed, for the pilot to
+issue numbers against, is the ADDRESSED form for the three rules that have no owner —
+`SRC-D-W1-1`'s exact-integer distance, `SRC-D-W1-5`'s ordinal-XOR-categorical exclusivity, and
+`SRC-D-OTEL-21`'s service-edge block — together with the cross-repo citer repointing, which
+`OPS-8.O5` places with the pilot and not with a lane.
+
+**Forms written and the file's own reading.** 208 insertions producing, at the file's own
+standalone gate reading, **`pre` 4 · `post` 10 · `invariant` 335 · `assert` 2 · `refs` 83 ·
+continuations 201 · tool forms 1** over **636 comment lines**, from 1 089 before — a 42 %
+reduction, against the repo's running 62 %. **Zero `note:` lines were written**, which is the
+form the doctrine says to starve, and the reason this surface produced none is structural: a DTO
+member's residual claim is almost always a population condition, an absence semantics or a
+representation contract, and each of those is an `invariant:` by definition. The high invariant
+count is the same fact from the other side — 60 exported types whose contract the C++ type system
+cannot carry.
+
+**The `refs:` targets used**: `F-SRC-metalog-spec:SPEC.md` ×11 · `SRC-D-OTEL-21` ×8 · `DN-50.D4`
+×7 · `DN-64.D3` ×5 · `SRC-D-W1-2`, `SRC-D-W1-4`, `SRC-D-TIR-5`, `SRC-D-OTEL-11`, `DN-32.D3` ×4 ·
+`SRC-II-7`, `SRC-D-WHERE-2`, `SRC-D-W1-1`, `ADR-31.D8`, `ADR-23.D4` ×3 · `SRC-D-WHERE-4`,
+`SRC-D-W1-5`, `DN-64.D6`, `DN-64.D4`, `DN-50.D5`, `ADR-9.D2`, `ADR-17.D3` ×2 · and one each of
+`STU-3.A1`, `SRC-D-WHERE-6`, `SRC-D-WHERE-5`, `SRC-D-W1-3`, `SRC-D-TID-16`, `SRC-D-RNK-2`,
+`SRC-D-PROV-1`, `SRC-D-OUT-RUN-1`, `SRC-D-OTEL-9`, `SRC-D-OTEL-22`, `SRC-D-OTEL-20`,
+`SRC-D-OTEL-13`, `SRC-D-OTEL-1`, `OPS-1.S15`, `DN-56.D2`, `DN-42.D17`, `BIB:determinism_model`,
+`ADR-9.D3`, `ADR-31.D2`, `ADR-3.D4`, `ADR-29.D2`, `ADR-29.D1`, `ADR-23.D6`, `ADR-23.D3`,
+`ADR-23.D2`, `ADR-17.D5`, `ADR-17.D2`, `ADR-16.D3`.
+
+**A declared departure from this repo's own converted style, and it is deliberate.** The sibling
+`api/` unit dropped every `SPEC §n` section number, because a `refs:` admits registry forms only.
+Where the claim IS a specification MUST, the section number is the coordinate that makes the claim
+checkable, so it is written **inside the tagged claim's own text** — a tagged line carries free
+prose and the gate reads the tag, not the sentence. Where it was decoration it is gone.
+
+**Interrogation — TWO cold readers over disjoint question sets, both spawned against a frozen
+tree and both finished before anything was touched.** Reader A took Q1-Q22 (the ordinal/W1
+channel, the transparent-lookup helpers, `TemplateRegistry`, presence churn, `TopKEntry`,
+`AcquisitionBlock`, the service edges, the ruleset and transport blocks, the cube, the failure
+frontier and the salience scale): 98 tool uses, 244 k tokens, 10.1 minutes. Reader B took Q23-Q42
+(the retention axis, the reservoir entry, `StatsBlock`, the behaviour block, the two version
+constants, `MetaLogDocument`, `MetaLogConfig`, the retention profile and the whole diff surface):
+69 tool uses, 182 k tokens, 8.4 minutes. Both final messages carry `GIT COMMANDS RUN: none` and
+neither transcript contains a `git` invocation. The exclusion list named this repo's own ledger,
+LogCraft's, the `ADR-26` file and `OPS-8` — the first because from unit 2 onward it is an answer
+key, the rest because they state the grammar.
+
+**Score: 38 of 42 recovered, 0 not recovered, 4 wrong — and all four `wrong` verdicts are
+CONVICTIONS** (`OPS-8.S9`, split (c)): in each one the reader answered the underlying question
+correctly from the tree and thereby contradicted a line **this conversion wrote**. None is
+reader-wrong and none is a tree that misleads, so none is evidence against the form. Scored from
+the per-question evidence, never from a summary line.
+
+**THE FOUR LINES THIS CONVERSION WROTE THAT A READER CAUGHT, each repaired before the commit.**
+
+1. **`ordinal_w1`'s thresholds — an anti-endogamy claim resting on nothing.** The conversion wrote
+   *"the thresholds are pre-registered, not fitted"* with `refs: STU-3.A1`. Reader A read
+   `STU-3.A1` and found it **holds the three bands fixed as INPUTS** while pre-registering
+   acceptance criteria for a different constant, the thin-sample floor; `DN-11` quotes them the
+   same way, as a derivation input. The deleted prose asserted *"pre-registered (anti-endogamy)"*
+   in one sentence and *"FROZEN from scenario-35's measured numerators"* with two quoted measured
+   poles in the next, which is the tension the reader's answer resolves against the conversion.
+   The line now states only what is checkable at the site — frozen bands, exact integer
+   cross-multiply, conservative bias — and the pre-registration question is a finding below.
+2. **`TemplateRegistry`'s out-of-line split — a reason that was REFUTED two days before the
+   conversion carried it.** The conversion wrote *"every named member is defined in the
+   implementation unit and never here — MSVC re-emits an out-of-line defaulted special member of a
+   module interface into each importer"*. Reader A found in `DONE.md` that the MSVC half was
+   measured on 2026-09-04 by a real MSVC golden run and **refuted**, after which the split was
+   ripped and the six special members moved back into the class body — which is the shape the file
+   carries today, so the hazard the line names cannot govern this class at all. The residue
+   (*the named members live in the implementation unit*) is a mirror of the declarations. The
+   whole line is deleted.
+3. **`MetaLogDocument::acquisition` — "trivially copyable" is false of a struct holding a vector.**
+   The conversion carried *"all-integer and trivially copyable, so `std::optional` is sound here"*.
+   Reader B pointed at `AcquisitionBlock::where_cardinality_per_depth`, a
+   `std::vector<std::uint64_t>`. The line now gives the ground its two neighbours already give and
+   that does hold: stamped once at close and only read.
+4. **`BehaviorBlock::dropped_ngram_observations` — a normative absence quoted without its scope.**
+   The conversion wrote *"an omitted key MEANS zero"*. Reader B quoted the specification: absence
+   is disambiguated by `metalog_version` — zero in a document declaring 0.7.0 or later,
+   **UNKNOWN** in an earlier one, which consumers MUST NOT read as zero. The scope is now on the
+   line.
+
+**One more repair a reader prompted without contradicting anything.** `MetaLogDiff::cube_diff`'s
+presence flag was justified by the MSVC precedent alone; reader B gave the stronger and more
+useful ground, which is now written beside it: `CubeDiffBlock` carries `axes`, a required
+descriptor, so *present-but-empty* is a real state that absence cannot express — where
+`reservoir_delta`, which is three lists and nothing else, has emptiness AS its absence. And the
+`refs: DN-42.D17` on `has_cube` was moved: it owns the minimal-common-collapse rule (its §4) and
+nothing else in that block, and trailing four invariants it read as covering the MSVC line too.
+
+**Stale, false and dangling prose deleted, each with the evidence and the search that backs it.**
+
+1. **A FALSE ATTRIBUTION ON A LIVE ADDRESS, which is the worst shape because the address resolves.**
+   `CubeCardinalityStat` carried *"The pre-collapse WARN thresholds (`kComponentWarn`/`kCellsWarn`)
+   were RETIRED (ADR-18 / studies/005 disposition-D)"*. **`ADR-18` is
+   `018-insight-intent-identity-and-alignment.md`** — it says nothing about the cube. The cube
+   subject is `history/adr-v1/0018-cube-a-attribution.md`, i.e. the number is PRE-REFORM and now
+   points at a different, live subject. A workspace sweep for `kComponentWarn`/`kCellsWarn` over
+   every repo returns exactly one hit, `STU-5` line 127, which names `kComponentWarn=64` as latent
+   and does not state a retirement; the constants exist nowhere in any source tree. The retirement
+   is real and it IS sourced, just not where the prose pointed: `STU-5.O3` item 1 names
+   `kComponentWarn=64` as the WARN monitor and not the collapse trigger, and
+   `tests/cube/test_cube.cpp` states the retirement in its own comment beside the assertion that
+   replaced it. The cold reader recovered both, plus the replacement itself — `collapse_note()`,
+   fired by the eidos pipeline when a collapse is APPLIED. So nothing is re-homed: the false
+   pointer is deleted and the fact is recoverable. The attic is not cited in its place, because a
+   citation into it is owed nothing. A sweep of every other live `ADR-18` citation in the
+   workspace found them all correctly about intent identity, so the class is one site wide.
+2. **A DANGLING COMMENT DESCRIBING AN ENTITY THAT DOES NOT EXIST, its own sentence truncated.**
+   Directly above `struct MetaLogDocument` stood *"Template-string emission mode (SPEC §3.4).
+   Defined before MetaLogDocument so the document can carry"* — and nothing followed. No
+   `TemplateStringMode`, `template_string_mode` or equivalent enum exists anywhere in
+   `insight-metalog`, `insight-eidos`, `insight-canon`, `logcraft`, `coderoast-server` or
+   `metalog-spec`. Deleted. The one live claim next to it — that this producer emits the INLINE
+   mode only — was re-homed at the document, which is what it is about.
+3. **A claim that is FALSE for composed documents, in the carried prose and twice over.**
+   `AcquisitionBlock` and `MetaLogDocument::acquisition` both read *"Always present."*
+   `src/operations/compose.cpp` never mentions `acquisition` and builds its output from a
+   default-constructed `MetaLogDocument`, so a **composed document carries no acquisition block at
+   all**. The lines now say what is true: `close_window()` sets it on every raw window and
+   `compose()` sets none. The consequence for the consumer is a finding below.
+4. **A file-header claim that reads as false and is at best ambiguous.** The header said
+   *"Header-only structs (no impl units)"*, while `src/metalog.api.impl.cpp` is the implementation
+   unit of this very module and defines `TemplateRegistry`'s six named members. Read as *the
+   structs have none* it is true and it is a mirror; read as *the module has none* it is false.
+   Deleted rather than repaired: no form admits it.
+5. **Three citations into the ATTIC, removed by the conversion rather than by a decision.** The
+   prose cited `cube_differential_axes.md §7.4`, `sift_where_attribution.md SRC-D-WHERE-4`, `SRC-D-WHERE-5` and
+   `cube_perf_and_collapse.md §C`; all three live in `technical_docs/history/architecture-v1/`,
+   which `CLAUDE.md` rules disposable and owed nothing. Each carried an `SRC-` code alongside, and
+   the code is what the `refs:` now carries — the address survives a wipe of the attic and the
+   path does not.
+
+**The address census, both legs (`OPS-8.S7.3b`).**
+
+*Outbound.* Three bare addresses were REFINED to the slot that owns the claim at that site
+(`ADR-17` -> `ADR-17.D2`/`D3`/`D5`, `ADR-29` -> `ADR-29.D2`, `ADR-9` -> `ADR-9.D3`) and six were
+ADDED (`ADR-16.D3`, `ADR-31.D2`, `BIB:determinism_model`, `DN-50.D5`,
+`F-SRC-metalog-spec:SPEC.md`, `STU-3.A1`). One address the instrument called LOST was restored
+before commit — `ADR-23.D6`, whose claim (*nothing here licenses a comparability statement across
+transport*) had no other home in the file and is now an `invariant:` beside the `refs:`. One LOST
+line stands as a **deliberate refinement with its evidence**: the bare `ADR-23` occurred at four
+sites, and each is now cited at the slot that actually owns its sentence — the section header at
+`ADR-23.D2`/`D4`/`D6`, and the two `transport` members plus the peel-boundary sentence at
+`ADR-23.D4`, whose own title is *"The peel boundary: the identity path CANNOT see the stack, by
+construction"*. Nothing points at a whole ADR where a slot exists.
+
+*Inbound.* The committed instrument's inbound leg searches from the **current working directory
+only** (`roots=["."]`), so run from inside the repo it cannot see a sibling repo naming your file —
+which is exactly the class it exists to find. The sweep was therefore re-run workspace-wide with
+the `CLAUDE.md` recipe. Leads and their disposition:
+
+| citing site | what it rests on | verdict |
+|---|---|---|
+| seven `insight-eidos` sites (`sift.cppm`, `sift.api-config.cppm`, `diff_engine.cpp`, `reservoir.cpp`, `playground.contract.cppm`, `playground.replay.cppm`, `raw_log_fidelity_test.cpp`, `rule_backend_test.cpp`, `bench_pyramid.cpp`) saying *"see metalog.api.cppm (TemplateRegistry) for the contract"* | the `TemplateRegistry` contract at this site | **not falsified** — the contract is still stated here, as three `invariant:` lines plus `refs: ADR-16.D3, SRC-D-TIR-5`. The citation is a BASENAME and not an address; the repair is `F-SRC-insight-metalog:metalog.api.cppm:TemplateRegistry`, and it belongs to the `insight-eidos` lane |
+| `insight-eidos/engine/tools/incident_episode_measure.cpp:1737` quoting `metalog.api.cppm: "a bounded floor of the M slots"` | a verbatim quote of this file's prose | **falsified in letter** — the line now reads *"a bounded floor of the reservoir slots"*. The fact it rests on (the reserve is a SUBSET of the reservoir, clamped to `reservoir_size`) is unchanged and still stated at the member. Finding for the `insight-eidos` lane |
+| `insight-eidos/insight-e2e/test_contract.md:145` and `:449` citing `insight-metalog/api/metalog.api.cppm:756` | a LINE-NUMBER coordinate | **dead, and it was already dead before this unit** — line 756 at the previous revision was `CubeCardinalityStat::cells`, not the cube border the sentence claims. It now lands in `TailSummary`. Finding for the lane that owns `test_contract.md` |
+| `DN-43` quoting *"distinct log levels observed (the cube's level axis)"*, `DN-59` quoting *"chain: WHERE …"*, `DN-2` quoting the `SRC-D-WHERE-2` statement | verbatim quotes of trailing comments | **stale in letter, intact in substance** — each quoted fact is now a tagged line at the same member, and each of those notes already carries the `F-SRC-` address. Findings for the design-note owner |
+| `DN-63` attributing *"a streaming consumer MUST NOT alert on it"* to `metalog.api.cppm:TailDelta` | a scoped `F-SRC-` address | the quoted sentence is `ReservoirDelta`'s and always was; the scope in the address is wrong. Still stated, at `ReservoirDelta`. Finding for the design-note owner |
+| `insight-metalog/tests/operations/test_compose_algebra.cpp:1236` | *"`retention_profile_name` (metalog.api.cppm) derives the §2.4 stamp from exactly four axes"* | **not falsified** — the four-axis derivation and the injectivity are both tagged lines now. The basename gains its address when `tests/operations/` converts |
+| `DN-74` quoting *"DERIVED from …"* | the `retention_profile_name` prose | **not falsified** — the phrase survives verbatim in the `post:` |
+
+**Findings for other lanes, each with its addressee.**
+
+**A. A composed document carries NO acquisition block, and a consumer reads that block to decide
+WHERE admissibility — for Daidalos, with Eqya on whether the gap is a claim.**
+`src/operations/compose.cpp` builds its output from a default-constructed `MetaLogDocument` and
+never mentions `acquisition`, so `MetaLogDocument::acquisition` is disengaged on every composed
+document. `insight-eidos/sift/src/engine/diff_engine.cpp` reads exactly that block to answer *"is
+`component` an admissible WHERE dimension for this window?"* — *"read off the window's own
+self-assessment and NEVER synthesized here"*. Whether a composed document should carry a merged
+self-assessment, or whether the consumer's absent-block path is the correct posture, is a design
+question with two repos in it. The comment now states the truth rather than *"Always present."*
+
+**B. The W1 octave thresholds are described as pre-registered and nothing records a
+pre-registration — for Eqya as claim-boundary owner, with Daidalos.** The deleted prose asserted
+*"The θ_k are pre-registered (anti-endogamy)"* and, four lines below, *"FROZEN from scenario-35's
+measured numerators"* with *"(measured pole 9.96)"* and *"(pole 0.14)"*. A cold reader that went
+looking found `STU-3.A1` holding the bands fixed as inputs while pre-registering a different
+constant, and `DN-11` quoting them as a derivation input. Anti-endogamy is a claim about ORDER —
+the constant fixed before the data — and the tree carries no record of that order for these three
+numbers. Either the record exists somewhere this search did not reach, or the anti-endogamy
+framing is unearned; both are decisions, not comments.
+
+**C. `ADR-9.D2` states the cube-key allocation is UNFIXED, and the fix has shipped — for
+Daidalos.** That slot reads *"`cube_base_`'s keys are plain `std::string` on `std::allocator` —
+general heap, two constructions per event … Fixing it is measure-first work with its own gate,
+deliberately not done here"*. `TransparentCubeKeyLess` is live on `cube_base_`
+(`api/metalog.cppm`), `bench_cube_key_alloc.cpp` and `bench_ordinal_key_alloc.cpp` exist, and the
+cold reader read the measured before/after out of `DONE.md` — the ordinal key going 1 -> 0
+allocations per event on the ship leg. The slot's own trap paragraph about SSO is still exactly
+right and worth keeping; the *"deliberately not done here"* clause is what has been overtaken.
+
+**D. Nine `insight-eidos` sites cite this file by BASENAME rather than by address — for the
+`insight-eidos` lane.** *"see metalog.api.cppm (TemplateRegistry) for the contract"* appears in
+`sift.cppm`, `sift.api-config.cppm`, `diff_engine.cpp`, `reservoir.cpp`,
+`playground.contract.cppm`, `playground.replay.cppm`, `raw_log_fidelity_test.cpp`,
+`rule_backend_test.cpp` and `bench_pyramid.cpp`. Nothing is falsified — the contract is still
+stated here, as tagged lines — but a basename is not an address, and
+`F-SRC-insight-metalog:metalog.api.cppm:TemplateRegistry` is what survives the next rename.
+
+**E. Two LINE-NUMBER citations into this file are dead, and one was dead before this unit — for
+the lane that owns `insight-eidos/insight-e2e/test_contract.md`.** Lines 145 and 449 both cite
+`insight-metalog/api/metalog.api.cppm:756` for the cube border. At the pre-conversion revision line
+756 was `CubeCardinalityStat::cells`, not the border, so the coordinate was already wrong; it now
+lands in `TailSummary`. `registry_grammar_lint`'s `G15` bans a `file:line` coordinate and reports 0
+live sites — that arm walks the doc tier it knows, and this file is not on it, which is the gate's
+blind spot rather than the citation's excuse.
+
+**F. One `insight-eidos` measurement tool quotes this file's prose verbatim — for the
+`insight-eidos` lane.** `engine/tools/incident_episode_measure.cpp:1737` reads
+`metalog.api.cppm: "a bounded floor of the M slots"`. The line now says *"a bounded floor of the
+reservoir slots"*; the fact the tool rests on (the reserve is a SUBSET of the reservoir, clamped to
+`reservoir_size`) is unchanged and still stated at the member.
+
+**G. Three design notes quote deleted trailing comments — for the design-note owner.** `DN-43`
+quotes *"distinct log levels observed (the cube's level axis)"*, `DN-59` quotes *"chain: WHERE
+prefix-path"*, and `DN-2` quotes the `SRC-D-WHERE-2` statement. Each fact survives as a tagged line
+at the same member and each note already carries the `F-SRC-` address, so nothing is lost — the
+quotes are stale in letter. Separately, `DN-63` attributes *"a streaming consumer MUST NOT alert on
+it"* to this file's `TailDelta`; that sentence is `ReservoirDelta`'s and always was, so the scope
+in the address is wrong.
+
+---
+
 # The law block: one was owed, one was issued, one is minted
 
 This lane was instructed not to pick a law number — they are workspace-global, append-only and
@@ -1837,3 +2111,120 @@ bearing; that is the test tier's own first step.
   give it one session. The ordering rule's own reason — that a test's `refs:` cites slots the source
   unit names — does not bind here: the harness cites `ADR`/`DN` slots and the specification, not
   slots this repo's `api/` unit would have minted.
+
+---
+
+# What the unit-15 session adds to the `OPS-8` verdict
+
+Read against the runbook as it stood at 05:30 on 2026-09-06; the earlier items in the verdicts
+above are the previous runs' and are not restated.
+
+## 14. THE COMMITTED `address_census.py`'s INBOUND LEG SEARCHES ONE DIRECTORY, AND THAT IS THE ONE PLACE THE CLASS IT EXISTS TO FIND DOES NOT LIVE
+
+`OPS-8.S7.3b` says to run the census *"from inside the repo that owns the files"*, and the inbound
+mode calls `inbound(paths, ["."])` — the current working directory. Run as instructed, from inside
+the migrating repo, the inbound leg **cannot see a sibling repo naming your file**, which is
+exactly the population the mode was added for: its own docstring cites `insight-eidos` resting a
+claim on prose `engine/api/engine.cppm` had lost. Measured here: from inside `insight-metalog` the
+leg returned **2** mentions; the same sweep over the workspace with the `CLAUDE.md` recipe returned
+**over sixty files**, including nine `insight-eidos` sites resting on this file's `TemplateRegistry`
+contract, a verbatim prose quote in an `insight-eidos` measurement tool, and two dead line-number
+coordinates in an `insight-eidos` contract document. The instrument is right and its default root
+is wrong; until it takes a `--roots` argument, run the workspace sweep by hand and say so.
+
+## 15. `claims_lib.render()` EMITS AN UNTAGGED SPEC WITHOUT ITS `//`, AND EVERY WITNESS BUT ONE IS BLIND TO IT
+
+The shared placer treats a spec that does not match its tagged-line regex as *"a tool form or a
+law-block line, verbatim"* and writes it as `f"{indent}{spec}"`. That is correct for `NOLINTNEXTLINE`
+and for a law-block frame. It is a trap for the shape a lane will actually write, because a
+two-line contract claim is naturally authored as two strings — and the second one, carrying no
+tag, lands as a **bare code line**. Measured here on the first run: about eighty broken lines, and
+**the CCC gate reported only 2 violations** over the file, because a line with no `//` is not a
+comment and the checker never looks at it. `malf format --check` said 0 misformatted. The witness
+that catches it is `code_only_diff.py` and nothing else. The fix is three lines at the call site —
+join a spec that does not open with a tag onto the one before it, so `flow()` wraps the whole claim
+and the two-line contract budget is enforced on the claim rather than on each fragment.
+
+## 16. A CONVICTION CAN BE ABOUT A CITATION AS WELL AS A CLAIM, AND `OPS-8.S9`'s SPLIT READS AS THOUGH IT IS ONLY ABOUT SENTENCES
+
+Two of this unit's four conviction verdicts were about the sentence a line asserts. A third was
+about a `refs:` — a reader pointed out that `DN-42.D17` owns the minimal-common-collapse rule and
+nothing else in the block it trailed, so at the end of four invariants it read as vouching for an
+MSVC miscompile claim it says nothing about. The address resolved, the gate was green, and the
+citation was still wrong in the only sense that matters. `OPS-8.O2` already records that the gate
+checks a tagged line's FORM and never its PLACEMENT; the same blindness applies to a `refs:` inside
+a multi-claim block, and the remedy is the same — read where each line landed, and put the `refs:`
+next to the claim it answers for rather than at the end of the block.
+
+## 17. THE MIRROR LESSON'S OTHER HALF: A CARRIED CLAIM CAN BE FALSE BECAUSE THE WORLD MOVED, NOT BECAUSE THE PROSE WAS EVER WRONG
+
+`OPS-8.O3` warns that carried prose is frequently false. Two of this unit's four convictions are a
+narrower species worth naming, because the search that catches them is different: the prose was
+TRUE when written and a **measurement since** made it false. `TemplateRegistry`'s MSVC reason was
+refuted by a real MSVC golden run on 2026-09-04 — one day after the prose's own dated
+re-measurement, which is why the comment reads current — and the specification scoped
+`dropped_ngram_observations`' normative absence to `metalog_version` 0.7.0 or later while the
+comment stated it flatly. Neither is findable by asking *is this sentence internally coherent?*;
+both are found by asking *when was this last measured, and has anything measured it since?*
+(`MEM:an-instrument-has-a-lifetime`). For a claim with a date in it, read the record AFTER that
+date before carrying it into a tagged line.
+
+---
+
+# Where the unit-15 session stopped
+
+**Fifteen units converted in total, no law minted in this session, the repo still NOT armed.**
+Arming (`OPS-8.S12`) needs the whole repo at zero and the test tier is still 2 629 violations, so
+`comment_contract: true` is not set and the CCC phase keeps counting `insight-metalog` rather than
+failing it.
+
+| unit | surface | files | would-be violations | comment lines | readers |
+|---|---|---|---|---|---|
+| 1-14 | (the two previous sessions) | 34 | 2 984 | 3 026 → 1 161 | 130 of 131 recovered |
+| 15 | `api/metalog.api.cppm` | 1 | 1 088 | 1 089 → 636 | 38 of 42 recovered, 4 wrong |
+| | **total** | **35** | **4 072** | **4 115 → 1 797 (56 % fewer)** | **168 of 173 recovered, 0 not recovered, 5 wrong** |
+
+**4 072 of the repo's 6 701 would-be violations — 60.8 %, in fifteen commits.** Every claim held
+for a reader was recovered or repaired; **nothing has had to be re-homed above the comment rung in
+any unit of this repo**, and no claim has been lost.
+
+**THIRTEEN LINES THESE CONVERSIONS THEMSELVES WROTE HAVE NOW BEEN FOUND DEFECTIVE BY A COLD READER
+AND CORRECTED BEFORE COMMIT — nine in the earlier sessions and four here — and not one by any
+gate.** The four here, in order: an *"pre-registered, not fitted"* claim about the W1 octave
+thresholds whose cited owner holds them fixed as inputs and pre-registers something else; a
+`TemplateRegistry` MSVC justification that a real MSVC run had refuted two days earlier; a
+*"trivially copyable"* claim about a struct that owns a vector; and a normative-absence claim
+quoted without the `metalog_version` scope the specification puts on it. All four are
+**convictions** rather than reader-wrong: in each the reader answered the underlying question
+correctly from the tree and thereby contradicted the residual line, which is the form succeeding.
+
+**Behaviour, the whole session in ONE batch.** One slot acquisition covering unit 15 alone;
+`malf test insight-metalog` **297 of 297 on clang-21 and 297 of 297 on gcc-16**, equal to the
+baseline the first session took. Slot wait for the session: **0 seconds** on the first acquisition
+and **161 seconds** on the second, 161 seconds in total, both taken with `MALF_BUILD_SLOT_ANCHOR`
+pinned to the lane's session pid and both tested on the acquire's EXIT STATUS — the refusal prints
+the *holder's* token, so a grep for the word passes on failure.
+
+**What remains: the test tier alone, 2 629 would-be violations over 34 files.** Largest first:
+`tests/operations/test_compose_algebra.cpp` 439, `test_golden_vectors.cpp` 196,
+`tests/determinism/test_determinism_gate.cpp` 173, `tests/cube/test_cube.cpp` 170,
+`tests/reservoir/test_reservoir.cpp` 144, `test_canonicalization_version_ruleset_coverage.cpp` 136,
+`tests/reservoir/test_retention_axis_census.cpp` 100, then 27 files under 100 each. **Every source,
+harness and package surface in this repo now reads zero.**
+
+**THE RESUME POINT IS `tests/reservoir/` (2 files, 244 would-be violations), and it is prepared
+rather than merely named.** Its token census is taken and non-trivial — `test_reservoir.cpp`
+carries **13** `/*name=*/` argument comments and 3 namespace closers, `test_retention_axis_census.cpp`
+**6** and 1, and the stripper's kept counts match those 16 and 7 exactly, with removed 144 and 100
+equalling each file's violation count. Two notes for whoever takes it. `test_retention_axis_census.cpp`
+opens with a 69-line header carrying the test-homing call, three arming conditions, a **declared
+expiry** and a falsifiability record of two applied-and-reverted mutations; the arming conditions
+survive in the assertion messages, which are code, and the expiry's argument is owned by
+`DN-64.D6`, so the header converts by citation rather than by re-homing. And `test_reservoir.cpp`'s
+`SRC-D-RNK-2` block carries the measured loss that motivated the error-class reserve, which is
+history and goes, while the rule it states is already `refs:`-able at the config member this unit
+converted.
+
+**The three test-tier files with a leading-block `SRC-` site — `tests/engine/test_ordinal_histograms.cpp`,
+`tests/engine/test_span_edges.cpp`, `tests/stats/test_stats.cpp` — still have not been read for
+statement bearing.** That remains the first act of whichever unit covers them.

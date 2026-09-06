@@ -1,6 +1,4 @@
-// insight.metalog.api — public DATA surface (the MetaLog DTOs/config/enums, ADR-3.D4).
-// Header-only structs (no impl units) → no api↔detail cycle. std via internal; canon types
-// (LogLevel/Timestamp/StructuralRole/CanonicalEvent) via import insight.canon.
+// refs: ADR-3.D4
 export module insight.metalog.api;
 import insight.metalog.internal;
 import insight.canon;
@@ -8,58 +6,46 @@ import insight.canon;
 export namespace insight::metalog
 {
 
-// ── Spec envelope (mirrors the published MetaLog schema; the version it conforms to is
-//    `kMetaLogSpecVersion` below — the ONE spelling, guarded against SPEC.md by the
-//    superproject pin-coherence gate) ────────────────────────────
-
-// Per-template per-wildcard-position value frequency table.
-//
-// The canon masker maps variable token positions to <*>, making field values invisible
-// to downstream detection.  FieldHistogram re-surfaces the empirical
-// distribution P(value | template_id, param_index) for each wildcarded
-// position, giving the drift and sequence banks a causal axis to observe.
-//
-// Example (HTTP template "GET <*> -> <*>"):
-//   histogram[0].value_counts = {"/api/users": 800, "/health": 200}
-//   histogram[1].value_counts = {"200": 950, "500": 50}
-//
-// Only populated when MetaLogConfig::max_param_histograms > 0.
-// Empty by default — zero overhead on the ingest_event hot path.
+// invariant: one row per wildcarded parameter position of one template, over the window.
+// invariant: populated only when MetaLogConfig::max_param_histograms > 0; empty otherwise.
+// refs: F-SRC-metalog-spec:SPEC.md
 struct FieldHistogram
 {
-    std::uint32_t param_index{0}; // 0-based wildcard position in params[]
+    // invariant: 0-based wildcard position in CanonicalEvent::params.
+    std::uint32_t param_index{0};
     std::unordered_map<std::string, std::uint64_t> value_counts;
-    std::uint64_t total{0};   // total events; may exceed sum(value_counts)
-                              // when max_histogram_values cap was hit
-    double entropy_bits{0.0}; // Shannon entropy over value_counts
-    // HyperLogLog estimate of distinct values in this window for this slot.
-    // Independent of max_histogram_values — never capped. 0 if not computed
-    // (producer did not enable cardinality tracking). See SPEC §3.5.1.
+    // invariant: every event that matched the template; exceeds the sum of value_counts once
+    // max_histogram_values bound the retained values.
+    std::uint64_t total{0};
+    double entropy_bits{0.0};
+    // invariant: an approximate distinct-value count for this slot, never bound by
+    // max_histogram_values.
+    // invariant: 0 when the producer computed no cardinality for the slot.
     std::uint64_t approximate_cardinality{0};
 };
 
-// W1 ordinal carrier (§4A.4 SRC-D-W1-2): a per-template, FIELD-keyed binned histogram for a
-// declared ordinal field (canon kOrdinalFieldCatalog). Counts over the schedule's frozen log2
-// ladder — full tail, NO frequency cap (B is small + fixed, so the carrier is bounded by
-// construction; this is exactly the representation the 4A.2 high-card suppression was a stopgap
-// for). A distinct stream from the positional, categorical `field_histograms`/`value_counts`: a
-// field is ordinal XOR categorical (SRC-D-W1-5), so the two never collide. Populated only when
-// MetaLogConfig::max_param_histograms > 0 (the batch / full-fidelity value-tracking path); empty
-// (omitted on the wire) otherwise → non-ordinal documents stay byte-identical (SRC-D-W1-4).
+// invariant: counts over the schedule's frozen log2 ladder, full tail and no frequency cap.
+// invariant: populated only when MetaLogConfig::max_param_histograms > 0; empty otherwise.
+// invariant: a field is ordinal XOR categorical, so this never collides with field_histograms.
+// refs: SRC-D-W1-2, SRC-D-W1-4, SRC-D-W1-5
 struct OrdinalHistogram
 {
-    std::string field_name; // the declared ordinal field (e.g. "latency_ms") — surfaced on the
-                            // diff row for `attributable_to` (SRC-D-W1-3)
-    // the versioned schedule id (the eidos diff comparability key, SRC-D-W1-4)
+    // invariant: the declared ordinal field, surfaced on the diff row for attributable_to.
+    // refs: SRC-D-W1-3
+    std::string field_name;
+    // invariant: the versioned schedule id, and the eidos diff's comparability key.
+    // refs: SRC-D-W1-4
     std::string schedule_id;
-    std::vector<std::uint64_t> counts; // counts[B] over the schedule's log2 ladder
-    std::uint64_t total{0};            // Σcounts (the per-field observation count = N for W1)
+    // invariant: one count per bin of the schedule's log2 ladder.
+    std::vector<std::uint64_t> counts;
+    // invariant: the sum of counts, which is the per-field observation count.
+    std::uint64_t total{0};
 };
 
-// The W1 ladder (§4A.4 SRC-D-W1-2): map a canonical-unit value onto its log2-octave bin index for
-// `schedule`, clamped to [0, B-1]. Pure integer — floor(log2) by a shift loop, no float, no edge
-// table; this IS the frozen, versioned ladder (metalog owns binning; eidos is ladder-agnostic at
-// w=1). `value` is non-negative (canon's parser rejects negatives); 0 and 1 fall in bin 0.
+// pre: value is non-negative -- canon's parser rejects negatives.
+// post: the octave index of value, clamped to [0, bins-1]; 0 and 1 both fall in bin 0.
+// invariant: pure integer, floor(log2) by a shift loop -- no float and no edge table.
+// refs: SRC-D-W1-2
 [[nodiscard]] constexpr std::uint32_t ordinal_bin_index(OrdinalSchedule schedule,
                                                         std::int64_t value) noexcept
 {
@@ -73,17 +59,12 @@ struct OrdinalHistogram
     return octave < bins ? octave : bins - 1U;
 }
 
-// The scale-relative magnitude of a W1 ordinal drift (§4A.4). How far the binned value
-// distribution moved along its log2-octave ladder, in coarse octave bands. The octave measure is
-// inherently SCALE-RELATIVE — a distance is proportional (400→800 ms and 40→80 ms are both +1
-// octave, 100 ms is HIGH for a 10 ms op and NONE for a 2 s op), so the ladder IS the normalization:
-// the differential-axis scale-relativity mandate is met WITHOUT any median/IQR divide. NONE means
-// within-noise (sub-octave jitter). This bucket is BOTH the eidos OrdinalDrift row's magnitude AND
-// the Attribution Cube's first differential axis (latency_shift) — metalog owns the ladder AND the
-// distance, one home, consumed by both.
+// invariant: octave bands, so the measure is scale-relative and needs no median/IQR divide.
+// invariant: None is within-noise (sub-octave jitter), never absence of data.
+// refs: SRC-D-W1-2
 enum class OrdinalShift : std::uint8_t
 {
-    None = 0, // within-noise (no drift surfaced)
+    None = 0,
     Low = 1,
     Med = 2,
     High = 3,
@@ -105,35 +86,28 @@ enum class OrdinalShift : std::uint8_t
     return "none";
 }
 
-// Which way mass moved along the ladder. Metalog reports the raw, semantics-free direction; the
-// eidos diff owns the operator-facing regression/recovery Polarity (Up = higher values = slower /
-// larger = worse; Down = faster / smaller = better), and the Attribution Cube's latency_shift axis
-// emerges on EITHER direction as a signed, polarity-mute band (up_* / down_*, distinct bands;
-// metalog reports the fact, the reading stays in eidos — cube_differential_axes.md §7.4).
+// invariant: the raw direction mass moved; the regression/recovery reading is the consumer's.
 enum class OrdinalDriftDirection : std::uint8_t
 {
-    None = 0, // neutral (no net movement)
-    Up = 1,   // mass moved UP the ladder (higher values)
-    Down = 2, // mass moved DOWN the ladder (lower values)
+    None = 0,
+    Up = 1,
+    Down = 2,
 };
 
-// A W1 ordinal-drift verdict: the scale-relative shift bucket + the direction mass moved.
+// invariant: a W1 verdict is the shift bucket plus the direction, never a distance.
 struct OrdinalDrift
 {
     OrdinalShift shift{OrdinalShift::None};
     OrdinalDriftDirection direction{OrdinalDriftDirection::None};
 };
 
-// The exact 1-D Wasserstein-1 (earth-mover) distance between two binned ordinal histograms on the
-// SAME schedule (§4A.4 SRC-D-W1-1), reduced to a shift bucket + direction. numerator =
-// Σ_i |CumA_i·N_b − CumB_i·N_a| (w=1, the log ladder), accumulated in a signed 128-bit integer via
-// det::FixedReducer (order-independent, exact, cross-stdlib + MSVC bit-identical); direction =
-// sign(Σ_i (CumB_i·N_a − CumA_i·N_b)). The bucket is an EXACT integer cross-multiply against frozen
-// octave thresholds θ_k (no float, no division, no float→int anywhere on the path), so the
-// verdict is replay-stable and golden-frozen. The θ_k are pre-registered (anti-endogamy): ≥5
-// octaves → HIGH, ≥2 → MED, ≥0.5 → LOW, below → NONE. A zero total (or empty histogram) is a
-// degenerate pairing → {NONE, None}; the caller still gates the schedule-id comparability
-// (SRC-D-W1-4).
+// pre: previous and current are binned on the SAME schedule; the caller gates the schedule-id
+// comparability.
+// post: the exact 1-D Wasserstein-1 distance reduced to a bucket and a direction.
+// post: a zero total on either side is a degenerate pairing and returns {None, None}.
+// invariant: exact integers throughout -- a 128-bit signed reducer and a cross-multiply against
+// frozen thresholds, so no float and no division reach the verdict.
+// refs: SRC-D-W1-1, SRC-D-W1-4, ADR-31.D2
 [[nodiscard]] inline OrdinalDrift ordinal_w1(const std::vector<std::uint64_t>& previous,
                                              const std::vector<std::uint64_t>& current,
                                              std::uint64_t previous_total,
@@ -142,20 +116,21 @@ struct OrdinalDrift
     using insight::det::i128;
     using insight::det::u128;
 
-    // Frozen octave thresholds θ_k on W1 = numerator/(Na·Nb). Compared by EXACT integer cross-
-    // multiply: the drift reaches level k ⟺ numerator·θden ≥ θnum·Na·Nb. Conservative-biased —
-    // a real regime shift must never read NONE. FROZEN from scenario-35's measured numerators.
-    constexpr std::int64_t kHighNum{5}, kHighDen{1}; // ≥ 5 octaves → HIGH  (measured pole 9.96)
-    constexpr std::int64_t kMedNum{2}, kMedDen{1};   // ≥ 2 octaves → MED   (interior, pinned)
-    constexpr std::int64_t kLowNum{1}, kLowDen{2};   // ≥ 0.5 octave → LOW; below → NONE (pole 0.14)
+    // invariant: frozen octave bands compared by exact integer cross-multiply -- 5 octaves HIGH, 2
+    // MED, 0.5 LOW -- and biased conservative, so a real regime shift never reads None.
+    // refs: STU-3.A1
+    constexpr std::int64_t kHighNum{5}, kHighDen{1};
+    constexpr std::int64_t kMedNum{2}, kMedDen{1};
+    constexpr std::int64_t kLowNum{1}, kLowDen{2};
 
     if (previous_total == 0 || current_total == 0)
-        return {}; // degenerate pairing — denom would be 0; no drift is defined
+        // assert: both totals are non-zero below, so the denominator cannot be zero.
+        return {};
 
     const i128 total_a{static_cast<i128>(u128{previous_total})};
     const i128 total_b{static_cast<i128>(u128{current_total})};
-    insight::det::FixedReducer numerator_reducer; // Σ |CumA·Nb − CumB·Na|
-    insight::det::FixedReducer direction_reducer; // Σ (CumB·Na − CumA·Nb)
+    insight::det::FixedReducer numerator_reducer;
+    insight::det::FixedReducer direction_reducer;
     std::uint64_t cum_a{0};
     std::uint64_t cum_b{0};
     const std::size_t bins{std::min(previous.size(), current.size())};
@@ -163,9 +138,9 @@ struct OrdinalDrift
     {
         cum_a += previous[i];
         cum_b += current[i];
-        const i128 a_term{static_cast<i128>(u128{cum_a}) * total_b}; // CumA·Nb
-        const i128 b_term{static_cast<i128>(u128{cum_b}) * total_a}; // CumB·Na
-        const i128 signed_term{b_term + (-a_term)};                  // CumB·Na − CumA·Nb
+        const i128 a_term{static_cast<i128>(u128{cum_a}) * total_b};
+        const i128 b_term{static_cast<i128>(u128{cum_b}) * total_a};
+        const i128 signed_term{b_term + (-a_term)};
         direction_reducer.add_fixed(signed_term);
         numerator_reducer.add_fixed(signed_term >= i128{0} ? signed_term : -signed_term);
     }
@@ -182,30 +157,21 @@ struct OrdinalDrift
         drift.shift = OrdinalShift::Med;
     else if (reaches(kLowNum, kLowDen))
         drift.shift = OrdinalShift::Low;
-    // else: within-noise → OrdinalShift::None (the default)
 
     const i128 direction{direction_reducer.raw()};
     if (!(direction >= i128{0}))
-        drift.direction = OrdinalDriftDirection::Up; // mass UP the ladder → slower/larger → worse
+        drift.direction = OrdinalDriftDirection::Up;
     else if (direction >= i128{1})
-        drift.direction = OrdinalDriftDirection::Down; // mass DOWN → faster/smaller → better
-    // else: perfectly balanced → OrdinalDriftDirection::None (the default)
+        drift.direction = OrdinalDriftDirection::Down;
 
     return drift;
 }
 
-// ── Transparent lookup helpers (ADR-9.D2 — the cube-key heap fix) ──────────────────
-// Namespace-scope and EXPORTED: the engine's hot-path maps key on them, and
-// dominant_component_of's signature names the component map's full type from the
-// stats partition — a class-member helper would be invisible there.
-// Both exist so a STEADY-STATE HIT constructs no std::string key: the maps below are
-// per-event hot path, and materialising the lookup key cost 2 general-heap
-// allocations per event for a >SSO component (measured, bench_cube_key_alloc;
-// ~19 ns/event on gcc-15 = 28% of ingest_event). A MISS still copies — the map must
-// own its key — so key BYTES, map ordering and determinism are untouched.
-// (template_str_cache_ below already used this exact shape for the same reason —
-// the cube fix extends the house pattern to the two remaining hot-path maps, it
-// does not invent one.)
+// invariant: namespace-scope and exported, because dominant_component_of's signature names the
+// component map's full type from the stats partition.
+// invariant: a steady-state hit constructs no std::string key; a miss still copies, so key bytes,
+// map ordering and determinism are unchanged.
+// refs: ADR-9.D2
 struct TransparentStringHash
 {
     using is_transparent = void;
@@ -214,10 +180,8 @@ struct TransparentStringHash
         return std::hash<std::string_view>{}(value);
     }
 };
-// Orders exactly as std::less<std::tuple<LogLevel, std::string, StructuralRole>>:
-// lexicographic over (level, component bytes, role). std::string's operator< IS
-// byte-wise string_view comparison, so admitting a string_view middle changes which
-// TYPES can ask, never where a key sorts — iteration order is bit-identical.
+// invariant: orders exactly as std::less over (level, component bytes, role), so admitting a
+// string_view middle changes which types may ask and never where a key sorts.
 struct TransparentCubeKeyLess
 {
     using is_transparent = void;
@@ -236,14 +200,11 @@ struct TransparentCubeKeyLess
     }
 };
 
-// TemplateRegistry (SRC-D-TIR-5): the single TemplateId -> template_str association, owned OUTSIDE
-// the per-window document (the engine owns one; Sift/diff callers own a local one), injected at the
-// display seams (serialize / explain). template_str is a pure DISPLAY attribute — never read on the
-// decision path — so it does not belong in the entries that flow through the pyramid; this is its
-// one home. Append-only, intern-once-per-id (same id => same canon-masked content, so first writer
-// wins). Backed by node-stable std::unordered_map, so returned string_views stay valid for the
-// registry's lifetime. The named members are defined in the implementation unit; the special
-// members are defaulted here, which is what the class actually wants.
+// invariant: the single TemplateId -> template_str home, owned outside the document and injected at
+// the display seams.
+// invariant: append-only and intern-once-per-id, so the first writer wins.
+// invariant: node-stable storage, so a returned view stays valid for the registry's lifetime.
+// refs: ADR-16.D3, SRC-D-TIR-5
 class TemplateRegistry
 {
   public:
@@ -254,95 +215,56 @@ class TemplateRegistry
     TemplateRegistry& operator=(TemplateRegistry&&) noexcept = default;
     ~TemplateRegistry() = default;
 
-    // Intern (first writer wins); returns a view stable for the registry's lifetime.
+    // post: interns on first sight and returns a view stable for the registry's lifetime.
     std::string_view intern(TemplateId template_id, std::string_view template_str);
-    // The interned string for `template_id`, or "" if unknown.
+    // post: the interned string for template_id, or an empty view when the id is unknown.
     [[nodiscard]] std::string_view lookup(TemplateId template_id) const noexcept;
     [[nodiscard]] bool contains(TemplateId template_id) const noexcept;
     [[nodiscard]] std::size_t size() const noexcept;
     void clear() noexcept;
-    // Union another registry in (first writer wins, so an existing id keeps its string — the masker
-    // is a pure fn, so a shared id always maps to the same bytes). Used to merge per-shard /
-    // per-window registries into one display vocabulary (e.g. sharded pipeline union,
-    // baseline∪changed in diff).
+    // post: ids already present keep their string; the union is the merged display vocabulary.
     void merge(const TemplateRegistry& other);
 
   private:
     std::unordered_map<TemplateId, std::string> table_;
 };
 
-// Every member is defined OUT OF LINE in the implementation unit src/metalog.api.impl.cpp, NOT here
-// in the interface — see the class note above, which carries the 2026-09-03 re-measurement. Of the
-// two compilers this shape was built for, the gcc half is now measured INERT on gcc-16.2 (the
-// _Hashtable internal-linkage defect does not reproduce, verified downstream at the separate-link
-// -unit split) while the MSVC half stands unmeasured and unretired: MSVC re-emits an out-of-line
-// `= default` special member defined in a module *interface* into every importer (LNK2005), so the
-// interface must only DECLARE them. Never fold these back into the interface.
-
-// ── Presence churn (DN-50.D4) — the boundary-crossing monoid ──────────────────────
-//
-// The measurand: "the presence of content oscillates" — a fact about the observed window range,
-// computed on the MetaLog document itself. It is deliberately NOT "the set of detectors that fire
-// oscillates", whose value is a function of every threshold upstream of it.
-
-// Presence of ONE template in ONE base window, plus the two ABSENT symbols the monoid needs.
-//
-// THE TWO ABSENCES ARE DIFFERENT FACTS AND A SINGLE optional<bool> WOULD BREAK THE IDENTITY LAW
-// (DN-50.D4). `EmptyRange` is the identity's projection — a range holding no observed window, which
-// MUST contribute nothing at a boundary. `Unretained` is a window that did happen and whose
-// retained set truncated: the template may have been in the tail, so its presence is not knowable
-// from the document, and that is a boundary we could not read rather than a boundary with no
-// transition. `Absent` is the strictly stronger claim, and it is available only where the window's
-// retained set was EXHAUSTIVE (`retention_is_exhaustive` below).
-//
-// Why the distinction carries the honesty of the whole statistic: `top_k` truncates by COUNT, so
-// "absent from the retained set" is not "absent from the window". A template oscillating around
-// the k-th rank would flip a naive presence bit with the world unchanged — invented churn, a
-// content claim whose value is a function of one of our own retention parameters, which is exactly
-// the defect this measurand exists to remove. The cheaper alternative — naming retained-set
-// membership AS presence — was rejected for that reason.
+// invariant: the measurand is the presence of CONTENT oscillating over the observed window range,
+// never the set of detectors that fire.
+// invariant: Unretained is a boundary that could not be read; Absent is the strictly stronger claim
+// and is available only where the window's retained set was exhaustive.
+// invariant: EmptyRange is the identity's projection and contributes nothing at a boundary.
+// refs: DN-50.D4
 enum class PresenceSymbol : std::uint8_t
 {
-    EmptyRange = 0, // the monoid identity's projections; contributes nothing at a boundary
-    Unretained = 1, // the window truncated and did not retain this template — presence UNKNOWN
-    Absent = 2,     // the window's retained set was exhaustive and did not hold it — presence 0
-    Present = 3,    // presence 1
+    EmptyRange = 0,
+    Unretained = 1,
+    Absent = 2,
+    Present = 3,
 };
 
-// The composable element of the presence-churn monoid, per template over a window RANGE.
-//
-//   C(A)·C(B) = ( first(A), trans(A)+trans(B)+d, indet(A)+indet(B)+i, last(B) )
-//   (d, i)    = (0, 1)                     when either side of the boundary is Unretained
-//             = ([last(A) != first(B)], 0) otherwise
-//
-// ASSOCIATIVE (proof at DN-50.D4): first(A.B) = first(A) and last(A.B) = last(B), so both
-// bracketings reduce to trans A + trans B + trans C + [last A != first B] + [last B != first C].
-// That is what lets ONE element per block fold at every ladder level with no re-scan of the base
-// windows — the pyramid folds churn the way it folds counts.
-//
-// NOT COMMUTATIVE, and that is a normative MUST rather than a caveat: the boundary term is
-// orientation-sensitive, so the product is applied in WINDOW order. An implementation that folded a
-// ring in ring-slot order instead would produce a value that is deterministic and WRONG, which no
-// determinism gate can see. The enforcement is therefore structural rather than an assertion:
-// `compose()` derives the orientation from the two documents' own window envelopes, so an argument
-// order that disagrees with time order cannot change the result.
-//
-// A DEFAULT-CONSTRUCTED VALUE IS THE IDENTITY: span 0, no transitions, both projections
-// `EmptyRange`. "This entry carries no churn observation" and "the monoid's neutral element" are
-// therefore the same state by construction, which is why no std::optional wraps it — an optional
-// here would be a second spelling of a state the type already has, and the two would drift.
+// invariant: the product is ASSOCIATIVE, so one element per block folds at every ladder level.
+// invariant: NOT commutative -- the boundary term is orientation-sensitive, so operands are applied
+// in window order.
+// invariant: a default-constructed value IS the identity: span 0 and both projections EmptyRange.
+// refs: DN-50.D4
 struct PresenceChurn
 {
-    std::uint32_t span_windows{0};  // base windows this element covers; 0 IS the identity
-    std::uint32_t transitions{0};   // readable boundaries where presence changed
-    std::uint32_t indeterminate{0}; // boundaries where RETENTION, not presence, changed
-    PresenceSymbol first{PresenceSymbol::EmptyRange}; // presence in the FIRST window of the range
-    PresenceSymbol last{PresenceSymbol::EmptyRange};  // presence in the LAST window of the range
+    // invariant: base windows this element covers; 0 is the identity.
+    std::uint32_t span_windows{0};
+    // invariant: readable boundaries where presence changed.
+    std::uint32_t transitions{0};
+    // invariant: boundaries where retention, not presence, changed.
+    std::uint32_t indeterminate{0};
+    // invariant: presence in the FIRST window of the range.
+    PresenceSymbol first{PresenceSymbol::EmptyRange};
+    // invariant: presence in the LAST window of the range.
+    PresenceSymbol last{PresenceSymbol::EmptyRange};
 
     [[nodiscard]] bool operator==(const PresenceChurn&) const noexcept = default;
 };
 
-// The base element for a template the producer RETAINED in one observed window.
+// post: the base element for a template the producer retained in one observed window.
 [[nodiscard]] constexpr PresenceChurn presence_churn_of_retained_window() noexcept
 {
     return {.span_windows = 1,
@@ -352,14 +274,9 @@ struct PresenceChurn
             .last = PresenceSymbol::Present};
 }
 
-// The element for a template absent from the retained set of a range of `span_windows` windows.
-//
-// `retention_exhaustive` answers "did this range retain every template it observed?" (see
-// `retention_is_exhaustive`). When it did, the template was in NO window of the range: presence is
-// a definite 0 throughout, so the range contributes no transitions and hides no boundary. When it
-// did not, nothing about the template is knowable inside the range — so every one of its
-// `span_windows - 1` internal boundaries is declared unreadable rather than silently counted as
-// "no transition", which would under-report churn while looking like a measurement.
+// pre: retention_exhaustive answers whether the range retained every template it observed.
+// post: an exhaustive range contributes a definite Absent; a truncated one declares each of its
+// span_windows-1 internal boundaries indeterminate rather than counting no transition.
 [[nodiscard]] constexpr PresenceChurn
 presence_churn_of_unretained_range(std::uint32_t span_windows, bool retention_exhaustive) noexcept
 {
@@ -378,14 +295,13 @@ presence_churn_of_unretained_range(std::uint32_t span_windows, bool retention_ex
             .last = PresenceSymbol::Unretained};
 }
 
-// The monoid product. `earlier` and `later` are the two operands IN WINDOW ORDER — the parameter
-// names are the contract, and `compose()` establishes it from the documents' window envelopes
-// rather than trusting a caller (see the MUST on `PresenceChurn`).
+// pre: earlier and later are the two operands IN WINDOW ORDER; compose() establishes that from the
+// documents' window envelopes rather than trusting a caller.
 [[nodiscard]] constexpr PresenceChurn compose_presence_churn(const PresenceChurn& earlier,
                                                              const PresenceChurn& later) noexcept
 {
-    // The identity law, and the reason `EmptyRange` is a symbol of its own: an empty range
-    // contributes NO boundary term, where an unretained one contributes an indeterminate.
+    // assert: an empty range contributes no boundary term, where an unretained one contributes an
+    // indeterminate.
     if (earlier.span_windows == 0)
         return later;
     if (later.span_windows == 0)
@@ -401,22 +317,20 @@ presence_churn_of_unretained_range(std::uint32_t span_windows, bool retention_ex
             .last = later.last};
 }
 
-// The document-root roll-up of per-template churn over the DECLARED horizon.
+// invariant: the document-root roll-up of per-template churn over the declared horizon.
+// refs: DN-50.D4, DN-50.D5
 struct PresenceChurnSummary
 {
-    // The presence predicate, DECLARED, so `indeterminate` means the same thing across producers.
-    // Without it the counters are uncomparable and the block fails its own honesty test. ONE
-    // spelling, owned here: the serializer writes this value and never a literal of its own.
+    // invariant: the presence predicate is DECLARED here so indeterminate means the same thing
+    // across producers; the serializer writes this value and never a literal of its own.
     static constexpr std::string_view kHorizon{"top_k_union_reservoir"};
 
-    // A one-window range cannot carry a transition (`transitions <= span_windows - 1` forces 0), so
-    // its churn block would be a member whose value another member already fixes. Below this span
-    // the block is omitted from the wire entirely rather than emitted as a tautology — the
-    // omit-when-absent discipline the rest of the document follows.
+    // invariant: a one-window range cannot carry a transition, so below this span the block is
+    // omitted from the wire rather than emitted as a tautology.
     static constexpr std::uint32_t kMinimumInformativeSpan{2};
 
-    std::uint32_t span_windows{0};         // the composed range this roll-up covers
-    std::uint32_t templates_with_churn{0}; // retained templates with at least one transition
+    std::uint32_t span_windows{0};
+    std::uint32_t templates_with_churn{0};
     std::uint64_t total_transitions{0};
     std::uint64_t total_indeterminate{0};
 
@@ -426,129 +340,101 @@ struct PresenceChurnSummary
 struct TopKEntry
 {
     TemplateId
-        template_id; // content hash POD (rendered to "h:"+hex at the serialize seam, spec §3.2).
-                     // SRC-D-TIR-5 — see metalog.api.cppm (TemplateRegistry) for the contract.
+        // invariant: a content-hash POD, rendered to a prefixed hex string at the serialize seam.
+        // refs: SRC-D-TIR-5
+        template_id;
     std::uint64_t count{0};
     double frequency{0.0};
-    // DN-32.D3 — the level AND its provenance, as one value (canon `EventLevel`). DECLARED
-    // means at least one observation at this level came from a position whose MEANING is the
-    // level; otherwise it is canon's content inference, and a downstream claim resting on it
-    // carries an error term a declared one does not.
-    //
-    // THE PROVENANCE HALF IS DOMAIN-ONLY, NEVER SERIALISED — the wire row still carries the
-    // level string alone (serialize.cpp), so the MetaLog spec and every document byte are
-    // untouched. That is affordable because nothing deserialises a MetaLogDocument: this
-    // package exposes `to_json` and no inverse, so a document only ever reaches a consumer
-    // in-process, with the marker intact. The day an inverse exists, this field is a spec
-    // question and not a local edit — and it would fail SAFE (absent = inferred = the
-    // under-claiming direction), which is why the default is spelled that way.
+    // invariant: the level AND its provenance; DECLARED means at least one observation carried the
+    // level in a position whose meaning is the level.
+    // invariant: the provenance half is domain-only and never serialised.
+    // refs: DN-32.D3
     std::optional<EventLevel> dominant_level;
-    // The template's dominant functional source (canon `component` — "src/auth",
-    // a build job): the per-template WHERE *label* (sift_where_attribution.md
-    // SRC-D-WHERE-2). Populated from dominant_component_of(bucket.component_counts) at
-    // build_top_k, independent of the cube, always. EMPTY
-    // (disengaged) when the format carried no component — never "" masquerading as
-    // a location. Whether it is *surfaced* on a finding is decided window-level off
-    // the acquisition block (SRC-D-WHERE-6), not by this field's presence.
+    // invariant: the template's dominant canon component -- the per-template WHERE label, populated
+    // independently of the cube.
+    // invariant: disengaged when the format carried no component, never an empty string.
+    // refs: SRC-D-WHERE-2, SRC-D-WHERE-6
     std::optional<std::string> dominant_component;
-    // Empty unless MetaLogConfig::max_param_histograms > 0.
+    // invariant: empty unless MetaLogConfig::max_param_histograms > 0.
     std::vector<FieldHistogram> field_histograms;
-    // W1 ordinal histograms (§4A.4 SRC-D-W1-2), field-keyed — one per declared ordinal field seen
-    // on this template. Empty unless MetaLogConfig::max_param_histograms > 0. Sibling to
-    // field_histograms; never collides (a field is ordinal XOR categorical, SRC-D-W1-5).
+    // invariant: one per declared ordinal field seen on this template; empty unless
+    // MetaLogConfig::max_param_histograms > 0.
+    // refs: SRC-D-W1-2, SRC-D-W1-5
     std::vector<OrdinalHistogram> ordinal_histograms;
-    // DN-50.D4 presence churn for this template over the range the document covers. The identity
-    // (span 0) on a document that carries no churn observation; `presence_churn_of_retained_window`
-    // on every retained row of an observed window; the monoid product on a composed one.
+    // invariant: the identity on a document carrying no churn observation, and the monoid product
+    // on a composed one.
+    // refs: DN-50.D4
     PresenceChurn presence_churn{};
 };
 
-// Per-window acquisition self-assessment (SPEC §16.x; sift_where_attribution.md
-// SRC-D-WHERE-4/SRC-D-WHERE-5). Raw, integer STRUCTURAL FACTS about which dimensions a window
-// reliably carries — so each consumer (WHERE, the cube axis, the format-relative
-// gate) applies its OWN predicate over the same facts ("the window declares its
-// own cubeability"), instead of four format checks that drift. NOT a baked verdict.
-// A pure function of the frozen ordered window (no float, no float→int, no
-// wall-clock); the counts are order-independent → bit-identical cross-stdlib.
-// Always present. Carries the window's dimension self-assessment (§6.1.1). Extensible-
-// by-addition, emit-gated (a field ships only when its formula is corpus-picked AND a
-// consumer needs it): burstiness / mixing_proxy / a convergence readout are ABSENT
-// (no stubs). The dimension-metadata below (component coverage + the WHERE-tree
-// cardinality-per-depth + the joint quantities) feeds the collapse guardrail (§C).
+// invariant: raw integer structural facts about the dimensions a window carries, never a baked
+// verdict -- each consumer applies its own predicate over them.
+// invariant: a pure function of the frozen ordered window, so the counts are order-independent and
+// bit-identical across standard libraries.
+// invariant: present on every document close_window() produces; compose() sets none.
+// refs: SRC-D-WHERE-4, SRC-D-WHERE-5
 struct AcquisitionBlock
 {
-    // `component`-axis coverage facts. records_with_component = events that carried
-    // a non-empty canon `component`; distinct_components = distinct values seen.
-    // lines_observed is NOT duplicated here — read it from WindowBlock.
+    // invariant: events that carried a non-empty canon component, and the distinct values seen.
+    // invariant: lines_observed is WindowBlock's and is deliberately not duplicated here.
     std::uint64_t records_with_component{0};
     std::uint64_t distinct_components{0};
 
-    // ── Per-dimension cardinality + dimension-metadata (§6.1.1 / cube_perf_and_collapse §C) ──
-    // Raw facts (no verdict). The MANDATORY cardinality signal: the observed distinct-value COUNT
-    // per cube dimension {level, where(=distinct_components), role}. This is CARDINALITY, never the
-    // count-per-value distribution (that stays the histogram's, F11). Publishing each dimension
-    // (not just the ∏ product) is what tells a consumer WHICH dimension is exploding — the input
-    // the collapse's LEVEL-vs-WHERE choice and the operator both need. WHERE is the open axis that
-    // can explode; level/role are bounded enums (their cardinality is small but still reported).
-    std::uint64_t level_cardinality{0}; // distinct log levels observed (the cube's level axis)
-    std::uint64_t role_cardinality{0};  // distinct structural_roles observed (the cube's role axis)
+    // invariant: the observed distinct-value COUNT per cube dimension, never the count-per-value
+    // distribution.
+    // invariant: published per dimension so a consumer can tell WHICH dimension is exploding.
+    std::uint64_t level_cardinality{0};
+    std::uint64_t role_cardinality{0};
 
-    // WHERE-tree distinct-cardinality-per-depth (truncate-and-recount), COARSEST → finest:
-    // where_cardinality_per_depth[d] = distinct WHERE prefixes truncated to depth d+1. The
-    // WHERE axis is a single depth-1 chain (`[component]`) today, so this is a ONE-element
-    // vector == distinct_components; it is shaped per-depth for the forward multi-depth WHERE
-    // tree (namespace ▸ service ▸ instance) that the collapse's prefix-truncation coarsens.
+    // invariant: entry d is the distinct count of WHERE prefixes truncated to depth d+1, coarsest
+    // first.
+    // invariant: one element today, because the WHERE axis is a single depth-1 chain.
     std::vector<std::uint64_t> where_cardinality_per_depth;
 
-    // P_closed — the cube's condensed cell count (the collapse guardrail's budget trigger). Read
-    // off the closed cube (built before this block); a pure integer function of the window (§16.9).
-    // The combinatorial upper bound ∏|dimᵢ| is DERIVABLE (level × distinct_components × role), so
-    // it is not stored — the per-dimension factors above are the richer, non-redundant signal.
+    // invariant: the closed cube's condensed cell count, read off the cube built before this block.
+    // invariant: the combinatorial bound is derivable from the per-dimension factors and is
+    // therefore not stored.
     std::uint64_t closed_cells{0};
 
-    // ── Span-native acquisition facts (ADR-29, SRC-D-OTEL-13) — the LICENCE
-    // ── Raw, threshold-free integer facts the eidos trace-vocabulary classifiers read to decide
-    // whether to speak trace vocabulary (span_records > 0). span_records = span events observed
-    // this window; orphan_parent_edges = spans whose declared parent did not resolve to a template
-    // in the window (evicted past max_active_spans / straddled the boundary) — counted, never
-    // guessed (SRC-D-OTEL-11). Both 0 for a non-span window (additive; a non-OTEL doc is
-    // unchanged).
+    // invariant: raw threshold-free counts; span_records > 0 is what licenses trace vocabulary.
+    // invariant: orphan_parent_edges counts spans whose declared parent did not resolve in the
+    // window -- counted, never guessed.
+    // invariant: both 0 for a non-span window.
+    // refs: SRC-D-OTEL-13, SRC-D-OTEL-11
     std::uint64_t span_records{0};
     std::uint64_t orphan_parent_edges{0};
-    // O4b Span Links (SRC-D-OTEL-9): declared cross-trace LINK targets that did not resolve to a
-    // span in this window (a cross-ROUTE link the aligned-path pooling grain hid, or an external
-    // target) — counted, never guessed, SIBLING to orphan_parent_edges (same SRC-D-OTEL-11
-    // discipline). The declared-error-model fact: the artifact says how much link topology it could
-    // not see, so a consumer (or the streaming stitch, §5.2) tells "no cross-route links" apart
-    // from "existed but the segmentation grain hid them". 0 for a window with no unresolved links.
+    // invariant: declared cross-trace LINK targets that did not resolve in this window -- counted,
+    // never guessed, and sibling to orphan_parent_edges.
+    // invariant: 0 for a window with no unresolved links.
+    // refs: SRC-D-OTEL-9, SRC-D-OTEL-11
     std::uint64_t orphan_link_edges{0};
 
     [[nodiscard]] bool operator==(const AcquisitionBlock&) const noexcept = default;
 };
 
-// ── O4b service edge (ADR-29, SRC-D-OTEL-21)
-// ──────────────────────────────────── The one legitimately-cubeable OTEL dimension, DISTILLED: the
-// observed span tree projected to (caller_service → callee_service) at COMPONENT granularity
-// (bounded by topology², service.name is the low-card WHERE tier), derived at close time in
-// resolve_span_edges. NOT a cube Dim (an edge is a per-PAIR fact with no per-event value — a cube
-// coordinate would fake a joint); NOT folded into top_ngrams (component-pair vs template-bigram are
-// different key spaces). It is its own additive, flag-gated block with its own diff
-// (SRC-D-OTEL-21). Deterministic: integer weights, sorted canonical (caller, callee) byte order, no
-// float.
+// invariant: the observed span tree projected to (caller_service -> callee_service) at component
+// granularity, derived at close time.
+// invariant: its own additive flag-gated block with its own diff -- not a cube dimension and not
+// folded into top_ngrams.
+// invariant: integer weights in sorted canonical (caller, callee) byte order, no float.
+// refs: ADR-29.D2, SRC-D-OTEL-21
 struct ServiceEdge
 {
-    std::string caller;      // caller_component = the PARENT span's service.name
-    std::string callee;      // callee_component = the CHILD span's service.name
-    std::uint64_t weight{0}; // observed parent→child edges at this component pair this window
+    // invariant: the PARENT span's service.name.
+    std::string caller;
+    // invariant: the CHILD span's service.name.
+    std::string callee;
+    // invariant: observed parent-to-child edges at this component pair this window.
+    std::uint64_t weight{0};
     [[nodiscard]] bool operator==(const ServiceEdge&) const noexcept = default;
 };
 
-// The window's distilled service topology (SRC-D-OTEL-21). Present iff the window had trace
-// substrate (span_records > 0) — a non-span window OMITS the block (absence = *unknown*, not "no
-// edges": the edge-block diff requires the block on BOTH sides, SRC-D-OTEL-20). Self-edges are
-// excluded at derivation (same-component parentage is intra-service, not topology). `edges` is
-// sorted by (caller, callee) and bounded to the top `max_service_edges` by weight (canonical-key
-// tie-break); `dropped_edges` counts those beyond the cap — the honest truncation fact.
+// invariant: present iff the window had trace substrate; a non-span window OMITS the block, and
+// that absence reads unknown rather than no edges.
+// invariant: self-edges are excluded at derivation.
+// invariant: edges are sorted by (caller, callee) and bounded to max_service_edges by weight with a
+// canonical-key tie-break; dropped_edges counts those beyond the cap.
+// refs: SRC-D-OTEL-21, SRC-D-OTEL-20
 struct ServiceEdgeBlock
 {
     std::vector<ServiceEdge> edges;
@@ -556,115 +442,89 @@ struct ServiceEdgeBlock
     [[nodiscard]] bool operator==(const ServiceEdgeBlock&) const noexcept = default;
 };
 
-// ── Composed-ruleset identity (SRC-II-7, ADR-17)
-// ───────────────────────────────────────────────────── The identity of the semantic ruleset that
-// SEGMENTED this document — the comparability key. Rides every MetaLogDocument as an ADDITIVE,
-// flag-gated block (the reservoir_delta/AcquisitionBlock discipline): no wire-version bump, and
-// ABSENCE = a legacy producer (composed before the ruleset was wired). Two documents are comparable
-// (aligned/intent AND template-grain) iff their semantic_identity matches; on mismatch the consumer
-// re-segments where raw inputs exist, refuses otherwise — never a silent compare (SRC-II-7
-// verbatim).
+// invariant: the identity of the semantic ruleset that SEGMENTED this document -- the comparability
+// key.
+// invariant: an additive flag-gated block, so absence means a legacy producer and no wire version
+// moves.
+// invariant: two documents are comparable iff their semantic_identity matches; on mismatch the
+// consumer re-segments where raw inputs exist and refuses otherwise, never compares.
+// refs: SRC-II-7, ADR-17.D3
 struct RulesetPackageRef
 {
-    std::string name;    // "github"
-    std::string version; // "1.0.0"
+    std::string name;
+    std::string version;
     [[nodiscard]] bool operator==(const RulesetPackageRef&) const noexcept = default;
 };
 
 struct RulesetIdentity
 {
-    // The composed content hash rendered hex (insight::semantic::ComposedSemantics::identity_hex) —
-    // the KEY. A content hash over the actual composed rows, not a hand-bumped label (§4.1).
+    // invariant: the composed content hash over the actual composed rows, and the KEY.
     std::string semantic_identity;
-    // The composed package set, for LEGIBILITY (an operator reads what vocabulary the report
-    // understood). The hash is the key; this list is the label. Canonical (package-sorted) order.
+    // invariant: the composed package set, in canonical package-sorted order, for legibility only
+    // -- the hash is the key.
     std::vector<RulesetPackageRef> packages;
     [[nodiscard]] bool operator==(const RulesetIdentity&) const noexcept = default;
 };
 
-// ── Per-run transport declaration (ADR-23) ─────────────────────
-//
-// WHICH delivery layers the declarer said wrap this run's lines. DISCLOSURE, never evidence: canon
-// knows transports and deduces nothing, so a reader learns what was DECLARED — a wrong declaration
-// stays wrong and the declarer owns it, with nothing announcing it (ADR-23.D2). Nothing here
-// licenses a comparability statement across transport; ADR-23.D6 owns that claim and keeps it
-// closed.
-//
-// It is NOT identity and NOT a comparability gate: the transform GRAMMAR (the catalogue) enters
-// `semantic_identity`, the per-run declaration does not, and two runs ± a declared transform MUST
-// carry the same identity or transport-invariance is only being asserted (ADR-23.D4). So this
-// block gates nothing on compose/diff — it rides the document as a namespaced §7 extension member.
+// invariant: which delivery layers the declarer said wrap this run's lines. DISCLOSURE, never
+// evidence: a wrong declaration stays wrong and the declarer owns it.
+// invariant: not identity and not a comparability gate -- the transform GRAMMAR enters
+// semantic_identity and the per-run declaration does not.
+// invariant: nothing here licenses a comparability statement ACROSS transport.
+// refs: ADR-23.D2, ADR-23.D4, ADR-23.D6
 struct TransportDeclaration
 {
-    // ORDERED, outside-in — the order the delivery layers were applied, mirroring
-    // `insight::transport::IngestDeclaration::stack`. EMPTY means "nothing was declared", which is
-    // a fact about the run and is NOT the same as the member being absent.
+    // invariant: ordered outside-in, the order the delivery layers were applied.
+    // invariant: empty means nothing was declared, which is a fact about the run and not the same
+    // as the member being absent.
     std::vector<std::string> names;
-    // The catalogue those names resolve against. Not decoration: a catalogue row rename is a
-    // comparability event (ADR-23.D3), so a name recorded without its catalogue version is
-    // unresolvable by a later reader — and recording an unresolvable name is worse than recording
-    // nothing. Defaults to the canon-owned constant for `canonicalization_version`'s reason: the
-    // names and the catalogue that resolves them live together in canon, so a producer cannot
-    // record a name against a catalogue it did not analyze under.
+    // invariant: the catalogue the names resolve against; a name recorded without its catalogue
+    // version is unresolvable by a later reader.
+    // refs: ADR-23.D3
     std::string catalog_version{insight::transport::kTransportCatalogVersion};
     [[nodiscard]] bool operator==(const TransportDeclaration&) const noexcept = default;
 };
 
-// ── Cube (SPEC §16) ────────────────────────────────────────────
-//
-// Intra-window joint categorical condensation: a CLOSED cube over a small, fixed
-// set of low-card categorical axes (level × structural_role × where-chain). An
-// attributor/projector, not a detector — given events already marked interesting
-// elsewhere, it answers "what is the smallest conjunction characterising them".
-// ALWAYS emitted (1.7.2) and permanently in the canonicalization_version comparability
-// contract; its cardinality is bounded by the per-window collapse guardrail (§C). Never
-// the source of truth for any 1-D marginal.
-
-// One axis descriptor (§16.2). kind=="categorical" is a flat low-card category
-// (cell value = a string); kind=="chain" is a single-parent roll-up hierarchy
-// (§16.3) carrying its ordered chain levels (coarsest first) + the frozen
-// floor_depth (cell value = an ordered prefix-path array).
+// invariant: kind categorical is a flat low-card category; kind chain is a single-parent roll-up
+// hierarchy carrying its ordered levels coarsest first plus a frozen floor_depth.
 struct CubeAxis
 {
-    std::string name;                              // "level" | "structural_role" | "where"
-    std::string kind;                              // "categorical" | "chain"
-    std::optional<std::vector<std::string>> chain; // chain only: ordered levels, coarsest first
-    std::optional<std::uint32_t> floor_depth;      // chain only: retained depth (≤ len(chain));
-                                                   // a WHERE-tree axis coarsened by the collapse
-    // guardrail (§C) carries its truncated depth here
-    // (< full ⇒ prefix-truncated; 0 ⇒ axis dropped).
-    // Per-window collapse depth for an ORDINAL axis (level): the number of lowest-severity
-    // levels merged into one band from the bottom (§C3 interval-banding), NEVER across the
-    // ERROR/FATAL frontier. Absent / 0 ⇒ no banding. Two cubes compare only at equal collapse
-    // (same floor_depth AND band_floor) — the axes carry the collapse so a mismatch is detectable.
+    // invariant: one of level, structural_role or where.
+    std::string name;
+    // invariant: either categorical or chain.
+    std::string kind;
+    // invariant: chain axes only -- the ordered chain levels, coarsest first.
+    std::optional<std::vector<std::string>> chain;
+    // invariant: chain axes only -- the retained depth; below the full depth the axis is
+    // prefix-truncated, and 0 means the axis was dropped.
+    std::optional<std::uint32_t> floor_depth;
+    // invariant: for an ORDINAL axis, how many lowest-severity levels the window merged into one
+    // band from the bottom, NEVER across the ERROR/FATAL frontier.
+    // invariant: absent or 0 means no banding; two cubes compare only at equal floor_depth AND
+    // band_floor, so the axes carry the collapse and a mismatch is detectable.
     std::optional<std::uint32_t> band_floor;
     [[nodiscard]] bool operator==(const CubeAxis&) const noexcept = default;
 };
 
-// A cell coordinate (§16.4), generic over axes. An ABSENT axis means aggregated
-// (`*`). The §16.2 reference axes are fixed (level, structural_role, where), so
-// the coord is the three optional keys; a future axis is one more optional field
-// (the wire object is open over axis names). A `categorical` value is a string; a
-// `chain` value (`where`) is an ordered prefix-path array (`[i]` = chain level i).
+// invariant: an ABSENT axis key means aggregated; the wire object is open over axis names.
+// invariant: a categorical value is a string and a chain value is an ordered prefix path.
 struct CubeCoord
 {
-    std::optional<std::string> level;              // categorical: severity
-    std::optional<std::vector<std::string>> where; // chain: WHERE prefix-path
-    std::optional<std::string> structural_role;    // categorical: KIND-FRAMING marker
-    // Ordinal differential axis, DIFF-TIME ONLY (cube_differential_axes.md §4): the scale-relative,
-    // SIGNED, polarity-MUTE latency (DurationLog2Ns) shift band a component's distribution crossed
-    // into — "up_low"|"up_med"|"up_high" (higher/slower) or "down_low"|"down_med"|"down_high"
-    // (lower/faster). The sign is oriented previous→current (read the MetaLogDiff previous/current
-    // stamp): up = current shifted higher than previous. metalog does NOT judge good/bad — the
-    // reading layer (eidos) maps up→regression, down→recovery. Present ONLY on a cube_diff
-    // emerging-border cell whose component shifted (either direction); ALWAYS absent on a stored
-    // cube cell (SHIFT_NONE is the aggregated baseline, never pinned) — the wire object stays open
-    // over axis names.
+    // invariant: categorical -- the severity.
+    std::optional<std::string> level;
+    // invariant: chain -- the WHERE prefix path, entry i being chain level i.
+    std::optional<std::vector<std::string>> where;
+    // invariant: categorical -- the kind-framing marker.
+    std::optional<std::string> structural_role;
+    // invariant: the signed, polarity-MUTE latency shift band a component crossed into, oriented
+    // previous to current; metalog does not judge good or bad.
+    // invariant: present ONLY on a cube_diff emerging-border cell whose component shifted, and
+    // always absent on a stored cube cell.
     std::optional<std::string> latency_shift;
     [[nodiscard]] bool operator==(const CubeCoord&) const noexcept = default;
 };
 
-// One closed cell: its coordinate + the distributive COUNT measure (integer).
+// invariant: one closed cell -- its coordinate plus the distributive integer COUNT measure.
 struct CubeCell
 {
     CubeCoord coord;
@@ -672,16 +532,13 @@ struct CubeCell
     [[nodiscard]] bool operator==(const CubeCell&) const noexcept = default;
 };
 
-// '*' sentinel for a CubeBaseRow's component_id (the empty-component / aggregated-WHERE joint).
-// Numeric max, identical to the cube's internal kStar, so a retained base and a freshly-interned
-// base agree bit-for-bit.
+// invariant: the aggregated-WHERE sentinel for a base row's component_id, numerically identical to
+// the cube's internal star so a retained and a re-interned base agree.
 inline constexpr std::uint32_t kStarComponent{std::numeric_limits<std::uint32_t>::max()};
 
-// One retained interned base joint (DOMAIN-ONLY, never serialised — see CubeBlock::base). The
-// per-(level, component, role) observation the closed cube was built from, with `component_id`
-// an index into CubeBlock::base_component_dict (kStarComponent = empty component). `level` is
-// already cube-normalised (Unknown→Info). Carried so compose()/diff() read the base instead of
-// recover_base-ing it per op.
+// invariant: one retained interned base joint, domain-only and never serialised.
+// invariant: component_id indexes CubeBlock::base_component_dict, and level is already
+// cube-normalised.
 struct CubeBaseRow
 {
     LogLevel level{LogLevel::Info};
@@ -691,38 +548,34 @@ struct CubeBaseRow
     [[nodiscard]] bool operator==(const CubeBaseRow&) const noexcept = default;
 };
 
-// The closed cube block (§16.1). `cells` is the condensed (closed) representation
-// in canonical coord-sorted order; the closure regenerates every non-closed cell
-// losslessly. `cell_count`/`raw_cell_count` expose the collapse rate (condensation
-// measure) the closure achieved. floor_saturation is a degenerate health metric at
-// floor_depth=1 (a diff-time concept) and is intentionally omitted.
+// invariant: an intra-window CLOSED cube over low-card categorical axes; an attributor and
+// projector, never a detector and never the source of truth for a 1-D marginal.
+// invariant: always built for a raw window and permanently inside the canonicalization_version
+// comparability contract.
+// invariant: cells is the condensed closed representation in canonical coord-sorted order,and the
+// closure regenerates every non-closed cell losslessly.
+// invariant: cell_count over raw_cell_count is the condensation the closure achieved.
+// refs: F-SRC-metalog-spec:SPEC.md
 struct CubeBlock
 {
     std::vector<CubeAxis> axes;
     std::vector<CubeCell> cells;
-    std::uint64_t cell_count{0};     // number of closed cells emitted
-    std::uint64_t raw_cell_count{0}; // raw (pre-closure) populated-cell count
-    // SPEC §16.10 `cube.cell_budget` — the STATIC producer constant the per-window collapse
-    // bounds `cells` by. It dominates every other term of the §11.3 envelope formula, so an
-    // undeclared budget leaves a consumer unable to price the block at all. Stamped by the
-    // bounded-cube builder (cube.cpp), which is the one place that both owns the budget and
-    // enforces it; optional so a hand-built CubeBlock declares nothing rather than declaring
-    // a budget of zero (the schema's minimum is 1).
+    std::uint64_t cell_count{0};
+    std::uint64_t raw_cell_count{0};
+    // invariant: the STATIC producer cell budget the per-window collapse bounds cells by.
+    // invariant: it dominates every other term of the envelope formula, so an undeclared budget
+    // leaves a consumer unable to price the block.
+    // invariant: disengaged rather than zero on a hand-built cube -- the schema's minimum is 1.
     std::optional<std::uint64_t> cell_budget;
 
-    // DOMAIN-ONLY (in-memory), NEVER serialised — the wire `dto::CubeBlock` (serialize.cpp) omits
-    // both, so the wire format is structurally unchanged ("stores closed cells, not base" is a
-    // WIRE invariant, not violated). The interned base + its sorted component dictionary the cube
-    // was built from, retained so compose_cubes/cube_diff_of read the base directly instead of
-    // recover_base-ing it from the closed cells every op (the §13 re-closure perf lever). Immutable
-    // after construction (emitted atomically with `cells`). Empty on a cube that did not retain it
-    // (e.g. parsed from the wire) → compose/diff fall back to recover_base. A pure cache of the
-    // closed cells (their lossless inverse) ⇒ EXCLUDED from operator== (two cubes with equal closed
-    // cells are equal whether or not the cache is populated).
+    // invariant: domain-only and never serialised, so the wire format is unchanged.
+    // invariant: the interned base plus its sorted component dictionary, immutable after
+    // construction; empty on a cube that did not retain it, and compose/diff then recover it.
+    // invariant: a pure cache of the closed cells, so it is excluded from equality.
     std::vector<CubeBaseRow> base;
     std::vector<std::string> base_component_dict;
 
-    // Identity is the wire-relevant state only; the retained base is a derived cache (above).
+    // invariant: identity is the wire-relevant state only; the retained base is a derived cache.
     [[nodiscard]] bool operator==(const CubeBlock& other) const noexcept
     {
         return axes == other.axes && cells == other.cells && cell_count == other.cell_count &&
@@ -730,8 +583,7 @@ struct CubeBlock
     }
 };
 
-// The cardinality axes (level, component, role) — index into CubeCardinalityStat::per_axis.
-// (Distinct from the axis-descriptor `CubeAxis` above — this is the monitor's per-axis index.)
+// invariant: the monitor's per-axis index, distinct from the axis descriptor CubeAxis.
 enum class CardinalityAxis : std::uint8_t
 {
     Level = 0,
@@ -739,35 +591,26 @@ enum class CardinalityAxis : std::uint8_t
     Role = 2
 };
 
-// §13 cardinality monitor (cube_perf_and_collapse.md C2) — the cube's distinct-value counts. A
-// PURE function of the closed cube (`cube_cardinality()`), **observability only**: never feeds the
-// deterministic content stream. The pre-collapse WARN thresholds (kComponentWarn/kCellsWarn) were
-// RETIRED (ADR-18 / studies/005 disposition-D): they predate dimensional collapse and fired on a
-// standalone threshold decoupled from the actual collapse trigger (cell_count > kCubeCellBudget).
-// The WARN now fires WHEN a collapse is APPLIED (`collapse_note()`, emitted by the eidos pipeline).
-// These are the raw counts (the breakdown that annotates that WARN + the acquisition
-// cardinalities); kCellsHard remains the documented cube bound (= the cube.cpp collapse budget,
-// asserted by tests).
+// invariant: a pure function of the closed cube, for observability only -- it never feeds the
+// deterministic content stream.
+// invariant: kCellsHard is the cube.cpp collapse budget, asserted by tests.
 struct CubeCardinalityStat
 {
     static constexpr std::size_t kAxisCount{3};
     static constexpr std::uint64_t kCellsHard{
-        4096}; // the collapse budget; the cube never exceeds it
+        // invariant: the collapse budget; the cube never exceeds it.
+        4096};
 
-    std::uint64_t cells{0};                           // closed cell count
-    std::array<std::uint32_t, kAxisCount> per_axis{}; // distinct [level, component, role]
+    std::uint64_t cells{0};
+    // invariant: distinct values per axis, indexed by CardinalityAxis.
+    std::array<std::uint32_t, kAxisCount> per_axis{};
 };
 
-// ── The failure frontier — ONE spelling, and it is this one ─────────────────────────────────
-// A level is "in failure" iff it is Error or Fatal. `Unknown` sorts ABOVE `Fatal` numerically but
-// is NOT a failure, so this is an explicit membership test, never a `>= Error` compare — the trap
-// the two former copies both wrote out in prose and would both have had to keep writing.
-//
-// EXPORTED rather than TU-local (DN-64.D3 row 6): the predicate was spelled twice, once here in
-// `diff.cpp`'s anonymous namespace and once as `is_error_class` in eidos' Sift, and the two halves
-// of ONE report deciding "failure" differently would split a single crossing between "escalation"
-// and "no crossing". They agreed at the moment they were found; that is what made it the row to
-// rip rather than the row to panic about.
+// invariant: a level is in failure iff it is Error or Fatal. Unknown sorts numerically ABOVE Fatal
+// and is NOT a failure, so this is a membership test and never a >= Error compare.
+// invariant: exported rather than TU-local, so the two halves of one report cannot decide failure
+// differently.
+// refs: DN-64.D3
 [[nodiscard]] constexpr bool is_failure_level(LogLevel level) noexcept
 {
     return level == LogLevel::Error || level == LogLevel::Fatal;
@@ -777,50 +620,38 @@ struct CubeCardinalityStat
     return level.has_value() && is_failure_level(level->value());
 }
 
-// The full scale of `ReservoirEntry::salience` — the PRODUCER'S bound, exported because it is the
-// producer's fact and two consumers were each spelling their own `10000.0` literal to divide by
-// (DN-64.D3: "a stale copy waiting" — move a rung on either ladder and both copies keep dividing
-// by the old scale, silently, in the direction nobody checks). It is the product of the two
-// ladders `salience_score` multiplies, max severity band ⊗ max rarity modulation, and salience.cpp
-// static_asserts it against those two rungs — so the number here cannot drift from the ladder that
-// defines it.
+// invariant: the full scale of ReservoirEntry::salience -- the PRODUCER's bound, exported so no
+// consumer spells its own literal to divide by.
+// invariant: the product of the two ladders salience_score multiplies, static_asserted in
+// salience.cpp against those rungs.
+// refs: DN-64.D3
 inline constexpr std::uint32_t kSalienceFullScale{10000U};
 
-// WHICH axis retained a template — the argmax of the soft max `salience_score` takes over its five
-// peer axes. The score is `severity ⊗ rarity` and severity is `max(level-band, terminator-band,
-// failure-cue-band, structural_surprise, novelty)`; before DN-64.D3 row 3 the argmax was computed
-// at that max and thrown away, so every consumer re-derived it from the two ORDINALS a document
-// publishes (`structural_surprise`, `novelty`) — two of the three inputs. That re-derivation is
-// structurally unable to name the level, terminator or failure-cue arms, so a success message
-// retained by ONE lexicon word reported itself as "retained by salience", with no axis.
-//
-// THE VERDICT CROSSES, NOT THE INPUTS. Publishing the third ordinal instead would reproduce the
-// same truncated argmax one hop later, in every consumer, forever.
+// invariant: WHICH axis retained a template -- the argmax of the soft max salience_score takes over
+// its five peer axes, stamped where the max is taken.
+// invariant: the two published ordinals are two of three severity inputs, so a consumer re-deriving
+// the argmax from them cannot name the level, terminator or failure-cue arms.
+// refs: DN-64.D3
 enum class RetentionAxis : std::uint8_t
 {
-    Level,              // the dominant_level's severity band (Warn / Error / Fatal)
-    FailureCue,         // the LEVEL-BLIND token-lexicon tier (§3.1 SRC-D-PROV-1)
-    Terminator,         // the declared structural failure marker (e.g. `##[error]`)
-    StructuralSurprise, // the STRUCTURE axis: reached only via a rare incoming transition
-    Novelty             // the TIME axis: first seen late within the window
+    // invariant: the dominant_level's severity band.
+    Level,
+    // invariant: the LEVEL-BLIND token-lexicon tier.
+    // refs: SRC-D-PROV-1
+    FailureCue,
+    // invariant: the declared structural failure marker.
+    Terminator,
+    // invariant: the STRUCTURE axis -- reached only via a rare incoming transition.
+    StructuralSurprise,
+    // invariant: the TIME axis -- first seen late within the window.
+    Novelty
 };
 
-// The axis NAMES, owned here beside the enumerators they name — the same reason `to_string`
-// exists for OrdinalShift above. Sift spelled this table itself, in another repo, for its
-// salience-memory trace: a rename here would have left that copy naming an axis that no longer
-// exists, and nothing would have said so (the build carries no -Wall, so the second switch's
-// missing case is not even a warning on the gcc leg).
-//
-// THE ABSENT AXIS IS NOT THIS FUNCTION'S BUSINESS. `retention_axis` is a `std::optional`, and a
-// disengaged one is a CONTRACT — an entry no salience computation produced has no argmax
-// (DN-64.D6) — so the word a consumer prints for it belongs to that consumer's own absence
-// vocabulary, not to the enum. Hence the parameter is the plain enum: a caller holding the
-// optional decides what absence reads as.
-//
-// The tail below is reachable only for a value that is no enumerator at all, which the fixed
-// `std::uint8_t` underlying type makes representable. No first-party path can mint one — the
-// field is off the wire (nothing deserialises it) and `salience_score` is its only producer — so
-// the tail names the state instead of guessing an axis, and stays distinct from any absence word.
+// invariant: the parameter is the plain enum, so a caller holding the optional owns the word
+// absence reads as.
+// invariant: the tail names the not-an-axis state rather than guessing, and stays distinct from any
+// absence word.
+// refs: DN-64.D6
 [[nodiscard]] inline std::string_view to_string(RetentionAxis axis) noexcept
 {
     switch (axis)
@@ -839,117 +670,64 @@ enum class RetentionAxis : std::uint8_t
     return "<not-an-axis>";
 }
 
-// Salience Reservoir entry (Tier 2). A template
-// retained by intrinsic SALIENCE rather than frequency — where a rare-but-severe
-// event (a lone fatal) survives the bounded fingerprint instead of collapsing
-// into the tail. Self-describing: carries why it was kept (salience + the inputs)
-// so a consumer/explainer can attribute it. Disjoint from top_k (a template here
-// did NOT make top_k by frequency); excluded from the tail residual.
+// invariant: a template retained by intrinsic SALIENCE rather than frequency, disjoint from top_k
+// and excluded from the tail residual.
+// invariant: self-describing -- it carries the salience and its inputs, so a consumer can attribute
+// the retention.
+// refs: ADR-31.D8
 struct ReservoirEntry
 {
-    // SRC-D-TIR-5 — see metalog.api.cppm (TemplateRegistry) for the contract. Local: same shape as
-    // TopKEntry.
+    // invariant: the same content-hash POD as TopKEntry's.
+    // refs: SRC-D-TIR-5
     TemplateId template_id;
     std::uint64_t count{0};
     double frequency{0.0};
-    // DN-32.D3 — the level AND its provenance, as one value (canon `EventLevel`). DECLARED
-    // means at least one observation at this level came from a position whose MEANING is the
-    // level; otherwise it is canon's content inference, and a downstream claim resting on it
-    // carries an error term a declared one does not.
-    //
-    // THE PROVENANCE HALF IS DOMAIN-ONLY, NEVER SERIALISED — the wire row still carries the
-    // level string alone (serialize.cpp), so the MetaLog spec and every document byte are
-    // untouched. That is affordable because nothing deserialises a MetaLogDocument: this
-    // package exposes `to_json` and no inverse, so a document only ever reaches a consumer
-    // in-process, with the marker intact. The day an inverse exists, this field is a spec
-    // question and not a local edit — and it would fail SAFE (absent = inferred = the
-    // under-claiming direction), which is why the default is spelled that way.
+    // invariant: the level AND its provenance; DECLARED means at least one observation carried the
+    // level in a position whose meaning is the level.
+    // invariant: the provenance half is domain-only and never serialised.
+    // refs: DN-32.D3
     std::optional<EventLevel> dominant_level;
-    // The template's dominant functional source (canon `component`) — the WHERE
-    // *label* (SRC-D-WHERE-2), mirroring TopKEntry. Populated independent of the cube,
-    // always; EMPTY when the format carried no component. Distinct from `cube_coord`
-    // (the §16.6 LOCATION cross): this is the cube-independent carrier the Sift WHERE
-    // rides.
+    // invariant: the template's dominant canon component -- the WHERE label, populated
+    // independently of the cube and disengaged when the format carried no component.
+    // invariant: distinct from cube_coord, which is the cube's LOCATION cross.
+    // refs: SRC-D-WHERE-2
     std::optional<std::string> dominant_component;
     StructuralRole structural_role{StructuralRole::None};
-    // Structural-surprise band (0..100): how off-path this template is, derived
-    // from the lowest-probability incoming transition in the behavior graph. >0
-    // means the template was reached only via a rare transition off the dominant
-    // path — the axis that retains a benign-but-anomalous event (an Info "took
-    // alternate cache path") that severity⊗rarity alone would drop. Attribution:
-    // a nonzero value here on a non-severe entry explains the retention.
+    // invariant: a 0..100 band derived from the lowest-probability incoming transition in the
+    // behaviour graph; above 0 the template was reached only off the dominant path.
     std::uint32_t structural_surprise{0};
-    // Self-novelty band (0..100): how late this template first appeared within the
-    // document's own span (first-seen position over lines_observed). >0 means it
-    // EMERGED during the window (recurring, count >= 2) rather than being present
-    // from the start — the axis that retains a benign template that just started
-    // happening (a new Info line) which severity/structure would drop. Self-relative
-    // (I3), re-derivable on compose() from merged provenance; NOT "absent from a
-    // baseline" (that is consumer-side diff / the pyramid's multi-horizon novelty).
+    // invariant: a 0..100 band over the first-seen position within this document's own span; above
+    // 0 the template emerged during the window rather than being present from the start.
+    // invariant: self-relative and re-derivable on compose from merged provenance -- never absence
+    // from a baseline.
     std::uint32_t novelty{0};
-    // Quantized salience score (deterministic, integer; I5). Higher = more
-    // salient. (severity ⊕ structural_surprise ⊕ novelty) ⊗ rarity, where severity
-    // folds level · failure-lexicon · structural_role.
+    // invariant: the quantized integer salience, higher meaning more salient.
     std::uint32_t salience{0};
-    // WHICH of the five peer axes won that max (DN-64.D3 row 3) — stamped where the max is taken
-    // (`salience_score`), never re-derived downstream.
-    //
-    // DOMAIN-ONLY, NEVER SERIALISED, on the DN-32.D3 precedent above: the wire row carries the
-    // salience number alone, so the MetaLog spec and every document byte are untouched. Nothing
-    // deserialises a MetaLogDocument (this package exposes `to_json` and no inverse), so a document
-    // only ever reaches a consumer in-process with the verdict intact.
-    //
-    // OPTIONAL, and the absence is a real third state rather than a defensive default: an entry
-    // that no salience computation produced (a hand-built document, a fixture) has no argmax to
-    // report, and the honest reading is "this entry does not say", not a fabricated `Level`. It
-    // fails SAFE — a consumer with no axis falls back to the un-attributed narrative it already
-    // had, which is the under-claiming direction.
-    //
-    // NO PRODUCED DOCUMENT REACHES THE DISENGAGED STATE, and that is a fact about a CLOSED
-    // PRODUCER SET, not a property of the type. Exactly two sites in this package fill a reservoir
-    // entry — `close_window`'s candidate collection (engine.cpp) and compose's reservoir
-    // re-derivation (compose.cpp) — and each admits a candidate only under
-    // `salience_score(...).score > 0`, which is the same predicate under which
-    // `SalienceVerdict::axis` is engaged. So the axis is present on every entry either one emits,
-    // and a consumer that meets an absent one today is reading a document nobody in this package
-    // built.
-    //
-    // The state is nevertheless the field's, not a placeholder, because that set is closed only
-    // over the paths that exist NOW. The field is DOMAIN-ONLY (above): nothing deserialises a
-    // document, so the first inbound path — a reader, a replayed fixture, a cross-process
-    // document — mints entries no salience computation produced, and needs somewhere to put them.
-    // A non-optional field would have that path stamp `Level` on an entry it knows nothing about,
-    // which is the fabrication this whole verdict exists to stop.
+    // invariant: the retention argmax stamped where the max is taken, never re-derived downstream.
+    // invariant: domain-only and never serialised.
+    // invariant: disengaged is a real third state -- an entry no salience computation produced has
+    // no argmax, and the honest reading is that this entry does not say.
+    // invariant: every entry this package emits engages it, because both filling sites admit a
+    // candidate only under a positive salience score, which is when the verdict is engaged.
+    // refs: DN-64.D3, DN-64.D6
     std::optional<RetentionAxis> retention_axis;
-    // §15.4 sub-coordinate (guarantee-2 aid): the reconciled first-seen ordinal of
-    // this template within the window (== Bucket::first_seen_index), bounded by the
-    // reservoir size. Populated only when a re-derivation coordinate is configured;
-    // a reservoir entry is a canon artifact, so locating its raw needs raw-recovery
-    // (§15.1-1) then re-canonicalization (§15.1-2). Never a per-line coordinate.
+    // invariant: the reconciled first-seen ordinal of this template within the window, bounded by
+    // the reservoir size; populated only when a re-derivation coordinate is configured.
+    // invariant: never a per-line coordinate.
     std::optional<std::uint64_t> within_window_ordinal;
-    // §16.6 reservoir→cell cross — LOCATION-only (`level` + `where`-path), read-only,
-    // one-way (cube geometry → item location): restores the WHERE of a salient template
-    // the (capped) emerging border never surfaced. A PURE FUNCTION of the entry's
-    // (dominant level, dominant component); carries NO salience back into the cube and
-    // never re-ranks a cell or the border. Always populated (the cube is always built).
-    // `structural_role` is intentionally left unset — the
-    // cross is LOCATION (severity + where), not the full cube cell.
+    // invariant: the LOCATION cross into the cube -- level plus WHERE path only, read-only and
+    // one-way, so it carries no salience back and never re-ranks a cell or the border.
+    // invariant: a pure function of the entry's dominant level and component; structural_role is
+    // deliberately left unset.
     std::optional<CubeCoord> cube_coord;
-    // DN-50.D4 presence churn, exactly as on TopKEntry — the declared horizon is
-    // `top_k UNION reservoir`, so a reservoir row is inside the measurand and must fold like any
-    // other retained row.
-    //
-    // DOMAIN-ONLY, NEVER SERIALISED, and for a reason that is not the DN-32.D3 precedent next door:
-    // SPEC section 7's placement table grants the `extensions` container at `stats.top_k[]` and at
-    // the document root, and NOT at `stats.reservoir[]`. A row extension here would be a bare
-    // vendor member at an ungranted placement — an issue on `metalog-spec`, never a member written
-    // locally. The document-root summary covers these rows and DECLARES that it does, through its
-    // `horizon`. Nothing deserialises a MetaLogDocument (this package exposes `to_json` and no
-    // inverse), so a document only ever reaches `compose()` in-process with the element intact.
+    // invariant: presence churn exactly as on TopKEntry -- the declared horizon is top_k UNION
+    // reservoir, so a reservoir row folds like any other retained row.
+    // invariant: domain-only, because the specification grants the extensions container at
+    // stats.top_k[] and at the document root and NOT at stats.reservoir[].
+    // refs: DN-50.D4, F-SRC-metalog-spec:SPEC.md
     PresenceChurn presence_churn{};
 };
 
-// Per-node branching statistics (MetaLog SPEC §4.2).
 struct BranchingEntry
 {
     TemplateId template_id;
@@ -958,23 +736,14 @@ struct BranchingEntry
     double entropy_bits{0.0};
 };
 
-// Compact "shape of the long tail" summary (SPEC §3.6, MetaLog 0.3).
-// Three-field block exposing how concentrated and how loud the tail is,
-// without expanding `top_k`. Adds ~60 bytes/window.
-//
-// * tail_template_count: number of distinct templates strictly below
-//   top_k (== StatsBlock::tail_unique; duplicated for spec-conformant
-//   self-contained block).
-// * tail_entropy_bits: Shannon entropy in bits over the row-normalised
-//   tail distribution (p_i = count_i / Σ count_j for j ∈ tail).
-//   Collapses toward 0 when one template dominates the tail.
-// * tail_max_rate: max(count_i)/lines_observed across the tail.
-//   Catches a single emerging template growing inside the tail while
-//   never breaching top_k.
-//
-// All three fields are REQUIRED when the block is present (atomic
-// emission). Producers MUST either emit all three or omit the block
-// entirely.
+// invariant: the bounded shape of the long tail -- how concentrated and how loud it is, without
+// expanding top_k.
+// invariant: tail_entropy_bits is the Shannon entropy over the row-normalised tail, and collapses
+// toward 0 when one template dominates it.
+// invariant: tail_max_rate is the loudest tail template's share of lines_observed.
+// invariant: all three fields are REQUIRED when the block is present -- a producer emits all three
+// or omits the block.
+// refs: F-SRC-metalog-spec:SPEC.md
 struct TailSummary
 {
     std::uint64_t tail_template_count{0};
@@ -991,52 +760,42 @@ struct StatsBlock
     std::size_t top_k_size{0};
     std::uint64_t tail_count{0};
     std::uint64_t tail_unique{0};
-    std::optional<double> entropy_bits; // Shannon entropy over full template distribution
-    // SPEC §3.6 (MetaLog 0.3). Optional bounded "shape of the tail"
-    // signal. Present when there is at least one template in the tail
-    // (tail_unique > 0); absent otherwise.
+    // invariant: Shannon entropy over the full template distribution.
+    std::optional<double> entropy_bits;
+    // invariant: present when the tail holds at least one template, absent otherwise.
     std::optional<TailSummary> tail_summary;
-    // Salience Reservoir (Tier 2). Salient templates retained below top_k.
-    // Empty unless MetaLogConfig::reservoir_size > 0. The tail residual excludes
-    // these (a promoted template is not double-counted in the omitted mass).
+    // invariant: salient templates retained below top_k; empty unless MetaLogConfig::reservoir_size
+    // > 0.
+    // invariant: the tail residual excludes these, so a promoted template is not double-counted.
     std::vector<ReservoirEntry> reservoir;
-    // SPEC §3.7 `stats.reservoir_size` — the cap this document's `reservoir` was admitted
-    // under. ABSENT is a declared posture, not a default: the spec reads an omitted cap as
-    // "the producer declares no cap" (§8 clause 4: an undeclared cap is not a claim), which
-    // is why this is optional rather than a sentinel. A producer that declares it owes the
-    // clause: the array MUST be bounded by the value. Set by the engine from
-    // MetaLogConfig::reservoir_size, and by compose() to the MINIMUM over the caps its inputs
-    // actually DECLARED (SPEC §12.1 / DN-56.D2) — absent on an input is no claim, not a bound of
-    // zero, so it is skipped; absent on BOTH is the only case where compose() omits the field.
+    // invariant: the cap this document's reservoir was admitted under; ABSENT is a declared
+    // posture, because the specification reads an omitted cap as no claim rather than a bound.
+    // invariant: a declaring producer owes the clause -- the array MUST be bounded by the value.
+    // invariant: compose() sets it to the minimum over the caps its inputs actually declared, and
+    // omits it only when both inputs declared none.
+    // refs: DN-56.D2
     std::optional<std::size_t> reservoir_size;
 };
 
-// "Does absence from this document's retained set mean absence from every window it covers?" —
-// the predicate that decides whether the DN-50.D4 presence bit of an unretained template is a
-// definite `Absent` or an unknowable `Unretained`.
-//
-// It is derived from two members the STANDARD already carries, so a consumer re-folding two
-// documents off the wire computes the same answer the producer did, with no vendor member to read.
-// A tail template has a count of at least 1, so `tail_count == 0` says the tail is empty; the
-// second clause is belt-and-braces against a hand-built document whose counts are all zero.
-//
-// RECURSIVELY SOUND ON A COMPOSED DOCUMENT, which is the clause that makes it usable at all:
-// `compose()` sets `tail_count` to the merged visible tail mass PLUS both inputs' own `tail_count`,
-// so a composed zero means neither input hid anything and composition itself dropped nothing.
-// Reading `tail_unique` alone would NOT be sound there — an input's tail templates are absent from
-// the input document, so they can never appear in the composed `tail_unique`.
+// post: whether absence from this document's retained set means absence from every window it covers
+// -- the predicate deciding Absent against Unretained.
+// invariant: derived from two members the STANDARD already carries, so a consumer re-folding two
+// documents off the wire computes the same answer the producer did.
+// invariant: sound on a composed document, because compose() adds both inputs' tail_count to the
+// merged visible tail mass; reading tail_unique alone would NOT be sound there.
+// refs: DN-50.D4
 [[nodiscard]] inline bool retention_is_exhaustive(const StatsBlock& stats) noexcept
 {
     return stats.tail_count == 0 && stats.tail_unique == 0;
 }
 
-// One n-gram row in the behaviour block. `sequence` holds the
-// content-derived template_ids in observed order (size == ngram_size).
+// invariant: sequence holds the content-derived template ids in observed order, sized ngram_size.
 struct NGramEntry
 {
     std::vector<TemplateId> sequence;
     std::uint64_t count{0};
-    double probability{0.0}; // p(last | prefix) — see spec §4
+    // invariant: p(last | prefix).
+    double probability{0.0};
 };
 
 struct BehaviorBlock
@@ -1044,89 +803,77 @@ struct BehaviorBlock
     std::size_t ngram_size{2};
     std::vector<NGramEntry> top_ngrams;
     std::size_t top_ngrams_size{0};
-    // SPEC §4 `behavior.dropped_ngram_observations` — n-gram OBSERVATIONS refused at the
-    // producer's accounting bound (MetaLogConfig::max_ngram_keys) BEFORE ever being counted. A
-    // heavier loss than `top_ngrams`' ranking cut, and the reason it is reported rather than
-    // inferred: an n-gram that would have ranked first can be absent purely because it arrived
-    // late. OBSERVATIONS and never distinct keys — see last_window_ngram_observations_dropped()
-    // for why the distinct count is not knowable.
-    //
-    // OPTIONAL because §4 makes the ABSENCE normative: in a document declaring 0.7.0 or later an
-    // omitted key MEANS zero, so a producer whose cap never binds emits bytes identical to one
-    // that has no cap at all. A sentinel 0 would write a claim where the spec asks for silence,
-    // and the published schema refuses it outright (`minimum: 1`). ENGAGED IMPLIES > 0 is the
-    // invariant of this field, and it is held by whoever sets it — the engine at the window it
-    // truncated, compose() at the sum — never by the serializer, which passes it through so that
-    // a broken producer reds a test instead of being silently laundered on the way out.
+    // invariant: n-gram OBSERVATIONS refused at MetaLogConfig::max_ngram_keys BEFORE being counted,
+    // never distinct keys -- the distinct count is not knowable.
+    // invariant: OPTIONAL because the absence is normative: in a document declaring 0.7.0 or later
+    // an omitted key MEANS zero, and in an earlier one it means UNKNOWN.
+    // invariant: a producer whose cap never binds therefore emits bytes identical to one with no
+    // cap at all.
+    // invariant: engaged implies greater than zero, held by whoever sets it and never by the
+    // serializer, which passes it through so a broken producer reds a test.
+    // refs: ADR-9.D3
     std::optional<std::uint64_t> dropped_ngram_observations;
     std::optional<std::uint64_t> graph_edge_count;
-    std::optional<std::vector<TemplateId>> dominant_path; // absent when not computed
-    std::optional<std::vector<BranchingEntry>> branching; // absent when not computed
-    // SPEC §4.2 `behavior.branching_size` — the cap `branching` was truncated to. `branching`
-    // is the one variable-length block the spec places no cap on, so §4.2 reads an omitted
-    // field as "the producer declares NO cap" — an assertion, not a silence. This producer
-    // DOES cap (MetaLogConfig::top_branching_size), so the field is owed on every document
-    // that carries `branching`, and is absent exactly where `branching` is.
+    // invariant: absent when not computed.
+    std::optional<std::vector<TemplateId>> dominant_path;
+    // invariant: absent when not computed.
+    std::optional<std::vector<BranchingEntry>> branching;
+    // invariant: the cap branching was truncated to; the specification reads an omitted field as
+    // the producer declaring NO cap, and this producer does cap.
+    // invariant: present on every document carrying branching, and absent exactly where branching
+    // is.
     std::optional<std::size_t> branching_size;
 };
 
 struct StabilityBlock
 {
-    std::string previous_window_end_iso; // RFC 3339 UTC
-    double kl_divergence{0.0};           // KL(current || previous)
-    double js_divergence{0.0};           // symmetric Jensen-Shannon, [0, 1] (log base 2)
+    // invariant: RFC 3339 UTC.
+    std::string previous_window_end_iso;
+    // invariant: KL(current || previous).
+    double kl_divergence{0.0};
+    // invariant: symmetric Jensen-Shannon in [0, 1], log base 2.
+    double js_divergence{0.0};
     std::uint64_t new_templates{0};
     std::uint64_t vanished_templates{0};
-    double stability_score{1.0}; // producer-defined; we use 1 - js_divergence
+    // invariant: producer-defined; this producer uses 1 - js_divergence.
+    double stability_score{1.0};
 };
 
 struct WindowBlock
 {
-    std::string start_iso; // RFC 3339 UTC, e.g. "2026-04-24T10:00:00Z"
+    // invariant: RFC 3339 UTC.
+    std::string start_iso;
     std::string end_iso;
     std::uint64_t duration_seconds{0};
     std::uint64_t lines_observed{0};
 };
 
-// Override for the REPORTED window bounds at close_window, decoupled from the
-// open/close machinery times (bibles/determinism_model.md §7).
-// A deterministic-batch caller supplies the input's parseable-timestamp envelope
-// ([min, max], or the epoch sentinel zero-width when a side has no parseable
-// timestamp) so the document's window reflects the log's own event-time span, not
-// an arrival/forward-filled time. Live callers omit it (bounds = open/close times).
+// invariant: overrides the REPORTED window bounds at close_window, decoupled from the open/close
+// machinery times.
+// invariant: a deterministic-batch caller supplies the input's parseable-timestamp envelope so the
+// window reflects event time; live callers omit it and the bounds are the open/close times.
+// refs: BIB:determinism_model
 struct ReportedWindowBounds
 {
     Timestamp start;
     Timestamp end;
 };
 
-// This package's own version, stamped into `producer.version` (SPEC §2.1). ONE spelling for the
-// package: the DTO default below and MetaLogEngineConfig::producer_version were two independent
-// literals, nothing outside the release test_package reads either, and both sat at 0.6.0 for the
-// whole 1.x line while the recipe moved to 1.9.6.
-//
-// Hand-carried rather than fed from the recipe, and that is a decision, not a gap: this interface
-// unit is RECOMPILED by every consumer, so a compile definition here would let a consumer's build
-// of the api module disagree with the linked engine. That is the hazard insight-canon's
-// CMakeLists already rules on for its own behaviour switches. The bump obligation therefore rides
-// the cut ceremony (operations/001 OPS-1.S15), and the release test_package pins what is emitted.
-//
-// pin-coherence: mirrors insight_metalog
+// invariant: this package's own version, stamped into producer.version. ONE spelling for the
+// package -- the DTO default and the engine config both read it.
+// invariant: hand-carried rather than fed from the recipe: this interface unit is recompiled by
+// every consumer.
+// invariant: a compile definition here would let a consumer's build of the api module disagree with
+// the linked engine.
+// refs: OPS-1.S15
 inline constexpr std::string_view kProducerVersion{"1.10.4"};
 
-// The SPEC edition this producer writes against, stamped into `metalog_version` (SPEC §9). ONE
-// spelling, for the reason stated directly above: the DTO default and the engine's own
-// `stamp_envelope` carried two independent literals — the same duplication shape that produced the
-// producer-version defect, one spec bump from the same failure. This is a DIFFERENT axis from
-// kProducerVersion: only the spec's MAJOR is normatively coupled (§9), and the version is owned by
-// metalog-spec, not by this workspace's release baseline — so the bump never rewrites it and the
-// marker below points at the document that declares it rather than at a recipe.
-//
-// Hand-carried for kProducerVersion's reason, which applies unchanged: this interface unit is
-// recompiled by every consumer, so a compile definition here would let a consumer's build of the
-// api module disagree with the linked engine.
-//
-// pin-coherence: mirrors metalog-spec/SPEC.md
+// invariant: the specification edition this producer writes against, stamped into metalog_version.
+// ONE spelling, and a DIFFERENT axis from kProducerVersion.
+// invariant: only the specification's MAJOR is normatively coupled, and the version is owned by
+// metalog-spec rather than by this workspace's release baseline.
+// invariant: hand-carried for kProducerVersion's reason, which applies unchanged.
+// refs: F-SRC-metalog-spec:SPEC.md
 inline constexpr std::string_view kMetaLogSpecVersion{"0.10.0"};
 
 struct ProducerBlock
@@ -1147,27 +894,28 @@ struct SourceBlock
     [[nodiscard]] bool operator==(const SourceBlock&) const noexcept = default;
 };
 
-// Re-derivation coordinate (SPEC §15): makes a window addressable back to its
-// source so `raw(window) = replay(source, bounds)` with no raw buffering, and every
-// finding is citable/verifiable. DESCRIPTIVE metadata only — bit-identical across
-// replays (I5) and MUST NOT feed any deterministic-content / retention / salience
-// compute (§15.6). Present on a document only when a `source_ref` is configured.
+// invariant: makes a window addressable back to its source, so raw(window) equals replay(source,
+// bounds) with no raw buffering.
+// invariant: DESCRIPTIVE metadata only -- bit-identical across replays and it MUST NOT feed any
+// deterministic-content, retention or salience computation.
+// invariant: present only when a source_ref is configured.
+// refs: F-SRC-metalog-spec:SPEC.md
 struct SourceRef
 {
-    // Selects the resolver (e.g. "logcraft" replay, a CI-artifact kind). Opaque to
-    // the spec; a producer MUST NOT assume a particular resolver.
+    // invariant: selects the resolver; opaque to the specification, so a producer MUST NOT assume a
+    // particular one.
     std::string resolver_kind;
-    // Opaque, resolvable handle — meaning defined by the environment (a replay
-    // source key, an immutable artifact URI, an otel_trace ref, …).
+    // invariant: an opaque resolvable handle whose meaning the environment defines.
     std::string handle;
     [[nodiscard]] bool operator==(const SourceRef&) const noexcept = default;
 };
 
 struct EventTimeBounds
 {
-    // The window is [start_tick, end_tick) in EVENT-TIME integer ticks. Integers
-    // (no float) and bit-identical across replays (§15.3). Window membership MUST be
-    // by event-time only — never the global sequence counter or replay depth.
+    // invariant: the window is [start_tick, end_tick) in EVENT-TIME integer ticks, bit-identical
+    // across replays.
+    // invariant: window membership MUST be by event time only, never the global sequence counter or
+    // replay depth.
     std::uint64_t start_tick{0};
     std::uint64_t end_tick{0};
     [[nodiscard]] bool operator==(const EventTimeBounds&) const noexcept = default;
@@ -1175,26 +923,25 @@ struct EventTimeBounds
 
 struct ReDerivationCoordinate
 {
-    // §15.2: a coordinate is XOR — either RAW (source_ref + bounds set, children
-    // absent) or COMPOSED (children set, source_ref + bounds absent). Sentinel
-    // values on composed coordinates are explicitly forbidden by §15.2 (encoding
-    // note). Consumers discriminate by the presence of `children`.
-    std::optional<SourceRef> source_ref;   // RAW only
-    std::optional<EventTimeBounds> bounds; // RAW only
-    // Guarantee-2 (fingerprint reproduction) aids — optional (§15.1-2): canon output
-    // depends on canon code + config, not just raw bytes. May appear on EITHER kind.
+    // invariant: a coordinate is XOR -- either RAW with source_ref and bounds set and children
+    // absent, or COMPOSED with children set and both of those absent.
+    // invariant: sentinel values on a composed coordinate are forbidden, so consumers discriminate
+    // on the presence of children.
+    std::optional<SourceRef> source_ref;
+    std::optional<EventTimeBounds> bounds;
+    // invariant: reproduction aids, admissible on EITHER kind, because canon output depends on
+    // canon code and config and not on raw bytes alone.
     std::optional<std::string> canonicalization_version;
     std::optional<std::string> config_hash;
-    // Composed documents ONLY (§15.5): the non-empty SET of raw (or recursively
-    // composed) children's coordinates. A composed coordinate resolves via its
-    // children — never via a coarse [first, last] bound (which over-claims across
-    // gaps / shards / sources).
+    // invariant: composed documents only -- the non-empty SET of children's coordinates.
+    // invariant: a composed coordinate resolves through its children, never a coarse first-last
+    // bound, which would over-claim across gaps, shards and sources.
     std::optional<std::vector<ReDerivationCoordinate>> children;
     [[nodiscard]] bool operator==(const ReDerivationCoordinate&) const noexcept = default;
 };
 
-// Provenance entry recording one input that fed a composed document
-// (SPEC §12.4).
+// invariant: one input that fed a composed document.
+// refs: F-SRC-metalog-spec:SPEC.md
 struct ProvenanceEntry
 {
     std::string window_start_iso;
@@ -1202,20 +949,18 @@ struct ProvenanceEntry
     SourceBlock source;
     std::uint64_t lines_observed{0};
     std::optional<std::string> document_id;
-    // The input's own re-derivation coordinate (§15.5), so a composed document's
-    // coordinate resolves to this raw child. Absent when the input had none.
+    // invariant: the input's own coordinate, so a composed document's coordinate resolves to this
+    // raw child; absent when the input had none.
     std::optional<ReDerivationCoordinate> coordinate;
 };
 
-// Template-string emission mode (SPEC §3.4). Defined before MetaLogDocument so the document can
-// carry
-
+// invariant: this producer emits the specification's INLINE template-string mode only -- the dedup
+// and id-only arms were never wired.
+// refs: SRC-D-TIR-5, ADR-9.D2
 struct MetaLogDocument
 {
-    // The SPEC version this document conforms to. Only its MAJOR is normatively coupled (§9), so
-    // this is a claim about which edition of the standard the bytes were written against — the
-    // producer's own version is `producer.version`, a separate axis. kMetaLogSpecVersion owns the
-    // value (and carries the pin-coherence marker that guards it against the spec).
+    // invariant: the specification edition the bytes were written against; only its MAJOR is
+    // normatively coupled, and the producer's own version is a separate axis.
     std::string metalog_version{kMetaLogSpecVersion};
     ProducerBlock producer{};
     WindowBlock window{};
@@ -1223,87 +968,64 @@ struct MetaLogDocument
     StatsBlock stats{};
     std::optional<BehaviorBlock> behavior;
     std::optional<StabilityBlock> stability;
-    // SRC-D-TIR-5 — see metalog.api.cppm (TemplateRegistry) for the contract. Local: this producer
-    // emits SPEC §3.4's INLINE mode only — the three modes are a producer MAY, and the
-    // dedup/id-only arms were never wired (ADR-9).
-    std::optional<std::vector<ProvenanceEntry>> provenance; // absent unless composed (SPEC §12.4)
-    // Processing-identifier strings (SPEC §2.4). Opaque names of the contract
-    // under which the document was produced; gate `compose()` / diff
-    // comparability (§13). Set from MetaLogConfig at close_window.
+    // invariant: absent unless the document is composed.
+    std::optional<std::vector<ProvenanceEntry>> provenance;
+    // invariant: opaque names of the contract the document was produced under, set from
+    // MetaLogConfig at close_window; they gate compose() and diff() comparability.
     std::optional<std::string> canonicalization_version;
     std::optional<std::string> retention_profile;
-    // Re-derivation coordinate (SPEC §15). Present whenever the producer was
-    // configured with a source_ref; a composed document carries `children` instead
-    // of addressing a single source. Absent otherwise.
+    // invariant: present whenever the producer was configured with a source_ref; a composed
+    // document carries children instead of addressing a single source.
     std::optional<ReDerivationCoordinate> coordinate;
-    // Intra-window cube (SPEC §16) — joint categorical condensation. ALWAYS built for a
-    // raw window (has_cube = true), collapse-bounded (§C). has_cube survives as the
-    // representation's presence flag: a COMPOSED document clears it when EITHER input
-    // omitted a cube (§16.7), which is the only way it is ever cleared (!has_cube = "no
-    // comparable joint available"). §2.4 freezes the axis SET per canonicalization_version /
-    // retention_profile, but NOT the per-window collapse stamps (§16.10), so compose and diff
-    // both read the pair at its minimal common collapse rather than requiring equal axes
-    // (DN-42.D17 §4).
-    //
-    // Representation: an explicit presence flag + inline value, NOT std::optional<CubeBlock>.
-    // MSVC /O2 /Ob2 miscompiles the SYNTHESIZED optional<CubeBlock> copy in consumer module TUs
-    // (a triviality-propagation bug — it memcpy's a stale _Has_value byte, spuriously engaging a
-    // disengaged cube). A presence-bool + inline value keeps MetaLogDocument a copyable value with
-    // DEFAULTED special members and honest triviality (bool truly trivial, CubeBlock truly not),
-    // so the synthesized copy is always correct.
+    // invariant: always built for a raw window and bounded by the per-window collapse.
+    // invariant: has_cube is the representation's presence flag; a COMPOSED document clears it when
+    // EITHER input omitted a cube, which is the only way it is ever cleared.
+    // invariant: the axis SET is frozen per canonicalization_version, but the per-window collapse
+    // stamps are not, so compose and diff read the pair at its minimal common collapse.
+    // refs: DN-42.D17
+    // invariant: an explicit presence flag plus an inline value, NOT std::optional<CubeBlock>: MSVC
+    // miscompiles the synthesized optional copy in consumer module translation units.
     bool has_cube{false};
     CubeBlock cube{};
-    // Per-window acquisition self-assessment (sift_where_attribution.md SRC-D-WHERE-4):
-    // the window's structural facts seeding the WHERE disposition + the cube-dimension
-    // self-assessment (§6.1.1, feeds the collapse guardrail). Always present.
-    // All-integer, so std::optional is sound here (the
-    // bool+inline workaround the cube needs is for vector-owning optionals copied in
-    // consumer module TUs; AcquisitionBlock is trivially copyable).
+    // invariant: the window's structural facts seeding the WHERE disposition and the cube dimension
+    // self-assessment.
+    // invariant: set by close_window() on every raw window; compose() sets none.
+    // invariant: stamped once at close and only read, so std::optional is sound despite the owned
+    // per-depth vector.
+    // refs: SRC-D-WHERE-4
     std::optional<AcquisitionBlock> acquisition;
-    // O4b distilled service topology (ADR-29, SRC-D-OTEL-21). Present iff the
-    // window had trace substrate (span_records > 0); ABSENT for a non-span window (absence =
-    // unknown, the additive-block discipline — the edge diff needs the block on both sides). Owns a
-    // vector but is stamped once at close and only read (never a synthesized-optional copy on the
-    // MSVC /O2 hot path), so std::optional is sound — the RulesetIdentity precedent.
+    // invariant: present iff the window had trace substrate; absent for a non-span window, and that
+    // absence reads unknown.
+    // invariant: stamped once at close and only read, so std::optional is sound despite the owned
+    // vector.
+    // refs: SRC-D-OTEL-21
     std::optional<ServiceEdgeBlock> service_edges;
-    // Composed-ruleset identity (SRC-II-7, ADR-17): the semantic_identity + package list of the
-    // ruleset that segmented this document. ABSENT = legacy producer (pre-ruleset). Stamped by the
-    // producer from the ComposedSemantics that tokenized the input. RulesetIdentity owns a vector,
-    // so it follows the CubeBlock precedent risk — but it is stamped once at close and only read
-    // (never a synthesized-optional copy on the MSVC /O2 hot path), so std::optional is sound.
+    // invariant: the semantic_identity and package list of the ruleset that segmented this
+    // document; absent means a legacy producer.
+    // invariant: stamped once at close and only read, so std::optional is sound.
+    // refs: SRC-II-7, ADR-17.D3
     std::optional<RulesetIdentity> ruleset;
-    // The per-run transport declaration (ADR-23). The PRODUCER stamps it on EVERY closed window,
-    // unconditionally — an empty `names[]` says "nothing was declared", and that must never
-    // degrade into the member's absence: "no stack declared" and "this producer cannot emit the
-    // field" are different facts about the run, and a conditionally-emitted key collapses them
-    // into one absence for every consumer.
-    //
-    // std::optional anyway, and the engagement carries the OTHER fact: a COMPOSED document whose
-    // inputs declared different stacks makes no single declaration, and writing an empty `names[]`
-    // there would be a WRONG claim rather than an absent one. compose() carries the block only
-    // when both inputs agree — the `ruleset` treatment, plus an explicit equality test because
-    // this block deliberately gates nothing (ADR-23.D4) and so has no gate to have matched them.
-    // Owns a vector but is stamped once at close and only read, so std::optional is sound here for
-    // the RulesetIdentity/ServiceEdgeBlock reason.
+    // invariant: the producer stamps it on EVERY closed window -- an empty names[] says nothing was
+    // declared, and that must never degrade into the member's absence.
+    // invariant: engaged only when both inputs of a compose agree, because a composed document
+    // whose inputs declared different stacks makes no single declaration.
+    // refs: ADR-23.D4
     std::optional<TransportDeclaration> transport;
-    // The run's terminal verdict (ADR-17): one four-class scalar per run, resolved by the
-    // SRC-D-OUT-RUN-1 precedence (authoritative side-input → console tail → Unknown) and stamped by
-    // the producing orchestration on a WHOLE-RUN document. Additive, NO wire-version bump: Unknown
-    // is the default AND the wire absence (the serializer omits it) — a legacy/verdict-free
-    // document reads back identical. NOT a cube dimension (OUTCOME labels the whole run, it is not
-    // a per-event coordinate any cell could carry); a per-quantum slice document (the aligned
-    // diff's per-pair windows) correctly keeps Unknown — a quantum is not a run.
+    // invariant: one four-class scalar per run, stamped by the producing orchestration on a
+    // WHOLE-RUN document; Unknown is both the default and the wire absence.
+    // invariant: not a cube dimension -- the outcome labels the whole run, and a per-quantum slice
+    // document correctly keeps Unknown.
+    // refs: SRC-D-OUT-RUN-1, ADR-17.D5
     insight::RunOutcome run_outcome{insight::RunOutcome::Unknown};
-    // DN-50.D4/D5 presence-churn roll-up over the declared horizon. ABSENT on a document that
-    // carries no churn observation at all — the monoid identity, and the state a hand-built or
-    // event-free document is in. All-integer and trivially copyable, so std::optional is sound here
-    // for the AcquisitionBlock reason (the bool-plus-inline workaround `has_cube` needs is for
-    // vector-owning optionals copied in consumer module TUs).
+    // invariant: the presence-churn roll-up over the declared horizon; ABSENT on a document that
+    // carries no churn observation at all, which is the monoid identity.
+    // refs: DN-50.D4, DN-50.D5
     std::optional<PresenceChurnSummary> presence_churn;
 };
 
-// ── Producer configuration ─────────────────────────────────────
-
+// invariant: the cube, the per-template dominant_component WHERE leaf and the per-window
+// acquisition block are ALWAYS emitted -- there is no opt-in gate for any of them.
+// refs: SRC-D-WHERE-2
 struct MetaLogConfig
 {
     static constexpr std::size_t kDefaultTopKSize = 64;
@@ -1312,211 +1034,151 @@ struct MetaLogConfig
     static constexpr std::size_t kDefaultTopBranchingSize = 64;
     static constexpr std::size_t kDefaultDominantPathMaxSteps = 8;
     static constexpr std::size_t kDefaultMaxActiveTraces = 4096;
-    // span_id→template bound (SRC-D-OTEL-11)
+    // invariant: the span_id to template bound.
+    // refs: SRC-D-OTEL-11
     static constexpr std::size_t kDefaultMaxActiveSpans = 16384;
-    // O4b service_edges emit cap (SRC-D-OTEL-21)
+    // invariant: the service_edges emit cap.
+    // refs: SRC-D-OTEL-21
     static constexpr std::size_t kDefaultMaxServiceEdges = 4096;
 
-    // Max entries kept in stats.top_k; the rest are summarised into
-    // tail_count / tail_unique. Default 64 (~10 KB inline envelope, per the size table in
-    // metalog-spec/SPEC.md §11 — which declares itself INFORMATIVE, so the figure is an
-    // expectation and not a bound). Set to 0 to skip top_k emission entirely (still bounded).
+    // invariant: max entries kept in stats.top_k; the rest are summarised into tail_count and
+    // tail_unique. 0 skips top_k emission and the document stays bounded.
     std::size_t top_k_size{kDefaultTopKSize};
 
-    // Salience Reservoir size M (Tier 2): max templates retained by salience
-    // below top_k. 0 = disabled (default — pure frequency retention, pre-Phase-2
-    // behaviour). Streaming funds M by shrinking top_k (~64); batch sets it large.
+    // invariant: max templates retained by salience below top_k; 0 disables the reservoir and
+    // leaves pure frequency retention.
     std::size_t reservoir_size{0};
 
-    // Reservoir diversity cap: max exemplars admitted per "kind"
-    // (structural_role × dominant_level), so M optimises COVERAGE of distinct
-    // salient kinds over depth — otherwise M fills with variants of one failure
-    // (test_query_0/_1/… FAILED) and crowds out a different failure. 0 = no cap.
+    // invariant: max exemplars admitted per kind (structural_role by dominant_level), so the
+    // reservoir optimises coverage of distinct salient kinds over depth; 0 means no cap.
     std::size_t reservoir_per_kind_cap{0};
 
-    // Error-class retention RESERVE (SRC-D-RNK-2 §5.2): a bounded floor of the M slots
-    // held exclusively for error-class templates (dominant_level ∈ {Error, Fatal} or
-    // role Terminator — the verdict-anchored-failure signal at the metalog layer), so
-    // non-failure salience (novelty / structural-surprise) can NEVER evict a real
-    // failure from a high-cardinality window. The reserve is admitted by salience then
-    // template_id and is EXEMPT from the per-kind cap (its purpose is failure DEPTH —
-    // a genuine failure storm keeps its top by salience; the per-kind cap governs only
-    // the general pool's diversity). 0 = disabled (default — no reserve). Clamped to
-    // reservoir_size. Schema-neutral: a retention policy, not template identity → no
-    // canonicalization_version / wire-version bump.
+    // invariant: a bounded floor of the reservoir slots held exclusively for error-class templates,
+    // so non-failure salience can never evict a real failure.
+    // invariant: admitted by salience then template_id, and EXEMPT from the per-kind cap.
+    // invariant: clamped to reservoir_size; 0 disables the reserve.
+    // invariant: a retention policy and not template identity, so it moves no
+    // canonicalization_version and no wire version.
+    // refs: SRC-D-RNK-2
     std::size_t reservoir_error_reserve{0};
 
-    // Order of n-gram emitted in the behaviour block. Spec emits a
-    // single order per document. Must be 2 or 3.
+    // invariant: the single n-gram order emitted in the behaviour block; 2 or 3.
     std::size_t ngram_size{2};
 
-    // Max entries kept in behavior.top_ngrams. Default 32.
-    // Set to 0 to disable emission of the behavior block entirely.
+    // invariant: max entries kept in behavior.top_ngrams; 0 disables the behaviour block.
     std::size_t top_ngrams_size{kDefaultTopNgramsSize};
 
-    // Max distinct n-gram keys retained before bounded dropping kicks
-    // in. Once the cap is reached, counts on existing keys keep
-    // updating but new keys are dropped. Bounds memory.
+    // invariant: max distinct n-gram keys retained; past the cap, counts on existing keys keep
+    // updating and new keys are dropped.
     std::size_t max_ngram_keys{kDefaultMaxNgramKeys};
 
-    // Trace-scoping master switch (ADR-29.D1). Default true: an OTEL event
-    // forms its n-gram WITHIN its trace. false is the CONTROL ARM — even OTEL events fall back
-    // to the global ring, reproducing the polluted global-order graph on the SAME input (the
-    // config mirror of the unit gate's with_trace=false arm; the scenario signal
-    // trace_scoping_disabled_control sets it). Non-OTEL ingest is byte-identical either way
-    // (no trace context → the global ring is taken regardless), so the flag is OTEL-only.
+    // invariant: default true -- an OTEL event forms its n-gram WITHIN its trace.
+    // invariant: false is the CONTROL ARM, reproducing the polluted global-order graph on the same
+    // input; non-OTEL ingest is byte-identical either way.
+    // refs: ADR-29.D1
     bool trace_scoping_enabled{true};
 
-    // O2 trace-scoping (ADR-29 SRC-D-OTEL-1, OR3): max concurrent OTEL traces whose
-    // n-gram ring is held at once. A ring is just the last 1–2 template ids — NOT a per-trace
-    // sub-fingerprint. On overflow the oldest-inserted trace's ring is evicted (deterministic
-    // FIFO), losing at most one cross-record edge for that trace, never its membership. Bounds
-    // per-window state at O(active traces), not O(traces). Consulted ONLY for OTEL inputs
-    // (events carrying a trace_id); non-OTEL ingest uses the single global ring at zero cost.
+    // invariant: max concurrent OTEL traces whose n-gram ring is held; a ring is the last one or
+    // two template ids, never a per-trace sub-fingerprint.
+    // invariant: overflow evicts the oldest-inserted trace's ring (deterministic FIFO), losing at
+    // most one cross-record edge for that trace and never its membership.
+    // invariant: consulted ONLY for events carrying a trace id.
+    // refs: SRC-D-OTEL-1
     std::size_t max_active_traces{kDefaultMaxActiveTraces};
 
-    // Observed DAG (ADR-29, SRC-D-OTEL-11): max span_id → template entries
-    // held in a window for close-time parent-edge resolution. A span's declared parent is resolved
-    // to an observed edge template(parent)→template(child) at close; a parent evicted past this
-    // bound (or outside the window) yields no edge + one `orphan_parent_edges` fact (counted, never
-    // guessed). Deterministic FIFO eviction of the oldest-inserted span. Bounds per-window span
-    // state at O(active spans). Consulted ONLY for span inputs (records with is_span); 0 disables
-    // the bound.
+    // invariant: max span_id to template entries held in a window for close-time parent-edge
+    // resolution.
+    // invariant: a parent evicted past this bound or outside the window yields no edge and one
+    // orphan_parent_edges fact -- counted, never guessed.
+    // invariant: deterministic FIFO eviction of the oldest-inserted span; consulted ONLY for
+    // records carrying is_span, and 0 disables the bound.
+    // refs: SRC-D-OTEL-11
     std::size_t max_active_spans{kDefaultMaxActiveSpans};
 
-    // O4b service-topology emit cap (SRC-D-OTEL-21): max service_edges emitted in the block; edges
-    // beyond this (top-weight-K, canonical-key tie-break) fold into `dropped_edges`. The
-    // accumulator is bounded by topology² (service.name is low-card); this is the safety cap on the
-    // emitted wire block.
+    // invariant: max service_edges emitted; edges beyond it fold into dropped_edges by top-weight-K
+    // with a canonical-key tie-break.
+    // invariant: the accumulator itself is bounded by topology squared; this is the wire cap.
+    // refs: SRC-D-OTEL-21
     std::size_t max_service_edges{kDefaultMaxServiceEdges};
 
-    // When true (default), the engine remembers the previous closed
-    // window's template frequencies and emits a stability block on
-    // every subsequent window.
+    // invariant: when true, the engine remembers the previous closed window's template frequencies
+    // and emits a stability block on every subsequent window.
     bool emit_stability{true};
 
-    // Cap on `behavior.branching` entries; 0 disables.
+    // invariant: cap on behavior.branching entries; 0 disables.
     std::size_t top_branching_size{kDefaultTopBranchingSize};
 
-    // Cap on `behavior.dominant_path` length; 0 disables.
+    // invariant: cap on behavior.dominant_path length; 0 disables.
     std::size_t dominant_path_max_steps{kDefaultDominantPathMaxSteps};
 
-    // Reported as producer.version in the envelope; kProducerVersion owns the value.
+    // invariant: reported as producer.version; kProducerVersion owns the value.
     std::string producer_version{kProducerVersion};
 
-    // NOTE (1.7.2): the cube (SPEC §16), the per-template `dominant_component` WHERE
-    // leaf (SRC-D-WHERE-2), and the per-window `acquisition` block are ALWAYS emitted — the
-    // former `emit_cube`/`emit_where` opt-in gates are removed. The cube is permanently
-    // in the §2.4 `canonicalization_version` comparability contract, and its cardinality
-    // is bounded by the per-window dimensional-collapse guardrail (cube_perf_and_collapse.md
-    // §C). The acquisition block carries the window's dimension self-assessment (raw facts;
-    // the admissibility verdict is a shared consumer-side predicate, never a wire mask).
-
-    // Re-derivation source (SPEC §15). When set, close_window stamps a coordinate
-    // on the document (source_ref + the window's event-time bounds). The engine does
-    // NOT derive its own source — the producer/ingest layer sets this (e.g. the
-    // LogCraft harness sets {resolver_kind="logcraft", handle=scenario+seed}; a CI
-    // run sets {resolver_kind=<artifact-kind>, handle=<artifact URI>}). Unset =
-    // no coordinate emitted (the conservative default; e.g. the line-agnostic diff).
+    // invariant: when set, close_window stamps a coordinate of this source plus the window's
+    // event-time bounds; the engine derives no source of its own.
+    // invariant: unset means no coordinate is emitted, which is the conservative default.
     std::optional<SourceRef> source_ref;
 
-    // Opaque processing-identifier strings (SPEC §2.4) — name the CONTRACT the
-    // document was produced under. Stamped onto MetaLogDocument at close_window;
-    // gate `compose()` / diff comparability (§13). The `canonicalization_version`
-    // also serves as the guarantee-2 aid stamped into a re-derivation coordinate
-    // (§15.1-2). The `retention_profile` names the retention parameters in effect
-    // (top_k size, reservoir admission weights/size/diversity caps, salience
-    // arithmetic — §3.1 / §3.7); MUST be bumped when any of those change.
-    //
-    // canonicalization_version DEFAULTS to the canon-owned constant (SRC-D-TID-16): the
-    // masking rules and the version that names them live together in canon, so a
-    // producer cannot silently leave old and new metalogs falsely comparable. Override
-    // only to express a different canonicalization contract (e.g. a test fixture).
+    // invariant: opaque strings naming the CONTRACT the document was produced under; they gate
+    // compose() and diff() comparability.
+    // invariant: retention_profile names the retention parameters in effect and MUST be bumped when
+    // any of them change.
+    // invariant: canonicalization_version defaults to the canon-owned constant, so a producer
+    // cannot silently leave old and new documents falsely comparable.
+    // refs: SRC-D-TID-16
     std::optional<std::string> canonicalization_version{
         std::string{insight::kCanonicalizationVersion}};
     std::optional<std::string> retention_profile;
-    // SRC-II-7 composed-ruleset identity (ADR-17): the semantic_identity + package list of the
-    // composition that tokenized the input, injected by the producing binary (the engine pipeline
-    // sets it from insight::engine::composed_semantics()). DEFAULT unset — a producer that does not
-    // inject it emits no ruleset block (a legacy producer; absence-tolerant on the consumer).
-    // Unlike canonicalization_version there is no canon-owned default: canon ships no default
-    // composition (ADR-17), so the binary that declares its package set is the only one that
-    // knows the hash.
+    // invariant: injected by the producing binary; DEFAULT unset, so a producer that does not
+    // inject it emits no ruleset block and reads as a legacy producer.
+    // invariant: unlike canonicalization_version there is no canon-owned default -- canon ships no
+    // default composition, so only the binary declaring its package set knows the hash.
+    // refs: SRC-II-7, ADR-17.D2
     std::optional<RulesetIdentity> ruleset;
 
-    // The stream's DECLARED transport stack (ADR-23), injected by the producing binary from the
-    // same object that holds the semantic coordinates (eidos `PipelineConfig::transport`). Stamped
-    // onto every closed document; NOT optional, because "nothing declared" is the default state of
-    // a run and not the absence of a statement — the empty `names[]` IS the degenerate stack.
-    //
-    // The producer records the declaration; it never resolves, verifies or applies it. Peeling is
-    // the caller's (ADR-23: line identity is a pure function of PEELED content, so the stack never
-    // reaches a tokenizer), and this field is on the RECORDING path only.
+    // invariant: the stream's DECLARED transport stack, injected by the producing binary and
+    // stamped on every closed document.
+    // invariant: NOT optional, because the empty names[] IS the degenerate stack.
+    // invariant: the producer records the declaration and never resolves, verifies or applies it --
+    // peeling is the caller's, and this field is on the recording path only.
+    // refs: ADR-23.D4
     TransportDeclaration transport;
 
-    // Max number of wildcard positions to histogram per top_k entry.
-    // 0 = disabled (default — zero overhead on the ingest_event hot path;
-    //               one predicted-not-taken branch per ingest call).
-    // When N > 0: the first min(N, params.size()) wildcard positions are
-    // tracked per template bucket.  Memory bounded by:
-    //   top_k_size × max_param_histograms × max_histogram_values map entries.
+    // invariant: max wildcard positions histogrammed per top_k entry; 0 disables and costs one
+    // predicted-not-taken branch per ingest call.
+    // invariant: above 0 the first min(N, params.size()) wildcard positions are tracked per
+    // template bucket, and memory is bounded by top_k_size times N times max_histogram_values.
     std::size_t max_param_histograms{0};
 
-    // Max distinct values tracked per histogram slot per template.
-    // Additional distinct values are counted in FieldHistogram::total but
-    // not stored individually in value_counts.
-    // Default 64 bounds each slot to ~5 KB at typical string sizes.
+    // invariant: max distinct values tracked per histogram slot per template; further distinct
+    // values are counted in FieldHistogram::total and not stored individually.
     static constexpr std::size_t kDefaultMaxHistogramValues{64};
     std::size_t max_histogram_values{kDefaultMaxHistogramValues};
 
     [[nodiscard]] bool operator==(const MetaLogConfig&) const noexcept = default;
 };
 
-// ── SPEC §2.4 retention profile ────────────────────────────────
-
-// The generation of the SALIENCE ARITHMETIC this producer implements — the half of §2.4's
-// `retention_profile` that no configuration field can express. §2.4 names the profile as covering
-// the top_k size, the reservoir's admission weights / size / diversity caps AND the salience
-// arithmetic; the size and the caps are MetaLogConfig members, while the admission weights and the
-// arithmetic are compiled in (src/stats/salience.cpp — the band ladder, the inverse-probability
-// surprise thresholds, the rarity modulation, the template_id tie-break). Two documents produced
-// under the SAME tuple by two binaries whose ladders differ are not comparable, and only this
-// constant can say so. Same species as insight::kCanonicalizationVersion, which names the masking
-// generation for the sibling identifier.
-//
-// BUMP OBLIGATION: any edit to the salience arithmetic that can move a retained bag for some input
-// bumps this. The observable that catches a missed bump is the pair of near-full reservoir goldens
-// (scripts/reservoir_nearfull_scenario.hpp at the Sift BATCH tuple, scripts/
-// reservoir_streaming_scenario.hpp at the SHIPPED streaming tuple — ADR-31.D8): an arithmetic
-// change moves them, so a moved golden landing with this generation unchanged IS the defect — they
-// travel together. Two arms and not one because a seam fix proves only the arm it was measured on,
-// and the streaming arm is the only one that drives the error-class reserve at all.
+// invariant: the generation of the SALIENCE ARITHMETIC this producer implements -- the half of the
+// retention profile that no configuration field can express.
+// invariant: two documents produced under the same configuration tuple by two binaries whose
+// ladders differ are not comparable, and only this constant can say so.
+// invariant: any edit to the salience arithmetic that can move a retained bag for some input bumps
+// this; the two near-full reservoir goldens are the observable that catches a miss.
+// refs: ADR-31.D8
 inline constexpr std::string_view kSalienceArithmeticGeneration{"salience-1"};
 
-// The SPEC §2.4 `retention_profile` for a producer configuration — DERIVED from the parameters, and
-// deliberately never a hand-written literal. A hand-written name can drift from what the engine
-// actually applied, and a document whose stamp names retention it did NOT use is worse than an
-// unstamped one: the gate then certifies a comparability that does not hold, silently, on both
-// sides.
-//
-// Shape: "<arithmetic generation>/k<top_k>-m<reservoir>-c<per_kind_cap>-e<error_reserve>", e.g.
-// "salience-1/k128-m64-c0-e16" — the shipped streaming tuple. Two properties the callers rely on,
-// both structural:
-//   • INJECTIVE — each axis is a one-letter tag plus a non-empty decimal run, the axes are joined
-//     by '-' (which no decimal run contains) and the generation is separated by '/' (which appears
-//     nowhere else), so the string determines the tuple and two distinct tuples cannot collide.
-//   • RECONSTRUCTABLE — the retention a stored document was produced under is readable off the
-//     stamp alone, months later, without the config that produced it. That is why this is a
-//     legible name and not a hash.
-// Deterministic across toolchains: integer std::to_chars only — no locale, no float, no hashing.
-//
-// The spec fixes no format and no registry (§2.4: "opaque strings … producers and consumers within
-// an environment MUST agree on their meaning out-of-band"), so this shape is ours to choose; what
-// the spec fixes is the MUST-bump, and deriving the name is how that MUST is discharged by
-// construction rather than by remembering.
+// post: the retention_profile stamp DERIVED from the parameters, never a hand-written literal that
+// could drift from the retention the engine applied.
+// invariant: INJECTIVE -- each axis is a one-letter tag plus a non-empty decimal run, joined by a
+// character no decimal run contains, so the string determines the tuple.
+// invariant: RECONSTRUCTABLE -- the retention a stored document was produced under is readable off
+// the stamp alone, which is why it is a legible name and not a hash.
+// invariant: deterministic across toolchains -- integer std::to_chars only, no locale, no float, no
+// hashing.
+// refs: F-SRC-metalog-spec:SPEC.md
 [[nodiscard]] inline std::string retention_profile_name(const MetaLogConfig& config)
 {
-    // Any std::size_t in base 10, plus its one-character axis tag.
+    // invariant: any std::size_t in base 10, plus its one-character axis tag.
     constexpr std::size_t kAxisFieldMax{std::numeric_limits<std::size_t>::digits10 + 2};
     std::string name{kSalienceArithmeticGeneration};
     const auto append_axis{
@@ -1537,8 +1199,6 @@ inline constexpr std::string_view kSalienceArithmeticGeneration{"salience-1"};
     append_axis('e', config.reservoir_error_reserve);
     return name;
 }
-
-// ── Diff document (SPEC §13) ───────────────────────────────────
 
 struct TemplateDelta
 {
@@ -1574,23 +1234,25 @@ struct NGramDelta
     std::vector<NGramRateChange> rate_changed;
 };
 
-// A service edge present on BOTH sides whose observed weight moved (SRC-D-OTEL-21).
+// invariant: an edge present on BOTH sides whose observed weight moved.
+// refs: SRC-D-OTEL-21
 struct ServiceEdgeWeightChange
 {
     std::string caller;
     std::string callee;
     std::uint64_t previous_weight{0};
     std::uint64_t current_weight{0};
-    std::int64_t delta{0}; // current - previous
+    // invariant: current minus previous.
+    std::int64_t delta{0};
 };
 
-// The service-topology delta (SRC-D-OTEL-21): its OWN diff pass over the two windows' service_edges
-// blocks. `emerged`/`vanished` are the appeared-from-nothing / disappeared edge sets at the cube's
-// absolute emergence discipline (θ_was=0, θ_now=1). Semantics-free integer/set arithmetic — metalog
-// stays polarity-blind (the degraded reading + the fold are eidos, SRC-D-OTEL-22). Present (in
-// MetaLogDiff) ONLY when BOTH documents carried a service_edges block; absent ⇒ edge verdicts are
-// *unknown* (never "all emerged"). Edges carry the changed-side (emerged) / baseline-side
-// (vanished) weight.
+// invariant: its OWN diff pass over the two windows' service_edges blocks; emerged and vanished are
+// the appeared-from-nothing and disappeared edge sets at the cube's absolute emergence discipline.
+// invariant: semantics-free integer and set arithmetic -- metalog stays polarity-blind and the
+// degraded reading is the consumer's.
+// invariant: present ONLY when BOTH documents carried a service_edges block; absence means edge
+// verdicts are unknown, never that all edges emerged.
+// refs: SRC-D-OTEL-21, SRC-D-OTEL-22
 struct ServiceEdgeDelta
 {
     std::vector<ServiceEdge> emerged;
@@ -1598,17 +1260,10 @@ struct ServiceEdgeDelta
     std::vector<ServiceEdgeWeightChange> weight_changed;
 };
 
-// Per-(template_id, param_index) JS divergence between the value_counts
-// distributions of two consecutive MetaLog windows.
-//
-// Only populated when both documents were produced with
-// MetaLogConfig::max_param_histograms > 0 and the same template_id
-// appears in both.
-//
-// js_divergence uses the same Laplace-smoothed log2 convention as
-// MetaLogDiff::js_divergence — value in [0, 1] (bits, clamped).
-// entropy_bits fields are the Shannon entropy of each window's
-// value_counts map (identical convention as FieldHistogram::entropy_bits).
+// invariant: the per-(template_id, param_index) JS divergence between two windows' value_counts
+// distributions, populated only when both documents tracked histograms and share the template.
+// invariant: js_divergence uses the same Laplace-smoothed log2 convention as
+// MetaLogDiff::js_divergence -- bits in [0, 1], clamped.
 struct FieldHistogramDelta
 {
     TemplateId template_id;
@@ -1616,32 +1271,26 @@ struct FieldHistogramDelta
     double js_divergence{0.0};
     double previous_entropy_bits{0.0};
     double current_entropy_bits{0.0};
-    // Per-side observation count backing each distribution (FieldHistogram::total).
-    // This is the sample size the JS divergence is estimated from — the basis for
-    // a consumer's confidence gate (min-sample floor): a high JS over a handful of
-    // observations is sampling noise, not a regime shift. Distinct from cardinality
-    // (number of DISTINCT values) and from the template's stream share (population
-    // proportion). May exceed sum(value_counts) when high-cardinality values were
-    // not retained individually.
+    // invariant: the per-side observation count backing each distribution -- the sample size the
+    // divergence is estimated from, and the basis for a consumer's min-sample floor.
+    // invariant: distinct from cardinality and from the template's stream share; it may exceed the
+    // sum of value_counts when high-cardinality values were not retained individually.
     std::uint64_t previous_sample_count{0};
     std::uint64_t current_sample_count{0};
-    // Cardinality tracking (SPEC §3.5.2). Zero when either document did not
-    // provide approximate_cardinality for this slot.
+    // invariant: zero when either document provided no approximate_cardinality for this slot.
     std::uint64_t previous_cardinality{0};
     std::uint64_t current_cardinality{0};
-    // Signed delta: current_cardinality - previous_cardinality.
-    // Positive = more unique values observed (potential injection / bloom).
+    // invariant: current_cardinality minus previous_cardinality.
     std::int64_t cardinality_delta{0};
 };
 
-// Per-(template_id, ordinal field) pairing of two windows' binned ordinal histograms (§4A.4
-// SRC-D-W1-1/SRC-D-W1-4 — the W1 channel). Carries BOTH sides' raw counts + totals +
-// schedule_ids; the eidos
-// diff checks the schedule_ids match (the comparability gate, SRC-D-W1-4, like
-// canonicalization_version at diff.cpp) then computes the exact-integer 1-D Wasserstein-1
-// earth-mover distance, its direction, and the {field}_shift bucket — metalog carries the counts,
-// eidos owns the distance (it is ladder-agnostic at w=1). Only populated when the same
-// (template_id, field_name) appears in BOTH documents' ordinal_histograms.
+// invariant: carries BOTH sides' raw counts, totals and schedule ids; the eidos diff gates on the
+// schedule ids matching, then computes the distance and the shift bucket.
+// invariant: metalog carries the counts and eidos owns the distance, which is ladder-agnostic at
+// w=1.
+// invariant: populated only when the same (template_id, field_name) appears in BOTH documents'
+// ordinal_histograms.
+// refs: SRC-D-W1-1, SRC-D-W1-4
 struct OrdinalHistogramDelta
 {
     TemplateId template_id;
@@ -1661,20 +1310,12 @@ struct DocumentRef
     std::optional<std::string> document_id;
 };
 
-// Pairwise change in the bounded long-tail shape (SPEC §3.6 tail_summary).
-// Present only when BOTH documents carried a tail_summary (both had a non-empty
-// tail) — a one-sided tail is a tail appearing/vanishing, which the template-
-// level new/vanished signals already express. Mirrors the TailSummary triple as
-// before / after / delta (delta = current - previous):
-//   * tail_template_count — distinct templates sitting below top_k.
-//   * tail_entropy_bits    — tail concentration. A NEGATIVE delta means the tail
-//     is collapsing toward one dominant template.
-//   * tail_max_rate        — tail loudness. A POSITIVE delta means the loudest
-//     tail template is growing relative to the stream.
-// "Louder AND more concentrated" (max_rate up, entropy down) is the classic
-// emerging-chronic-error signature — a single error growing inside the tail
-// without ever breaching top_k. eidos `TailShift` is the streaming analogue;
-// this is the same signal as a pairwise, stateless diff field.
+// invariant: the pairwise change in the bounded long-tail shape, present only when BOTH documents
+// carried a tail_summary.
+// invariant: every delta is current minus previous, so a negative entropy delta is a tail
+// collapsing toward one dominant template and a positive max-rate delta is it growing.
+// invariant: a one-sided tail is a tail appearing or vanishing, which the template-level new and
+// vanished signals already express.
 struct TailDelta
 {
     std::uint64_t previous_tail_template_count{0};
@@ -1688,15 +1329,7 @@ struct TailDelta
     double tail_max_rate_delta{0.0};
 };
 
-// ── Cube diff (SPEC §13.6, EXPERIMENTAL) ───────────────────────
-//
-// The emerging border between two cube blocks: the smallest constraint
-// characterising what GREW (and the dual, what vanished) between `previous` and
-// `current`. The emerging region (count_prev ≤ θ_was ∧ count_cur ≥ θ_now — two
-// ABSOLUTE thresholds, never a ratio, §16.5 MUST-2) is order-convex, bounded by a
-// (lower, upper) border pair.
-
-// One border cell: the constraint coordinate + the (was, now) counts it bounds.
+// invariant: one border cell is the constraint coordinate plus the (was, now) counts it bounds.
 struct CubeBorderCell
 {
     CubeCoord coord;
@@ -1705,10 +1338,8 @@ struct CubeBorderCell
     [[nodiscard]] bool operator==(const CubeBorderCell&) const noexcept = default;
 };
 
-// An order-convex region as a (lower, upper) border pair (§13.6):
-//  * lower — the most-SPECIFIC emerging cells (the precise description).
-//  * upper — the most-GENERAL emerging cells = the minimal generators = the
-//    deterministic HEADLINE (computed, not narrated).
+// invariant: lower holds the most SPECIFIC emerging cells and upper the most GENERAL -- the minimal
+// generators, which are the deterministic headline.
 struct CubeBorder
 {
     std::vector<CubeBorderCell> lower;
@@ -1716,83 +1347,80 @@ struct CubeBorder
     [[nodiscard]] bool operator==(const CubeBorder&) const noexcept = default;
 };
 
-// The cube_diff block: emitted only when BOTH documents carried a cube AND their
-// axes are equal (the §2.4 comparability gate + an equal cube schema). `axes`
-// equals both inputs' cube axes.
+// invariant: the emerging border between two cube blocks -- the smallest constraint characterising
+// what GREW, and the dual for what vanished.
+// invariant: the emerging region is defined by two ABSOLUTE thresholds and never a ratio, so it is
+// order-convex and bounded by a (lower, upper) border pair.
+// invariant: emitted only when BOTH documents carried a cube AND their axes are equal; axes equals
+// both inputs' cube axes.
+// refs: F-SRC-metalog-spec:SPEC.md
 struct CubeDiffBlock
 {
     std::vector<CubeAxis> axes;
-    // Presence-bool + inline value, NOT std::optional<CubeBorder> (CubeBorder owns vectors, so a
-    // synthesized optional<CubeBorder> copy hits the same MSVC bug as the cube). Since
-    // CubeDiffBlock is itself an inline value member of MetaLogDiff now, these are copied on every
-    // MetaLogDiff copy (detection holds std::optional<MetaLogDiff>) even when empty — bool+value
-    // keeps that copy sound.
+    // invariant: a presence bool plus an inline value, NOT std::optional<CubeBorder>, because a
+    // synthesized optional copy of a vector-owning type hits the same MSVC miscompile.
     bool has_emerging{false};
-    CubeBorder emerging{}; // growth region (valid iff has_emerging)
+    // invariant: the growth region, valid iff has_emerging.
+    CubeBorder emerging{};
     bool has_vanishing{false};
-    CubeBorder vanishing{}; // disappearance region, the dual (valid iff has_vanishing)
+    // invariant: the disappearance region and the dual, valid iff has_vanishing.
+    CubeBorder vanishing{};
     [[nodiscard]] bool operator==(const CubeDiffBlock&) const noexcept = default;
 };
 
-// ── reservoir delta (§5.3) — the streaming chronic-vs-new consumption seam ──
-// Direction of an ERROR/FATAL failure-frontier crossing, oriented previous→current
-// (the MetaLogDiff previous/current stamp). SIGNED but POLARITY-MUTE: metalog records
-// which way a template's dominant_level moved across the failure frontier; the
-// escalation (up) / recovery (down) READING is the consumer's — the latency_shift
-// discipline (cube_differential_axes.md §7.4). Never a good/bad verdict here.
+// invariant: the direction of an ERROR/FATAL failure-frontier crossing, oriented previous to
+// current.
+// invariant: SIGNED but POLARITY-MUTE -- the escalation or recovery reading is the consumer's,
+// never a good or bad verdict here.
 enum class FrontierDirection : std::uint8_t
 {
-    Up,  // crossed INTO the failure band (…→ Error/Fatal)
-    Down // crossed OUT of the failure band (Error/Fatal →…)
+    // invariant: crossed INTO the failure band.
+    Up,
+    // invariant: crossed OUT of the failure band.
+    Down
 };
 
-// One rare-salient template on the reservoir-delta membership boundary. The snapshot
-// carried is the entry as it stands on the side that OWNS it: the current-window entry
-// for new_salient, the previous-window entry for vanished_salient. Both draw from a
-// document's RESERVOIR (which carries salience + structural_role), so all five fields
-// are populated.
+// invariant: one rare-salient template on the reservoir-delta membership boundary.
+// invariant: the snapshot is the entry as it stands on the side that OWNS it -- the current window
+// for new_salient and the previous window for vanished_salient.
+// invariant: drawn from a document's RESERVOIR, so every field is populated.
 struct ReservoirDeltaEntry
 {
     TemplateId template_id;
-    // DN-32.D3: the snapshot carries the level AND its provenance, because this member is a
-    // STREAMING decision signal (§5.3 chronic-vs-new) — a snapshot that dropped the marker would
-    // be a claim rebuilt from a guess with the guess no longer visible.
+    // invariant: the level AND its provenance, because this member is a streaming decision signal
+    // and a snapshot that dropped the marker would rebuild a claim from an invisible guess.
+    // refs: DN-32.D3
     std::optional<EventLevel> dominant_level;
     StructuralRole structural_role{StructuralRole::None};
     std::uint32_t salience{0};
     std::uint64_t count{0};
-    // The template's SHARE of the window that owns this snapshot, carried from that side's
-    // ReservoirEntry for the same reason FrontierCrossing below carries both sides' counts and
-    // shares: so a consumer can rank the row WITHOUT RE-READING THE DOCUMENTS. A consumer that had
-    // to divide `count` by a `lines_observed` it fetched itself would own a membership domain of
-    // its own again, which is what DN-64.D4 forbids. Domain-only —
-    // `dto::ReservoirDeltaEntry` (serialize.cpp) does not carry it.
+    // invariant: the template's SHARE of the window that owns this snapshot, so a consumer can rank
+    // the row without re-reading the documents.
+    // invariant: domain-only -- the wire row does not carry it.
+    // refs: DN-64.D4
     double frequency{0.0};
-    // The snapshot's retention argmax, carried from the owning side's ReservoirEntry (see the
-    // field there for why it is the VERDICT and not the ordinals, and why it is optional).
-    // Domain-only — `dto::ReservoirDeltaEntry` (serialize.cpp) does not carry it.
+    // invariant: the snapshot's retention argmax, carried from the owning side's entry.
+    // invariant: domain-only -- the wire row does not carry it.
+    // refs: DN-64.D3
     std::optional<RetentionAxis> retention_axis;
     [[nodiscard]] bool operator==(const ReservoirDeltaEntry&) const noexcept = default;
 };
 
-// One failure-frontier crossing: a template present in BOTH sides' salience memory
-// whose dominant_level crosses the ERROR/FATAL frontier. Carries both levels so the
-// consumer can attribute the crossing without re-reading the documents.
+// invariant: a template present in BOTH sides' salience memory whose dominant_level crosses the
+// ERROR/FATAL frontier.
 struct FrontierCrossing
 {
     TemplateId template_id;
     FrontierDirection direction;
-    // DN-32.D3: both sides carry their provenance. A crossing is the input to an ESCALATION
-    // reading downstream (§5.3 chronic-but-erupted restores full confidence), so a consumer must
-    // be able to see whether the levels that define the crossing were declared or inferred.
+    // invariant: both sides carry their provenance, so a consumer can see whether the levels that
+    // define the crossing were declared or inferred.
+    // refs: DN-32.D3
     std::optional<EventLevel> previous_level;
     std::optional<EventLevel> current_level;
-    // The two sides' occurrence counts and shares, from the salience-memory entry each side owns
-    // (top_k or reservoir — both carry `count` and `frequency`). Here for the same reason the two
-    // levels are: "so the consumer can attribute the crossing WITHOUT RE-READING THE DOCUMENTS".
-    // A consumer that had to re-read them to render "2x on baseline, 2x on changed" would be back
-    // to owning a membership domain of its own, which is exactly what DN-64.D4 forbids.
-    // Domain-only — `dto::FrontierCrossing` (serialize.cpp) carries the ids and levels alone.
+    // invariant: the two sides' occurrence counts and shares, from the salience-memory entry each
+    // side owns, so a consumer attributes the crossing without re-reading the documents.
+    // invariant: domain-only -- the wire row carries the ids and levels alone.
+    // refs: DN-64.D4
     std::uint64_t previous_count{0};
     std::uint64_t current_count{0};
     double previous_frequency{0.0};
@@ -1800,17 +1428,14 @@ struct FrontierCrossing
     [[nodiscard]] bool operator==(const FrontierCrossing&) const noexcept = default;
 };
 
-// The §5.3 reservoir delta over the two documents' salience memory (top_k ∪ reservoir):
-//   * new_salient      — in current.reservoir, absent from previous.(top_k ∪ reservoir).
-//   * vanished_salient — in previous.reservoir, absent from current.(top_k ∪ reservoir).
-//   * frontier_crossings — on BOTH sides' memory, dominant_level crossing the failure frontier.
-// Every list is keyed and sorted by template_id (the canonical key; TemplateId's defaulted
-// byte-order). Set-difference + integer level compares over membership that is already
-// deterministic content (ADR-31.D8) — no unordered iteration order may leak into any output.
-// The reading discipline (who reads which member) is the consumer's, not the producer's:
-// new_salient + frontier_crossings are the STREAMING members (read on the anchored
-// per-scale diffs); vanished_salient is the BATCH member — a streaming consumer MUST NOT
-// alert on it (rarity IS intermittency; §5.3).
+// invariant: the delta over the two documents' salience memory, which is top_k union reservoir.
+// invariant: new_salient is in current.reservoir and absent from previous memory, vanished_salient
+// the mirror, and frontier_crossings sits in both.
+// invariant: every list is keyed and sorted by template_id, and the arithmetic is set difference
+// plus integer level compares over already-deterministic membership.
+// invariant: new_salient and frontier_crossings are the STREAMING members; vanished_salient is the
+// BATCH member and a streaming consumer MUST NOT alert on it.
+// refs: ADR-31.D8
 struct ReservoirDelta
 {
     std::vector<ReservoirDeltaEntry> new_salient;
@@ -1823,27 +1448,24 @@ struct ReservoirDelta
     [[nodiscard]] bool operator==(const ReservoirDelta&) const noexcept = default;
 };
 
-// ── comparison outcome (SPEC §13.2, REQUIRED on every MetaLogDiff since spec 0.10.0) ──
-//
-// The producer's ASSERTION ABOUT THE COMPARISON IT PERFORMED — never a summary of which fields it
-// chose to serialise. `Changed` obliges the document to carry a WITNESS: at least one signal
-// property that is non-vacuous by that property's own `x-metalog-vacuous` declaration in
-// `schema/metalog_diff.v0.schema.json` (§13.2.1). `Unchanged` forbids one; it is a POSITIVE result
-// ("the comparison ran and found nothing"), not an empty document, and it MAY still carry signal
-// properties as long as every one of them sits at its declared vacuous value.
-//
-// NOT a member of MetaLogDiff: it is a pure function of the diff's findings, and a stored copy is
-// redundant state that a hand-built diff (the eidos classify/sift tests build them) would carry at
-// a default contradicting its own content. Derived at the wire seam instead —
-// `comparison_outcome_of(const MetaLogDiff&)` in metalog.cppm is the single definition, callable
-// in-process by a consumer that wants the assertion without serialising.
+// invariant: the producer's ASSERTION about the comparison it performed, never a summary of which
+// fields it chose to serialise.
+// invariant: Changed obliges the document to carry a WITNESS -- one signal property that is
+// non-vacuous by its own declaration in the diff schema.
+// invariant: Unchanged forbids a witness; it is a POSITIVE result and MAY still carry signal
+// properties as long as every one sits at its declared vacuous value.
+// invariant: NOT a member of MetaLogDiff -- it is a pure function of the findings, derived at the
+// wire seam so a hand-built diff cannot carry a default contradicting its content.
+// refs: F-SRC-metalog-spec:SPEC.md
 enum class ComparisonOutcome : std::uint8_t
 {
-    Unchanged, // the comparison ran and found no change; the document carries NO witness
-    Changed    // the comparison found at least one change; the document carries its witness
+    // invariant: the comparison ran and found no change; the document carries NO witness.
+    Unchanged,
+    // invariant: the comparison found at least one change; the document carries its witness.
+    Changed
 };
 
-// The two wire tokens SPEC §13.2 fixes. Exhaustive over the enum by construction.
+// invariant: the two wire tokens the specification fixes, exhaustive over the enum.
 [[nodiscard]] inline std::string_view to_string(ComparisonOutcome outcome) noexcept
 {
     return outcome == ComparisonOutcome::Changed ? "changed" : "unchanged";
@@ -1851,16 +1473,12 @@ enum class ComparisonOutcome : std::uint8_t
 
 struct MetaLogDiff
 {
-    // SPEC §13.1.1: the version of the SPECIFICATION this document conforms to — the same axis
-    // AND the same value as `metalog_version`, never an independent version of the diff document.
-    // It therefore mirrors `kMetaLogSpecVersion` rather than carrying a literal: this was the THIRD
-    // hand-written copy of that one fact, and being hand-written it had drifted four MINOR versions
-    // behind, stamping `0.6.0` onto documents carrying `comparison_outcome` — a member the spec
-    // made REQUIRED at 0.10.0. §13.1.1 forbids exactly that (a producer MUST NOT emit a version
-    // older than the version at which the newest member it carries was minted) and states in the
-    // same breath that no schema keyword catches it: `pattern` fixes the shape, and JSON Schema
-    // cannot compare a version against the version at which a sibling member was minted. The rule
-    // binds the PRODUCER, so this is the only place it can be held.
+    // invariant: the version of the SPECIFICATION this document conforms to -- the same axis AND
+    // the same value as metalog_version, never an independent version of the diff document.
+    // invariant: a producer MUST NOT emit a version older than the version at which the newest
+    // member it carries was minted.
+    // invariant: no schema keyword can catch that, so the rule binds the producer and is held here.
+    // refs: F-SRC-metalog-spec:SPEC.md
     std::string diff_version{kMetaLogSpecVersion};
     DocumentRef previous{};
     DocumentRef current{};
@@ -1872,37 +1490,32 @@ struct MetaLogDiff
     std::vector<TemplateId> vanished_templates;
     std::vector<BranchingDelta> branching_delta;
     std::optional<NGramDelta> ngram_delta;
-    // O4b service-topology delta (SRC-D-OTEL-21). Present ONLY when both documents carried a
-    // service_edges block (absent ⇒ *unknown*). Serialised under the §7 `extensions` container,
-    // which §13.2.1 step 2 excludes from the witness set by name. See ServiceEdgeDelta.
+    // invariant: present ONLY when both documents carried a service_edges block; absence reads
+    // unknown.
+    // invariant: serialised under the extensions container, which the witness derivation excludes
+    // by name.
+    // refs: SRC-D-OTEL-21
     std::optional<ServiceEdgeDelta> service_edge_delta;
-    // Per-param distribution shift. Empty unless both documents were produced
-    // with max_param_histograms > 0 and share at least one template_id.
-    // Sorted by js_divergence descending (highest shift first).
+    // invariant: empty unless both documents tracked histograms and share a template; sorted by
+    // js_divergence descending.
     std::vector<FieldHistogramDelta> field_histogram_deltas;
-    // W1 ordinal distribution drift (§4A.4). Empty unless both documents were produced with
-    // max_param_histograms > 0 and share a (template_id, declared-ordinal field). Carries both
-    // sides' binned counts; the eidos diff computes the Wasserstein-1 distance. Sorted by
-    // (template_id, field_name). See OrdinalHistogramDelta.
+    // invariant: empty unless both documents tracked histograms and share a (template_id,
+    // declared-ordinal field); sorted by (template_id, field_name).
+    // refs: SRC-D-W1-1
     std::vector<OrdinalHistogramDelta> ordinal_histogram_deltas;
-    // Long-tail shape change. Present only when both documents carried a
-    // tail_summary. See TailDelta.
+    // invariant: present only when both documents carried a tail_summary.
     std::optional<TailDelta> tail_delta;
-    // Emerging-border cube diff (SPEC §13.6) — EXPERIMENTAL. Present (has_cube_diff) only when
-    // both documents carried a `cube` and their axes are equal. Structured evidence (the upper
-    // border is the deterministic headline); NOT an alert on its own. Presence-bool + inline value,
-    // NOT std::optional<CubeDiffBlock> — same MSVC consumer-synthesis reason as
-    // MetaLogDocument::cube.
+    // invariant: present only when both documents carried a cube and their axes are equal.
+    // invariant: structured evidence -- the upper border is the deterministic headline, and it is
+    // not an alert on its own.
+    // invariant: a presence bool plus an inline value for MetaLogDocument::cube's reason, and
+    // because axes is a required descriptor: present-but-empty is a state, absence is not.
     bool has_cube_diff{false};
     CubeDiffBlock cube_diff{};
-    // §5.3 reservoir delta. Additive on the DERIVED diff → no canonicalization_version bump: that
-    // axis is canon's processing contract (§2.4), which a derived diff block does not move.
-    // Inline value, NOT a presence-bool pair and NOT std::optional: emptiness IS absence
-    // here (all three lists empty ⇒ the block is omitted from JSON — reservoir_delta.empty()), so a
-    // separate has_ flag would be redundant state to keep in sync. Inline (not
-    // std::optional<ReservoirDelta>) also sidesteps the MSVC consumer-synthesis bug that
-    // drove cube_diff to bool+value — detection holds std::optional<MetaLogDiff>, but an
-    // inline vector-owning member copies soundly where a synthesized optional would not.
+    // invariant: additive on the DERIVED diff, so no canonicalization_version bump -- that axis is
+    // canon's processing contract, which a derived diff block does not move.
+    // invariant: an inline value, because emptiness IS absence here: all three lists empty means
+    // the block is omitted from JSON, so a separate presence flag would be redundant state.
     ReservoirDelta reservoir_delta{};
 };
 
