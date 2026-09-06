@@ -3450,14 +3450,19 @@ it is the backstop, not the first line.**
 | `test_param_histograms_compose.cpp` | 25 |
 | `test_processing_identifiers.cpp` | 9 |
 
-**Unit 25 is the whole remainder and the repo arms behind it** — they are small and unrelated, so no subject
-grouping is available. **Question density, measured over four units: 38 questions for 245
-violations, 40 for 439, 35 for 229, 36 for 332** — a reader is paced by the number of distinct
-CLAIMS, not by deleted lines, so budget 35-40 questions per unit whatever its violation count.
+**Unit 25 is the whole remainder, and the repo ARMS behind it** — 6 small unrelated files at 164,
+which is one questionnaire. **Then set `comment_contract: true` for `insight-metalog` in
+`packages.yml` and it is the fourth armed repo**, after `logcraft`, `coderoast-ipc` and
+`insight-twin`. Nothing outside `tests/operations/` carries a violation.
+
+**Question density, measured over five units: 38 questions for 245 violations, 40 for 439, 35 for
+229, 36 for 332, 37 for 238** — a reader is paced by the number of distinct CLAIMS, not by deleted
+lines, so budget 35-40 questions per unit whatever its violation count.
 
 **AND RUN `budget_precheck.py` BEFORE the first `DRY=1` placement.** `Placer.B` reports at most one
 overrun per BLOCK, so unit 23's script read 15 overruns, then 5, then 2, then 2, then 2 across five
-re-strip-and-re-place cycles; the pre-check listed all of them in one pass over 96 specs.
+re-strip-and-re-place cycles; the pre-check listed all of them in one pass over 96 specs. Unit 24
+used it first and cleared 8 overruns in a single edit.
 
 Take the build slot only around the behaviour witness; the reading, stripping and drafting need
 none. **Arming is one `packages.yml` line away once this directory reads 0** — nothing else in the
