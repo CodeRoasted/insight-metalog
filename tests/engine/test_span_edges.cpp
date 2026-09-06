@@ -1,15 +1,4 @@
-//
-// The observed causal DAG (SRC-D-OTEL-11): a SPAN record's causality is
-// DECLARED (parent_span_id), so it never enters an adjacency ring. At window close the engine
-// resolves template(parent) → template(child) into the SAME bounded n-gram graph the inferred
-// path feeds (one fingerprint, no fork). This pins:
-//   (1) the observed edge appears in top_ngrams; span_records / orphan_parent_edges are stated;
-//   (2) an unresolvable parent (evicted / straddled) → an orphan fact, NEVER a guessed edge;
-//   (3) G-O3-2 — under a CONCURRENT interleave the observed DAG manufactures ZERO cross-"trace"
-//       edges, whereas the inferred global-adjacency graph on the SAME records does (the noise
-//       delta is the O0→O2 de-pollution pattern, re-run at DAG grain);
-//   (4) determinism — the observed graph is bit-identical across replays (SACRED).
-
+// refs: SRC-D-OTEL-11
 #include <gtest/gtest.h>
 
 #include <array>
@@ -23,7 +12,6 @@ namespace tok = insight::tokenization;
 namespace meta = insight::metalog;
 using insight::metalog::test::make_event;
 
-// Build a span event: a canon event with declared trace/span identity (is_span → observed DAG).
 [[nodiscard]] tok::CanonicalEvent make_span(std::string_view templ, std::uint64_t span_id,
                                             std::uint64_t parent_span_id)
 {
@@ -60,7 +48,6 @@ TEST(SpanEdges, ObservedParentEdgeAccountedAtClose)
 {
     meta::MetaLogEngine engine{meta::MetaLogConfig{.top_k_size = 16, .top_ngrams_size = 16}};
     engine.open_window(kT0);
-    // Child serialized BEFORE parent (the routine OTLP order) — close-time resolution handles it.
     engine.ingest_event(make_span("child", /*span=*/2, /*parent=*/1));
     engine.ingest_event(make_span("root", /*span=*/1, /*parent=*/0));
     const auto doc{engine.close_window(kT1)};
@@ -75,30 +62,22 @@ TEST(SpanEdges, UnresolvableParentIsAnOrphanNotAGuessedEdge)
 {
     meta::MetaLogEngine engine{meta::MetaLogConfig{.top_k_size = 16, .top_ngrams_size = 16}};
     engine.open_window(kT0);
-    engine.ingest_event(make_span("orphan", /*span=*/5, /*parent=*/99)); // parent not in window
+    engine.ingest_event(make_span("orphan", /*span=*/5, /*parent=*/99));
     const auto doc{engine.close_window(kT1)};
 
     ASSERT_TRUE(doc.acquisition.has_value());
     EXPECT_EQ(doc.acquisition->span_records, 1U);
     EXPECT_EQ(doc.acquisition->orphan_parent_edges, 1U);
-    // No edge was invented from the unresolved parent.
     EXPECT_FALSE(has_edge(doc, "orphan", "orphan"));
 }
 
-// (3) G-O3-2: the observed DAG vs inferred adjacency under a concurrent interleave. Two "traces"
-// (a1→a2, b1→b2) whose spans arrive round-robin. The observed graph accounts ONLY the declared
-// edges; the inferred global-adjacency graph on the same arrival order manufactures cross-trace
-// bigrams (a1→b1, b1→a2, …) — the noise the trace axis de-pollutes.
 TEST(SpanEdges, ObservedDagHasNoInterleaveNoiseThatInferredDoes)
 {
-    // Declared edges the observed graph MUST have and the ONLY edges it may have.
     const std::array<std::pair<std::string_view, std::string_view>, 2> declared{
         {{"a1", "a2"}, {"b1", "b2"}}};
 
     const auto interleave = [&](bool observed)
     {
-        // observed=false → drive the SAME records through the inferred global ring (is_span off,
-        // trace-scoping off) — the polluted control the trace axis beats.
         meta::MetaLogEngine engine{meta::MetaLogConfig{
             .top_k_size = 32, .top_ngrams_size = 64, .trace_scoping_enabled = false}};
         engine.open_window(kT0);
@@ -113,8 +92,8 @@ TEST(SpanEdges, ObservedDagHasNoInterleaveNoiseThatInferredDoes)
             const std::uint64_t base{static_cast<std::uint64_t>(i) * 10U};
             emit("a1", base + 1U, 0U);
             emit("b1", base + 3U, 0U);
-            emit("a2", base + 2U, base + 1U); // parent = this trace's a1
-            emit("b2", base + 4U, base + 3U); // parent = this trace's b1
+            emit("a2", base + 2U, base + 1U);
+            emit("b2", base + 4U, base + 3U);
         }
         return engine.close_window(kT1);
     };
@@ -144,18 +123,14 @@ TEST(SpanEdges, ObservedDagHasNoInterleaveNoiseThatInferredDoes)
         return noise;
     };
 
-    // Observed: only the two declared edges, ZERO interleave noise.
     EXPECT_TRUE(has_edge(observed_doc, "a1", "a2"));
     EXPECT_TRUE(has_edge(observed_doc, "b1", "b2"));
     EXPECT_EQ(noise_edges(observed_doc), 0)
         << "observed DAG must not manufacture cross-trace edges";
-    // Inferred adjacency on the same interleave DOES manufacture cross-trace noise — the delta the
-    // observed graph eliminates (the G-O3-2 number: inferred noise → 0 observed).
     EXPECT_GT(noise_edges(inferred_doc), 0) << "the inferred global-adjacency control must show "
                                                "interleave noise for the delta to be real";
 }
 
-// (4) Determinism (SACRED): the observed graph replays bit-identically.
 TEST(SpanEdges, ObservedGraphReplaysBitIdentically)
 {
     const auto run = []

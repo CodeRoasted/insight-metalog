@@ -1,7 +1,3 @@
-// Unit tests: allow short identifiers and test-specific patterns
-// HLL approximate cardinality per (template, param): population, capped-table behaviour, diff
-// delta.
-
 #include <gtest/gtest.h>
 
 import insight.metalog.test;
@@ -13,14 +9,7 @@ namespace tok = insight::tokenization;
 namespace meta = insight::metalog;
 using insight::metalog::test::ParamEvent;
 
-// ── HyperLogLog cardinality tests ────────────────────────────────────────────
-//
-// Verify that FieldHistogram::approximate_cardinality is populated by HLL
-// and that FieldHistogramDelta::cardinality_delta captures the growth.
-//
-// The point of the field: approximate_cardinality is the UNCAPPED distinct-value
-// count, so it stays right exactly where the capped value_counts table goes blind.
-
+// refs: F-SRC-metalog-spec:SPEC.md
 TEST(HllCardinalityTest, ApproximateCardinalityIsNonZeroWhenHistogramsEnabled)
 {
     meta::MetaLogConfig cfg;
@@ -32,7 +21,6 @@ TEST(HllCardinalityTest, ApproximateCardinalityIsNonZeroWhenHistogramsEnabled)
     const auto t1 = t0 + std::chrono::seconds{60};
 
     eng.open_window(t0);
-    // Inject 50 distinct values — value table caps at 10, but HLL sees all 50.
     for (int i = 0; i < 50; ++i)
     {
         auto e = ParamEvent::make("GET <*>", {"val_" + std::to_string(i)});
@@ -47,14 +35,12 @@ TEST(HllCardinalityTest, ApproximateCardinalityIsNonZeroWhenHistogramsEnabled)
 
     EXPECT_GT(fh.approximate_cardinality, 0u)
         << "HLL approximate_cardinality must be non-zero after 50 distinct values";
-    // HLL at p=14 has ~1.5% error; 50 distinct values → estimate should be
-    // within a reasonable range (5..200) even for small cardinalities.
     EXPECT_GE(fh.approximate_cardinality, 5u) << "HLL estimate too low for 50 distinct values";
 }
 
 TEST(HllCardinalityTest, ApproximateCardinalityIsZeroWhenHistogramsDisabled)
 {
-    meta::MetaLogEngine eng; // default: max_param_histograms = 0
+    meta::MetaLogEngine eng;
     const auto t0 = insight::Timestamp{} + std::chrono::hours{10};
     const auto t1 = t0 + std::chrono::seconds{60};
 
@@ -71,20 +57,16 @@ TEST(HllCardinalityTest, ApproximateCardinalityIsZeroWhenHistogramsDisabled)
 
 TEST(HllCardinalityTest, EstimatesHighCardinalityEvenWhenValueTableFull)
 {
-    // This is the key cardinality-limitation test: with max_histogram_values=10,
-    // the value_counts table fills up after 10 unique values and cannot track
-    // more. But HLL sketches ALL values and still gives a good estimate.
 
     meta::MetaLogConfig cfg;
     cfg.max_param_histograms = 1;
-    cfg.max_histogram_values = 10; // table caps at 10
+    cfg.max_histogram_values = 10;
 
     meta::MetaLogEngine eng{cfg};
     const auto t0 = insight::Timestamp{} + std::chrono::hours{10};
     const auto t1 = t0 + std::chrono::seconds{60};
 
     eng.open_window(t0);
-    // Inject 500 distinct values.
     for (int i = 0; i < 500; ++i)
     {
         auto e = ParamEvent::make("GET <*>", {"uid_" + std::to_string(i)});
@@ -94,11 +76,9 @@ TEST(HllCardinalityTest, EstimatesHighCardinalityEvenWhenValueTableFull)
 
     const auto& fh = doc.stats.top_k[0].field_histograms[0];
 
-    // value_counts should have at most 10 entries.
     EXPECT_LE(fh.value_counts.size(), 10u)
         << "value_counts table must be capped at max_histogram_values";
 
-    // HLL estimate should be much larger — demonstrating the limitation is lifted.
     EXPECT_GT(fh.approximate_cardinality, 50u)
         << "HLL must track cardinality beyond the value_counts cap. The exact value table "
            "saturates at max_histogram_values, so without the HLL a cardinality explosion "
@@ -107,8 +87,6 @@ TEST(HllCardinalityTest, EstimatesHighCardinalityEvenWhenValueTableFull)
 
 TEST(HllCardinalityTest, CardinalityDeltaPopulatedInDiff)
 {
-    // Build two windows: first with 20 distinct values, second with 100.
-    // The diff must carry a positive cardinality_delta for the param.
 
     meta::MetaLogConfig cfg;
     cfg.max_param_histograms = 1;
@@ -139,7 +117,6 @@ TEST(HllCardinalityTest, CardinalityDeltaPopulatedInDiff)
     {
         if (fhd.current_cardinality > 0 || fhd.previous_cardinality > 0)
         {
-            // The second window has more distinct values → delta should be positive.
             if (fhd.cardinality_delta > 0)
                 found_positive_delta = true;
         }

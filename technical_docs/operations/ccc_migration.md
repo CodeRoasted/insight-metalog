@@ -2063,6 +2063,148 @@ converts.
 
 ---
 
+## Unit 19 — `tests/engine/` (9 files, 268 would-be violations)
+
+The engine's own behavioural suites: `test_behavior_block.cpp` (77),
+`test_field_histograms.cpp` (45), `test_windowing_seam_over_raw_lines.cpp` (31),
+`test_span_edges.cpp` (28), `test_stats_block.cpp` (27), `test_ordinal_histograms.cpp` (26),
+`test_hll_cardinality.cpp` (24), `test_stability_block.cpp` (5) and
+`test_engine_lifecycle.cpp` (5). Nine files, one subject — what `MetaLogEngine` puts in a closed
+document — so one reader.
+
+**Two of the three leading-block `SRC-` files are here, and unit 17 had already read them.**
+`test_ordinal_histograms.cpp` (line 1) and `test_span_edges.cpp` (line 2) are CITING sites, not
+statement-bearing: the statements of both codes are `insight-canon`'s `core/api/canon.api.cppm`.
+Each becomes a one-line `refs:` at the file head, position class unchanged, so
+`registry_grammar_lint`'s declaration-by-position classing is unmoved. No law number is owed and
+none was minted.
+
+**Census (`OPS-8.S4`).** `NOLINT` (every spelling) 0, `clang-format off/on` 0, `wall-clock:` 0,
+`DETERMINISM-ALLOW` 0, `LOG-SEAT-ALLOW` 0, the retired-structure marker 0, SPDX 0; `/*name=*/`
+**6** (all in `test_span_edges.cpp`) and namespace closers **9**, one per file. After the strip:
+identical. No census decision was needed.
+
+**Stripper cross-check (`OPS-8.S5`).** No suppression in any of the nine, so the equality reduces
+to `removed == violations`, and it holds file by file: 77, 45, 31, 28, 27, 26, 24, 5, 5 — each
+equal to its own would-be violation count. Kept 7 in `test_span_edges.cpp` (6 `/*name=*/` plus its
+closer) and 1 in each of the other eight. All nine carried the leading-blank-line defect after the
+strip and all nine were trimmed in the draft.
+
+**The claims ledger.** 78 comment blocks over the nine files. This unit is unusually M-heavy: the
+`BehaviorBlockTest` and `SpanEdges` suites carry assertion messages that already state the
+arithmetic and the anti-vacuity argument the prose above them restated, and an assertion message is
+code.
+
+| id | class | the claim, as the deleted comment stated it | disposition |
+|---|---|---|---|
+| X1 | X | the W1 ordinal carrier, its ladder and its emit order (`SRC-D-W1-2`) | **`// refs: SRC-D-W1-2`** at the ordinal file head — a CITING site, verified against canon's interface |
+| X2 | X | the observed causal DAG: a span's causality is DECLARED, so it never enters an adjacency ring (`SRC-D-OTEL-11`) | **`// refs: SRC-D-OTEL-11`** at the span file head — likewise a citing site |
+| X3 | X | template identity is a pure function of the line's own tokens (`SRC-D-TID-3`), which is what retired the evolving-cluster test | **`// refs: SRC-D-TID-3`** at `UniqueTemplateCount`, the test whose claim rests on it |
+| C1 | C | the `ordinals` span is valid through the ingest call, which copies what it keeps | **`// pre:`** at `ingest_latency_ms` |
+| C2 | C | `tail_summary` is absent when the tail is empty and otherwise carries all three fields; a partial one is never emitted | **`// invariant:`** at `TailSummaryAbsentWhenTailEmpty` |
+| X4 | X | the accounting bound and its omit-when-zero rule are the specification's §4 | **`// refs: F-SRC-metalog-spec:SPEC.md`** at `BoundedNgramKeysCapDistinctEntries` |
+| X5 | X | the composed drop count is the SUM, absent counting as zero, and commutativity is what the sum gives free | **`// refs: F-SRC-metalog-spec:SPEC.md, DN-56.D6`** at the compose-sum test |
+| X6 | X | the HLL estimate's error ceiling | **`// refs: F-SRC-metalog-spec:SPEC.md`** at the first HLL test — the *~1.5 %* figure is the specification's stated ceiling, not this repo's measurement |
+| X7 | X | the joint grain canon and metalog were never proven at together | **`// refs: DN-43.O3`** at the windowing-seam file head |
+| X8 | X | the two windows are shaped after the determinism corpus, the population the format-strategy gate pre-registers | **`// refs: DN-43.O2, F-SRC-insight-metalog:service_a.log`** at `kWindowOne` |
+| X9 | X | the publication half — an absent level is omitted from the wire, while the cube's axis carries its own value | **`// refs: DN-43.D10, F-SRC-metalog-spec:SPEC.md`** at the second windowing test |
+| R1 | R | `compose` drops branching because it cannot recompute it from aggregated counts, so it is absent and never present-but-empty | held → Q1 |
+| R2 | R | the counter counts OBSERVATIONS, never distinct keys, and no correct distinct-key value exists to assert | held → Q3 |
+| R3 | R | the snapshot is taken in `close_window` ahead of `reset_window_state`, so the live counter is already zero at the read | held → Q4 |
+| R4 | R | reading the SECOND close is what makes the reset arm an arm rather than a restatement | held → Q5 |
+| R5 | R | the two present-side counts are deliberately different, because the only arm a carry-one-side implementation passes is the one where the sides are equal | held → Q7 |
+| R6 | R | the round-robin interleave makes every globally adjacent pair cross traces, which is what leaves the global graph with zero real transitions | held → Q8 |
+| R7 | R | the third arm is the config flag's A/B on identical input | held → Q9 |
+| H1 | H | a TDD structure — *"Test 1 regression guard; Tests 2–5 RED before engine impl, GREEN after"* — and *"this is the state before the feature"* | deleted — history, and **stale**, see below |
+| M1 | M | field histograms re-surface the causal structure *"that Drain removes"* | deleted — **stale**, Drain is retired, see below |
+| R8 | R | the HLL estimate is accepted in a range because it is an estimator, not an exact count | held → Q12 |
+| M2 | M | a `FieldHistogramSerializationTest` section header, at the END of a file that contains no such test | deleted — **orphaned**, its content carried into unit 18, see below |
+| R9 | R | a child span serialises before its parent routinely, and close-time resolution handles it | held → Q16 |
+| R10 | R | an unresolvable parent becomes an orphan FACT, never a guessed edge | held → Q17 |
+| R11 | R | the inferred control run is what makes the observed graph's zero noise a delta rather than a vacuous zero | held → Q18 |
+
+**Interrogation** — one fresh agent, 27 questions, 63 tool uses, 216 k tokens, 10.4 minutes.
+Transcript checked: `GIT COMMANDS RUN: none`. **The reader disclosed one contamination and it is
+recorded:** a single recursive `grep` for a decision code, run before it adopted the exclusion
+glob, printed reference-index lines from the two excluded ledgers; it reports those lines were
+codename lists carrying no answer, and every later search carried the exclusion. Kept as a
+disclosure rather than a discount, because the questions it could plausibly have touched (the two
+`SRC-` citations) were answered from `insight-canon` and `insight-metalog` sources it names.
+
+**Score: 27 of 27 recovered, 0 not recovered, 0 wrong, 0 convictions.** Twenty-four at high
+confidence, three at medium (Q6 on why the drop count gets a commutativity arm the sibling caps do
+not, Q10 on whether the disabled-by-default test pins a limitation or a guarantee, Q12 on the HLL
+range's width). **Every line this conversion wrote that a question touched was read back and
+confirmed**: Q19 verified the `tail_summary` `invariant:` against the specification and the type's
+own shape; Q21 answered the template-identity question the `SRC-D-TID-3` citation now carries, from
+canon's stateless masker and its own test; Q23 and Q24 landed on the two design-note slots the
+windowing citations name; and Q25 read the `service_a.log` address and then **verified it line by
+line** — `kWindowOne` is that corpus file's lines 1-4 and `kWindowTwo` its lines 25-27, byte-for-byte
+apart from a dropped trailing request id.
+
+**Dispositions.** Nothing was not-recovered, so nothing was re-homed and no line was repaired.
+
+**Forms written (11 insertions, 27 comment lines after, from 289 before).** `pre:` 1 ·
+`invariant:` 1 · `refs:` 9 · one untagged continuation · tool forms kept 15 (6 `/*name=*/`, 9
+namespace closers).
+
+**Address census (`OPS-8.S7.3b`).** Exit 0 on all nine files, no address lost. Three files carried
+one address each before and after (`SRC-D-W1-2`, `SRC-D-OTEL-11`, `SRC-D-TID-3` — all three
+preserved as `refs:` lines at the same position class); four gained one or two
+(`F-SRC-metalog-spec:SPEC.md` three times, `F-SRC-insight-metalog:service_a.log` once); two carried
+none either way. Inbound leg run over all nine: every mention resolves to a code symbol or to a
+design-note paragraph that names the file without resting on its prose.
+
+**Stale claims deleted, with the evidence and the sibling repos searched BY NAME** — searched in
+`insight-canon`, `insight-eidos`, `metalog-spec`, `logcraft` and the superproject's
+`technical_docs/` shelf.
+
+1. **`test_field_histograms.cpp` said field histograms re-surface the causal structure "that Drain
+   removes" — in the present tense, about a component that no longer exists.** The only occurrence
+   of *Drain* anywhere in `insight-canon`'s or this repo's interfaces is a retirement note in
+   `insight-canon/core/api/canon.api.cppm` recording that the Drain clustering knobs were removed;
+   `test_stats_block.cpp`'s own deleted prose says the `migrate_bucket` path "was deleted with the
+   Drain clustering". A claim that was true when written and was falsified by a later change — the
+   *world moved* class, not a claim that was ever wrong.
+2. **The same file's TDD scaffolding.** *"Tests 2–5 — RED before engine impl, GREEN after"* and
+   *"This is the state before the feature"* describe a state three years of commits ago; all five
+   tests are green and the feature shipped. History, deleted.
+3. **The HLL range claimed an upper bound the code does not assert.** The prose read *"50 distinct
+   values → estimate should be within a reasonable range (5..200)"*; the assertion is
+   `EXPECT_GE(fh.approximate_cardinality, 5u)` and there is no upper bound anywhere in the test.
+   The reader established the same fact independently. The *~1.5 % error* half of that prose is
+   NOT stale — it is the specification's own stated ceiling for the sketch's precision — which is
+   why the surviving form at that test is a `refs:` to the specification rather than a deletion.
+4. **An orphaned section header.** `test_field_histograms.cpp` ends with a
+   `FieldHistogramSerializationTest` block whose body states the real reason a *different*
+   directory's test exists. Deleted here; the claim it carried was verified at the artifact and
+   written into `tests/serialization/test_serialization.cpp` in unit 18.
+
+**Findings for other lanes, with their addressees.**
+
+**A. The dropped-observation fixture cannot separate the two quantities its prose distinguished —
+for Kleio.** The deleted comment insisted the counter measures refused OBSERVATIONS and never
+refused distinct KEYS. True of the engine — but in this fixture all 20 templates are distinct, so
+all 19 bigrams are distinct and the 15 refused observations are also 15 distinct refused keys. The
+reader stated it plainly: a fixture that repeats a refused key would be needed to separate them.
+The distinction is real and the arm does not witness it.
+
+**B. `TEST(FieldHistogramTest, DisabledByDefault_ParamsDiscarded)`'s assertion message reads as
+pinning a limitation, while the assertion pins a guarantee — for Kleio.** The message says the
+default config "must produce no field histograms (zero-overhead guarantee)" and then describes the
+`status_code` distribution being invisible downstream. The reader had to reach `LEXICON.md`, the
+api's default and Sift's own opt-in constant to settle that the opt-in default is a kept guarantee
+rather than a tracked gap. An assertion message is code, so this is a finding.
+
+**C. Two threshold pairs in this unit are fixture arithmetic with headroom and nothing derives
+them — for Kleio, informational.** `EXPECT_GE(approximate_cardinality, 5u)` for a true cardinality
+of 50, and `tail_entropy_bits < 0.4` / `tail_max_rate > 0.32` against computed values of about
+0.161 and 0.3267. The reader derived the second pair exactly from the fixture; neither pair has a
+stated derivation, and the sibling test one section away pins its own value exactly (`3.0/14.0`),
+which is the shape that makes the looseness visible.
+
+---
+
 # The law block: one was owed, one was issued, one is minted
 
 This lane was instructed not to pick a law number — they are workspace-global, append-only and
@@ -2831,3 +2973,198 @@ earlier test units name.
 `tests/engine/test_span_edges.cpp`, `tests/stats/test_stats.cpp` — still have not been read for
 statement bearing.** That remains the first act of whichever unit covers them, and it is what
 decides whether `tests/engine/` and `tests/stats/` are unblocked or owe a law number.
+
+---
+
+# Where the session stopped, after unit 19 — the handover
+
+**Nineteen units converted, no law minted in this session, the repo is NOT armed.** Arming
+(`OPS-8.S12`) needs the whole repo at zero and the test tier still carries 1 647 would-be
+violations.
+
+| unit | surface | files | would-be violations | comment lines | reader |
+|---|---|---|---|---|---|
+| 1-14 | (the first two sessions) | 34 | 2 984 | 3 026 → 1 161 | 130 of 131 recovered |
+| 15 | `api/metalog.api.cppm` | 1 | 1 088 | 1 089 → 636 | 38 of 42 recovered, 4 wrong |
+| 16 | `tests/reservoir/` | 2 | 244 | 267 → 100 | 12 of 12 recovered |
+| 17 | `tests/cube/` | 2 | 218 | 227 → 18 | 29 of 29 recovered |
+| 18 | `tests/serialization/` | 4 | 252 | 262 → 36 | 27 of 29, 2 not recovered |
+| 19 | `tests/engine/` | 9 | 268 | 289 → 27 | 27 of 27 recovered |
+| | **total** | **52** | **5 054** | **5 160 → 1 978** | **263 of 270 recovered, 2 not recovered, 5 wrong** |
+
+**5 054 of the repo's 6 701 would-be violations — 75.4 %, in nineteen unit commits plus one
+correction commit.** The gate's own line after unit 19, verbatim:
+
+> `malf format: CCC SUMMARY · mode=check-paths · files 70 = armed 0 + report-only 70 + NOT CHECKED
+> 0 · armed repos: none · comment lines 3700 · forms pre=31 post=177 invariant=577 assert=64
+> note=202 refs=281 continuation=525 law=1 tool=173 · violations in armed files 0 (none) ·
+> would-be violations in report-only files 1647 (bare=1461 tag-mid-line=1 slash3=1 spacer=144
+> trailing=40) · rc=0`
+
+**Behaviour, one batch covering units 17, 18 and 19.** One slot acquisition;
+`malf test insight-metalog` **297 of 297 on clang-21 and 297 of 297 on gcc-16**, equal to the
+baseline the first session took. Slot wait for this session: **1 171 seconds on one acquisition**,
+1 171 seconds in total, taken with `MALF_BUILD_SLOT_ANCHOR` pinned to the lane's session pid and
+tested on the acquire's EXIT STATUS.
+
+## What remains: 1 647 would-be violations over 18 files, and the arithmetic is the gate's
+
+**Checked against `malf format --check insight-metalog`, not against the previous marker.** Per
+directory: `tests/operations/` 1 402 · `tests/determinism/` 173 · `tests/stats/` 61 ·
+`tests/metalog.test.cppm` 11. Those four sum to **1 647**, which is the gate's own figure.
+
+Per file, largest first — these eighteen also sum to 1 647:
+
+`tests/operations/test_compose_algebra.cpp` 439 · `test_golden_vectors.cpp` 196 ·
+`tests/determinism/test_determinism_gate.cpp` 173 ·
+`test_canonicalization_version_ruleset_coverage.cpp` 136 · `test_presence_churn_property.cpp` 98 ·
+`test_comparison_outcome.cpp` 98 · `test_stability_vs_diff_divergence.cpp` 95 ·
+`test_presence_churn_monoid.cpp` 68 · `test_presence_churn_rank_boundary.cpp` 63 ·
+`tests/stats/test_stats.cpp` 61 · `test_shift_sample_floor.cpp` 45 ·
+`test_retention_profile_name.cpp` 41 · `test_ruleset_identity.cpp` 31 · `test_diff_blocks.cpp` 31 ·
+`test_reservoir_delta.cpp` 27 · `test_param_histograms_compose.cpp` 25 ·
+`tests/metalog.test.cppm` 11 · `test_processing_identifiers.cpp` 9.
+
+## The unit plan for what is left — four units, in this order
+
+**Unit 20 — `tests/determinism/test_determinism_gate.cpp` + `tests/stats/test_stats.cpp` +
+`tests/metalog.test.cppm` (3 files, 245).** Taken together because the harness module is what the
+other two import and a reader must read it either way. `tests/stats/test_stats.cpp` carries one of
+the three leading-block `SRC-` sites (line 17, `SRC-D-TIR-2`), settled below.
+
+**Unit 21 — `tests/operations/test_compose_algebra.cpp` alone (1 file, 439).** One file, one
+subject: the composition algebra's three clauses at three modal strengths. It is the densest file
+in the repo — 1 399 lines, with derived arithmetic written out per arm — and it earns its own
+reader.
+
+**Unit 22 — the identity and versioning group (5 files, 413):** `test_golden_vectors.cpp` 196 ·
+`test_canonicalization_version_ruleset_coverage.cpp` 136 · `test_retention_profile_name.cpp` 41 ·
+`test_ruleset_identity.cpp` 31 · `test_processing_identifiers.cpp` 9.
+
+**Unit 23 — the diff group (9 files, 550):** `test_presence_churn_property.cpp` 98 ·
+`test_comparison_outcome.cpp` 98 · `test_stability_vs_diff_divergence.cpp` 95 ·
+`test_presence_churn_monoid.cpp` 68 · `test_presence_churn_rank_boundary.cpp` 63 ·
+`test_shift_sample_floor.cpp` 45 · `test_diff_blocks.cpp` 31 · `test_reservoir_delta.cpp` 27 ·
+`test_param_histograms_compose.cpp` 25.
+
+245 + 439 + 413 + 550 = **1 647**. At zero, arm the repo: `comment_contract: true` at the top level
+of `packages.yml`, then re-run `malf format --check insight-metalog` and confirm the summary reads
+`armed 1` with `violations in armed files 0` rather than `report-only`.
+
+## The three leading-block `SRC-` files: READ, and NONE is statement-bearing
+
+This was the blocking question and it is answered. Measured with `registry_grammar_lint`'s own
+decider — its `SRC_SWEEP` and `SRC_CITE` patterns, declaration classed by POSITION (an interface
+unit, or a `.cpp`'s first 40 lines) — over every sibling repo:
+
+| file | code | where the code's STATEMENT lives | verdict |
+|---|---|---|---|
+| `tests/engine/test_ordinal_histograms.cpp` line 1 | `SRC-D-W1-2` | `insight-canon/core/api/canon.api.cppm` — the per-schedule wire identity, the frozen versioned ladder and its bin count, three declaring-position sites | **citing** |
+| `tests/engine/test_span_edges.cpp` line 2 | `SRC-D-OTEL-11` | the same canon interface — a span record's declared causality resolved into the n-gram graph at window close, four declaring-position sites | **citing** |
+| `tests/stats/test_stats.cpp` line 17 | `SRC-D-TIR-2` | `insight-eidos` — `sift/src/sift.detail-shared.cppm` plus three `*.test.cppm` fixtures; the full argument is in the disposable attic | **citing** |
+
+In all three the prose beside the code describes **the test**, never the code's rule, which is
+`OPS-8.O5`'s criterion. **So neither `tests/engine/` nor `tests/stats/` ever owed a law number.**
+The first two were converted in unit 19 as one-line `refs:` at the same position class, and
+`registry_grammar_lint` stayed at 95 claimed codes, 95 declared in source, 0 failures. The third,
+in unit 20, converts the same way — and unit 20's draft already does exactly that.
+
+## The rules at `api/metalog.api.cppm` that owe a law number — text included, so no re-derivation
+
+Recorded by an earlier session and re-stated here in full, because a law number is the pilot's to
+issue and the next session should be able to ask for one without opening the file. `D-LSRC-`
+numbers are workspace-global, append-only and checked DENSE; **15 are declared today** (the
+registry lint's own form-1 line is the figure to trust), so the next free integer is 16 and it was
+issued elsewhere. **A lane never picks — it asks.**
+
+1. **The exact-integer distance rule.** The W1 ordinal distance is computed as an exact integer
+   cross-multiply against frozen band numerators and denominators, never in floating point, so the
+   band a pair falls in is bit-identical on every leg. No ADR or design-note slot states it; the
+   sites that obey it are the api's `ordinal_w1` and the cube's `signed_shift_id`.
+2. **The ordinal-XOR-categorical exclusivity rule.** A `TopKEntry` carries EITHER the categorical
+   `field_histograms` stream OR the ordinal `ordinal_histograms` stream for a given field, never
+   both, and the two are gated by the same `max_param_histograms` knob. Obeyed by the engine's
+   accumulation path and asserted by `tests/engine/test_ordinal_histograms.cpp`; no slot owns it.
+3. **The service-edge block, whose candidate owner explicitly refuses it.** Its authority is
+   `metalog-spec`'s governance file, a DIFFERENT owner whose numbering is not citable from this
+   shelf (`.claude/rules/adr-shelf-boundary.md`), so no `refs:` line can reach it — which is
+   exactly the absence a law block exists to fix.
+
+A fourth candidate was opened and CLOSED this session: the severity frontier
+(*"`{ERROR, FATAL}` are never banded"*), closure-first/collapse-last, the static cell budget and
+the minimal-common-collapse read are **all four stated verbatim in the specification's §16.10**,
+which is an addressable owner reachable as `F-SRC-metalog-spec:SPEC.md`. No block is owed there and
+the three collapse tests now cite the specification instead.
+
+## What was drafted and NOT landed — re-derivable, not work in hand
+
+Units 20, 21, 22 and 23 were scoped, stripped and drafted in this lane's scratchpad
+(`ccc-metalog-4`), and **none of it is in the tree**. The scratchpad is disposable and everything in
+it is re-derivable from `OPS-8.S3`-`S6` in under an hour per unit; treat the list below as a
+statement of what was checked, not as a deliverable to recover.
+
+* **Stripper cross-check already run on all four**, and `removed == violations` holds file by file
+  for every one of the eighteen remaining files: no file in the test tier carries a suppression of
+  any kind, so the equality reduces to the flat form with no kept-class subtraction.
+* **Token census already taken on all four.** `NOLINT` (every spelling) 0, `clang-format off/on` 0,
+  `wall-clock:` 0, `DETERMINISM-ALLOW` 0, `LOG-SEAT-ALLOW` 0, the retired-structure marker 0, SPDX
+  0 across the whole remaining tier. `/*name=*/` counts: `test_stats.cpp` 10,
+  `test_canonicalization_version_ruleset_coverage.cpp` 10, `test_param_histograms_compose.cpp` 9,
+  `test_diff_blocks.cpp` 8, `test_compose_algebra.cpp` 6, `test_presence_churn_rank_boundary.cpp` 3,
+  `test_presence_churn_property.cpp` 2, `test_presence_churn_monoid.cpp` 1. Namespace closers: one
+  per file except `test_compose_algebra.cpp`, `test_diff_blocks.cpp`,
+  `test_param_histograms_compose.cpp` and `test_processing_identifiers.cpp`, which carry two.
+* **Drafts gated standalone at zero would-be violations** for units 20 (30 comment lines, 12
+  insertions) and 21 (27 comment lines, 14 insertions), with `anchor_collide.py` clean on both.
+  Units 22 and 23 are stripped but their claims scripts are not written.
+* **Citation targets already verified at the artifact** for the drafted units, so a successor need
+  not re-check them: `ADR-3.D4`, `ADR-20.D7`, `ADR-23.D3`, `ADR-31.D8`, `DN-42.D17`, `DN-43.D10`,
+  `DN-56.D2`, `DN-56.D3`, `DN-56.D5`, `DN-56.D6`, `DN-56.D8`, `DN-56.D9`, `DN-56.O3`, `STU-3`
+  (the thin-sample-floor study), `SRC-D-OTEL-21`, `SRC-D-TIR-2`,
+  `F-SRC-metalog-spec:SPEC.md`, `F-SRC-metalog-spec:GOVERNANCE.md`,
+  `F-SRC-insight-eidos:insight_pipeline.cpp`, `F-SRC-insight-metalog:golden.yaml`.
+
+## Two traps this session paid for, for whoever takes the next unit
+
+* **A `refs:` anchored on a SECTION RULER lands on the anonymous `namespace` that follows it, not
+  on the test the section heads** — and `claims.py` reports zero anchor errors while it does.
+  Caught by `anchor_collide.py`, which reported the bare token `namespace` resolving at three
+  places in one file. Anchor a section's citation on its first `TEST`, never on the ruler.
+* **The address census counts `ADR-23` and `ADR-23.D4` as different tokens**, so replacing a bare
+  ADR number with the slots it names reads as a LOSS. Both such lines in unit 18 were legitimate,
+  and the disposition belongs in the ledger with its evidence rather than in a restored address.
+
+## The resume point
+
+**`OPS-8.S1` preflight, then unit 20 — `tests/determinism/test_determinism_gate.cpp` (173),
+`tests/stats/test_stats.cpp` (61) and `tests/metalog.test.cppm` (11), 245 would-be violations over
+3 files.** Take the build slot only around the behaviour witness; the reading, stripping and
+drafting need none.
+
+---
+
+## IN-FLIGHT UNIT LANDED WITH WITNESS 4 OWED — read this before converting anything else
+
+`tests/engine/` (9 files) was converted by the lane of 2026-09-06 and landed by the pilot at a
+context checkpoint **with four of the five `OPS-8.O1` witnesses green and the fifth OWED**:
+
+* **Comment-only** — all 9 files' code token streams byte-identical to their pre-conversion blob.
+* **Grammar** — `malf format --check insight-metalog/tests/engine` reads **0** would-be violations.
+* **Behaviour** — `malf test insight-metalog` **297 of 297 on clang-21 and 297 of 297 on gcc-16**,
+  equal to the recorded baseline, taken by the pilot under a held slot.
+* **Addressability** — the outbound census exits 0: no address lost, two added
+  (`F-SRC-insight-metalog:service_a.log`, `F-SRC-metalog-spec:SPEC.md`).
+* **KNOWLEDGE — NOT TAKEN.** No questionnaire was ever written for this unit and no cold reader
+  ever read it. **The tagged claims in these nine files have been interrogated by nobody.**
+
+**It was landed rather than reverted or left dirty** because the work is real and the mechanical
+witnesses hold, and because a dirty tree across a context boundary is how a conversion gets silently
+discarded. **It was landed rather than declared complete** because witness 4 is the one that has
+caught every defect this programme found — no gate has ever caught one — and simulating it would be
+worse than owing it.
+
+**So the first act of the next session on this repo is `OPS-8.S3.5` + `OPS-8.S8` for these nine
+files**: write the questionnaire from the pre-conversion blobs (`git show <pre-unit rev>:<file>`),
+run a fresh reader against the working tree, score from per-question evidence, and disposition every
+not-recovered and every conviction. Until that lands, **treat every tagged claim in `tests/engine/`
+as unverified** and do not cite one as established.

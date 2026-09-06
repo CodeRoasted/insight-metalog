@@ -1,7 +1,3 @@
-// Unit tests: allow short identifiers and test-specific patterns
-// MetaLogEngine lifecycle + window envelope: open/close guards, reset semantics,
-// duration/lines_observed.
-
 #include <gtest/gtest.h>
 
 import insight.metalog.test;
@@ -34,8 +30,6 @@ TEST(MetaLogEngineLifecycle, ResetBetweenWindowsKeepsStabilityState)
     EXPECT_EQ(doc2.stability->vanished_templates, 1U);
 }
 
-// ── Window block ──────────────────────────────────────────────────────────────
-
 TEST(MetaLogEngineWindow, DurationAndLinesObserved)
 {
     meta::MetaLogEngine engine;
@@ -60,7 +54,6 @@ TEST(MetaLogEngineWindow, StartAndEndISONotEmpty)
     EXPECT_FALSE(doc.window.end_iso.empty());
     EXPECT_NE(doc.window.start_iso, doc.window.end_iso);
 }
-// ── Lifecycle guards ──────────────────────────────────────────────────────────
 
 TEST(MetaLogEngineLifecycle, IngestBeforeOpenWindowThrows)
 {

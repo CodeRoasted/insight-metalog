@@ -1,6 +1,3 @@
-// Unit tests: allow short identifiers and test-specific patterns
-// StabilityBlock: cross-window stability score, KL/JS divergences, new/vanished counts.
-
 #include <gtest/gtest.h>
 
 import insight.metalog.test;
@@ -62,7 +59,7 @@ TEST_F(StabilityBlockTest, NewAndVanishedAreCounted)
     (void)engine.close_window(t0_ + std::chrono::seconds(60));
 
     engine.open_window(t0_ + std::chrono::seconds(60));
-    engine.ingest_event(make_event("a")); // b vanished, c new
+    engine.ingest_event(make_event("a"));
     engine.ingest_event(make_event("c"));
     auto d2{engine.close_window(t0_ + std::chrono::seconds(120))};
     ASSERT_TRUE(d2.stability.has_value());
@@ -87,7 +84,6 @@ TEST_F(StabilityBlockTest, DivergencesAreNonNegative)
     EXPECT_GE(d2.stability->js_divergence, 0.0);
     EXPECT_LE(d2.stability->js_divergence, 1.0);
 }
-// ── Stability extras ──────────────────────────────────────────────────────────
 
 TEST(MetaLogEngineStability, EmitStabilityFalseNeverEmitsBlock)
 {
@@ -112,7 +108,6 @@ TEST(MetaLogEngineStability, StabilityScoreAlwaysInZeroOne)
         engine.ingest_event(make_event("a"));
     (void)engine.close_window(t0 + std::chrono::seconds(1));
 
-    // Completely disjoint next window.
     engine.open_window(t0 + std::chrono::seconds(1));
     for (int i = 0; i < 20; ++i)
         engine.ingest_event(make_event("z"));
