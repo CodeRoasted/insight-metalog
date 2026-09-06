@@ -1619,6 +1619,278 @@ their assertion messages; the evidence that they can go red does not.
 
 ---
 
+## Unit 17 — `tests/cube/` (2 files, 218 would-be violations)
+
+The first unit of the test tier's cube subject and the resume point the previous session prepared:
+`test_cube.cpp` (170 would-be violations, 967 lines) and `test_cube_emerging_border.cpp` (48, 253
+lines). One subject, one reader. Ordered here rather than after `tests/operations/` because the
+cube's source unit (units 3 and 4) is already converted, so every rule these tests witness has
+either a converted `invariant:` at its site or a design-note slot to cite.
+
+**The three leading-block `SRC-` files were read FIRST, because the plan was blocked on them**
+(`OPS-8.O5`). `tests/engine/test_ordinal_histograms.cpp` (line 1, `SRC-D-W1-2`),
+`tests/engine/test_span_edges.cpp` (line 2, `SRC-D-OTEL-11`) and `tests/stats/test_stats.cpp`
+(line 17, `SRC-D-TIR-2`) are **all three CITING sites, none statement-bearing**, so neither
+`tests/engine/` nor `tests/stats/` owes a law number and both are unblocked. The measurement, run
+with `registry_grammar_lint`'s own decider (`SRC_SWEEP` + `SRC_CITE`, declaration classed by
+position) over every sibling repo: `SRC-D-W1-2`'s statement is `insight-canon`'s
+`core/api/canon.api.cppm` (the per-schedule wire identity, the frozen versioned ladder and its bin
+count B, three declaring-position sites); `SRC-D-OTEL-11`'s is the same file (a SPAN record's
+declared causality resolved into the n-gram graph at window close, four declaring-position sites);
+`SRC-D-TIR-2` has declaring-position sites in `insight-eidos` (`sift/src/sift.detail-shared.cppm`
+and three `*.test.cppm` fixtures) and its full statement in the disposable attic
+(`technical_docs/history/architecture-v1/insight_perf_template_id.md` § 3). In all three metalog
+test files the prose beside the code describes **the test**, not the code's rule, which is the
+`OPS-8.O5` criterion. Each becomes `refs: SRC-<code>` unchanged when its unit converts.
+
+**Census (`OPS-8.S4`), re-derived from the gates this repo runs** rather than read off unit 15's
+entry — the gate inventory in `insight-metalog/scripts/` and the superproject's `scripts/` was
+re-enumerated and is unchanged. Counted in the two files: `NOLINT` (every spelling) 0,
+`clang-format off/on` 0, `wall-clock:` 0, `DETERMINISM-ALLOW` 0, `LOG-SEAT-ALLOW` 0, the
+retired-structure marker 0, `SPDX-License-Identifier:` 0; `/*name=*/` **1** and namespace closers
+**4** (three in `test_cube.cpp`, one in the border file). After the strip: identical, 1 and 4. No
+census decision was needed.
+
+**Stripper cross-check (`OPS-8.S5`).** Neither file carries a suppression of any kind, so
+`removed == violations - (suppression-without-why + trailing-nolint)` reduces to
+`removed == violations`: `test_cube.cpp` **170 == 170**, `test_cube_emerging_border.cpp`
+**48 == 48**. Kept 4 and 1, equal to the token census exactly. Both files also carried the
+leading-blank-line defect the previous session recorded — removing a file's leading comment block
+leaves an empty first line that no witness sees — and both were trimmed by hand in the draft.
+
+**The claims ledger.** 96 comment blocks over the two files. M and H dominate this unit: the
+`CubeCollapse` and `CubeDiff` suites carry assertion messages that already state what the prose
+above the test restated, and an assertion message is code, so it survives the strip.
+
+| id | class | the claim, as the deleted comment stated it | disposition |
+|---|---|---|---|
+| M1 | M | `test_cube.cpp` covers "closure/condensation, the order-convex border, compose re-closure, the reservoir→cell LOCATION cross, the single-parent-tree guard, and a byte-identity golden" | deleted — the TEST names are the enumeration, and the last item is **stale**, see the findings |
+| C1 | C | `ev()`'s component/template are string literals, so the returned event's `string_view`s stay valid | **`// pre:`** at `ev` — the caller's storage outlives the event |
+| M2 | M | `find_cell` finds a closed cell by optional level + where-leaf + role | deleted — the four parameters are the statement |
+| X1 | X | the collapse oracle must exercise a real collapse for the rebuild-equality assertion to witness anything (`ADR-31.D8`) | **`// refs: ADR-31.D8`** at `GuardrailBoundsAnExplodingWindowByLevelBanding` |
+| R1 | R | 1500 components × two bandable levels is what pushes the un-collapsed cube past the budget | held → Q2 |
+| R2 | R | `comps` is `static` so the component `string_view`s stay valid | held → Q1 |
+| M3 | M | "the guardrail's CONTRACT: every window's cube is bounded by the budget" | deleted — `EXPECT_LE(cell_count, kCellsHard)` and its message say it |
+| R3 | R | the collapse must be RECORDED in the axes so mismatched-collapse cubes are detectable | held → Q3 |
+| X2 | X | compare-at-min: an unequal-axes pair is read at the minimal common collapse, never refused (`DN-42.D17`) | **`// refs: DN-42.D17`** at `CompareAtMinDiffsAcrossDifferentCollapseDepths` |
+| R4 | R | without compare-at-min the diff would VANISH on axis mismatch, losing attribution at the collapse transition | held → Q4 |
+| X3 | X | the severity fixture's rebuild-equality assertion is the same `ADR-31.D8` witness | **`// refs: ADR-31.D8`** at `SeverityFrontierNeverCrossedWhereCollapsesInstead` |
+| R5 | R | 2000 components × six levels ≫ the budget even at the maximal band, so WHERE must drop | held → Q5 |
+| M4 | M | "LEVEL banding climbed to the frontier ceiling and stopped"; "ERROR and FATAL are DISTINCT cells" | deleted — four assertion messages state both |
+| R6 | R | closure is lossless and always applied; collapse is lossy and applied only over budget | held → Q6 |
+| R7 | R | the cardinality monitor is the PURE compute; the eidos pipeline emits the WARN | held → Q7 |
+| H1 | H | "the pre-collapse WARN predicates were RETIRED" | deleted — history |
+| R8 | R | the window total lives in the closure of coord `{}`; closure pins the constant dims and stars the varying ones | held → Q8 |
+| R9 | R | a where-pinned cell carrying the same count as its parent is redundant and is not stored | held → Q9 |
+| C2 | C | `two_windows()` builds a pair under a shared processing contract so `diff()` does not trip the comparability gate | **`// post:`** at `two_windows` |
+| X4 | X | the registry resolves template strings at serialise (`SRC-D-TIR-5`) | **`// refs: SRC-D-TIR-5`** above the `if (out_registry != nullptr)` guard |
+| R10 | R | the upper border is the headline — the minimal generators that characterise everything that emerged | held → Q11 |
+| R11 | R | a document with `has_cube == false` can only come from a composed axis-mismatch, which is why the tests set it by hand | held → Q12 |
+| R12 | R | the reservoir→cell cross is a LOCATION firewall: no salience and no role leak into it | held → Q13 |
+| R13 | R | the cube's cross-machine byte identity is proved by the golden workflow over the committed corpus, NOT by an in-test frozen hash | **`// note:` + `// refs: F-SRC-insight-metalog:golden.yaml`** at `CubeDeterminism` — judged non-recoverable and written; Q14 tests the line |
+| R14 | R | the cube's three dims are per-line-pure and each count is a plain sum, so the closed cube is permutation-invariant | held → Q15 |
+| H2 | H | the playground copies of the order-independence property could retire once it was asserted here | deleted — history |
+| X5 | X | the up→regression / down→recovery reading is proved eidos-side | **`// refs: F-SRC-insight-eidos:ordinal_drift_test.cpp`** at `DriftUpEmergesUpShiftCell`; the prose's path was **stale**, see the findings |
+| R15 | R | the homing call: this is metalog integration (engine → diff → cube_diff), not a LogCraft e2e | held → Q23 (the border file carries the same claim) |
+| R16 | R | determinism: a seed-free integer ladder, single worker, no wall clock, no float→int | held → Q15/Q16 |
+| M5 | M | `kMsToNs` exists because the `DurationLog2Ns` schedule reads nanoseconds | deleted — canon's `OrdinalSchedule` states the unit at its declaration; held → Q16 |
+| R17 | R | 100 ms is bin 26, 100 s is bin 36, so the move is ten octaves and lands in the HIGH bucket | held → Q17 |
+| M6 | M | `kShiftSampleFloor = 32`, so 40 events clear it | deleted — a mirror of `diff.cpp`'s constant; the rule is held → Q21 |
+| R18 | R | `max_param_histograms > 0` is what enables the ordinal (DurationLog2Ns) histograms | held → Q18 |
+| R19 | R | the STABLE `auth` component keeps payments' WHERE cell from collapsing as redundant, so the shifted coord is pinned rather than the aggregate | held → Q19 |
+| R20 | R | the shift only ever pins on the CURRENT side, so a real match lands in emerging; vanishing is scanned so the control can prove NONE | held → Q20 |
+| R21 | R | ordinal_w1's thresholds are scale-relative, so without the floor an 8-vs-8 pairing would manufacture `up_high` | held → Q21 |
+| H3 | H | the `b60ec47` regression the polarity-MUTE arm guards | deleted — history; the assertion message keeps "REGRESSION GUARD … polarity-MUTE, not up-clipped" |
+| R22 | R | the border file's homing argument: its path is canon-tokenize → metalog document → `meta::diff()` → cube border, touching no LogCraft generator, transport or replay | held → Q23 |
+| R23 | R | canon ships NO default composition; every BINARY, never a library, declares its semantic package set | held → Q24 |
+| R24 | R | under an EMPTY package set the multi-generator class recovers 1 of 2 declared members (recall 0.5) — `role: Terminator` never emerges, because the `##[error]` row is the github package's | held → Q25 |
+| R25 | R | the recall floor and mis-point ceiling are PRE-REGISTERED, carried over verbatim from the retired fixture | held → Q26 |
+| C3 | C | a `DeclaredCell` dimension left empty is a wildcard | **`// invariant:`** at `struct DeclaredCell` |
+| C4 | C | `composed` must outlive the `Tokenizer` it feeds | **`// pre:`** at `build_doc` |
+| M7 | M | presence is a bool plus an inline value, not an optional, because of the MSVC consumer-synthesis miscompile | deleted — `api/metalog.api.cppm` carries the same claim as two `invariant:` lines at `has_cube` and `has_emerging`; held → Q28 |
+| H4 | H | the cube is always built "since 1.7.2"; the fixture was re-homed from the playground on 2026-07-18 | deleted — history |
+
+**Interrogation** — one fresh agent, 29 questions, 113 tool uses, 224 k tokens, 13.9 minutes.
+Transcript checked: `GIT COMMANDS RUN: none`, and no `git` invocation appears in its tool calls.
+**The reader disclosed one contamination itself and it is recorded rather than hidden:** an early
+`grep -rn` over `insight-metalog/technical_docs/` printed matching LINES from this ledger — an
+excluded file — and one of them named Q7's answer. It did not open the file and re-derived Q7 from
+`api/metalog.cppm` and `insight-eidos`'s pipeline, but **Q7's independence is compromised and is
+reported as such**. A recursive grep reaches an excluded file's contents without opening it, which
+the interrogation prompt's exclusion list cannot prevent — a finding for `OPS-8` below.
+
+**Score: 29 of 29 recovered, 0 not recovered, 0 wrong — and 0 convictions.** Scored from the
+per-question evidence, not from the reader's own framing: every answer was read back against the
+code. Twenty-five answers came at high confidence, three at medium (Q1 *"the tree states no reason
+for the `static`"*, Q2's *"1500 exactly"* against a computed threshold of ~1365, Q19 *"the test file
+itself does not say"* — recovered from a sibling fixture in this repo), and Q7 is the contaminated
+one.
+
+**Every line THIS conversion wrote was put to the reader, and none was faulted.** Q1 read the
+`pre:` at `ev` and confirmed the lifetime obligation it states; Q14 read the `note:` + `refs:` pair
+at `CubeDeterminism` and independently verified both halves against
+`.github/workflows/golden.yaml` and `scripts/determinism_sections.txt`; Q27 read the `invariant:`
+at `DeclaredCell` and confirmed it against `coord_of` and `score_border`; Q4 confirmed the
+`DN-42.D17` citation, Q22 confirmed that the reading half lives in `insight-eidos/sift`, which is
+where the repaired `F-SRC-` address points.
+
+**What the reader found that the conversion had not.** Four answers went past the question and
+each is verified below before being filed — none was taken on the reader's word.
+
+| Q | what it answered | verdict |
+|---|---|---|
+| Q1 | the `static` on `comps` buys **nothing**: the engine copies the component out of the view (`engine.cpp`, `std::string{event.component}`) and a block-scoped vector already outlives every event built from it; removing `static` only rebuilds 1500 strings per entry | recovered — and the deleted prose's stated reason was **wrong**, see the findings |
+| Q4 | compare-at-min never refuses — and **two `invariant:` lines in the already-converted `api/` unit still assert an axes-equality gate that does not exist** | recovered — the two lines are verified false and repaired in a separate commit, see the findings |
+| Q9 | the dropped cells are the where-**starred** generalizations; the where-**pinned** base cell is the one that survives, so the assertion message beside it is inverted | recovered — verified against `close_and_emit`'s `agg.closure == cell` and the file's own next assertion; a finding, not a repair |
+| Q24 | `ADR-17.D2` rules **one composition point per PRODUCT LINE**, owned by the lowest package that tokenizes, and names a per-binary `compose({…})` list a *drift hazard, refused* — the opposite of what the deleted prose asserted | recovered — verified at the slot; a finding for Daidalos |
+| Q29 | the minimal-generator loop establishes **emergence, not minimality**, and its dimension bound is a tautology over three `bool`-to-`int` terms that also ignores `latency_shift`, `CubeCoord`'s fourth key | recovered — confirms and sharpens the finding the conversion had already opened |
+
+**Dispositions.** No claim was *not recovered*, so nothing was re-homed above the comment rung.
+Two repairs were made in the tree before the commit, both comment-only and both re-gated
+(`OPS-8.S7` steps 2 and 3 re-run, `wc -c` clean at 100 bytes):
+
+1. **`F-SRC-metalog-spec:SPEC.md` added at the three collapse tests.** Chasing Q5's answer settled
+   a question this unit had opened as a possible law-block candidate: the severity frontier
+   (*"`{ERROR, FATAL}` are never banded"*), closure-first/collapse-last, the static 4096 budget and
+   the minimal-common-collapse read are **all four stated verbatim in the specification's §16.10**,
+   which is an addressable owner reachable by a form-3 address this repo already uses. So **no law
+   number is owed here** — the `OPS-8.S9` test refuses a block wherever a slot already owns the
+   argument, and this is that case. The three tests now cite it.
+2. **The `post:` at `two_windows` was sharpened.** It read *"…under one processing contract, so
+   `diff()` judges them comparable"*, which the reader's Q10 shows invites a wrong inference: both
+   windows come from ONE engine under ONE config, so the two explicit assignments are documentation
+   and the comparability gate could not trip either way. The line now states the pair's shape and
+   its distinguishing burst instead of a causal claim it does not need. Not scored as a conviction —
+   the reader did not contradict the line, it contradicted an inference the line permitted — and
+   recorded here because the distinction is the ledger's, not the converter's, to blur.
+
+**Forms written (10 insertions, 18 comment lines after, from 227 before).** `pre:` 2 · `post:` 1
+(one untagged continuation) · `invariant:` 1 · `note:` 1 · `refs:` 7 · tool forms kept 5
+(1 `/*name=*/`, 4 namespace closers). `refs:` targets used: `ADR-31.D8` twice,
+`F-SRC-metalog-spec:SPEC.md` three times, `DN-42.D17`, `SRC-D-TIR-5`,
+`F-SRC-insight-metalog:golden.yaml`, `F-SRC-insight-eidos:ordinal_drift_test.cpp`.
+
+**Address census (`OPS-8.S7.3b`), outbound and inbound.** Outbound: `test_cube.cpp` **added**
+`DN-42.D17`, `F-SRC-metalog-spec:SPEC.md`, `F-SRC-insight-metalog:golden.yaml` and
+`F-SRC-insight-eidos:ordinal_drift_test.cpp`, and lost none — its pre-unit distinct set was
+`{ADR-31.D8, SRC-D-TIR-5}` and both survive as `refs:` lines. `test_cube_emerging_border.cpp`
+carried zero addresses before and after. Exit 0 on both files.
+Inbound: **5 mentions, 4 benign and 1 real.** Three are the metalog-conformance design note's, and
+every one names a **code** symbol or an assertion's exact text (`has_latency_shift_axis`,
+`EXPECT_EQ(c.axes[0].kind, "categorical")`), all of which survive the strip. One is in the
+disposable attic. The fifth is finding **D** below.
+
+**Stale claims deleted, with the evidence and the sibling repos searched BY NAME.** Every
+condemnation below was searched outside this repo before it was filed, in `insight-canon`,
+`insight-eidos`, `metalog-spec`, `logcraft` and the superproject's `technical_docs/` shelf.
+
+1. **The file header claimed `test_cube.cpp` ends in "a byte-identity golden". It does not, and
+   the file's own body said so.** No test in the file asserts a frozen hash: the suites are
+   `CubeBlock`, `CubeCollapse`, `CubeCardinality`, `CubeDiff`, `CubeCompose`, `CubeReservoirCross`,
+   `CubeMustOne`, `CubeDeterminism` and `CubeDiffLatencyShift`, and the block at the old line 614
+   said in terms that *"the cube's cross-machine BYTE-IDENTITY proof is a cut/gate-time cross-leg
+   assertion … NOT an in-test frozen hash"*. The same header also omitted two whole sections that
+   ARE in the file — order-independence, and the six-test `latency_shift` suite — which is the
+   shape of an enumeration that stopped being maintained. The nearest live golden is
+   `tests/operations/test_golden_vectors.cpp`, a different file. Deleted; the true half survives as
+   the `note:` + `refs:` at `CubeDeterminism`, which the reader then verified independently.
+2. **The eidos pointer's PATH was stale.** The `latency_shift` header named
+   `insight-eidos/diff/tests/classify/ordinal_drift_test.cpp`. `insight-eidos/diff/` **does not
+   exist** — that repo's packages are `detection`, `engine`, `explain`, `fuzz`, `insight-e2e`,
+   `llm`, `sift` and `test_package` — and the file is at
+   `insight-eidos/sift/tests/classify/ordinal_drift_test.cpp`; the only `diff/` occurrences are
+   stale object files under a build tree. The remedy is `OPS-8`'s: an ADDRESS at the citing site,
+   so the pointer is now the form-3 `F-SRC-` address, which `registry_grammar_lint` resolves
+   unconditionally and a future rename reds. The reader independently placed the reading layer in
+   `insight-eidos/sift` (Q22), which confirms the repair points at the right file.
+3. **The justification for `static std::vector<std::string> comps` is false.** Two tests declare
+   that vector `static` under the trailing comment *"static storage → the component string_views
+   stay valid"*. The lifetime it names does not need `static`: a block-scoped vector already
+   outlives every event built from it inside the same test body, and the engine copies the
+   component out of the view at ingest (`src/engine/engine.cpp`, `std::string{event.component}`)
+   into a `std::map` key. What `static` actually buys is skipping the 1500-string rebuild, and
+   since gtest enters a test body once per run it buys that only under `--gtest_repeat`. Deleted
+   rather than carried; the surviving `pre:` at `ev` states the real obligation (the caller's
+   storage outlives every use of the returned event) without attributing it to the `static`.
+
+**A near-miss recorded because the search IS the finding.** The collapse-oracle block cited
+*"ADR-31.D8 oracle-coverage"*, and the token `oracle-coverage` appears **nowhere else in the
+workspace** while `ADR-31` contains the string *"oracle"* **zero times** — which reads as a false
+attribution. It is not one. Read as *"the oracle FOR `ADR-31.D8`"* the sentence is true and
+load-bearing: the rebuild-equality assertion witnesses that slot's determinism claim only if a
+collapse actually fired, so the fixture's job is to keep the witness non-vacuous. Filed as a
+citation KEPT, not as a conviction — `OPS-8.O3`'s mirror lesson applied to a hyphenation.
+
+**Findings for other lanes, with their addressees.**
+
+**A. A vacuous assertion in `CubeDiff.EmergingHeadlineIsMinimalGenerator` — for Kleio.** The loop
+over `emerging.upper` asserts
+`EXPECT_LE(level.has_value() + where.has_value() + structural_role.has_value(), 3)`. Three `bool`s
+promote to `int`, so the sum is in `[0, 3]` and the bound **cannot fail**; the reader added that it
+also ignores `latency_shift`, `CubeCoord`'s fourth optional key. The deleted comment claimed the
+property the assertion was meant to carry — *"a minimal generator has no emergent parent"* — and
+nothing in the file checks it; minimality is enforced only inside `border_of`'s `has_parent` pass,
+which the loop does not re-derive. This is a code change, so it is a finding and not a repair: the
+arm needs an assertion that starring any pinned dimension leaves the emergent set, or a bound that
+can fail.
+
+**B. An inverted assertion message in `CubeBlock.ClosureCollapsesSingleComponent` — for Kleio.**
+Its message reads *"a single-component window must collapse (redundant where-pinned cells
+dropped)"*. It is backwards. With one component the base tuple is `(Info, auth, None)` and closure
+stores exactly the cells that equal their own closure (`close_and_emit`'s `agg.closure == cell`),
+which is that fully-pinned cell alone — the file's very next assertion proves it, expecting
+`find_cell(doc.cube, "INFO", "auth", "None")` to be non-null. What is dropped is the seven
+where-**starred** generalizations. An assertion message is code, so this is a finding; the deleted
+prose above the test carried the same inversion and was not carried forward.
+
+**C. Two `invariant:` lines in the already-converted `api/` unit assert an axes-equality gate that
+does not exist — repaired by this lane in a separate commit, and recorded here because it is a
+CONVERTED line that was wrong.** `api/metalog.api.cppm` stated, at `CubeDiffBlock`,
+*"emitted only when BOTH documents carried a cube AND their axes are equal"*, and at
+`MetaLogDiff::has_cube_diff`, *"present only when both documents carried a cube and their axes are
+equal"*. Both are false, and two other converted sites in the same repo say so: `src/operations/
+diff.cpp` carries `assert: the ONE gate is that both carried a cube; there is no axes-equality
+gate, since the contract freezes the axis SET, not the collapse stamps` with `refs: DN-42.D17`, and
+`src/cube/metalog.detail.cube.cppm` carries `note: unequal axes are the mandated case: the diff
+reads the pair's minimal common collapse`. The lesson for the programme is the sharp one: **a
+converted `invariant:` is an assertion the conversion signs, the CCC gate cannot check its truth,
+and this pair survived a cold reader on its own unit** — it took a reader on a DIFFERENT unit,
+asking a question whose answer crossed the file, to catch it.
+
+**D. A cross-repo rationale whose only copy is prose in a repo that has not been converted yet —
+for the pilot, addressed to whoever takes `insight-eidos`'s `insight-e2e` unit.** The inbound
+census turned up `insight-eidos/insight-e2e/tests/playground.contract.cppm`, whose comment carries
+the SAME homing argument this unit deleted, in the same words — *"its path was canon-tokenize →
+metalog document → meta::diff() → cube border, touching no LogCraft generator, no transport and no
+replay"*. Nothing is lost today. But it is prose in an unconverted repo: the eidos lane will delete
+it, and at that moment the argument leaves the workspace with no witness reporting the loss — the
+outbound census cannot see it (no address), and the inbound census only fires for the lane
+converting the OTHER end. Either site can fix it, and the fix is one `note:` or a doc paragraph
+with an address.
+
+**E. The composition rule the deleted prose stated is the opposite of `ADR-17.D2`'s — for
+Daidalos.** `test_cube_emerging_border.cpp`'s header asserted *"every BINARY, never a library, owns
+its composition"* and defended declaring a MINIMAL one-package set as *"the more isolating
+instrument"*. `ADR-17.D2` rules **one composition point per PRODUCT LINE**, owned by the lowest
+package that tokenizes, in one TU (`insight::engine::composed_semantics()`), with every downstream
+consumer reaching the set through it — and names a per-binary `compose({…})` list a **drift hazard,
+refused**. The prose was not carried into any tagged line, so nothing false was signed; the reader
+found the slot unaided. What remains is a real question the conversion may not settle: **does
+`ADR-17.D2`'s refusal reach a TEST binary?** This one declares `insight::semantic::github` alone
+while production composes four packages, and `insight-metalog/CMakeLists.txt` marks the dependency
+*test-only*. Either the slot admits a test-binary carve-out or this test is the drift it names.
+
+**F. Two dangling pointers in `insight-eidos`'s e2e coverage surface — for the pilot, addressed to
+the eidos lane.** Reaching for Q23, the reader found that
+`insight-eidos/insight-e2e/coverage/25_cube_emerging_border_bred.md` and
+`insight-eidos/insight-e2e/tests/cube/cube_bred_oracle_test.cpp` both still point at a
+`25_…_bred.contract.yaml` and a paired contract test that are **not in the tree**, and observed
+that `insight-metalog/tests/cube/test_cube_emerging_border.cpp` is now the only surviving
+border-recovery assertion against the shipped engine. Not this lane's repo; recorded with its
+addressee.
+
+---
+
 # The law block: one was owed, one was issued, one is minted
 
 This lane was instructed not to pick a law number — they are workspace-global, append-only and
