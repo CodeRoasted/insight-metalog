@@ -1,30 +1,15 @@
-// cube_collapse_scenario.hpp — the shared synthetic cardinality-explosion window for the cube
-// dimensional-collapse guardrail (cube_perf_and_collapse.md §C3).
-//
-// Ingested IDENTICALLY by both determinism oracles so they exercise the EXACT same collapse:
-//   - tests/cube/test_cube.cpp        → the in-suite behavioral guardrail tests.
-//   - scripts/determinism_fixture.cpp → the cross-compiler/leg determinism gate
-//     (determinism_bitidentity.sh + golden.yaml, --cube-collapse section).
-//
-// The always-on cube can explode (O(B·2ⁿ)); the per-window guardrail bounds it by coarsening the
-// base
-// + re-closing. The axis-selection tie-break is an ADR-31.D8-class content decision (a declared
-// total order), so the cross-leg gate MUST replay a window that actually FIRES a collapse — else
-// the collapse policy is unproven cross-machine (the ADR-31.D8 oracle-coverage lesson). This window
-// has 1500 distinct components each at two bandable levels (Trace/Debug): the closed cube exceeds
-// the 4096-cell budget and the LEVEL interval-banding {Trace,Debug}→Debug fires (band_floor=2),
-// WHERE kept intact.
-//
-// Header-only, NO includes: the including TU provides `std`, `insight.canon` and `insight.metalog`
-// via `import` — include this AFTER those imports (ordinary textual inclusion, imported names
-// resolve).
+// invariant: a synthetic cardinality-explosion window that FIRES the dimensional-collapse guardrail
+// -- the closed cube exceeds the budget and the level banding collapses it.
+// invariant: ingested identically by the in-suite guardrail tests and the cross-leg gate.
+// note: the axis-selection tie-break is content, so a leg must replay a window that collapses.
+// refs: ADR-31.D8
 #ifndef INSIGHT_METALOG_CUBE_COLLAPSE_SCENARIO_HPP
 #define INSIGHT_METALOG_CUBE_COLLAPSE_SCENARIO_HPP
 
 namespace insight::metalog::cube_collapse
 {
 
-// Keep the digest focused on the always-on cube + its collapse (no stability/histogram noise).
+// invariant: stability and histograms are off, so the digest stays about the cube.
 inline void configure(insight::metalog::MetaLogConfig& cfg)
 {
     cfg.top_k_size = 16;
@@ -32,7 +17,7 @@ inline void configure(insight::metalog::MetaLogConfig& cfg)
     cfg.emit_stability = false;
 }
 
-// The distinct components, in static storage so the CanonicalEvent string_views stay valid.
+// invariant: static storage, so the CanonicalEvent string_views stay valid.
 inline const std::vector<std::string>& components()
 {
     static const std::vector<std::string> comps = []
@@ -46,8 +31,8 @@ inline const std::vector<std::string>& components()
     return comps;
 }
 
-// Drive ONE window that explodes the cube past the budget so the {Trace,Debug}→Debug banding fires.
-// Caller does open_window / close_window around this. Deterministic given configure() above.
+// post: one window that explodes the cube past the budget, so the banding fires.
+// pre: the caller brackets this with open_window and close_window.
 inline void emit_window(insight::metalog::MetaLogEngine& engine)
 {
     for (const auto& comp : components())
@@ -68,4 +53,4 @@ inline void emit_window(insight::metalog::MetaLogEngine& engine)
 
 } // namespace insight::metalog::cube_collapse
 
-#endif // INSIGHT_METALOG_CUBE_COLLAPSE_SCENARIO_HPP
+#endif
