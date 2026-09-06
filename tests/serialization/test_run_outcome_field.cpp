@@ -1,20 +1,6 @@
-// Unit tests: allow short identifiers and test-specific patterns
-// test_run_outcome_field.cpp — the additive run-verdict scalar on MetaLogDocument.
-// The additive-block discipline (a new block keeps the wire version because its ABSENCE is the
-// legacy reading), applied to a plain enum field: Unknown is BOTH the in-memory default and the
-// wire ABSENCE, so a verdict-free / legacy document's JSON is byte-identical to a pre-outcome
-// producer's — NO metalog wire-version bump. Two faces:
-//   1. ABSENCE — a default (Unknown) document emits NO run_outcome key (the additive-block proof's
-//      unit leg; the byte-compare gate is the measure-first INERT run).
-//   2. PRESENCE — a stamped verdict serialises as the LOWER-CASE token SPEC §2.5 mints, and
-//      `unstable` stays `unstable` (never folded — the G-OUT-2 property at the wire).
-// The case is the assertion, not a detail: §2.5 states the vocabulary is case-sensitive and
-// `schema/metalog.v0.schema.json` pins it as a CLOSED enum, so an upper-case token fails §8
-// clause 1. The Sift change report spells the same four classes UPPER-CASE for its own consumer
-// (`sift-action/src/types.ts`); these two wires are deliberately not aligned, so a token from one
-// is never evidence about the other.
-// A diff here is a wire-contract break — fix the code, never the assertion.
-
+// invariant: RunOutcome::Unknown is both the in-memory default and the wire ABSENCE, so a
+// verdict-free document is byte-identical to a pre-outcome producer's.
+// refs: F-SRC-metalog-spec:SPEC.md, F-SRC-metalog-spec:metalog.v0.schema.json
 #include <glaze/glaze.hpp>
 #include <gtest/gtest.h>
 
@@ -33,13 +19,12 @@ using insight::metalog::test::make_event;
     engine.open_window(start);
     engine.ingest_event(make_event("alpha"));
     auto doc{engine.close_window(start + std::chrono::seconds(60))};
-    doc.run_outcome = outcome; // the producing orchestration's stamp
+    doc.run_outcome = outcome;
     *out_registry = engine.registry();
     return doc;
 }
 } // namespace
 
-// ── 1. ABSENCE: Unknown (the default) emits NO key — the wire is pre-outcome byte-identical ──
 TEST(RunOutcomeField, UnknownEmitsNoKey)
 {
     meta::TemplateRegistry registry;
@@ -51,7 +36,6 @@ TEST(RunOutcomeField, UnknownEmitsNoKey)
         << "Unknown must serialise as ABSENCE (additive field, no wire bump): " << json;
 }
 
-// ── 2. PRESENCE: a stamped verdict rides the wire in SPEC §2.5's minted lower-case vocabulary ──
 TEST(RunOutcomeField, StampedVerdictSerialises)
 {
     const std::array<std::pair<insight::RunOutcome, std::string_view>, 4> cases{{

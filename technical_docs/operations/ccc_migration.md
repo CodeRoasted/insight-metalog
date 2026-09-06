@@ -1891,6 +1891,178 @@ addressee.
 
 ---
 
+## Unit 18 — `tests/serialization/` (4 files, 252 would-be violations)
+
+`test_egress_encoding_conformance.cpp` (91), `test_transport_declaration_extension.cpp` (83),
+`test_serialization.cpp` (59) and `test_run_outcome_field.cpp` (19). One subject — what this
+package puts on the wire — so one reader.
+
+**Census (`OPS-8.S4`).** `NOLINT` (every spelling) 0, `clang-format off/on` 0, `wall-clock:` 0,
+`DETERMINISM-ALLOW` 0, `LOG-SEAT-ALLOW` 0, the retired-structure marker 0, SPDX 0;
+`/*name=*/` **4** (three in the egress file, one in `test_serialization.cpp`) and namespace closers
+**6**. After the strip: identical. No census decision was needed.
+
+**Stripper cross-check (`OPS-8.S5`).** No suppression in any of the four, so the equality reduces
+to `removed == violations`: **91 == 91**, **83 == 83**, **59 == 59**, **19 == 19**. Kept 4, 1, 4
+and 1, equal to the token census per file. All four carried the leading-blank-line defect after the
+strip and all four were trimmed in the draft.
+
+**The claims ledger.** 105 comment blocks over the four files. The egress file is the dense one:
+its four header sections are an ownership argument, an oracle-independence argument, a homing
+argument and a scope statement, and all four have addressable owners in the egress design note.
+
+| id | class | the claim, as the deleted comment stated it | disposition |
+|---|---|---|---|
+| C1 | C | every byte this writer emits into a declared encoding is legal there — a MUST on the emitting surface, over ALL string inputs, never an upstream precondition | **`// invariant:`** + **`// refs: DN-65.D1, DN-65.D5`** at the egress file head |
+| X1 | X | the sibling eidos arm asserting the same property is GREEN and BLIND — it injects into a message body, which never reaches the diff wire | **`// refs:`** carrying the same form-3 address the prose named, scope included, at the same head — preserved verbatim rather than shortened |
+| C2 | C | the scanner is independent of the writer by construction — no shared code, table or header | **`// invariant:`** at `ConformanceScanner` |
+| C3 | C | its scope is the RFC 8259 grammar plus the §7 control-byte ban, and NOT UTF-8 well-formedness | **`// invariant:`** at the same site |
+| X2 | X | re-reading Glaze's output with Glaze is SUT == ORACLE | **`// refs: DN-65.D7`** — added after the interrogation, see the dispositions |
+| C4 | C | the depth bound stops a malformed input recursing the test binary off its stack, and reports the overrun as a violation | **`// note:`** at `kMaxDepth` |
+| C5 | C | `std::nullopt` means the text is conformant | **`// post:`** at `scan()` |
+| C6 | C | the caller owns the `component` storage — `CanonicalEvent::component` is a view | **`// pre:`** at `make_event` |
+| R1 | R | all 32 C0 bytes are driven because five have short escapes the writer emits regardless, so a five-byte gate would be green and vacuous | held → Q2 |
+| R2 | R | the injection point is a `where` coordinate because the diff wire carries template IDs, not template text | held → Q3 |
+| R3 | R | the byte sits mid-string because Glaze's string writer has a vectorised body and a scalar tail that corrupt differently | held → Q4 — **NOT RECOVERED, and deleted rather than re-homed**, see below |
+| R4 | R | the two ordinary neighbours keep the WHERE axis at full depth so nothing collapses the tainted label away | held → Q5 — recovered as a different, TRUE role; the stated mechanism is **wrong**, see the stale claims |
+| R5 | R | `kMarker` on the wire is the anti-vacuity guard | held → Q6 — recovered from the assertion messages, which are code |
+| R6 | R | a gate whose oracle cannot FAIL is not a gate | held → Q7 |
+| R7 | R | the legal twin spells the byte as an escape in a raw literal, never as a literal control byte in this source file | held → Q8 |
+| R8 | R | both `to_json` overloads share one `kWriteOpts`, so both are driven rather than one standing in for the other | held → Q9 |
+| M1 | M | the value-counts test pins key-sorting, byte-stability on repeat and omission on the default path | deleted — three test names and their assertion messages |
+| R9 | R | `value_counts` is an `unordered_map`, so emission MUST key-sort or replay bit-identity is lost | **`// note:`** at `ValueCountsEmittedKeySorted` — carried in from an ORPHANED section header in `tests/engine/test_field_histograms.cpp`, see the findings |
+| R10 | R | `entropy_bits` must not be emitted: a float, losslessly derivable, and every emitted field is integer-typed | held → Q12, Q13 |
+| R11 | R | the overhead bound is cap-derived, and the guard is that `param_histograms` can never make the document unbounded | held → Q14 |
+| R12 | R | 96 bytes per value entry is a *generous* per-entry figure | held → Q15 — **NOT RECOVERED**, re-homed as a `note:` stating only what is checkable, see the dispositions |
+| X3 | X | §8 clause 4 makes the caps decidable from the document alone and §4.2 makes an absent `branching_size` a positive assertion | **`// refs: F-SRC-metalog-spec:SPEC.md`** at `EveryEmittedCappedBlockDeclaresItsCapAndHonoursIt` |
+| C7 | C | the fixture window carries all three capped blocks — a reservoir entry, branching transitions and the always-on cube | **`// post:`** at `window_with_every_capped_block` |
+| X4 | X | §4's `dropped_ngram_observations`, whose ABSENCE is normative in a document declaring 0.7.0 or later | **`// refs: F-SRC-metalog-spec:SPEC.md`** at `ACappedWindowWritesTheRefusedObservationCount` |
+| R13 | R | the count is hand arithmetic, never a second call into the producer | held → Q19 |
+| M2 | M | a section ruler for `FieldHistogramDiffTest` | deleted — **stale**, the suite moved, see the stale claims |
+| C8 | C | the transport member is emitted even when nothing was declared, because a conditionally emitted key is indistinguishable from a key this producer cannot emit | **`// invariant:`** + **`// refs: ADR-23.D4, ADR-23.D6`** at the transport file head |
+| C9 | C | the helper returns the serialized bytes of one window closed with NOTHING declared | **`// post:`** at `produce_undeclared_document_json` |
+| C10 | C | the recorded emission state, whose comparison reds in BOTH directions | **`// invariant:`** at `kTransportMemberIsEmitted` |
+| H1 | H | four sites describing a pre-registered RED that was repaired on 2026-09-04 | deleted — **stale**, see the stale claims |
+| C11 | C | `RunOutcome::Unknown` is both the in-memory default and the wire ABSENCE, so a verdict-free document is byte-identical to a pre-outcome producer's | **`// invariant:`** + **`// refs:`** to the specification and its schema, at the run-outcome file head |
+| R14 | R | the Sift change report spells the same four classes UPPER-CASE, and the two wires are deliberately not aligned | held → Q28 |
+| R15 | R | a diff here is a wire-contract break — fix the code, never the assertion | held → Q29 |
+
+**Interrogation** — one fresh agent, 29 questions, 67 tool uses, 160 k tokens, 8.8 minutes.
+Transcript checked: `GIT COMMANDS RUN: none`. The exclusion list was strengthened for this reader
+after unit 17's disclosure — it now forbids a recursive `grep` whose OUTPUT would print an excluded
+file's lines, not only opening one — and no contamination was reported or observed.
+
+**Score: 27 of 29 recovered, 2 not recovered, 0 wrong — and 0 convictions.** Scored from the
+per-question evidence. Every one of the twelve lines this conversion wrote that a question touched
+was read back and confirmed: Q11 confirmed the scanner's declared scope against the specification's
+encoding section, Q21 confirmed the transport head's `invariant:` against `ADR-23.D4`, `compose.cpp`
+and the api's own invariants, Q23 confirmed the two-way ratchet at `kTransportMemberIsEmitted` and
+added that the constant now stands at `true` so the check behaves as a plain assertion, and Q27
+confirmed the run-outcome head against the specification's §2.5 and `wire_format.cpp`. **No line
+this conversion wrote was faulted.**
+
+**The two NOT RECOVERED, and their dispositions are different on purpose.**
+
+* **Q4 — why the injected byte sits mid-string. NOT re-homed, deleted, and a finding.** The prose
+  gave a mechanism: *"Glaze's string writer has a vectorised body and a scalar tail that corrupt
+  differently — the body substitutes NUL bytes for the offending byte, the tail copies it
+  verbatim"*. The reader answered at medium confidence with a different, plausible account and said
+  plainly *"the file states no reason"*. A workspace-wide sweep over every sibling repo and the
+  superproject for that measurement returns **one** hit, in an unrelated `insight-canon` scan test
+  about its own loop; the egress design note does not carry it. So it is an **unsourced
+  measurement**, `OPS-8.S9`'s last row: re-homing it would be the conversion inventing a fact about
+  a third-party library's codegen and signing it. Deleted, with the finding below.
+* **Q15 — where the 96-byte per-entry constant comes from. Re-homed, narrowly.** The reader
+  established the stronger fact: `kBytesPerValueEntryUpperBound` **occurs exactly once in the whole
+  workspace**, with no comment, no `refs:`, and no doc, ADR, spec clause or measurement anywhere
+  that derives it. The deleted prose called it *"generous bytes per entry"*, which is a
+  quantitative claim this lane cannot check. What IS checkable is what the assertion does with it,
+  and that is what the `note:` now says — a cap-derived ceiling, not the measured overhead, which
+  the test prints and never asserts. The provenance gap is a finding.
+
+**Two more dispositions, both improvements the reader handed over.** `refs: DN-65.D7` was added at
+`ConformanceScanner`: the SUT-versus-oracle argument has its own slot, which the conversion had not
+found and the reader cited from the design note in its first answer. And the address census's two
+`LOST` lines were re-derived at the artifact before being accepted (below).
+
+**Forms written (14 insertions, 36 comment lines after, from 262 before).** `pre:` 1 · `post:` 3 ·
+`invariant:` 6 · `note:` 3 · `refs:` 7 · six untagged continuations · tool forms kept 10
+(4 `/*name=*/`, 6 namespace closers).
+
+**Address census (`OPS-8.S7.3b`), outbound and inbound.** Added `DN-65.D7`,
+`F-SRC-metalog-spec:SPEC.md` (twice) and `F-SRC-metalog-spec:metalog.v0.schema.json`. **Two `LOST`
+lines, both re-derived at the artifact and both legitimate**, so the census exits 1 and the
+disposition is recorded here rather than the address restored:
+
+1. **`ADR-23` (bare, no slot) at the transport file.** The prose said *"Two ADR-23 slots meet
+   here"* and then named them; the conversion carries `refs: ADR-23.D4, ADR-23.D6`, which the
+   census scores as three distinct tokens where the bare number was one. The bare form is strictly
+   less addressable than the two slots that replace it.
+2. **`ADR-26` (bare, no slot) at the egress file.** The prose read *"(ADR-26 at drain; the argument
+   is DN-65.D1)"* — a pointer to a **planned drain destination**, not a current owner. `ADR-26`
+   contains zero occurrences of *egress*, *encoding* or *RFC 8259* today, the egress design note is
+   still IN FLIGHT and records `ADR-26` as its *disposition target at drain*, and **every other
+   converted site in the workspace that obeys this rule cites the DN slot alone** —
+   `src/serialization/json_egress.hpp`, `api/metalog.cppm`, and three `json_egress.hpp` files in
+   `insight-eidos`. Repointing the citers is the drain's pass (`ADR-6.D9`), not this unit's.
+
+**Inbound census.** Run over all four files; every mention resolves to a code symbol or a document
+paragraph that names the file without resting on its prose. Nothing to repair.
+
+**Stale claims deleted, with the evidence and the sibling repos searched BY NAME** — searched in
+`insight-canon`, `insight-eidos`, `metalog-spec`, `sift-action`, `logcraft` and the superproject's
+`technical_docs/` shelf.
+
+1. **Four sites in `test_transport_declaration_extension.cpp` still described a pre-registered RED
+   that was repaired on 2026-09-04.** The file's own `///` block recorded the repair — *"now
+   `true`: the producer DOES emit …"* — and `kTransportMemberIsEmitted` stands at `true`; but a
+   section ruler still read *"PRE-REGISTERED RED"*, a line above the test still read *"Flips to
+   green when `fr.coderoast.transport` is emitted"*, a body block still described the skip that had
+   been replaced, and one line stated flatly *"The red still stands, pinned by the assertion
+   above"*. The file contradicted itself. Verified independently by the reader, which observed that
+   with the constant at `true` the assertion behaves as a plain positive check. The residual
+   contract — that the comparison reds in both directions — survives as the `invariant:` at the
+   constant.
+2. **An orphaned section ruler in `test_serialization.cpp`.** `// ── FieldHistogramDiffTest ──`
+   stands at the end of the file with no test under it; the three `FieldHistogramDiffTest` cases
+   live in `tests/operations/test_diff_blocks.cpp`. The suite moved and the header stayed.
+3. **The two ordinary components in the egress probe are not there for the reason the prose gave.**
+   It said they *"keep the WHERE axis at full depth so nothing collapses the tainted label away"*.
+   Closure does not work that way: with a single component the base tuple is the only closed cell
+   and it is where-PINNED, so the tainted label reaches the wire either way — which unit 17's
+   `CubeBlock.ClosureCollapsesSingleComponent` demonstrates directly (`raw_cell_count` 8,
+   `cell_count` 1, the pinned cell surviving). The reader found the role that IS load-bearing and
+   the prose never stated: the same builder with `include_tainted = false` is the diff arm's
+   **baseline**, so the neighbours are the shared content that makes the diff a one-component
+   change rather than a comparison between documents with nothing in common.
+
+**Findings for other lanes, with their addressees.**
+
+**A. `kBytesPerValueEntryUpperBound{96}` has no provenance anywhere in the workspace — for Kleio.**
+The constant occurs exactly once, and the bound it builds (`top_k_count × 2 × 64 × 96`) evaluates
+to about 6.3 MB against a real overhead the test prints and never asserts. Either it was measured
+and the measurement is unrecorded, or it is a round number — and the arm's strength depends on
+which. The `note:` now says only what is checkable; the number's ground is the finding.
+
+**B. The mid-string injection point rests on an unrecorded claim about Glaze's codegen — for
+Kleio.** The deleted prose justified placing the byte between a marker and a literal tail with a
+measurement about a vectorised body and a scalar tail corrupting differently. If that was measured,
+it is recorded nowhere; if it was reasoned, the placement's extra value over an end-of-string
+injection is unproven. The fixture is unchanged either way — this is a request for the measurement
+or for the claim to be dropped, not for a code change.
+
+**C. An orphaned rationale in `tests/engine/test_field_histograms.cpp`, carried across the unit
+boundary into this one — recorded because the carry is unusual.** That file ends with a
+`FieldHistogramSerializationTest` section header whose body states the real reason this unit's
+key-sorting test exists: `FieldHistogram::value_counts` is an `unordered_map`, so emission must
+key-sort or replay bit-identity is lost. The suite it heads is in THIS directory. The claim was
+verified at the artifact (`api/metalog.api.cppm` declares `std::unordered_map<std::string,
+std::uint64_t> value_counts`) and written here as a `note:` at
+`ValueCountsEmittedKeySorted`; the orphaned header is `tests/engine`'s to delete when that unit
+converts.
+
+---
+
 # The law block: one was owed, one was issued, one is minted
 
 This lane was instructed not to pick a law number — they are workspace-global, append-only and

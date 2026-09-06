@@ -1,47 +1,7 @@
-// Unit tests: allow short identifiers and test-specific patterns.
-//
-// test_egress_encoding_conformance.cpp — the EGRESS ENCODING gate: `metalog::to_json` emits
-// RFC 8259-conformant JSON for EVERY string input, including log-derived bytes below 0x20.
-//
-// ── THE INVARIANT, AND WHY IT IS OWNED HERE ────────────────────────────────────────────────────
-// "Every byte this surface emits into a declared encoding is legal in that encoding" is a MUST on
-// the EMITTING surface, unconditional, quantified over ALL string inputs — never a precondition on
-// an upstream producer (ADR-26 at drain; the argument is DN-65.D1). `insight-metalog` writes the
-// MetaLog document and diff wire, so `insight-metalog` owns the legality of those bytes. Sift
-// embeds the diff verbatim as `glz::raw_json` BY DESIGN (so spec-open members survive with no parse
-// round-trip), which makes Sift's report validity a function of THIS writer with no type-level
-// guarantee at the seam (DN-65.D5). The postcondition is discharged here or nowhere.
-//
-// ── THE ORACLE IS A DIFFERENT IMPLEMENTATION, ON PURPOSE ───────────────────────────────────────
-// Re-reading Glaze's output with Glaze is SUT == ORACLE: it proves ROUND-TRIP, never CONFORMANCE,
-// because a writer and its paired reader can agree on bytes no third party accepts — which is
-// exactly the defect this gate exists for (the engine exits 0; Node's `JSON.parse` throws).
-// `ConformanceScanner` below is therefore a hand-written recursive-descent JSON validator with no
-// dependency on the serializer under test. Its declared scope: RFC 8259 grammar + §7's rule that
-// U+0000..U+001F may not appear unescaped inside a string. It deliberately does NOT validate UTF-8
-// well-formedness — that is a different claim about a different byte class, and folding it in here
-// would let this gate go red for a reason it does not own.
-//
-// ── WHY THE INJECTION POINT IS A `where` COORDINATE AND NOT A MESSAGE BODY ─────────────────────
-// This is the load-bearing part of the homing call, and it is the correction of a live blind spot.
-// `F-SRC-insight-eidos:change_report_test.cpp:JsonStripsAnsiAndEscapesSurvivingControlBytes`
-// asserts THIS EXACT PROPERTY, is GREEN, and was
-// BLIND for the whole of 1.10.x: it injects \001 into a MESSAGE BODY, which becomes template TEXT
-// and surfaces only in Sift's own — correctly escaped — fields. The MetaLog diff wire carries
-// template IDs, not template text, so a byte injected into a message can never reach the
-// `glz::raw_json` seam. A green arm sitting off the path the bytes actually take.
-// The path the bytes DO take is the WHERE coordinate: canon's `component` -> the cube's interned
-// WHERE label -> `dto::CubeCoord::where` -> the wire. That is why the injection below is a
-// `component`, and the marker assertion in `wire_carries_marker` is what keeps this arm from
-// becoming the same kind of green-blind row: it proves the tainted field REACHED the wire before
-// anything is asserted about its encoding.
-//
-// ── SCOPE OF THE C0 SET ───────────────────────────────────────────────────────────────────────
-// All 32 bytes 0x00..0x1F are driven, not just NUL. Five of them (\b \t \n \f \r) have short JSON
-// escapes the writer emits regardless of the escape option, so a gate that probed only those would
-// be green and vacuous; the other 27 are the defect's real domain. Asserting over the whole set is
-// what makes the arm a statement about the ALPHABET rather than about one byte.
-
+// invariant: every byte this writer emits into a declared encoding is legal there -- a MUST on the
+// emitting surface, over ALL string inputs, never a precondition on an upstream producer.
+// refs: DN-65.D1, DN-65.D5
+// refs: F-SRC-insight-eidos:change_report_test.cpp:JsonStripsAnsiAndEscapesSurvivingControlBytes
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -63,27 +23,25 @@ namespace meta = insight::metalog;
 using insight::LogLevel;
 using insight::StructuralRole;
 
-// ── The independent oracle ────────────────────────────────────────────────────────────────────
-
 struct Violation
 {
     std::size_t offset{0};
     std::string reason;
 };
 
-// A hand-written RFC 8259 validator. Independent of Glaze by construction: it shares no code, no
-// table and no header with the writer under test.
+// invariant: independent of the writer under test -- it shares no code, table or header with it.
+// invariant: its scope is the RFC 8259 grammar plus the ban on unescaped U+0000..U+001F inside a
+// string; UTF-8 well-formedness is a different claim and is not checked here.
+// refs: DN-65.D7
 class ConformanceScanner
 {
   public:
-    // Nesting bound. Our documents are shallow (single digits); the bound exists so a malformed
-    // input cannot recurse the test binary off its stack, and it is reported as a violation rather
-    // than silently accepted.
+    // note: an overrun is a reported violation, so a malformed input cannot recurse off the stack.
     static constexpr std::size_t kMaxDepth{64};
 
     explicit ConformanceScanner(std::string_view text) noexcept : text_{text} {}
 
-    // std::nullopt == the text is conformant JSON.
+    // post: nullopt means the text is conformant JSON; otherwise the first violation found.
     [[nodiscard]] std::optional<Violation> scan()
     {
         skip_whitespace();
@@ -118,7 +76,6 @@ class ConformanceScanner
         return static_cast<std::uint8_t>(text_[position_]);
     }
 
-    // RFC 8259 §2: these four bytes are the ONLY insignificant whitespace between tokens.
     void skip_whitespace() noexcept
     {
         while (!at_end() && (peek() == ' ' || peek() == '\t' || peek() == '\n' || peek() == '\r'))
@@ -244,10 +201,6 @@ class ConformanceScanner
         }
     }
 
-    // THE RULE THIS GATE EXISTS FOR — RFC 8259 §7: a string is a sequence of Unicode scalar values
-    // wrapped in quotes, and "all Unicode characters may be placed within the quotation marks,
-    // except for the characters that MUST be escaped: quotation mark, reverse solidus, and the
-    // control characters (U+0000 through U+001F)".
     [[nodiscard]] bool parse_string()
     {
         if (!expect('"'))
@@ -283,7 +236,7 @@ class ConformanceScanner
 
     [[nodiscard]] bool parse_escape()
     {
-        ++position_; // the reverse solidus
+        ++position_;
         if (at_end())
         {
             record("escape at end of input");
@@ -379,7 +332,6 @@ class ConformanceScanner
     }
 };
 
-// Verbose-on-failure: the bytes around the violation, escaped so a terminal cannot eat them.
 [[nodiscard]] std::string hex_window(std::string_view text, std::size_t offset)
 {
     constexpr std::size_t kRadius{48};
@@ -401,16 +353,9 @@ class ConformanceScanner
     return out;
 }
 
-// ── The subject ───────────────────────────────────────────────────────────────────────────────
-
-// A printable sentinel carried alongside the injected byte. Its presence on the wire is what
-// proves the tainted field REACHED the serializer's output — the anti-vacuity guard. It survives
-// the fix unchanged (only the control byte's encoding moves), so this assertion means the same
-// thing before and after `escape_control_characters` is forced.
 constexpr std::string_view kMarker{"kleioEgressProbe"};
 
-// A CanonicalEvent carrying template, level and component. The caller owns the component storage
-// (CanonicalEvent::component is a string_view).
+// pre: the caller owns `component`'s storage -- CanonicalEvent::component is a view.
 [[nodiscard]] tok::CanonicalEvent make_event(std::string_view tmpl, LogLevel level,
                                              std::string_view component)
 {
@@ -428,10 +373,6 @@ constexpr std::string_view kMarker{"kleioEgressProbe"};
         .reservoir_size = 8, .reservoir_per_kind_cap = 4, .emit_stability = false};
 }
 
-// `component` = <marker> <injected byte> "tail". The byte sits mid-string on purpose: Glaze's
-// string writer has a vectorised body and a scalar tail that corrupt differently (the body
-// substitutes NUL bytes for the offending byte, the tail copies it verbatim), and a probe that
-// only ever landed in one of them would under-report the defect's shapes.
 [[nodiscard]] std::string tainted_component(std::uint8_t injected)
 {
     std::string out{kMarker};
@@ -447,12 +388,9 @@ struct BuiltDocument
     meta::MetaLogDocument document;
 };
 
-// Deterministic: fixed epoch-anchored time points, no wall clock, no RNG, single-threaded.
 constexpr std::chrono::system_clock::time_point kEpoch{};
 constexpr std::chrono::seconds kWindowSpan{60};
 
-// One closed window carrying the tainted component plus two ordinary neighbours (so the WHERE axis
-// keeps full depth and nothing collapses the tainted label away).
 [[nodiscard]] std::unique_ptr<BuiltDocument> build_tainted_document(std::uint8_t injected,
                                                                     bool include_tainted)
 {
@@ -472,24 +410,13 @@ constexpr std::chrono::seconds kWindowSpan{60};
     return built;
 }
 
-// The anti-vacuity guard, stated as a function so both arms use the same definition.
 [[nodiscard]] bool wire_carries_marker(std::string_view json)
 {
     return json.find(kMarker) != std::string_view::npos;
 }
 
-// ── The oracle's own kill-switch ──────────────────────────────────────────────────────────────
-//
-// A gate whose oracle cannot FAIL is not a gate. These two rows mutate the input and pin both
-// verdicts, so a later refactor that neutered the scanner would red here rather than turn the two
-// conformance arms silently green.
 TEST(EgressEncodingConformance, TheScannerAcceptsLegalJsonAndRejectsARawControlByte)
 {
-    // The conformant twin carries 0x01 as its legal \u0001 escape. Pairing the two rows is what
-    // makes this a DISCRIMINATION test rather than two unrelated assertions: the scanner must
-    // separate the byte's ENCODING from its presence as content, which is exactly the distinction
-    // the defect under test gets wrong. Written as an escape sequence in a raw literal, never as a
-    // literal control byte in this source file.
     constexpr std::string_view kLegal{
         R"({"where":["auth\u0001tail"],"count":3,"ratio":-1.5e2,"ok":true,"none":null,"list":[]})"};
     const auto clean{ConformanceScanner{kLegal}.scan()};
@@ -498,7 +425,6 @@ TEST(EgressEncodingConformance, TheScannerAcceptsLegalJsonAndRejectsARawControlB
         << (clean ? clean->reason : std::string{}) << "\n"
         << kLegal;
 
-    // The same document with that escape replaced by the raw byte it denotes.
     std::string illegal{R"({"where":["auth)"};
     illegal.push_back('\x01');
     illegal += R"(tail"]})";
@@ -510,13 +436,6 @@ TEST(EgressEncodingConformance, TheScannerAcceptsLegalJsonAndRejectsARawControlB
     EXPECT_EQ(dirty->offset, 15U) << "expected the violation at the injected byte.\n"
                                   << hex_window(illegal, dirty->offset);
 }
-
-// ── The two arms ──────────────────────────────────────────────────────────────────────────────
-//
-// Both overloads of `metalog::to_json` share one `kWriteOpts` (serialize.cpp), so the document and
-// the diff stand or fall together — which is precisely why BOTH are driven here rather than one
-// standing in for the other. A future change that split the options would be caught by whichever
-// arm kept the unsafe one.
 
 TEST(EgressEncodingConformance, MetaLogDocumentEmitsConformantJsonForEveryC0Byte)
 {
@@ -565,8 +484,6 @@ TEST(EgressEncodingConformance, MetaLogDiffEmitsConformantJsonForEveryC0Byte)
     for (std::uint16_t value{0}; value <= 0x1FU; ++value)
     {
         const auto injected{static_cast<std::uint8_t>(value)};
-        // Baseline without the tainted component, current with it: the label EMERGES, so it lands
-        // on the cube diff's emerging border and its WHERE coordinate reaches the diff wire.
         const auto baseline{build_tainted_document(injected, /*include_tainted=*/false)};
         const auto current{build_tainted_document(injected, /*include_tainted=*/true)};
         const std::string json{meta::to_json(meta::diff(baseline->document, current->document))};

@@ -1,6 +1,3 @@
-// Unit tests: allow short identifiers and test-specific patterns
-// Wire serialisation: key-sorted value_counts, omit-empty discipline, bounded document overhead.
-
 #include <gtest/gtest.h>
 
 import insight.metalog.test;
@@ -12,19 +9,13 @@ namespace tok = insight::tokenization;
 namespace meta = insight::metalog;
 using insight::metalog::test::ParamEvent;
 
-// These pin the wire contract: keys lexicographically sorted regardless of
-// insertion order, byte-stable across repeated serialisation, and OMITTED on the
-// default (max_param_histograms = 0) path so non-histogram documents are
-// byte-unchanged.
+// note: value_counts is an unordered_map, so emission must key-sort or replay bit-identity is lost.
 TEST(FieldHistogramSerializationTest, ValueCountsEmittedKeySorted)
 {
     meta::MetaLogEngine engine{meta::MetaLogConfig{.max_param_histograms = 1}};
     const auto t0{std::chrono::system_clock::now()};
     engine.open_window(t0);
 
-    // Distinctive values that appear ONLY in value_counts, ingested OUT of sorted
-    // order. An insertion- or hash-ordered emit would place them out of order;
-    // the std::map conversion at the serialiser must restore lexicographic order.
     for (const auto* val : {"zzz_zebra", "aaa_alpha", "mmm_mango"})
     {
         auto ev{ParamEvent::make("slot=<*>", {val})};
@@ -45,11 +36,6 @@ TEST(FieldHistogramSerializationTest, ValueCountsEmittedKeySorted)
     EXPECT_LT(pos_a, pos_m) << "value_counts must serialise key-sorted.\n" << json;
     EXPECT_LT(pos_m, pos_z) << "value_counts must serialise key-sorted.\n" << json;
 
-    // entropy_bits MUST NOT be emitted: it is a float and is losslessly derivable
-    // from value_counts, so a consumer that wants it computes it. Every
-    // emitted field is integer-TYPED — param_index, value_counts counts, total, and
-    // the HLL approximate_cardinality (=3 distinct values here) — so no float lands
-    // on the wire. Pin the exact shape (key-sorted value_counts).
     EXPECT_NE(json.find("\"param_histograms\":[{\"param_index\":0,\"value_counts\":"
                         "{\"aaa_alpha\":1,\"mmm_mango\":1,\"zzz_zebra\":1},\"total\":3,"
                         "\"approximate_cardinality\":3}]"),
@@ -63,7 +49,7 @@ TEST(FieldHistogramSerializationTest, ValueCountsEmittedKeySorted)
 
 TEST(FieldHistogramSerializationTest, OmittedWhenDisabled)
 {
-    meta::MetaLogEngine engine; // default: max_param_histograms = 0
+    meta::MetaLogEngine engine;
     const auto t0{std::chrono::system_clock::now()};
     engine.open_window(t0);
     for (int i{0}; i < 5; ++i)
@@ -79,12 +65,6 @@ TEST(FieldHistogramSerializationTest, OmittedWhenDisabled)
         << json;
 }
 
-// Measure-first gate (b): with the histogram caps in force (top_k_size ×
-// max_param_histograms × max_histogram_values), the serialised overhead is
-// bounded and acceptable for the batch / full-fidelity path. Builds a realistic
-// CI-shaped batch (512 templates × 2 param slots, ~20 / ~6 distinct values),
-// prints the measured doc sizes, and asserts the overhead stays within the
-// cap-derived upper bound (param_histograms can never make the doc unbounded).
 TEST(FieldHistogramSerializationTest, BoundedDocumentOverhead)
 {
     constexpr std::size_t kTemplates{512};
@@ -136,9 +116,7 @@ TEST(FieldHistogramSerializationTest, BoundedDocumentOverhead)
               << (100.0 * static_cast<double>(overhead) / static_cast<double>(json_without.size()))
               << "%\n";
 
-    // Cap-derived upper bound: every slot at max distinct values, generous bytes
-    // per "key":count JSON entry. Real overhead is far below this; the guard is
-    // that param_histograms can never make the batch document unbounded.
+    // note: a cap-derived ceiling, not the measured overhead, which is printed and never asserted.
     constexpr std::size_t kBytesPerValueEntryUpperBound{96};
     const std::size_t cap_bound{top_k_count * kMaxHist * kMaxValues *
                                 kBytesPerValueEntryUpperBound};
@@ -147,21 +125,10 @@ TEST(FieldHistogramSerializationTest, BoundedDocumentOverhead)
         << "B cap_bound=" << cap_bound << "B";
 }
 
-// ── DeclaredCapSerializationTest ──────────────────────────────────────────────
-//
-// SPEC §8 clause 4 made the caps decidable from the document alone, and §4.2 made the
-// ABSENCE of `behavior.branching_size` a positive assertion ("the producer declares no
-// cap"). So for every variable-length block this producer caps, two things are pinned
-// here: the cap is DECLARED beside the array it bounds, and it is declared ONLY there —
-// a cap standing next to an absent array would price a term the document does not carry,
-// and an absent cap next to a capped array is the false statement §4.2 describes.
-// String-level assertions on purpose: the claim is about emitted BYTES.
-
 namespace
 {
-    // One window carrying all three capped blocks: a rare error below a small top_k
-    // (populates `stats.reservoir`), repeated transitions (populate `behavior.branching`),
-    // and the always-on cube.
+    // post: one closed window carrying all three capped blocks -- a reservoir entry, branching
+    // transitions and the always-on cube.
     meta::MetaLogDocument window_with_every_capped_block(meta::MetaLogConfig config,
                                                          meta::TemplateRegistry& registry)
     {
@@ -182,6 +149,7 @@ namespace
     }
 } // namespace
 
+// refs: F-SRC-metalog-spec:SPEC.md
 TEST(DeclaredCapSerializationTest, EveryEmittedCappedBlockDeclaresItsCapAndHonoursIt)
 {
     constexpr std::size_t kReservoirCap{8};
@@ -201,7 +169,6 @@ TEST(DeclaredCapSerializationTest, EveryEmittedCappedBlockDeclaresItsCapAndHonou
     ASSERT_FALSE(doc.behavior->branching->empty()) << "fixture must populate branching.\n" << json;
     ASSERT_TRUE(doc.has_cube) << "the cube is always-on.\n" << json;
 
-    // Declared — with the value the producer actually applied.
     EXPECT_NE(json.find("\"reservoir_size\":" + std::to_string(kReservoirCap)), std::string::npos)
         << "stats.reservoir_size must be declared beside an emitted reservoir (SPEC §3.7).\n"
         << json;
@@ -213,8 +180,6 @@ TEST(DeclaredCapSerializationTest, EveryEmittedCappedBlockDeclaresItsCapAndHonou
         << "cube.cell_budget must be declared beside emitted cells (SPEC §16.10).\n"
         << json;
 
-    // …and honoured: SPEC §8 clause 4 — the array is truthfully bounded by the cap the
-    // SAME document declares for it.
     ASSERT_TRUE(doc.stats.reservoir_size.has_value()) << json;
     EXPECT_LE(doc.stats.reservoir.size(), *doc.stats.reservoir_size)
         << "clause 4: reservoir holds " << doc.stats.reservoir.size() << " under a declared cap of "
@@ -236,10 +201,8 @@ TEST(DeclaredCapSerializationTest, ABlockThatIsNotEmittedDeclaresNoCap)
 {
     meta::TemplateRegistry registry;
     const auto doc{window_with_every_capped_block(
-        meta::MetaLogConfig{.top_k_size = 3,
-                            .reservoir_size = 0, // reservoir disabled
-                            .emit_stability = false,
-                            .top_branching_size = 0}, // branching disabled
+        meta::MetaLogConfig{
+            .top_k_size = 3, .reservoir_size = 0, .emit_stability = false, .top_branching_size = 0},
         registry)};
     const std::string json{meta::to_json(doc, registry)};
 
@@ -255,20 +218,8 @@ TEST(DeclaredCapSerializationTest, ABlockThatIsNotEmittedDeclaresNoCap)
         << json;
 }
 
-// ── DroppedNgramObservationsWireTest ──────────────────────────────────────────
-//
-// SPEC §4 `behavior.dropped_ngram_observations`, on the BYTES. The field is the one place the
-// format lets a producer confess the heavier of its two n-gram losses — the accounting bound,
-// which refuses a key before it is ever counted, as opposed to `top_ngrams`' ranking cut — and §4
-// makes its ABSENCE normative: in a document declaring 0.7.0 or later an omitted key affirms that
-// nothing was dropped. So both directions are wire claims and both are pinned here, from ONE
-// fixture whose only moving part is the cap.
-
 namespace
 {
-    // 20 distinct templates in one window: 19 bigrams, `cap` admitted, the rest refused. At
-    // cap = 4 that is 15 refused observations; at the producer default the cap never binds and
-    // the count is a true zero.
     meta::MetaLogDocument window_of_twenty_distinct_templates(std::size_t cap,
                                                               meta::TemplateRegistry& registry)
     {
@@ -286,6 +237,7 @@ namespace
     }
 } // namespace
 
+// refs: F-SRC-metalog-spec:SPEC.md
 TEST(DroppedNgramObservationsWireTest, ACappedWindowWritesTheRefusedObservationCount)
 {
     meta::TemplateRegistry registry;
@@ -293,7 +245,6 @@ TEST(DroppedNgramObservationsWireTest, ACappedWindowWritesTheRefusedObservationC
     const std::string json{meta::to_json(doc, registry)};
 
     ASSERT_TRUE(doc.behavior.has_value()) << json;
-    // 19 bigrams, 4 admitted → 15 refused. Hand arithmetic, not a second call into the producer.
     EXPECT_NE(json.find("\"dropped_ngram_observations\":15"), std::string::npos)
         << "SPEC §4: a window whose accounting bound BOUND must report the refused observation "
            "count — 20 distinct templates form 19 bigrams, 4 fit under the cap, 15 are refused.\n"
@@ -303,15 +254,10 @@ TEST(DroppedNgramObservationsWireTest, ACappedWindowWritesTheRefusedObservationC
 TEST(DroppedNgramObservationsWireTest, AnUncappedWindowOmitsTheKeyRatherThanWritingZero)
 {
     meta::TemplateRegistry registry;
-    // The producer default (MetaLogConfig::kDefaultMaxNgramKeys = 4096) against 19 bigrams: the
-    // cap cannot bind, so the count is a genuine zero rather than an unmeasured one.
     const auto doc{
         window_of_twenty_distinct_templates(meta::MetaLogConfig{}.max_ngram_keys, registry)};
     const std::string json{meta::to_json(doc, registry)};
 
-    // THE ABSENCE MUST BE ATTRIBUTABLE TO THE ZERO, and these three assertions are what make it
-    // so. A document with no behavior block, or with an empty n-gram array, would satisfy the
-    // "key not found" check below while proving nothing at all about the omission rule.
     ASSERT_TRUE(doc.behavior.has_value()) << "the block must be PRESENT, or the absence below is "
                                              "the block's, not the field's.\n"
                                           << json;
@@ -332,7 +278,5 @@ TEST(DroppedNgramObservationsWireTest, AnUncappedWindowOmitsTheKeyRatherThanWrit
            "byte-identical to one that has no bound at all.\n"
         << json;
 }
-
-// ── FieldHistogramDiffTest ────────────────────────────────────────────────────
 
 } // namespace
