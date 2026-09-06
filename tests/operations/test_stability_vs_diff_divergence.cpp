@@ -1,68 +1,21 @@
-// Unit tests: allow short identifiers and test-specific patterns
-//
-// test_stability_vs_diff_divergence.cpp — the RETENTION CUT is what separates a document's
-// `stability` block from `diff()`'s divergence, and this file is the witness that says so.
-//
-// ── THE TWO READERS OF ONE QUANTITY
-//
-// `js_divergence` is computed twice in this package, from two different populations:
-//
-//   producer side  `MetaLogEngine::build_stability` reads the WINDOW — every accumulated bucket
-//                  and `lines_observed`, before any cap is applied. `prev_freq_` on the other
-//                  side of the comparison is likewise the previous window's FULL bucket set.
-//   operations side `diff(previous, current)` reads the two DOCUMENTS — `stats.top_k` only,
-//                  which the producer already truncated at `min(top_k_size, unique_templates)`.
-//
-// Below the cut those two populations are the same set, so the two numbers are the same number.
-// Above it they are not, and the whole point of `stability` being a separate block is that it
-// keeps reading the full window when the document no longer carries it.
-//
-// ── WHY THIS FILE EXISTS AT ALL: THE GREEN THAT SAID NOTHING
-//
-// The equality half was already true and already observable — every committed golden vector in
-// `tests/vectors/` shows `stability.js_divergence` equal to line 3's `js_divergence`, bit for bit,
-// on all three corpora. It was true VACUOUSLY: every one of those windows carries between 1 and 12
-// unique templates against the default `top_k_size` of 64, so `stats.top_k` is never truncated and
-// the two populations cannot differ. An equality asserted only in the regime where it is forced is
-// not an assertion. `DN-50.D8` predicted exactly that in writing — *"a gate that only asserts
-// equality would be vacuously green on every small fixture"* — and this file is the half it asked
-// for, produced by moving the cut instead of by adding a corpus.
-//
-// ── HOW THE INFORMATIVE CASE IS REACHED: THE KNOB, NOT A NEW FIXTURE
-//
-// `MetaLogConfig::top_k_size` is a producer knob, so the truncation regime is one config member
-// away on the corpus already in the tree. The two arms below run the SAME committed log bytes
-// through the SAME shared tokenize-and-split construction and differ in that member alone — a
-// do-operator on the retention cut and on nothing else. That is why arm 3 can attribute the
-// separation to the cut rather than to the input.
-//
-// The premise each arm needs is ASSERTED rather than assumed: arm 1 asserts that nothing was
-// truncated, arm 2 asserts that both windows were. Should the corpus ever stop having the shape
-// these arms need, they RED with the observed counts in the message instead of going quietly
-// vacuous the way the equality-only reading did.
-//
-// ── EXACT COMPARISON, AND WHY NO TOLERANCE IS THE RIGHT ANSWER
-//
-// `divergences()` accumulates in the integer/fixed-point domain (`__int128` reductions over
-// `det_log2_fixed`, one exact divide per output — src/stats/statistics.cpp) precisely so the
-// result carries no accumulation order and no libm dependence. Two calls over the same population
-// therefore produce the same bits on every leg, and the comparison here is `==` on the doubles.
-// A tolerance would be strictly worse than useless: the drift it would absorb is the drift this
-// gate exists to see.
-//
-// ── WHAT A FUTURE CHANGE WOULD HAVE TO DO TO RED THIS FILE
-//
-//   * `build_stability` reusing `WindowAnalysis::ordered[0 .. top_k_cut]` instead of the full
-//     bucket set — the plausible "reuse the sorted view we already built" optimisation. Arm 2 and
-//     arm 3 both red: the producer number would start following the knob.
-//   * `diff()` reading a full-template array instead of `stats.top_k` — arm 2 and arm 3 red from
-//     the other side.
-//   * The corpus losing its 9 -> 12 unique-template shape — the premise assertions red by name.
-//
-// Determinism: no RNG, no threads, no wall clock. The window bounds are the literal epoch offsets
-// owned by `corpus_windows_scenario.hpp`; the input is committed log text; the divergence is
-// integer-domain. Single-threaded by construction.
 
+// refs: DN-50.D1, DN-50.D8
+// invariant: the RETENTION CUT is what separates a document's stability block from diff()'s
+// divergence, and this file is the witness that says so.
+// invariant: js_divergence is computed twice from two populations -- the producer reads the WINDOW
+// before any cap, and diff() reads the two DOCUMENTS' already-truncated top_k.
+// invariant: below the cut those populations are the same set and the two numbers are the same
+// number; above it they are not, and that is why stability is a separate block.
+// invariant: the equality half was already true and observable, but VACUOUSLY: every committed
+// window carries 1 to 12 unique templates against a default top_k_size of 64.
+// note: nothing is truncated there, and an equality forced by the regime is not an assertion.
+// invariant: the informative case is reached by the KNOB and not a new fixture: the same committed
+// bytes through the same construction, differing in top_k_size alone -- a do-operator on the cut.
+// invariant: each arm's premise is ASSERTED rather than assumed, so a corpus that stops having the
+// needed shape REDS with the observed counts instead of going quietly vacuous.
+// invariant: the comparison is == on the doubles because divergences() accumulates in the
+// integer/fixed-point domain, so two calls over one population produce the same bits on every leg.
+// note: a tolerance would absorb exactly the drift this gate exists to see.
 #include <gtest/gtest.h>
 
 #include <chrono>
@@ -79,8 +32,7 @@
 
 import insight.metalog.test;
 
-// AFTER the imports (plain TU): the corpus tokenize-and-split construction shared with
-// scripts/determinism_fixture.cpp and tests/operations/test_golden_vectors.cpp.
+// note: after the imports, plain TU: the construction shared with the fixture and the vectors.
 #include "corpus_windows_scenario.hpp"
 
 namespace
@@ -89,21 +41,18 @@ namespace
 namespace meta = insight::metalog;
 namespace cw = insight::metalog::corpus_windows;
 
-// The corpus with the richest split in the tree: 9 unique templates in the first window, 12 in the
-// second (re-derived from tests/vectors/service_a.vectors.jsonl). It is the only committed corpus
-// whose window count is high enough for a small cut to bite on BOTH sides of the diff.
+// invariant: the corpus with the richest split in the tree -- 9 unique templates in the first
+// window and 12 in the second -- and the only one whose counts let a small cut bite on BOTH sides.
 constexpr std::string_view kCorpusName{"service_a"};
 
-// Two coordinates on the one axis this file sweeps.
-//   - the shipped default: 64 >= 12, so nothing is truncated and the populations coincide.
-//   - a cut of 2: below both windows' template counts, so both documents lose entries.
-// 2 rather than 1 so the retained set is still a set and the truncation is not confounded with a
-// degenerate single-entry document.
+// invariant: two coordinates on the one axis swept: the shipped default of 64, which truncates
+// nothing, and a cut of 2, which is below both windows' template counts.
+// note: 2 rather than 1, so the retained set is still a set and truncation is not confounded.
 constexpr std::size_t kNoTruncationTopK{meta::MetaLogConfig::kDefaultTopKSize};
 constexpr std::size_t kTruncatingTopK{2};
 
-// Every number a failure needs, gathered in one pass so the arms never re-run the producer and
-// then compare readings from two different runs.
+// invariant: every number a failure needs is gathered in one pass, so the arms never re-run the
+// producer and then compare readings from two different runs.
 struct Measurement
 {
     std::size_t configured_top_k{0};
@@ -120,9 +69,8 @@ struct Measurement
     return std::filesystem::path{INSIGHT_METALOG_CORPUS_DIR} / (std::string{kCorpusName} + ".log");
 }
 
-// `std::nullopt` distinguishes the two ways this can fail to produce a reading — an unreadable
-// corpus, and a document that carried no divergence at all — from a reading that merely came out
-// wrong. The caller reports which.
+// invariant: the disengaged optional distinguishes an unreadable corpus and a document carrying no
+// divergence from a reading that merely came out wrong, and the caller reports which.
 enum class ProduceFailure : std::uint8_t
 {
     CorpusUnreadable,
@@ -173,8 +121,7 @@ enum class ProduceFailure : std::uint8_t
     return "<unknown failure>";
 }
 
-// 17 significant digits round-trips an IEEE-754 double, so a reader comparing two reports is
-// comparing the values and not their rendering.
+// note: 17 significant digits round-trips an IEEE-754 double, so a reader compares values.
 [[nodiscard]] std::string report(const Measurement& measurement)
 {
     return std::format("\n  corpus                        {}"
@@ -190,11 +137,8 @@ enum class ProduceFailure : std::uint8_t
                        measurement.stability_js - measurement.diff_js);
 }
 
-// ── Arm 1 — below the cut: the two readings are the same number, bit for bit ───────────────────
-//
-// This is the half that was already green. It stays, because it is the control that makes arm 2
-// mean something — but its premise is now asserted, so it can no longer be green for the reason
-// that made it uninformative.
+// invariant: arm 1, below the cut -- the half that was already green, kept because it is the
+// control that makes arm 2 mean something, and its premise is now asserted.
 TEST(StabilityVersusDiffDivergence, BelowTheRetentionCutTheTwoDivergencesAreBitEqual)
 {
     const auto measured{measure(kNoTruncationTopK)};
@@ -216,9 +160,7 @@ TEST(StabilityVersusDiffDivergence, BelowTheRetentionCutTheTwoDivergencesAreBitE
         << report(*measured);
 }
 
-// ── Arm 2 — above the cut: the two readings separate ───────────────────────────────────────────
-//
-// The informative half, and the one that had zero witnesses before this file.
+// invariant: arm 2, above the cut -- the informative half, and the one that had zero witnesses.
 TEST(StabilityVersusDiffDivergence, AboveTheRetentionCutTheTwoDivergencesSeparate)
 {
     const auto measured{measure(kTruncatingTopK)};
@@ -247,12 +189,10 @@ TEST(StabilityVersusDiffDivergence, AboveTheRetentionCutTheTwoDivergencesSeparat
         << report(*measured);
 }
 
-// ── Arm 3 — WHICH of the two follows the knob ──────────────────────────────────────────────────
-//
-// Arm 2 on its own says only "two numbers differ", which a wrong change could satisfy by moving
-// EITHER of them. This arm names the direction: sweeping `top_k_size` must move the document-side
-// reading and must leave the window-side reading untouched. That is the design fact `DN-50.D1`(2)
-// established — `stability` is not the acute series — stated as something the code has to hold.
+// invariant: arm 3 names the DIRECTION, because arm 2 alone says only that two numbers differ,
+// which a wrong change could satisfy by moving either of them.
+// invariant: sweeping top_k_size must move the document-side reading and leave the window-side
+// reading untouched -- stability is not the acute series, stated as something the code holds.
 TEST(StabilityVersusDiffDivergence, StabilityIgnoresTheRetentionCutAndTheDiffFollowsIt)
 {
     const auto whole{measure(kNoTruncationTopK)};

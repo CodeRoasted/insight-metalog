@@ -1,35 +1,17 @@
-// Unit tests: allow short identifiers and test-specific patterns.
-//
-// test_comparison_outcome.cpp — SPEC §13.2 / §13.2.1: the `comparison_outcome` member every
-// MetaLogDiff has been REQUIRED to carry since metalog-spec 0.10.0, and the WITNESS rule that
-// decides which of its two values is honest.
-//
-// The rule in one line: `"changed"` obliges the document to carry at least one signal property that
-// is NON-VACUOUS by that property's own `x-metalog-vacuous` declaration in
-// `schema/metalog_diff.v0.schema.json`; `"unchanged"` forbids one. Vacuity is DECLARED per property
-// and is not a function of JSON shape — the spec's own worked counter-examples are that
-// `stability_score` is vacuous at ONE, `tail_delta` carries findings with no array at all, and a
-// `cube_diff`'s `axes` is a descriptor that must never witness.
-//
-// ── WHY THIS FILE HAS TWO GROUPS, AND WHAT EACH FIXTURE HAS TO CONTROL ───────────────────────────
-// They prove two different things and neither can prove the other's.
-//
-// `ComparisonOutcomeRule` builds MetaLogDiff values BY HAND. The property under test is
-// per-property vacuity, so the fixture must be able to move ONE signal property while holding all
-// ten others at their declared vacuous value — which no pair of documents can do, because a real
-// change moves several at once. Hand-built diffs are the only fixture with that control, and they
-// are what makes each clause's failure attributable to the declaration it mirrors.
-//
-// `ComparisonOutcomeProducer` diffs ENGINE-PRODUCED documents. The property under test is that this
-// producer actually LANDS on the declared vacuous values when it found nothing — an obligation
-// §13.2.1 puts on the producer ("a value merely CLOSE to the declared vacuous value is a witness,
-// and will be read as one"). A hand-built diff cannot show that: it asserts the arithmetic it was
-// handed. Only two real windows through the real engine can.
-//
-// Every case in the first group is one that a SHAPE rule — "a non-empty array, or a scalar above
-// zero" — decides differently from the declarations. That is deliberate: a suite whose cases agree
-// under both rules would pass against the behaviour this file exists to replace.
 
+// refs: F-SRC-metalog-spec:SPEC.md, F-SRC-metalog-spec:metalog_diff.v0.schema.json
+// invariant: every MetaLogDiff must carry comparison_outcome, and the witness rule decides which of
+// its two values is honest.
+// invariant: changed obliges the document to carry at least one signal property that is NON-VACUOUS
+// by that property's own x-metalog-vacuous declaration; unchanged forbids one.
+// invariant: vacuity is DECLARED per property and is not a function of JSON shape.
+// note: stability_score is vacuous at ONE and tail_delta has findings with no array at all.
+// invariant: the diff schema declares x-metalog-vacuous on THIRTEEN top-level properties, and
+// group A moves ONE while holding the other twelve at their declared vacuous value.
+// note: no pair of real documents can do that, a real change moving several properties at once.
+// invariant: group B diffs ENGINE-PRODUCED documents, because only two real windows can show the
+// producer LANDS on the declared vacuous values; a value merely CLOSE to one is a witness.
+// note: every group A case is one a SHAPE rule would decide differently from the declarations.
 #include <gtest/gtest.h>
 
 import insight.metalog.test;
@@ -42,10 +24,9 @@ namespace meta = insight::metalog;
 using insight::metalog::test::make_event;
 using meta::ComparisonOutcome;
 
-// ── Group A: the rule, one case per `x-metalog-vacuous` declaration ──────────────────────────────
-
-// A diff carrying only §13.2's four REQUIRED members and no signal property at all. Every case
-// below starts here and moves exactly one property off its declared vacuous value.
+// note: group A -- one case per x-metalog-vacuous declaration.
+// invariant: the base diff carries only the four REQUIRED members and no signal property, so every
+// case below moves exactly one property off its declared vacuous value.
 [[nodiscard]] meta::MetaLogDiff bare_diff()
 {
     meta::MetaLogDiff diff;
@@ -56,8 +37,8 @@ using meta::ComparisonOutcome;
     return diff;
 }
 
-// Verbose on failure: gtest cannot print a scoped enum, and "expected 0, got 1" is not a
-// diagnosis. Reports the two WIRE TOKENS, which is what the document carries.
+// invariant: gtest cannot print a scoped enum, so the report names the two WIRE TOKENS, which is
+// what the document actually carries.
 [[nodiscard]] ::testing::AssertionResult outcome_is(const meta::MetaLogDiff& diff,
                                                     ComparisonOutcome want)
 {
@@ -74,10 +55,8 @@ TEST(ComparisonOutcomeRule, NoSignalPropertyAtAllIsUnchanged)
     EXPECT_TRUE(outcome_is(bare_diff(), ComparisonOutcome::Unchanged));
 }
 
-// `kl_divergence` / `js_divergence` declare `const: 0` — EXACT numeric equality. The spec names the
-// failure this catches by value: "a divergence computed in floating point and serialised as 1e-17
-// between two identical distributions is a FALSE WITNESS, and the defect is the producer's". The
-// rule side of that is this: 1e-17 IS a witness, so a producer must never emit it for "no change".
+// invariant: the divergences declare const 0, EXACT numeric equality, so a divergence serialised as
+// 1e-17 between two identical distributions IS a witness and the defect is the producer's.
 TEST(ComparisonOutcomeRule, DivergenceIsVacuousAtExactlyZeroAndWitnessesAtOneUlp)
 {
     auto diff{bare_diff()};
@@ -93,12 +72,12 @@ TEST(ComparisonOutcomeRule, DivergenceIsVacuousAtExactlyZeroAndWitnessesAtOneUlp
     diff.kl_divergence = 1e-17;
     EXPECT_TRUE(outcome_is(diff, ComparisonOutcome::Changed));
 
-    diff.kl_divergence = -0.0; // `const: 0` matches -0.0: same number, not a witness
+    diff.kl_divergence = -0.0;
     EXPECT_TRUE(outcome_is(diff, ComparisonOutcome::Unchanged));
 }
 
-// `stability_score` declares `const: 1`, NOT 0 — it is `1 - js_divergence`. A "greater than zero"
-// shape rule fires on PERFECT STABILITY and is silent nowhere; this asserts the opposite polarity.
+// invariant: stability_score declares const 1 and not 0, being 1 minus js_divergence, so a
+// greater-than-zero shape rule fires on PERFECT STABILITY and is silent nowhere.
 TEST(ComparisonOutcomeRule, StabilityScoreIsVacuousAtOneNotAtZero)
 {
     auto diff{bare_diff()};
@@ -106,16 +85,15 @@ TEST(ComparisonOutcomeRule, StabilityScoreIsVacuousAtOneNotAtZero)
     diff.stability_score = 1.0;
     EXPECT_TRUE(outcome_is(diff, ComparisonOutcome::Unchanged));
 
-    diff.stability_score = 0.0; // total instability — the value a shape rule reads as "no finding"
+    diff.stability_score = 0.0;
     EXPECT_TRUE(outcome_is(diff, ComparisonOutcome::Changed));
 
     diff.stability_score = 0.9999999999999999;
     EXPECT_TRUE(outcome_is(diff, ComparisonOutcome::Changed));
 }
 
-// `template_deltas` declares PER ROW (`items.properties.delta.const: 0`) because the array is a
-// union over both windows and is non-empty whenever either window is. A row is not a finding; a
-// non-zero `delta` is. A `minItems: 1` shape rule would witness on all three rows below.
+// invariant: template_deltas declares vacuity PER ROW because the array is a union over both
+// windows and is non-empty whenever either is; a row is not a finding, a non-zero delta is.
 TEST(ComparisonOutcomeRule, TemplateDeltasWitnessOnANonZeroDeltaNotOnARow)
 {
     auto diff{bare_diff()};
@@ -133,10 +111,9 @@ TEST(ComparisonOutcomeRule, TemplateDeltasWitnessOnANonZeroDeltaNotOnARow)
     EXPECT_TRUE(outcome_is(diff, ComparisonOutcome::Changed));
 }
 
-// `branching_delta` declares `maxItems: 0` — the ARRAY is the finding, so any row witnesses, even a
-// row whose entropy did not move. This is the declaration that forces the producer-side rule proved
-// in ProducerEmitsNoBranchingDeltaWhenNoEntropyMoved below: this array is a union too, so emitting
-// it unconditionally would witness "changed" on two identical documents.
+// invariant: branching_delta declares maxItems 0, so the ARRAY is the finding and any row witnesses
+// even one whose entropy did not move.
+// note: it is a union too, so emitting it unconditionally would witness on two identical documents.
 TEST(ComparisonOutcomeRule, BranchingDeltaWitnessesOnAnyRowIncludingAZeroOne)
 {
     auto diff{bare_diff()};
@@ -159,7 +136,7 @@ TEST(ComparisonOutcomeRule, NewAndVanishedTemplatesWitnessOnAnyEntry)
     EXPECT_TRUE(outcome_is(diff, ComparisonOutcome::Changed));
 }
 
-// `ngram_delta`'s declaration mutes `ngram_size` explicitly: it is a PARAMETER, never a finding.
+// invariant: ngram_delta mutes ngram_size explicitly -- it is a PARAMETER, never a finding.
 TEST(ComparisonOutcomeRule, NgramDeltaIsVacuousOnItsSizeParameterAlone)
 {
     auto diff{bare_diff()};
@@ -173,10 +150,9 @@ TEST(ComparisonOutcomeRule, NgramDeltaIsVacuousOnItsSizeParameterAlone)
     EXPECT_TRUE(outcome_is(diff, ComparisonOutcome::Changed));
 }
 
-// `tail_delta` has nine numeric members and NO array, so a "non-empty array" shape rule witnesses
-// NEVER and a tail-shape change is rejected while being correct. The declaration names the three
-// `*_delta` members; the six `previous_`/`current_` members are the coordinates they are taken
-// between, and are loud and non-zero in both halves of this case.
+// invariant: tail_delta has nine numeric members and NO array, so a non-empty-array shape rule
+// witnesses NEVER and rejects a tail-shape change while being correct.
+// note: the six previous_/current_ members are the coordinates the three deltas are taken between.
 TEST(ComparisonOutcomeRule, TailDeltaWitnessesOnADeltaNotOnItsCoordinates)
 {
     auto diff{bare_diff()};
@@ -195,10 +171,9 @@ TEST(ComparisonOutcomeRule, TailDeltaWitnessesOnADeltaNotOnItsCoordinates)
     EXPECT_TRUE(outcome_is(diff, ComparisonOutcome::Changed));
 }
 
-// `cube_diff.axes` is the diff's declared COORDINATE SPACE — required, non-empty, and a descriptor
-// (SPEC §13.6). Under a shape rule this was the single largest vacuity in the release: this
-// producer emits a cube_diff whenever both inputs carry a cube, so EVERY such document would have
-// witnessed "changed" for free. The finding is a populated emerging/vanishing border.
+// invariant: cube_diff.axes is the diff's declared COORDINATE SPACE -- required, non-empty, and a
+// descriptor -- so under a shape rule every cube-bearing document would witness changed for free.
+// note: the finding is a populated emerging or vanishing border, never the axes.
 TEST(ComparisonOutcomeRule, CubeDiffIsVacuousOnAxesAloneAndWitnessesOnABorderCell)
 {
     auto diff{bare_diff()};
@@ -230,22 +205,19 @@ TEST(ComparisonOutcomeRule, ReservoirDeltaWitnessesOnAnyOfItsThreeLists)
     EXPECT_TRUE(outcome_is(diff, ComparisonOutcome::Changed));
 }
 
-// `withheld_signals` (§13.2.2, new in 0.10.0) declares `maxItems: 0` — any name is a finding, the
-// finding being that ANOTHER property carries one this document does not show. It is the only
-// clause whose input is a property that never reaches the wire: this producer computes
-// `field_histogram_deltas` on every diff and never serialises it (§3.5.2 blesses that), so a
-// comparison whose ONLY finding lay there had, before 0.10.0, no honest outcome — `"changed"`
-// carried no witness and `"unchanged"` was false. This producer emitted the false one, and the
-// first EXPECT below is the one that fails against that behaviour.
+// invariant: withheld_signals declares maxItems 0, so any name is a finding, the finding being that
+// ANOTHER property carries one this document does not show.
+// invariant: it is the only clause whose input never reaches the wire, this producer computing
+// field_histogram_deltas on every diff and never serialising it.
+// note: so a comparison whose only finding lay there once had no honest outcome available.
 TEST(ComparisonOutcomeRule, WithheldFieldHistogramDeltasWitnessThroughWithheldSignals)
 {
     auto diff{bare_diff()};
     EXPECT_TRUE(meta::withheld_signals_of(diff).empty());
     EXPECT_TRUE(outcome_is(diff, ComparisonOutcome::Unchanged));
 
-    // One slot whose distribution moved, and nothing else in the whole document. Every other
-    // signal property stays at its declared vacuous value, so this row is the sole finding — and
-    // it is one no reader of the serialized document can see.
+    // invariant: one slot whose distribution moved and nothing else in the document, so this row is
+    // the sole finding -- and one no reader of the serialized document can see.
     meta::FieldHistogramDelta row;
     row.template_id = insight::template_id_of("user <*> logged in");
     row.param_index = 0;
@@ -257,12 +229,9 @@ TEST(ComparisonOutcomeRule, WithheldFieldHistogramDeltasWitnessThroughWithheldSi
               (std::vector<std::string>{"field_histogram_deltas"}));
 }
 
-// §13.2.2 bounds what may be NAMED, and the bound is narrower than "everything this producer
-// drops": a member must be in the witness set (§13.2.1 step 2) and must not already witness in the
-// document. Two properties this producer computes fail that test in opposite ways, and naming
-// either would be a false statement about what the document withholds — `ordinal_histogram_deltas`
-// is not a member of the standard at all, and `service_edge_delta` IS carried, under the §7
-// `extensions` container. Neither may appear, and neither may move the outcome on its own.
+// invariant: what may be NAMED is narrower than everything this producer drops: a member must be in
+// the witness set and must not already witness in the document.
+// note: one candidate is not in the standard at all and the other IS carried, under extensions.
 TEST(ComparisonOutcomeRule, WithheldSignalsNamesNeitherANonStandardNorAnExtensionProperty)
 {
     auto diff{bare_diff()};
@@ -279,11 +248,9 @@ TEST(ComparisonOutcomeRule, WithheldSignalsNamesNeitherANonStandardNorAnExtensio
     EXPECT_TRUE(outcome_is(diff, ComparisonOutcome::Unchanged));
 }
 
-// ── Group B: the producer lands on the declared vacuous values ───────────────────────────────────
-
-// One window's worth of events. `alpha` branches to `beta` and to `gamma`, so the closed document
-// carries a non-empty `behavior.branching` — which is what makes the branching_delta case below a
-// real test rather than a vacuous one.
+// note: group B -- the producer lands on the declared vacuous values.
+// invariant: alpha branches to beta and to gamma, so the closed document carries a non-empty
+// branching block, which is what makes the branching_delta case below a real test.
 void ingest_branching_window(meta::MetaLogEngine& engine)
 {
     auto alpha{make_event("alpha <*>")};
@@ -298,8 +265,8 @@ void ingest_branching_window(meta::MetaLogEngine& engine)
     }
 }
 
-// Two windows built by two engines from the SAME event stream: same counts, same branching, same
-// cube, same line total. Every signal property must land on its declared vacuous value.
+// invariant: two windows built by two engines from the SAME event stream -- same counts, same
+// branching, same cube, same line total -- so every signal property must land on its vacuous value.
 [[nodiscard]] std::pair<meta::MetaLogDocument, meta::MetaLogDocument> identical_pair()
 {
     const auto t0{insight::Timestamp{} + std::chrono::hours{1}};
@@ -319,15 +286,15 @@ void ingest_branching_window(meta::MetaLogEngine& engine)
     return {std::move(previous), std::move(current)};
 }
 
-// The headline case. Two documents with identical content diff to a document that asserts
-// "unchanged" AND carries no witness — each clause checked separately, because a single
-// outcome assert would pass against a predicate that returned Unchanged unconditionally.
+// invariant: the headline case: identical content must diff to a document asserting unchanged AND
+// carrying no witness, each clause checked separately.
+// note: a single outcome assert would pass against a predicate returning Unchanged always.
 TEST(ComparisonOutcomeProducer, IdenticalWindowsAssertUnchangedAndCarryNoWitness)
 {
     const auto [previous, current] = identical_pair();
 
-    // Fixture preconditions. Without these the case below can pass by carrying nothing at all,
-    // which is the shape of a gate that never looked.
+    // pre: without these the case can pass by carrying nothing at all, which is the shape of a gate
+    // that never looked.
     ASSERT_TRUE(previous.behavior.has_value() && previous.behavior->branching.has_value())
         << "fixture must produce a branching block, or the branching_delta clause is untested";
     ASSERT_FALSE(previous.behavior->branching->empty()) << "fixture branching block is empty";
@@ -339,8 +306,8 @@ TEST(ComparisonOutcomeProducer, IdenticalWindowsAssertUnchangedAndCarryNoWitness
 
     const auto diff{meta::diff(previous, current)};
 
-    // The divergences must be EXACTLY their declared vacuous values, not merely close: `const: 0`
-    // and `const: 1` are exact numeric equality, and 1e-17 is a false witness.
+    // invariant: the divergences must be EXACTLY their declared vacuous values and not merely
+    // close, because const 0 and const 1 are exact numeric equality and 1e-17 is a false witness.
     ASSERT_TRUE(diff.kl_divergence.has_value());
     ASSERT_TRUE(diff.js_divergence.has_value());
     ASSERT_TRUE(diff.stability_score.has_value());
@@ -374,9 +341,8 @@ TEST(ComparisonOutcomeProducer, IdenticalWindowsAssertUnchangedAndCarryNoWitness
         EXPECT_EQ(diff.tail_delta->tail_max_rate_delta, 0.0);
     }
 
-    // The `cube_diff`-only shape: this producer emits a cube_diff on every cube-bearing pair, so
-    // its ORDINARY no-change output is `axes` and nothing else. That is a descriptor, not a
-    // finding.
+    // invariant: this producer emits a cube_diff on every cube-bearing pair, so its ordinary
+    // no-change output is axes and nothing else -- a descriptor, not a finding.
     ASSERT_TRUE(diff.has_cube_diff) << "both inputs carried a cube, so a cube_diff is owed";
     EXPECT_FALSE(diff.cube_diff.axes.empty()) << "a cube_diff owes its coordinate space";
     EXPECT_FALSE(diff.cube_diff.has_emerging) << "an emerging border between two identical windows";
@@ -395,9 +361,8 @@ TEST(ComparisonOutcomeProducer, IdenticalWindowsAssertUnchangedAndCarryNoWitness
         << json;
 }
 
-// The producer-side half of BranchingDeltaWitnessesOnAnyRowIncludingAZeroOne: the array is a union
-// over both windows' branching maps, so before this rule it was non-empty on every pair of
-// branching-bearing documents, identical or not.
+// invariant: the producer-side half of the branching rule: the array is a union over both windows'
+// branching maps, so before this rule it was non-empty on every branching-bearing pair.
 TEST(ComparisonOutcomeProducer, EmitsNoBranchingDeltaWhenNoEntropyMoved)
 {
     const auto [previous, current] = identical_pair();
@@ -410,9 +375,8 @@ TEST(ComparisonOutcomeProducer, EmitsNoBranchingDeltaWhenNoEntropyMoved)
         << diff.branching_delta.size() << " row(s)";
 }
 
-// The other half of the rule: a real change must assert "changed", and the document must carry the
-// witness that decided it — asserting the outcome alone would pass against a predicate that
-// returned Changed unconditionally.
+// invariant: a real change must assert changed AND the document must carry the witness that decided
+// it, the outcome alone passing against a predicate that returns Changed always.
 TEST(ComparisonOutcomeProducer, AChangedPairAssertsChangedAndCarriesTheWitness)
 {
     const auto t0{insight::Timestamp{} + std::chrono::hours{1}};

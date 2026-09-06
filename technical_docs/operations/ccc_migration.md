@@ -3397,16 +3397,52 @@ inside `reservoir_delta` rows. That clause was not carried into any converted li
 is in the tree — but **Argos or whoever owns that gate should know the two-tier description was
 understated**, because the same sentence may sit in its own docs.
 
+## Unit 24 — comparison outcome, stability-vs-diff divergence, shift sample floor
+
+Three files (98 + 95 + 45), **238 would-be violations to 0**, stripper cross-check exact, comment
+lines **238 -> 129**, 3 tool forms kept.
+
+### The five witnesses
+
+* **Comment-only** — 3 of 3 byte-identical in code tokens, re-taken after the repair below.
+* **Grammar** — the unit reads **0**; the repo moves **402 -> 164**, exactly -238.
+* **Behaviour** — **297 of 297 on clang-21 and 297 of 297 on gcc-16**, one acquire, one release.
+* **Addressability** — nothing lost, three added (`F-SRC-metalog-spec:SPEC.md`,
+  `F-SRC-metalog-spec:metalog_diff.v0.schema.json`, `STU-3`).
+* **Knowledge** — one fresh cold reader, **37 questions, 37 recovered, 0 not recovered, 0 wrong,
+  0 convictions**, `GIT COMMANDS RUN: none`, 29 tool uses, 120 k tokens, 4.5 minutes, no
+  contamination.
+
+### The repair, counted at the schema rather than carried
+
+The prose said group A *"moves ONE signal property while holding all TEN others at their declared
+vacuous value."* Counted directly in `metalog_diff.v0.schema.json`: **THIRTEEN top-level properties
+carry an `x-metalog-vacuous` declaration** — `branching_delta`, `cube_diff`,
+`field_histogram_deltas`, `js_divergence`, `kl_divergence`, `new_templates`, `ngram_delta`,
+`reservoir_delta`, `stability_score`, `tail_delta`, `template_deltas`, `vanished_templates`,
+`withheld_signals`. Moving one holds **twelve**, not ten. The line now states the thirteen and the
+twelve, and **the reader's Q2 came back naming all thirteen from the schema independently.**
+
+Three further counts were verified at the artifact before the reader and all held: `kDefaultTopKSize`
+is 64, `tail_delta` has exactly nine members (three deltas and six coordinates), and the ordinal
+ladder is 48 bins.
+
+### Why zero convictions is not the same as nothing found
+
+**This is the first unit where every carried claim survived the reader**, after two units that
+produced one and two convictions. The difference is not luck: the off-by-two was found by COUNTING
+the schema rather than transcribing the sentence, which is the same move that caught unit 22's
+ladder factor and unit 23's corpora claim — and each of those was found the same way, at the
+artifact, before the reader ran. **The reader's value shifts as the converter's discipline improves:
+it is the backstop, not the first line.**
+
 ## The resume point
 
-**`OPS-8.S1` preflight, then unit 24. What is left is 9 files in `tests/operations/`, 402 would-be
-violations**, the gate's own counts as of 2026-09-06:
+**`OPS-8.S1` preflight, then unit 25 — the LAST unit in this repo. 6 files in `tests/operations/`,
+164 would-be violations**, the gate's own counts as of 2026-09-06:
 
 | file | violations |
 |---|---|
-| `test_comparison_outcome.cpp` | 98 |
-| `test_stability_vs_diff_divergence.cpp` | 95 |
-| `test_shift_sample_floor.cpp` | 45 |
 | `test_retention_profile_name.cpp` | 41 |
 | `test_ruleset_identity.cpp` | 31 |
 | `test_diff_blocks.cpp` | 31 |
@@ -3414,7 +3450,7 @@ violations**, the gate's own counts as of 2026-09-06:
 | `test_param_histograms_compose.cpp` | 25 |
 | `test_processing_identifiers.cpp` | 9 |
 
-**Take the nine as TWO units, split by size** — they are small and unrelated, so no subject
+**Unit 25 is the whole remainder and the repo arms behind it** — they are small and unrelated, so no subject
 grouping is available. **Question density, measured over four units: 38 questions for 245
 violations, 40 for 439, 35 for 229, 36 for 332** — a reader is paced by the number of distinct
 CLAIMS, not by deleted lines, so budget 35-40 questions per unit whatever its violation count.
