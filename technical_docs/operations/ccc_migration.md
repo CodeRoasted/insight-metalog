@@ -3143,28 +3143,34 @@ drafting need none.
 
 ---
 
-## IN-FLIGHT UNIT LANDED WITH WITNESS 4 OWED — read this before converting anything else
+## THE UNIT-19 LANDING: WHY THE COMMIT MESSAGE SAYS WITNESS 4 IS OWED, AND WHY IT IS NOT
 
-`tests/engine/` (9 files) was converted by the lane of 2026-09-06 and landed by the pilot at a
-context checkpoint **with four of the five `OPS-8.O1` witnesses green and the fifth OWED**:
+The commit that landed `tests/engine/` states that no cold reader ever read those nine files and
+that the knowledge witness is owed. **That was true when it was written and it is not true now**,
+and the record is corrected here rather than left to contradict itself two thousand lines apart.
 
-* **Comment-only** — all 9 files' code token streams byte-identical to their pre-conversion blob.
-* **Grammar** — `malf format --check insight-metalog/tests/engine` reads **0** would-be violations.
-* **Behaviour** — `malf test insight-metalog` **297 of 297 on clang-21 and 297 of 297 on gcc-16**,
-  equal to the recorded baseline, taken by the pilot under a held slot.
-* **Addressability** — the outbound census exits 0: no address lost, two added
-  (`F-SRC-insight-metalog:service_a.log`, `F-SRC-metalog-spec:SPEC.md`).
-* **KNOWLEDGE — NOT TAKEN.** No questionnaire was ever written for this unit and no cold reader
-  ever read it. **The tagged claims in these nine files have been interrogated by nobody.**
+**What happened, in order.** The lane placed the unit in the tree and took its four mechanical
+witnesses; it spawned the cold reader; while the reader was running, a context checkpoint arrived
+and the pilot — which could not see a reader it had not spawned — landed the working tree rather
+than leave it dirty across the boundary, and said plainly in its message what it believed was
+missing. The reader returned minutes later with 27 answers. The lane scored them, wrote the unit
+entry above, and both landed in the same commit the pilot made, because the pilot swept the whole
+working tree including the ledger.
 
-**It was landed rather than reverted or left dirty** because the work is real and the mechanical
-witnesses hold, and because a dirty tree across a context boundary is how a conversion gets silently
-discarded. **It was landed rather than declared complete** because witness 4 is the one that has
-caught every defect this programme found — no gate has ever caught one — and simulating it would be
-worse than owing it.
+**So all five witnesses hold, and the four the commit message lists are correctly stated there.**
+The fifth is the entry above: **27 of 27 recovered, 0 not recovered, 0 wrong, 0 convictions**, one
+fresh agent over 27 questions, 63 tool uses, 216 k tokens, 10.4 minutes, `GIT COMMANDS RUN: none`,
+with one contamination disclosed by the reader itself and recorded rather than discounted. Its
+claims table, its four deleted stale claims and its three findings are all in that entry.
 
-**So the first act of the next session on this repo is `OPS-8.S3.5` + `OPS-8.S8` for these nine
-files**: write the questionnaire from the pre-conversion blobs (`git show <pre-unit rev>:<file>`),
-run a fresh reader against the working tree, score from per-question evidence, and disposition every
-not-recovered and every conviction. Until that lands, **treat every tagged claim in `tests/engine/`
-as unverified** and do not cite one as established.
+**Nothing is owed for `tests/engine/` and its tagged claims are not to be treated as unverified.**
+The one thing the episode did cost is the commit message, which cannot be amended in a shared
+worktree and stands as written; this section is the correction, at the place a reader meets it.
+
+**The lesson, and it is the pilot's rather than the lane's.** `OPS-8`'s opening already says a lane
+is not finished when its report says so. The mirror is now measured too: **a lane is not idle
+because it has not reported.** A background reader is invisible to everyone but the lane that
+spawned it, so a checkpoint sweep of a lane's working tree can land a unit and simultaneously
+declare a witness missing that is minutes from arriving. The cheap check is the same one that
+catches the other direction — ask the lane before sweeping its tree, and if it cannot answer, say
+what is unknown rather than what is missing.
