@@ -1495,6 +1495,130 @@ in the address is wrong.
 
 ---
 
+## Unit 16 — `tests/reservoir/` (2 files, 244 would-be violations)
+
+The first test-tier unit, and both files in it are about one subject — what the salience reservoir
+retains and why — so one reader answers for both (`OPS-8.S2`: split where a reader can answer from
+a subset, keep together where it cannot). `test_reservoir.cpp` 814 lines and
+`test_retention_axis_census.cpp` 253, 267 comment lines between them.
+
+**Census (`OPS-8.S4`).** Derived the same way as unit 15's. `test_reservoir.cpp`: **13**
+`/*name=*/` argument comments and **3** namespace closers; `test_retention_axis_census.cpp`: **6**
+and **1**. Zero `NOLINT` of any spelling, zero `clang-format off`, zero `wall-clock:`, zero
+`DETERMINISM-ALLOW`, zero `LOG-SEAT-ALLOW`, zero `SPDX-License-Identifier:` in either file. After
+the strip: identical, 13/3 and 6/1, and the gate's `tool=23` equals the two kept counts (16 + 7).
+No census decision was needed. **The `/*name=*/` forms matter here in a way they did not in the
+source tier**: they are what `bugprone-argument-comment` reads against the parameter name, and
+this file uses them on every boolean and count literal it passes — `/*top_k=*/16`,
+`/*reservoir_size=*/0`, `/*error_reserve=*/1`.
+
+**Stripper cross-check (`OPS-8.S5`).** No suppression in either file, so
+`removed == violations`: `test_reservoir.cpp` 144 == 144, `test_retention_axis_census.cpp`
+100 == 100.
+
+**The leading-blank-line repair `OPS-8.S5` records was owed on BOTH files** — each opened with a
+header comment block, so each came out of the strip starting on an empty line, invisible to
+`malf format --check` (0 misformatted) and to the comment-only witness (whitespace is dropped by
+construction). Removed by hand before the copy.
+
+**Forms written.** 33 insertions. `test_reservoir.cpp`: 64 comment lines, `pre` 1 · `post` 4 ·
+`invariant` 9 · `assert` 9 · `refs` 9 · 16 continuations · 16 tool forms.
+`test_retention_axis_census.cpp`: 36 comment lines, `post` 1 · `invariant` 11 · `assert` 2 ·
+`refs` 3 · 12 continuations · 7 tool forms. Comment lines 267 → 100, would-be violations 244 → 0, and the repo's own gate moved
+2 629 → 2 385 — 244 exactly.
+
+**The test tier converts differently, and the ratio says so.** In unit 15, 335 of 434 tagged lines
+were `invariant:` and there were two `assert:` in the whole file. Here `assert:` is 11 of 49, because what
+a test's deleted prose actually carried is an **isolation argument** — *"the echoed run is
+ingested FIRST and self-loops, so novelty and structural surprise are both 0 and the failure-cue
+tier is the only axis under test"* — which is a local execution assumption at a point in a body,
+and that is exactly `assert:`. The rest went nowhere: `ADR-26.D6` makes the test NAME the claim,
+and every arm here is already named as a sentence about its subject
+(`ErrorClassReserveIsExemptFromPerKindCap`, `NoveltyAdmitsLateEmergingBenignTemplate`), so the
+paragraph restating the name was a mirror.
+
+**`refs:` targets used**: `SRC-D-TIR-5` ×2, `SRC-D-PROV-1` ×2, `SRC-D-RNK-2` ×2, `DN-64.D6` ×3,
+`ADR-31.D8`, `DN-56.D2`, `DN-64.D3`.
+
+**Address census.** Outbound: **exit 0, nothing lost**, four addresses added (`ADR-31.D8` and
+`DN-56.D2` in `test_reservoir.cpp`, `DN-64.D3` and `DN-64.D6` in the census file). Inbound: the
+committed instrument reports **clean** from inside the repo, and the workspace-wide re-run returns
+only generated `build-*/…_tests.cmake` entries — ctest's `DEF_SOURCE_LINE` properties, regenerated
+by every build, which are line coordinates into these files but not citations anybody maintains.
+No inbound citation to falsify.
+
+**A rider on verdict item 14, measured on this unit.** The workspace-wide inbound sweep the
+committed instrument's `roots=["."]` makes necessary has a cost of its own: run from the workspace
+root it walks `build-*/` and returns ctest's generated `DEF_SOURCE_LINE` properties — 30-odd hits
+into these two files, none of them a citation anybody maintains. The repo-root default avoids that
+noise and misses the siblings; the sweep finds the siblings and eats the build trees. Both are
+correct behaviours of the wrong scope, and what the instrument owes is a `--roots` argument, not a
+different default.
+
+**Interrogation — one cold reader over twelve questions, spawned against a frozen tree and finished
+before anything was touched.** 69 tool uses, 200 k tokens, 8.6 minutes; the final message carries
+`GIT COMMANDS RUN: none` and no `git` invocation appears in the transcript. Same exclusion list as
+unit 15's readers.
+
+**Score: 12 of 12 recovered, 0 not recovered, 0 wrong.** No line this conversion wrote was
+contradicted. Scored from the per-question evidence.
+
+What the reader recovered that the deleted prose only gestured at is worth recording, because it is
+the argument for deleting it. On the two control arms it re-derived the discriminator itself: an
+absence has two candidate causes — no retention path, or a broken fixture — and *"one arm cannot do
+both jobs, because only the pair discriminates between them"*. On the reserve's window shape it
+recomputed the design from the code: `beta verify token` emits 200 + 9 = 209 outgoing transitions
+and each branch edge is 3, so p ≈ 1.4 % is inside the strong-off-path band at 90, the lone Error is
+80 × 90 = 7 200 against each branch's 8 100 — *"exactly the `EXPECT_LT(error_salience,
+min_branch_salience)` the arm rests on"* — and it then answered the counterfactual the prose never
+raised, that at 30 recurrences the edge is 10.3 %, the branches fall to a lower band and the arm
+would stop isolating the reserve at all.
+
+**One precision fix, caught by the lane and not by the reader.** The `build_high_card_window`
+`invariant:` first read *"about 1.4 % of the window"*, which names the wrong denominator: the
+figure is 3 of the 209 transitions **out of the branches' shared predecessor**, which is what the
+strong-off-path band is computed over, not a share of the window's 637 events. The reader used the
+line and derived the correct denominator itself, so it never became a conviction; the line now says
+what it meant.
+
+**Stale or unsourced prose deleted, with the evidence.** Nothing in either file was measured false.
+The one class worth naming is **history**: `test_reservoir.cpp`'s `SRC-D-RNK-2` block carried the
+narrative of the measured loss that motivated the error-class reserve, and
+`test_retention_axis_census.cpp`'s header carried a falsifiability record of two applied-and-reverted
+mutations. Both are history (`H`) under the claim classes and go; both are also findings, below,
+because of where their records live.
+
+**Witnesses.** Comment-only: both files' code token streams byte-identical to `HEAD`. Grammar:
+`malf format --check tests/reservoir` reports **0 would-be violations** over the unit. Behaviour:
+`malf test insight-metalog` **297 of 297 on clang-21 and 297 of 297 on gcc-16**, taken on its own
+slot acquisition and covering unit 16 alone — and the run is not vacuous, each toolchain having
+rebuilt exactly the two converted translation units (2 `Building CXX object` lines apiece, both
+naming these files). Address census: exit 0 outbound, clean inbound. Slot wait for this witness:
+**925 seconds**, against **161** for unit 15's and **0** for the session's first — 1 086 seconds in
+total across three acquisitions, with four CCC lanes sharing the one global slot.
+
+**Findings for other lanes, with their addressees.**
+
+**H. The measurement that justifies a SHIPPED retention policy lives in the disposable attic — for
+Eqya as claim-boundary owner, with Daidalos.** `MetaLogConfig::reservoir_error_reserve` exists
+because a real `testTimeout (FAILED)` was evicted from both `top_k` and the reservoir in a live CI
+window of 3 508 templates. The cold reader traced that number to
+`technical_docs/history/architecture-v1/detection_provenance_and_legibility.md` § 5.2, and noted
+without prompting that `CLAUDE.md` declares `technical_docs/history/` disposable. The only live
+source witness is a comment in **another repo** — `insight-eidos/sift/api/sift.api-config.cppm` —
+which names the same case at its forwarding field. A retention policy that ships in the product has
+its justifying measurement recorded nowhere that is owed to survive.
+
+**I. The falsifiability record for the retention-axis gate has the same problem — for Kleio, with
+Eqya.** The two mutation controls that show `RetentionAxisCensus`'s arms are not vacuously green —
+dropping `engine.cpp`'s axis stamp reds the `close_window` arm alone, dropping `compose.cpp`'s reds
+the `compose` arm alone, which is precisely the two-producer partition the arming condition exists
+for — are recorded only in `technical_docs/history/1.10.3.md`. The reader found them and flagged
+the provenance as best-effort in the same breath. What survives the attic is the arms themselves and
+their assertion messages; the evidence that they can go red does not.
+
+---
+
 # The law block: one was owed, one was issued, one is minted
 
 This lane was instructed not to pick a law number — they are workspace-global, append-only and
@@ -2228,3 +2352,38 @@ converted.
 **The three test-tier files with a leading-block `SRC-` site — `tests/engine/test_ordinal_histograms.cpp`,
 `tests/engine/test_span_edges.cpp`, `tests/stats/test_stats.cpp` — still have not been read for
 statement bearing.** That remains the first act of whichever unit covers them.
+
+---
+
+# Where the session stopped, after unit 16
+
+**Sixteen units converted, no law minted in this session, the repo still NOT armed.** Arming
+(`OPS-8.S12`) needs the whole repo at zero.
+
+| unit | surface | files | would-be violations | comment lines | reader |
+|---|---|---|---|---|---|
+| 1-14 | (the two previous sessions) | 34 | 2 984 | 3 026 → 1 161 | 130 of 131 recovered |
+| 15 | `api/metalog.api.cppm` | 1 | 1 088 | 1 089 → 636 | 38 of 42 recovered, 4 wrong |
+| 16 | `tests/reservoir/` | 2 | 244 | 267 → 100 | 12 of 12 recovered |
+| | **total** | **37** | **4 316** | **4 382 → 1 897 (57 % fewer)** | **180 of 185 recovered, 0 not recovered, 5 wrong** |
+
+**4 316 of the repo's 6 701 would-be violations — 64.4 %, in sixteen commits.**
+
+**What remains: 2 385 would-be violations over 32 test files.** Largest first:
+`tests/operations/test_compose_algebra.cpp` 439, `test_golden_vectors.cpp` 196,
+`tests/determinism/test_determinism_gate.cpp` 173, `tests/cube/test_cube.cpp` 170,
+`test_canonicalization_version_ruleset_coverage.cpp` 136, `test_presence_churn_property.cpp` 98,
+`test_comparison_outcome.cpp` 98, `test_stability_vs_diff_divergence.cpp` 95,
+`tests/serialization/test_egress_encoding_conformance.cpp` 91, then 23 files under 90 each.
+
+**THE RESUME POINT IS `tests/cube/` (2 files, 218 would-be violations —
+`test_cube.cpp` 170 and `test_cube_emerging_border.cpp` 48).** One subject, one reader. After it,
+`tests/serialization/` (4 files, 252) and `tests/engine/` (9 files, 268) are the next two
+self-contained directories; `tests/operations/` (15 files, 1 402) is the one that needs a split by
+file group and two readers, and it should be taken last so its `refs:` can cite everything the
+earlier test units name.
+
+**The three test-tier files with a leading-block `SRC-` site — `tests/engine/test_ordinal_histograms.cpp`,
+`tests/engine/test_span_edges.cpp`, `tests/stats/test_stats.cpp` — still have not been read for
+statement bearing.** That remains the first act of whichever unit covers them, and it is what
+decides whether `tests/engine/` and `tests/stats/` are unblocked or owe a law number.
