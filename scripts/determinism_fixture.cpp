@@ -1,5 +1,5 @@
 // note: bare and file-wide; measured to cover 9 diagnostics here, one a WarningsAsErrors class.
-// NOLINTBEGIN Test
+// NOLINTBEGIN
 #include <chrono>
 #include <fstream>
 #include <iostream>
@@ -218,4 +218,4 @@ int main(int argc, char** argv)
     return 0;
 }
 
-// NOLINTEND Test
+// NOLINTEND
