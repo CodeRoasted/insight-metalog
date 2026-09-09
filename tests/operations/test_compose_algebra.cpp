@@ -892,6 +892,124 @@ TEST(ComposeAlgebraTest, TheSameDocumentsStayAssociativeWhenTheTopKCutDoesNotBit
            "exactly — an integer reduction over an identically ordered distribution";
 }
 
+// refs: DN-57.O1
+// invariant: DN-57.O1 problem (e) carries TWO worked examples and they falsify DIFFERENT required
+// fields, so one test cannot stand for both -- this is the second.
+// invariant: example 1 (the arm above) shares no template between A and C, so the divergence lands
+// on the SET fields, unique_templates and tail_unique, while mass agrees.
+// invariant: example 2 shares template y between A and C, so the set fields AGREE and the
+// divergence lands on a retained top_k entry's own count and on tail_count -- both REQUIRED.
+// invariant: the sharper claim is attribution, not conservation: total mass is 25 on both
+// bracketings and every line is accounted for, yet the same template reports 10 or 14.
+// note: counts 5/4/6/10 are pairwise distinct at every rung, so no template_id tie-break decides a
+// rank here and the arm is about truncation alone.
+TEST(ComposeAlgebraTest, TopKTruncationBreaksAssociativityOfARetainedEntrysOwnCount)
+{
+    constexpr std::size_t kCut{2};
+    // note: DN-57.O1's A = {x:5, y:4}, B = {z:6}, C = {y:10} at top_k_size 2 and no reservoir.
+    const auto a{make_document("2026-03-01T00:00:00Z", "2026-03-01T00:01:00Z", 9, kCut,
+                               std::nullopt, {{"assoc ex2 x", 5}, {"assoc ex2 y", 4}}, {})};
+    const auto b{make_document("2026-03-01T00:01:00Z", "2026-03-01T00:02:00Z", 6, kCut,
+                               std::nullopt, {{"assoc ex2 z", 6}}, {})};
+    const auto c{make_document("2026-03-01T00:02:00Z", "2026-03-01T00:03:00Z", 10, kCut,
+                               std::nullopt, {{"assoc ex2 y", 10}}, {})};
+
+    const insight::TemplateId y{insight::template_id_of("assoc ex2 y")};
+
+    // post: the count a bracketing publishes for a template, or absent when it was cut away.
+    const auto count_of{[](const meta::MetaLogDocument& doc, const insight::TemplateId& tid)
+                        -> std::optional<std::uint64_t>
+                        {
+                            for (const auto& entry : doc.stats.top_k)
+                                if (entry.template_id == tid)
+                                    return entry.count;
+                            for (const auto& entry : doc.stats.reservoir)
+                                if (entry.template_id == tid)
+                                    return entry.count;
+                            return std::nullopt;
+                        }};
+
+    // pre: the mechanism assertion comes first -- with a live reservoir nothing below would be a
+    // statement about top_k truncation.
+    ASSERT_TRUE(a.stats.reservoir.empty() && b.stats.reservoir.empty() && c.stats.reservoir.empty())
+        << "the falsifier requires NO reservoir entries";
+    ASSERT_FALSE(a.stats.reservoir_size.has_value())
+        << "and NO declared cap, so the composed admission bound is the candidate count itself";
+
+    const auto ab{meta::compose(a, b)};
+    ASSERT_EQ(ab.stats.top_k.size(), 2U)
+        << "the cut must BITE at this rung, or the whole arm is vacuous:\n    "
+        << render_top_k(ab);
+    ASSERT_FALSE(count_of(ab, y).has_value())
+        << "y (count 4) is the entry the cut removes at this rung -- if it survived, the "
+           "irreversible step never happened:\n    "
+        << render_top_k(ab);
+    ASSERT_EQ(ab.stats.tail_count, 4U) << "and y's whole mass becomes lumped tail:\n    "
+                                       << render_top_k(ab);
+
+    const auto bc{meta::compose(b, c)};
+    ASSERT_EQ(bc.stats.tail_count, 0U)
+        << "nothing is cut on this side -- z and y both fit in two slots:\n    "
+        << render_top_k(bc);
+
+    const auto ab_c{meta::compose(ab, c)};
+    const auto a_bc{meta::compose(a, bc)};
+
+    // note: every conserved quantity agrees, which is what makes the divergence below a loss of
+    // ATTRIBUTION rather than a counting bug.
+    EXPECT_EQ(ab_c.window.lines_observed, 25U) << "9 + 6 + 10";
+    EXPECT_EQ(a_bc.window.lines_observed, 25U) << "9 + 6 + 10 either way";
+    EXPECT_EQ(ab_c.stats.unique_templates, a_bc.stats.unique_templates)
+        << "example 2's SET fields agree -- x, y and z are the union on both bracketings. If this "
+           "diverges, the arm has drifted onto example 1's property:\n    left:  "
+        << render_top_k(ab_c) << "\n    right: " << render_top_k(a_bc);
+    EXPECT_EQ(ab_c.stats.tail_unique, a_bc.stats.tail_unique)
+        << "and exactly one template (x) is newly cut on each side:\n    left:  "
+        << render_top_k(ab_c) << "\n    right: " << render_top_k(a_bc);
+
+    // note: and the ATTRIBUTION does not.
+    const auto left{count_of(ab_c, y)};
+    const auto right{count_of(a_bc, y)};
+    ASSERT_TRUE(left.has_value()) << "y is retained on the left bracketing:\n    "
+                                  << render_top_k(ab_c);
+    ASSERT_TRUE(right.has_value()) << "y is retained on the right bracketing:\n    "
+                                   << render_top_k(a_bc);
+    EXPECT_EQ(*left, 10U)
+        << "(A∘B)∘C: y's four lines from A were folded into A∘B's tail, so only C's ten survive as "
+           "an identity. Got "
+        << *left << ":\n    " << render_top_k(ab_c);
+    EXPECT_EQ(*right, 14U)
+        << "A∘(B∘C): y never met a binding cut, so A's four and C's ten are still one template. "
+           "Got "
+        << *right << ":\n    " << render_top_k(a_bc);
+    EXPECT_NE(*left, *right)
+        << "§12.2 says the counts underlying a three-way compose MUST agree, and a top_k entry's "
+           "`count` is REQUIRED: (A∘B)∘C = "
+        << *left << ", A∘(B∘C) = " << *right
+        << ". If these ever agree, DN-57.O1 problem (e)'s second worked example is WRONG and the "
+           "`0.10.0` RFC body must be re-derived before it is posted.";
+
+    EXPECT_EQ(ab_c.stats.tail_count, 9U)
+        << "5 (x, newly cut) + 4 (A∘B's lumped y). Got " << ab_c.stats.tail_count;
+    EXPECT_EQ(a_bc.stats.tail_count, 5U)
+        << "5 (x, newly cut) and nothing carried -- B∘C lumped nothing. Got "
+        << a_bc.stats.tail_count;
+
+    // assert: mass is conserved on BOTH sides, so neither bracketing is simply losing lines -- the
+    // same 25 lines are split 16/9 one way and 20/5 the other.
+    const auto retained_mass{[](const meta::MetaLogDocument& doc)
+                             {
+                                 std::uint64_t sum{0};
+                                 for (const auto& entry : doc.stats.top_k)
+                                     sum += entry.count;
+                                 return sum;
+                             }};
+    EXPECT_EQ(retained_mass(ab_c) + ab_c.stats.tail_count, 25U)
+        << "left bracketing must account for every line:\n    " << render_top_k(ab_c);
+    EXPECT_EQ(retained_mass(a_bc) + a_bc.stats.tail_count, 25U)
+        << "right bracketing must account for every line:\n    " << render_top_k(a_bc);
+}
+
 // refs: DN-56.D2, DN-56.O3
 // invariant: DN-56.D2 argued the stamp makes the two caps equal in every normal case; that is FALSE
 // -- build_reservoir returns early when every template fit in top-K, declaring no cap.
