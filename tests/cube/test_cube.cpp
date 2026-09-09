@@ -68,6 +68,54 @@ find_border(const std::vector<meta::CubeBorderCell>& cells, std::optional<std::s
     return nullptr;
 }
 
+// post: how many of CubeCoord's FOUR optional keys this cell pins; a cell pinning none is the
+// whole cube and can never be a generator of anything.
+// note: latency_shift is counted -- it is a real key and omitting it under-reports specificity.
+[[nodiscard]] std::size_t pinned_dimensions(const meta::CubeCoord& coord)
+{
+    return static_cast<std::size_t>(coord.level.has_value()) +
+           static_cast<std::size_t>(coord.where.has_value()) +
+           static_cast<std::size_t>(coord.structural_role.has_value()) +
+           static_cast<std::size_t>(coord.latency_shift.has_value());
+}
+
+// post: true when `general` is a STRICT generalization of `specific` -- every key it pins, the
+// other pins to the same value, and it pins strictly fewer of them.
+// invariant: this is the comparability relation the upper border must be an ANTICHAIN under: if
+// both cells are emergent and one generalizes the other, the more specific one is not minimal.
+[[nodiscard]] bool generalizes(const meta::CubeCoord& general, const meta::CubeCoord& specific)
+{
+    const auto key_ok{[](const auto& lhs, const auto& rhs)
+                      { return !lhs.has_value() || lhs == rhs; }};
+    if (!key_ok(general.level, specific.level) || !key_ok(general.where, specific.where) ||
+        !key_ok(general.structural_role, specific.structural_role) ||
+        !key_ok(general.latency_shift, specific.latency_shift))
+        return false;
+    return pinned_dimensions(general) < pinned_dimensions(specific);
+}
+
+[[nodiscard]] std::string render_coord(const meta::CubeCoord& coord)
+{
+    std::string out{"(level=" + coord.level.value_or("*") + ", where="};
+    if (coord.where)
+        for (const auto& leaf : *coord.where)
+            out += leaf + "/";
+    else
+        out += "*";
+    out += ", role=" + coord.structural_role.value_or("*");
+    out += ", latency=" + coord.latency_shift.value_or("*") + ")";
+    return out;
+}
+
+[[nodiscard]] std::string render_border(const std::vector<meta::CubeBorderCell>& cells)
+{
+    std::string out{"upper border [" + std::to_string(cells.size()) + "]:"};
+    for (const auto& cell : cells)
+        out += "\n      " + render_coord(cell.coord) + " prev=" +
+               std::to_string(cell.previous_count) + " cur=" + std::to_string(cell.current_count);
+    return out;
+}
+
 } // namespace
 
 TEST(CubeBlock, AlwaysBuiltEvenOnDefaultConfig)
@@ -393,10 +441,36 @@ TEST(CubeDiff, EmergingHeadlineIsMinimalGenerator)
     {
         EXPECT_EQ(cell.previous_count, 0U) << "an upper-border cell emerged from nothing (≤ θ_was)";
         EXPECT_GE(cell.current_count, 1U);
-        EXPECT_LE(cell.coord.level.has_value() + (cell.coord.where.has_value()) +
-                      cell.coord.structural_role.has_value(),
-                  3);
+        // assert: the bound that stood here was `bools summed <= 3`, which is the range of the
+        // expression itself and could not fail; a cell pinning NOTHING is the whole cube.
+        EXPECT_GE(pinned_dimensions(cell.coord), 1U)
+            << "a fully-starred cell is the entire cube, not a minimal generator of anything. "
+            << render_coord(cell.coord);
     }
+
+    // assert: MINIMALITY, the property the vacuous bound was meant to carry -- the upper border is
+    // an ANTICHAIN, so no cell in it is a strict generalization of another cell in it.
+    // invariant: if one did generalize another, the more specific cell carries pinned dimensions it
+    // did not need and the headline over-specifies the change.
+    for (const auto& general : emerging.upper)
+        for (const auto& specific : emerging.upper)
+            EXPECT_FALSE(generalizes(general.coord, specific.coord))
+                << "upper-border cell " << render_coord(specific.coord)
+                << " is strictly generalized by " << render_coord(general.coord)
+                << ", so it is not a minimal generator and both cannot head the same border.\n    "
+                << render_border(emerging.upper);
+
+    // assert: and the fixture's OWN declared antichain -- (ERROR, db) is new on BOTH the level and
+    // the where axis, so each alone is a minimal generator and neither needs the other.
+    EXPECT_NE(find_border(emerging.upper, "ERROR", std::nullopt, std::nullopt), nullptr)
+        << "expected {level=ERROR} as a minimal generator: no ERROR line existed in the previous "
+           "window.\n    "
+        << render_border(emerging.upper);
+    EXPECT_NE(find_border(emerging.upper, std::nullopt, "db", std::nullopt), nullptr)
+        << "expected {where=db} as a minimal generator: no db line existed in the previous "
+           "window.\n    "
+        << render_border(emerging.upper);
+
     EXPECT_FALSE(diff.cube_diff.has_vanishing);
 }
 
