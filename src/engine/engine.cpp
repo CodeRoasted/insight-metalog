@@ -370,7 +370,7 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
     }
 
     // note: ordinal observations are field-keyed, so they never collide with param values.
-    // refs: SRC-D-W1-2
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:OrdinalHistogram
     if (config_.max_param_histograms > 0 && !event.ordinals.empty())
     {
         for (const auto& observation : event.ordinals)
@@ -644,7 +644,7 @@ void MetaLogEngine::build_top_k(MetaLogDocument& doc, const WindowAnalysis& anal
         }
 
         // note: ordinal histograms are emitted in sorted field-name order, so a replay is stable.
-        // refs: SRC-D-W1-2
+        // refs: F-SRC-insight-metalog:metalog.api.cppm:OrdinalHistogram
         if (config_.max_param_histograms > 0)
         {
             const auto& bucket{*ordered[i].second};

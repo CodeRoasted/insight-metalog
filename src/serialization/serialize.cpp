@@ -66,7 +66,7 @@ namespace dto
     };
 
     // note: counts is the full uncapped tail; schedule_id is the consumer's comparability key.
-    // refs: SRC-D-W1-2
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:OrdinalHistogram
     struct OrdinalHistogram
     {
         std::string field_name;
@@ -100,7 +100,7 @@ namespace dto
         std::string horizon;
     };
 
-    // refs: SRC-D-W1-4
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:OrdinalHistogram
     struct TopKExtensions
     {
         // note: an unfrozen ladder and an engine-side schedule id make two producers' bins differ.

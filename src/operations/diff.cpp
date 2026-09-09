@@ -301,7 +301,8 @@ namespace
     // post: a row per (template_id, field_name) in BOTH top_k lists, carrying both sides' counts,
     // totals and schedule_ids, in deterministic order.
     // note: the consumer gates on the schedule_ids matching, then computes the W1 distance.
-    // refs: SRC-D-W1-1, SRC-D-W1-4
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:ordinal_w1
+    // refs: F-SRC-insight-canon:canon.api.cppm:OrdinalSchedule
     void diff_ordinal_histogram_deltas(MetaLogDiff& out, const MetaLogDocument& previous,
                                        const MetaLogDocument& current)
     {

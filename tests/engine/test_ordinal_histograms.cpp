@@ -1,4 +1,4 @@
-// refs: SRC-D-W1-2
+// refs: F-SRC-insight-metalog:metalog.api.cppm:OrdinalHistogram
 #include <gtest/gtest.h>
 
 import insight.metalog.test;

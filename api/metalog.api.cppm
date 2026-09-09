@@ -27,14 +27,14 @@ struct FieldHistogram
 // invariant: counts over the schedule's frozen log2 ladder, full tail and no frequency cap.
 // invariant: populated only when MetaLogConfig::max_param_histograms > 0; empty otherwise.
 // invariant: a field is ordinal XOR categorical, so this never collides with field_histograms.
-// refs: SRC-D-W1-2, SRC-D-W1-4, SRC-D-W1-5
+// refs: F-SRC-insight-canon:canon.api.cppm:OrdinalSchedule
 struct OrdinalHistogram
 {
     // invariant: the declared ordinal field, surfaced on the diff row for attributable_to.
-    // refs: SRC-D-W1-3
+    // refs: F-SRC-insight-canon:canon.api.cppm:OrdinalObservation
     std::string field_name;
     // invariant: the versioned schedule id, and the eidos diff's comparability key.
-    // refs: SRC-D-W1-4
+    // refs: F-SRC-insight-canon:canon.api.cppm:OrdinalSchedule
     std::string schedule_id;
     // invariant: one count per bin of the schedule's log2 ladder.
     std::vector<std::uint64_t> counts;
@@ -45,7 +45,6 @@ struct OrdinalHistogram
 // pre: value is non-negative -- canon's parser rejects negatives.
 // post: the octave index of value, clamped to [0, bins-1]; 0 and 1 both fall in bin 0.
 // invariant: pure integer, floor(log2) by a shift loop -- no float and no edge table.
-// refs: SRC-D-W1-2
 [[nodiscard]] constexpr std::uint32_t ordinal_bin_index(OrdinalSchedule schedule,
                                                         std::int64_t value) noexcept
 {
@@ -61,7 +60,7 @@ struct OrdinalHistogram
 
 // invariant: octave bands, so the measure is scale-relative and needs no median/IQR divide.
 // invariant: None is within-noise (sub-octave jitter), never absence of data.
-// refs: SRC-D-W1-2
+// refs: F-SRC-insight-metalog:metalog.api.cppm:ordinal_bin_index
 enum class OrdinalShift : std::uint8_t
 {
     None = 0,
@@ -107,7 +106,7 @@ struct OrdinalDrift
 // post: a zero total on either side is a degenerate pairing and returns {None, None}.
 // invariant: exact integers throughout -- a 128-bit signed reducer and a cross-multiply against
 // frozen thresholds, so no float and no division reach the verdict.
-// refs: SRC-D-W1-1, SRC-D-W1-4, ADR-31.D2
+// refs: F-SRC-insight-canon:canon.api.cppm:OrdinalSchedule, ADR-31.D2
 [[nodiscard]] inline OrdinalDrift ordinal_w1(const std::vector<std::uint64_t>& previous,
                                              const std::vector<std::uint64_t>& current,
                                              std::uint64_t previous_total,
@@ -359,7 +358,7 @@ struct TopKEntry
     std::vector<FieldHistogram> field_histograms;
     // invariant: one per declared ordinal field seen on this template; empty unless
     // MetaLogConfig::max_param_histograms > 0.
-    // refs: SRC-D-W1-2, SRC-D-W1-5
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:OrdinalHistogram
     std::vector<OrdinalHistogram> ordinal_histograms;
     // invariant: the identity on a document carrying no churn observation, and the monoid product
     // on a composed one.
@@ -1290,7 +1289,8 @@ struct FieldHistogramDelta
 // w=1.
 // invariant: populated only when the same (template_id, field_name) appears in BOTH documents'
 // ordinal_histograms.
-// refs: SRC-D-W1-1, SRC-D-W1-4
+// refs: F-SRC-insight-metalog:metalog.api.cppm:ordinal_w1
+// refs: F-SRC-insight-canon:canon.api.cppm:OrdinalSchedule
 struct OrdinalHistogramDelta
 {
     TemplateId template_id;
@@ -1501,7 +1501,7 @@ struct MetaLogDiff
     std::vector<FieldHistogramDelta> field_histogram_deltas;
     // invariant: empty unless both documents tracked histograms and share a (template_id,
     // declared-ordinal field); sorted by (template_id, field_name).
-    // refs: SRC-D-W1-1
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:OrdinalHistogramDelta
     std::vector<OrdinalHistogramDelta> ordinal_histogram_deltas;
     // invariant: present only when both documents carried a tail_summary.
     std::optional<TailDelta> tail_delta;

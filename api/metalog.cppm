@@ -90,7 +90,7 @@ class MetaLogEngine
         // invariant: keyed by canon field name, not by param position, so it never collides with
         // param_value_counts -- a field is ordinal XOR categorical.
         // invariant: populated only when config_.max_param_histograms > 0.
-        // refs: SRC-D-W1-2, SRC-D-W1-5, ADR-9.D2
+        // refs: F-SRC-insight-metalog:metalog.api.cppm:OrdinalHistogram, ADR-9.D2
         struct OrdinalAccumulator
         {
             OrdinalSchedule schedule{};
