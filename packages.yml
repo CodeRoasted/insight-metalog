@@ -1,4 +1,3 @@
-comment_contract: true
 packages:
   insight_metalog:
     path: .
