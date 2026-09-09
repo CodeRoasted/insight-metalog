@@ -106,6 +106,12 @@ TEST(FieldHistogramDiffTest, JSDivergenceNearZeroForSameDistribution)
 
     auto d = meta::diff(prev, curr);
 
+    // assert: a delta is emitted for every histogram present on BOTH sides unconditionally, with
+    // no changed-only filter, so this vector is non-empty by construction -- pin that rather than
+    // rely on it, or the loop below becomes a claim over an empty set.
+    ASSERT_FALSE(d.field_histogram_deltas.empty())
+        << "no FieldHistogramDelta was emitted, so the divergence assertion below never ran";
+
     for (const auto& fhd : d.field_histogram_deltas)
     {
         EXPECT_DOUBLE_EQ(fhd.js_divergence, 0.0)
