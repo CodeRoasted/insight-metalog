@@ -1,10 +1,10 @@
 ###########################################################
-#  insight_metalog — MetaLog spec-conformant producer (1.5.2 template-aligned named modules).
+#  insight_metalog — MetaLog spec-conformant producer (template-aligned named modules).
 #  Spec: https://github.com/CodeRoasted/metalog-spec
 ###########################################################
 cmake_minimum_required(VERSION 3.28)
 
-# 1.5.1 unwrap: the pure module does `import std` → the import-std gate UUID MUST be set before
+# modules unwrap: the pure module does `import std` → the import-std gate UUID MUST be set before
 # project()/CXX-enable (451f2fe2-… = CMake 4.3.1's CMAKE_EXPERIMENTAL_CXX_IMPORT_STD).
 set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "451f2fe2-a8a2-47c3-bc32-94786d8fc91b")
 
@@ -26,7 +26,7 @@ endif()
 find_package(glaze REQUIRED CONFIG)
 
 ###########################################################
-#  Sources (1.5.2 domain decomposition, §11.9.11)
+#  Sources (domain decomposition, ADR-3.D4)
 #  - PUBLIC module interface units (installed): internal (src/) + api + facade (api/).
 #  - PRIVATE (sealed, build-only) detail shards (src/<domain>/): three domain shards —
 #    detail.stats (HLL, statistics, salience, wire_format), detail.operations
@@ -51,7 +51,7 @@ file(GLOB_RECURSE METALOG_IMPL_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE
 ###########################################################
 #  Module-bearing static library
 ###########################################################
-# §11.9.7/§11.9.11 install seal: the PUBLIC file set (internal/api/facade) is installed; the
+# ADR-3.D4 install seal: the PUBLIC file set (internal/api/facade) is installed; the
 # PRIVATE cxx_modules_detail set is build-only — legal because no external target imports the
 # lib's private module (tests/benchmarks are module MEMBERS below).
 add_library(insight_metalog STATIC ${METALOG_IMPL_SOURCES})
@@ -123,7 +123,7 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/insight_metalog-config.cmake
 #  Tests
 ###########################################################
 if(INSIGHT_METALOG_BUILD_TESTS)
-    # Per-domain test mirror (§11.9.11): tests/<domain>/*.cpp, one directory per concern. The glob
+    # Per-domain test mirror (ADR-3.D4): tests/<domain>/*.cpp, one directory per concern. The glob
     # below is the ONLY reader of that set and no comment restates it — the list that stood here
     # had three of its six names wrong and omitted two further directories.
     file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS
@@ -137,7 +137,7 @@ if(INSIGHT_METALOG_BUILD_TESTS)
         find_package(insight_semantic_github REQUIRED CONFIG)
         enable_testing()
 
-        # §11.9.7 white-box tests are MODULE MEMBERS: the test target RECOMPILES the module
+        # ADR-3.D4 white-box tests are MODULE MEMBERS: the test target RECOMPILES the module
         # (interface units + impl .cpp) + the test TUs, so a test may import the sealed detail
         # module (via the insight.metalog.test aggregate) WITHOUT the lib exporting it;
         # CXX_MODULE_STD ON provides the same std module.
@@ -186,7 +186,7 @@ if(INSIGHT_METALOG_BUILD_BENCHMARKS)
     if(BENCH_SOURCES)
         find_package(benchmark REQUIRED CONFIG)
         find_package(spdlog   REQUIRED CONFIG)
-        # §11.9.7/§11.9.11: like the white-box tests, benchmarks are MODULE MEMBERS, not consumers —
+        # ADR-3.D4: like the white-box tests, benchmarks are MODULE MEMBERS, not consumers —
         # the bench target RECOMPILES the module (interface + detail + impl .cpp) + the bench TUs
         # (via the insight.metalog.bench aggregate) and does NOT link insight_metalog; it pulls the
         # lib's deps directly. This is what lets the detail module stay a PRIVATE (build-only,

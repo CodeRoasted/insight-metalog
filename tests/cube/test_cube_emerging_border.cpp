@@ -187,6 +187,8 @@ struct Class
 
 TEST(CubeEmergingBorder, RecoversDeclaredAntichainPerDifficultyClass)
 {
+    // note: a fixture set, not a composition point -- the package sits below the composition owner.
+    // refs: ADR-17.D2
     const std::array manifests{insight::semantic::github::kManifest};
     const auto composed{insight::semantic::compose(manifests)};
     const std::filesystem::path root{std::filesystem::path{INSIGHT_METALOG_FIXTURE_DIR} /
