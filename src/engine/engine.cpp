@@ -92,7 +92,7 @@ void MetaLogEngine::open_window(Timestamp start)
     global_ring_ = {};
     trace_rings_.clear();
     trace_ring_fifo_.clear();
-    // refs: SRC-D-OTEL-11
+    // refs: F-SRC-insight-metalog:metalog.cppm:record_span
     span_templates_.clear();
     span_fifo_.clear();
     pending_span_edges_.clear();
@@ -217,7 +217,7 @@ void MetaLogEngine::record_span(const tokenization::CanonicalEvent& event,
                                 InternalTemplateID internal_id)
 {
     // note: the span vocabulary is spoken iff span_records_ > 0.
-    // refs: SRC-D-OTEL-13
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:span_records
     ++span_records_;
     const SpanId span_id{event.trace.span_id};
     // invariant: a span id is unique per (trace, span); on a hash collision the first wins.
@@ -230,7 +230,7 @@ void MetaLogEngine::record_span(const tokenization::CanonicalEvent& event,
             span_templates_.erase(span_fifo_.front());
             span_fifo_.pop_front();
         }
-        // refs: SRC-D-OTEL-21
+        // refs: F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeBlock
         span_templates_.emplace(span_id, SpanNode{.template_id = internal_id,
                                                   .component = std::string{event.component}});
         span_fifo_.push_back(span_id);
@@ -241,7 +241,7 @@ void MetaLogEngine::record_span(const tokenization::CanonicalEvent& event,
                                        .parent_span_id = event.trace.parent_span_id,
                                        .child_component = std::string{event.component}});
 
-    // refs: SRC-D-OTEL-9
+    // refs: ADR-29.D2
     for (const SpanId linked : event.linked_span_ids)
         pending_link_edges_.push_back(
             {.source_component = std::string{event.component}, .linked_span_id = linked});
@@ -266,7 +266,7 @@ void MetaLogEngine::resolve_span_edges()
         account_ngram(key);
 
         // note: an unknown endpoint and a self-edge are excluded -- neither is topology.
-        // refs: SRC-D-OTEL-21
+        // refs: F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeBlock
         const std::string& caller{parent_it->second.component};
         const std::string& callee{edge.child_component};
         if (!caller.empty() && !callee.empty() && caller != callee)
@@ -274,7 +274,7 @@ void MetaLogEngine::resolve_span_edges()
     }
 
     // note: a link whose target left the window yields no edge and is counted as an orphan.
-    // refs: SRC-D-OTEL-9
+    // refs: ADR-29.D2
     for (const auto& link : pending_link_edges_)
     {
         const auto target_it{span_templates_.find(link.linked_span_id)};
@@ -399,7 +399,7 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
     // invariant: an OTEL event forms its n-grams within its own trace ring, and both rings feed the
     // one bounded graph rather than a per-trace sub-fingerprint.
     // note: a SPAN record's causality is DECLARED and never enters an adjacency ring.
-    // refs: ADR-29.D1, SRC-D-OTEL-11
+    // refs: ADR-29.D1, F-SRC-insight-metalog:metalog.cppm:record_span
     if (event.trace.is_span)
     {
         record_span(event, lookup.internal_id);
@@ -422,7 +422,7 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end,
 
     // assert: the queued span edges resolve before the graph is analyzed, so the observed DAG feeds
     // dominant_path and structural_surprise like any other edge.
-    // refs: SRC-D-OTEL-11
+    // refs: F-SRC-insight-metalog:metalog.cppm:record_span
     resolve_span_edges();
 
     const WindowAnalysis analysis{analyze_window()};
@@ -441,7 +441,7 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end,
     // refs: F-SRC-insight-metalog:metalog.api.cppm:AcquisitionBlock
     // refs: F-SRC-insight-metalog:metalog.cppm:build_acquisition
     build_acquisition(doc);
-    // refs: SRC-D-OTEL-21
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeBlock
     build_service_edges(doc);
 
     // assert: the n-gram drop count is snapshotted before reset_window_state clears the live
@@ -1163,7 +1163,8 @@ void MetaLogEngine::build_acquisition(MetaLogDocument& doc) const
     acquisition.role_cardinality = card.per_axis[static_cast<std::size_t>(CardinalityAxis::Role)];
 
     // note: the span facts are raw integer counts, threshold-free.
-    // refs: SRC-D-OTEL-13, SRC-D-OTEL-11, SRC-D-OTEL-9
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:span_records
+    // refs: F-SRC-insight-metalog:metalog.cppm:record_span, ADR-29.D2
     acquisition.span_records = span_records_;
     acquisition.orphan_parent_edges = orphan_parent_edges_;
     acquisition.orphan_link_edges = orphan_link_edges_;
@@ -1174,11 +1175,11 @@ void MetaLogEngine::build_acquisition(MetaLogDocument& doc) const
 // post: emitted iff the window had trace substrate; a present-but-empty block says "no topology",
 // never "unknown".
 // note: dropped_edges is the honest truncation count.
-// refs: SRC-D-OTEL-21
+// refs: F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeBlock
 void MetaLogEngine::build_service_edges(MetaLogDocument& doc) const
 {
     if (span_records_ == 0)
-        // refs: SRC-D-OTEL-20
+        // refs: F-SRC-insight-metalog:metalog.api.cppm:span_records
         return;
 
     ServiceEdgeBlock block;
@@ -1239,7 +1240,7 @@ void MetaLogEngine::reset_window_state()
     global_ring_ = {};
     trace_rings_.clear();
     trace_ring_fifo_.clear();
-    // refs: SRC-D-OTEL-11
+    // refs: F-SRC-insight-metalog:metalog.cppm:record_span
     span_templates_.clear();
     span_fifo_.clear();
     pending_span_edges_.clear();
@@ -1247,7 +1248,7 @@ void MetaLogEngine::reset_window_state()
     orphan_parent_edges_ = 0;
     orphan_link_edges_ = 0;
     // note: the per-window span, link and service-topology state all reset together.
-    // refs: SRC-D-OTEL-9, SRC-D-OTEL-21
+    // refs: ADR-29.D2, F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeBlock
     pending_link_edges_.clear();
     service_edges_.clear();
     ngram_counts_.clear();

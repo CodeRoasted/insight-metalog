@@ -1,4 +1,4 @@
-// refs: SRC-D-OTEL-11
+// refs: F-SRC-insight-metalog:metalog.cppm:record_span
 #include <gtest/gtest.h>
 
 #include <array>

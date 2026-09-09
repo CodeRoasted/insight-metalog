@@ -151,7 +151,7 @@ TEST(MetaLogDocument, ReservoirStreamingExercisesTheShippedTupleReserveAndEdgeTi
         << census();
 }
 
-// refs: SRC-D-OTEL-21
+// refs: F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeBlock
 // invariant: the emitted block must be OVER the cap and the cut must fall on a weight tie, so the
 // last surviving edge is decided by the canonical-key tie-break alone.
 TEST(MetaLogDocument, ServiceEdgesOverCapExercisesTheTieBreak)

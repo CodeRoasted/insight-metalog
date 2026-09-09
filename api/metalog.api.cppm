@@ -399,13 +399,14 @@ struct AcquisitionBlock
     // invariant: orphan_parent_edges counts spans whose declared parent did not resolve in the
     // window -- counted, never guessed.
     // invariant: both 0 for a non-span window.
-    // refs: SRC-D-OTEL-13, SRC-D-OTEL-11
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:span_records
+    // refs: F-SRC-insight-metalog:metalog.cppm:record_span
     std::uint64_t span_records{0};
     std::uint64_t orphan_parent_edges{0};
     // invariant: declared cross-trace LINK targets that did not resolve in this window -- counted,
     // never guessed, and sibling to orphan_parent_edges.
     // invariant: 0 for a window with no unresolved links.
-    // refs: SRC-D-OTEL-9, SRC-D-OTEL-11
+    // refs: ADR-29.D2, F-SRC-insight-metalog:metalog.cppm:record_span
     std::uint64_t orphan_link_edges{0};
 
     [[nodiscard]] bool operator==(const AcquisitionBlock&) const noexcept = default;
@@ -416,7 +417,7 @@ struct AcquisitionBlock
 // invariant: its own additive flag-gated block with its own diff -- not a cube dimension and not
 // folded into top_ngrams.
 // invariant: integer weights in sorted canonical (caller, callee) byte order, no float.
-// refs: ADR-29.D2, SRC-D-OTEL-21
+// refs: ADR-29.D2, F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeBlock
 struct ServiceEdge
 {
     // invariant: the PARENT span's service.name.
@@ -433,7 +434,7 @@ struct ServiceEdge
 // invariant: self-edges are excluded at derivation.
 // invariant: edges are sorted by (caller, callee) and bounded to max_service_edges by weight with a
 // canonical-key tie-break; dropped_edges counts those beyond the cap.
-// refs: SRC-D-OTEL-21, SRC-D-OTEL-20
+// refs: F-SRC-insight-metalog:metalog.api.cppm:span_records
 struct ServiceEdgeBlock
 {
     std::vector<ServiceEdge> edges;
@@ -996,7 +997,7 @@ struct MetaLogDocument
     // absence reads unknown.
     // invariant: stamped once at close and only read, so std::optional is sound despite the owned
     // vector.
-    // refs: SRC-D-OTEL-21
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeBlock
     std::optional<ServiceEdgeBlock> service_edges;
     // invariant: the semantic_identity and package list of the ruleset that segmented this
     // document; absent means a legacy producer.
@@ -1033,10 +1034,10 @@ struct MetaLogConfig
     static constexpr std::size_t kDefaultDominantPathMaxSteps = 8;
     static constexpr std::size_t kDefaultMaxActiveTraces = 4096;
     // invariant: the span_id to template bound.
-    // refs: SRC-D-OTEL-11
+    // refs: F-SRC-insight-metalog:metalog.cppm:record_span
     static constexpr std::size_t kDefaultMaxActiveSpans = 16384;
     // invariant: the service_edges emit cap.
-    // refs: SRC-D-OTEL-21
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeBlock
     static constexpr std::size_t kDefaultMaxServiceEdges = 4096;
 
     // invariant: max entries kept in stats.top_k; the rest are summarised into tail_count and
@@ -1081,7 +1082,7 @@ struct MetaLogConfig
     // invariant: overflow evicts the oldest-inserted trace's ring (deterministic FIFO), losing at
     // most one cross-record edge for that trace and never its membership.
     // invariant: consulted ONLY for events carrying a trace id.
-    // refs: SRC-D-OTEL-1
+    // refs: F-SRC-insight-canon:canon.api.cppm:OtelTraceContext
     std::size_t max_active_traces{kDefaultMaxActiveTraces};
 
     // invariant: max span_id to template entries held in a window for close-time parent-edge
@@ -1090,13 +1091,13 @@ struct MetaLogConfig
     // orphan_parent_edges fact -- counted, never guessed.
     // invariant: deterministic FIFO eviction of the oldest-inserted span; consulted ONLY for
     // records carrying is_span, and 0 disables the bound.
-    // refs: SRC-D-OTEL-11
+    // refs: F-SRC-insight-metalog:metalog.cppm:record_span
     std::size_t max_active_spans{kDefaultMaxActiveSpans};
 
     // invariant: max service_edges emitted; edges beyond it fold into dropped_edges by top-weight-K
     // with a canonical-key tie-break.
     // invariant: the accumulator itself is bounded by topology squared; this is the wire cap.
-    // refs: SRC-D-OTEL-21
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeBlock
     std::size_t max_service_edges{kDefaultMaxServiceEdges};
 
     // invariant: when true, the engine remembers the previous closed window's template frequencies
@@ -1233,7 +1234,7 @@ struct NGramDelta
 };
 
 // invariant: an edge present on BOTH sides whose observed weight moved.
-// refs: SRC-D-OTEL-21
+// refs: F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeDelta
 struct ServiceEdgeWeightChange
 {
     std::string caller;
@@ -1250,7 +1251,7 @@ struct ServiceEdgeWeightChange
 // degraded reading is the consumer's.
 // invariant: present ONLY when BOTH documents carried a service_edges block; absence means edge
 // verdicts are unknown, never that all edges emerged.
-// refs: SRC-D-OTEL-21, SRC-D-OTEL-22
+// refs: F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeBlock
 struct ServiceEdgeDelta
 {
     std::vector<ServiceEdge> emerged;
@@ -1493,7 +1494,7 @@ struct MetaLogDiff
     // unknown.
     // invariant: serialised under the extensions container, which the witness derivation excludes
     // by name.
-    // refs: SRC-D-OTEL-21
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeDelta
     std::optional<ServiceEdgeDelta> service_edge_delta;
     // invariant: empty unless both documents tracked histograms and share a template; sorted by
     // js_divergence descending.

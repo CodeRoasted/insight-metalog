@@ -211,8 +211,9 @@ namespace dto
     // post: all-integer, so the block is genuinely cross-machine bit-identical.
     // note: the window's raw structural facts; a consumer applies its own predicate.
     // refs: F-SRC-insight-metalog:metalog.api.cppm:AcquisitionBlock
-    // refs: F-SRC-insight-metalog:metalog.cppm:build_acquisition, SRC-D-OTEL-13
-    // refs: SRC-D-OTEL-11, SRC-D-OTEL-9
+    // refs: F-SRC-insight-metalog:metalog.cppm:build_acquisition
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:span_records
+    // refs: F-SRC-insight-metalog:metalog.cppm:record_span, ADR-29.D2
     struct Acquisition
     {
         std::uint64_t records_with_component{0};
@@ -228,7 +229,7 @@ namespace dto
 
     // invariant: a present-but-empty edges array means "no topology" and is NOT absence; block
     // absence is the optional on the document.
-    // refs: SRC-D-OTEL-21
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeBlock
     struct ServiceEdge
     {
         std::string caller;
@@ -494,7 +495,7 @@ namespace dto
 
     // invariant: the whole block is present iff BOTH documents carried a service_edges block;
     // absence means unknown.
-    // refs: SRC-D-OTEL-21
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeBlock
     struct ServiceEdgeWeightChange
     {
         std::string caller;
@@ -512,7 +513,7 @@ namespace dto
     };
 
     // note: a diff of vendor data is vendor data, which is why the topology delta sits here.
-    // refs: SRC-D-OTEL-21
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeBlock
     struct DiffExtensions
     {
         std::optional<ServiceEdgeDelta> service_edge_delta;

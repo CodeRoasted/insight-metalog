@@ -146,13 +146,13 @@ class MetaLogEngine
     // post: the span's span_id -> template id is remembered under config_.max_active_spans and its
     // declared parent edge is queued for close-time resolution.
     // invariant: a span never enters an adjacency ring -- its causality is declared.
-    // refs: SRC-D-OTEL-11, ADR-29.D2
+    // refs: ADR-29.D2
     void record_span(const tokenization::CanonicalEvent& event, InternalTemplateID internal_id);
     // post: each queued parent edge resolves into ngram_counts_ as template -> template; an
     // unresolved parent increments orphan_parent_edges_.
     // invariant: counts are commutative and integer-only with no wall-clock read, so the resolution
     // order cannot move a byte.
-    // refs: SRC-D-OTEL-11
+    // refs: F-SRC-insight-metalog:metalog.cppm:record_span
     void resolve_span_edges();
 
     // invariant: computed once per close_window and owned by a local there, so it lives exactly as
@@ -225,7 +225,7 @@ class MetaLogEngine
     void build_acquisition(MetaLogDocument& doc) const;
     // post: emitted iff the window had trace substrate, sorted canonical order, top
     // max_service_edges by weight with a canonical-key tie-break, plus dropped_edges.
-    // refs: SRC-D-OTEL-21
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeBlock
     void build_service_edges(MetaLogDocument& doc) const;
     void stash_prev_window(const MetaLogDocument& doc);
     void reset_window_state();
@@ -252,7 +252,7 @@ class MetaLogEngine
     // invariant: one ring per active OTEL trace, bounded by config_.max_active_traces with FIFO
     // eviction ordered by trace_ring_fifo_; empty for a non-OTEL stream.
     // invariant: point-lookup only, never iterated, so the map order reaches no output.
-    // refs: SRC-D-OTEL-1
+    // refs: F-SRC-insight-canon:canon.api.cppm:OtelTraceContext
     std::unordered_map<TraceId, NgramRing> trace_rings_;
     std::deque<TraceId> trace_ring_fifo_;
 
@@ -261,7 +261,8 @@ class MetaLogEngine
     // invariant: a declared parent resolves into the SAME bounded ngram_counts_ graph, so there is
     // one fingerprint and no second graph.
     // note: component is owned; canon's string_view is arena-stable only in the record.
-    // refs: SRC-D-OTEL-11, SRC-D-OTEL-21, ADR-29.D2
+    // refs: F-SRC-insight-metalog:metalog.cppm:record_span
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeBlock, ADR-29.D2
     struct SpanNode
     {
         InternalTemplateID template_id{};
@@ -280,26 +281,26 @@ class MetaLogEngine
     // post: resolved at close by span_id, across traces, into the same distilled service topology
     // as intra-trace parentage.
     // note: only the source component is known now; the linked span may come later.
-    // refs: SRC-D-OTEL-9
+    // refs: ADR-29.D2
     struct PendingLinkEdge
     {
         std::string source_component;
         SpanId linked_span_id{};
     };
     std::vector<PendingLinkEdge> pending_link_edges_;
-    // refs: SRC-D-OTEL-13
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:span_records
     std::uint64_t span_records_{0};
     // invariant: declared parents that did not resolve.
-    // refs: SRC-D-OTEL-11
+    // refs: F-SRC-insight-metalog:metalog.cppm:record_span
     std::uint64_t orphan_parent_edges_{0};
     // invariant: declared LINK targets that did not resolve -- counted, never guessed.
-    // refs: SRC-D-OTEL-9
+    // refs: ADR-29.D2
     std::uint64_t orphan_link_edges_{0};
     // invariant: accumulated from each resolved parent-child pair whose components differ,
     // self-edges excluded, and cleared per window.
     // invariant: a std::map, so iteration is the canonical (caller, callee) byte order the wire
     // block emits.
-    // refs: SRC-D-OTEL-21
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeBlock
     std::map<std::pair<std::string, std::string>, std::uint64_t> service_edges_;
 
     // invariant: keyed by compact per-window internal ids; the content-derived spec ids are

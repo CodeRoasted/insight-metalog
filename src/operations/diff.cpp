@@ -184,7 +184,8 @@ namespace
     // post: defined ONLY when both documents carried a service_edges block; absent on either side
     // leaves it unset, so edge verdicts are unknown rather than all-emerged.
     // note: both blocks are canonically sorted, so the three lists need no re-sort.
-    // refs: SRC-D-OTEL-21, SRC-D-OTEL-20
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeBlock
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:span_records
     void diff_service_edge_delta(MetaLogDiff& out, const MetaLogDocument& previous,
                                  const MetaLogDocument& current)
     {

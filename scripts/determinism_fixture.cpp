@@ -116,7 +116,7 @@ int main(int argc, char** argv)
     }
 
     // post: emits the service-edges block decided by the over-cap top-K select.
-    // refs: SRC-D-OTEL-21
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeBlock
     if (std::string{argv[1]} == "--service-edges")
     {
         namespace ml = insight::metalog;
