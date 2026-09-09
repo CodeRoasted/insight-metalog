@@ -94,7 +94,7 @@ TEST(FieldHistogramDiffTest, JSDivergenceNonZeroAfterStatusFlip)
 }
 
 // invariant: identical value_counts and totals make the smoothed distributions equal, so the
-// divergence is exactly zero; the arm asserts a 0.01 bound rather than that equality.
+// divergence is exactly zero and the arm asserts that equality, not a tolerance around it.
 TEST(FieldHistogramDiffTest, JSDivergenceNearZeroForSameDistribution)
 {
     const auto t0 = insight::Timestamp{} + std::chrono::hours{3};
@@ -108,10 +108,12 @@ TEST(FieldHistogramDiffTest, JSDivergenceNearZeroForSameDistribution)
 
     for (const auto& fhd : d.field_histogram_deltas)
     {
-        EXPECT_LT(fhd.js_divergence, 0.01)
-            << "JS divergence must be near-zero for identical distributions "
-               "(param_index="
-            << fhd.param_index << ")";
+        EXPECT_DOUBLE_EQ(fhd.js_divergence, 0.0)
+            << "identical value_counts over the same key union with the same key_count added to "
+               "both denominators make the smoothed distributions EQUAL, so the divergence is "
+               "exactly zero and has no rounding freedom. A 0.01 bound is two orders of magnitude "
+               "of slack and would pass on a real divergence of 0.009 (param_index="
+            << fhd.param_index << ", got " << fhd.js_divergence << ")";
     }
 }
 // invariant: tail_delta carries before, after and delta for all three tail-summary fields; a tail
