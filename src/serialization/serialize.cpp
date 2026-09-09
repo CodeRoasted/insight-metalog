@@ -254,7 +254,7 @@ namespace dto
     };
 
     // note: omitted for a legacy producer, and packages renders in package-sorted order.
-    // refs: SRC-II-7
+    // refs: ADR-17.D3
     struct RulesetPackageRef
     {
         std::string name;
@@ -689,7 +689,7 @@ namespace
     }
 
     // note: this is the ONLY place a template id materialises as a string.
-    // refs: SRC-D-TIR-2
+    // refs: F-SRC-insight-metalog:metalog.cppm:template_id_for
     [[nodiscard]] std::vector<std::string> render_sequence(const std::vector<TemplateId>& ids)
     {
         std::vector<std::string> out;
@@ -710,7 +710,7 @@ namespace
 
     // pre: the registry holds every template id the document names; a hand-built document must seed
     // one with its strings.
-    // refs: SRC-D-TIR-5
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:TemplateRegistry
     [[nodiscard]] std::string resolve_template_str(const TemplateRegistry& registry,
                                                    TemplateId template_id)
     {
@@ -965,7 +965,7 @@ namespace
             extensions.transport = dto::TransportDeclaration{
                 .catalog_version = doc.transport->catalog_version, .names = doc.transport->names};
         // note: the opaque identifiers already own the ruleset's comparability role.
-        // refs: SRC-II-7
+        // refs: ADR-17.D3
         if (doc.ruleset)
         {
             dto::RulesetIdentity ruleset{.semantic_identity = doc.ruleset->semantic_identity,

@@ -180,7 +180,7 @@ struct SalienceVerdict
 
 // post: score 0 and no axis for a non-salient template, so rare-benign noise never enters the
 // reservoir.
-// refs: SRC-D-PROV-1
+// refs: ADR-20.D5
 [[nodiscard]] SalienceVerdict salience_score(std::optional<LogLevel> level, StructuralRole role,
                                              std::string_view tmpl, bool echoed_source,
                                              std::uint64_t count, std::uint64_t lines,

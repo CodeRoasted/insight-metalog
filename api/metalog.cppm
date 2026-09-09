@@ -38,7 +38,7 @@ class MetaLogEngine
     [[nodiscard]] MetaLogDocument
     close_window(Timestamp end, std::optional<ReportedWindowBounds> reported_bounds = std::nullopt);
 
-    // refs: SRC-D-TIR-5
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:TemplateRegistry
     [[nodiscard]] const TemplateRegistry& registry() const noexcept
     {
         return registry_;
@@ -72,7 +72,7 @@ class MetaLogEngine
         std::unordered_map<LogLevel, std::uint64_t> declared_level_counts;
         // invariant: AND-reduced over the window's events, so true iff every event that formed this
         // template was echoed script source and none was a real runtime occurrence.
-        // refs: SRC-D-PROV-1
+        // refs: ADR-20.D5
         bool all_echoed_source{true};
         std::unordered_map<StructuralRole, std::uint64_t> role_counts;
         // invariant: always populated; the dominant component is the template's WHERE label.
@@ -193,7 +193,6 @@ class MetaLogEngine
     [[nodiscard]] std::uint32_t surprise_of(const WindowAnalysis& analysis,
                                             const std::string& content_id) const noexcept;
     // note: the engine keys per-window state by content_id string; this bridges to the POD.
-    // refs: SRC-D-TIR-2
     [[nodiscard]] TemplateId template_id_for(const std::string& content_id) const;
     void stamp_envelope(MetaLogDocument& doc, Timestamp start, Timestamp end,
                         std::optional<ReportedWindowBounds> reported_bounds) const;
@@ -242,9 +241,9 @@ class MetaLogEngine
     std::unordered_map<std::string, InternalTemplateID> content_template_index_;
     // invariant: indexed by internal id; the h-prefixed hex string is rendered only at the
     // serialize seam.
-    // refs: SRC-D-TIR-2
+    // refs: F-SRC-insight-metalog:metalog.cppm:template_id_for
     std::vector<TemplateId> content_templates_by_internal_id_;
-    // refs: SRC-D-TIR-5
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:TemplateRegistry
     TemplateRegistry registry_;
 
     // invariant: the non-OTEL n-gram path; only [0] is read at ngram_size 2, both at 3.
@@ -337,7 +336,7 @@ class MetaLogEngine
 // yields one byte sequence.
 // pre: `registry` contains every id the document references; engine.registry() does.
 // note: this seam emits the per-entry inline template mode; the others were never wired.
-// refs: ADR-9.D4, DN-65.D1, DN-65.D5, SRC-D-TIR-5
+// refs: ADR-9.D4, DN-65.D1, DN-65.D5, F-SRC-insight-metalog:metalog.api.cppm:TemplateRegistry
 [[nodiscard]] std::string to_json(const MetaLogDocument& doc, const TemplateRegistry& registry);
 
 // post: the same omit-empty discipline and the same RFC 8259 guarantee as the document overload,
@@ -350,7 +349,7 @@ class MetaLogEngine
 // none being skipped rather than read as zero.
 // invariant: stability is dropped and the result is id-only, so the display string resolves by id
 // from the engine registry.
-// refs: DN-56.D2, DN-56.D3, SRC-D-TIR-5
+// refs: DN-56.D2, DN-56.D3, F-SRC-insight-metalog:metalog.api.cppm:TemplateRegistry
 [[nodiscard]] MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs);
 
 // post: delta is current minus previous, with `previous` the earlier document.

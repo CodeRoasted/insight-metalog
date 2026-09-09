@@ -203,7 +203,7 @@ struct TransparentCubeKeyLess
 // the display seams.
 // invariant: append-only and intern-once-per-id, so the first writer wins.
 // invariant: node-stable storage, so a returned view stays valid for the registry's lifetime.
-// refs: ADR-16.D3, SRC-D-TIR-5
+// refs: ADR-16.D3
 class TemplateRegistry
 {
   public:
@@ -340,7 +340,7 @@ struct TopKEntry
 {
     TemplateId
         // invariant: a content-hash POD, rendered to a prefixed hex string at the serialize seam.
-        // refs: SRC-D-TIR-5
+        // refs: F-SRC-insight-canon:canon.api.cppm:TemplateId
         template_id;
     std::uint64_t count{0};
     double frequency{0.0};
@@ -448,7 +448,7 @@ struct ServiceEdgeBlock
 // moves.
 // invariant: two documents are comparable iff their semantic_identity matches; on mismatch the
 // consumer re-segments where raw inputs exist and refuses otherwise, never compares.
-// refs: SRC-II-7, ADR-17.D3
+// refs: ADR-17.D3
 struct RulesetPackageRef
 {
     std::string name;
@@ -637,7 +637,7 @@ enum class RetentionAxis : std::uint8_t
     // invariant: the dominant_level's severity band.
     Level,
     // invariant: the LEVEL-BLIND token-lexicon tier.
-    // refs: SRC-D-PROV-1
+    // refs: ADR-20.D5
     FailureCue,
     // invariant: the declared structural failure marker.
     Terminator,
@@ -678,7 +678,7 @@ enum class RetentionAxis : std::uint8_t
 struct ReservoirEntry
 {
     // invariant: the same content-hash POD as TopKEntry's.
-    // refs: SRC-D-TIR-5
+    // refs: F-SRC-insight-canon:canon.api.cppm:TemplateId
     TemplateId template_id;
     std::uint64_t count{0};
     double frequency{0.0};
@@ -955,7 +955,7 @@ struct ProvenanceEntry
 
 // invariant: this producer emits the specification's INLINE template-string mode only -- the dedup
 // and id-only arms were never wired.
-// refs: SRC-D-TIR-5, ADR-9.D2
+// refs: F-SRC-insight-metalog:metalog.api.cppm:TemplateRegistry, ADR-9.D2
 struct MetaLogDocument
 {
     // invariant: the specification edition the bytes were written against; only its MAJOR is
@@ -1002,7 +1002,7 @@ struct MetaLogDocument
     // invariant: the semantic_identity and package list of the ruleset that segmented this
     // document; absent means a legacy producer.
     // invariant: stamped once at close and only read, so std::optional is sound.
-    // refs: SRC-II-7, ADR-17.D3
+    // refs: ADR-17.D3
     std::optional<RulesetIdentity> ruleset;
     // invariant: the producer stamps it on EVERY closed window -- an empty names[] says nothing was
     // declared, and that must never degrade into the member's absence.
@@ -1014,7 +1014,7 @@ struct MetaLogDocument
     // WHOLE-RUN document; Unknown is both the default and the wire absence.
     // invariant: not a cube dimension -- the outcome labels the whole run, and a per-quantum slice
     // document correctly keeps Unknown.
-    // refs: SRC-D-OUT-RUN-1, ADR-17.D5
+    // refs: ADR-17.D5
     insight::RunOutcome run_outcome{insight::RunOutcome::Unknown};
     // invariant: the presence-churn roll-up over the declared horizon; ABSENT on a document that
     // carries no churn observation at all, which is the monoid identity.
@@ -1058,7 +1058,6 @@ struct MetaLogConfig
     // invariant: clamped to reservoir_size; 0 disables the reserve.
     // invariant: a retention policy and not template identity, so it moves no
     // canonicalization_version and no wire version.
-    // refs: SRC-D-RNK-2
     std::size_t reservoir_error_reserve{0};
 
     // invariant: the single n-gram order emitted in the behaviour block; 2 or 3.
@@ -1124,7 +1123,7 @@ struct MetaLogConfig
     // any of them change.
     // invariant: canonicalization_version defaults to the canon-owned constant, so a producer
     // cannot silently leave old and new documents falsely comparable.
-    // refs: SRC-D-TID-16
+    // refs: F-SRC-insight-canon:canon.api.cppm:kCanonicalizationVersion
     std::optional<std::string> canonicalization_version{
         std::string{insight::kCanonicalizationVersion}};
     std::optional<std::string> retention_profile;
@@ -1132,7 +1131,7 @@ struct MetaLogConfig
     // inject it emits no ruleset block and reads as a legacy producer.
     // invariant: unlike canonicalization_version there is no canon-owned default -- canon ships no
     // default composition, so only the binary declaring its package set knows the hash.
-    // refs: SRC-II-7, ADR-17.D2
+    // refs: ADR-17.D3, ADR-17.D2
     std::optional<RulesetIdentity> ruleset;
 
     // invariant: the stream's DECLARED transport stack, injected by the producing binary and

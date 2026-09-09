@@ -170,7 +170,7 @@ SalienceVerdict salience_score(std::optional<LogLevel> level, StructuralRole rol
                                 verdict.axis = axis;
                             }
                         }};
-    // refs: DN-32.D3, SRC-D-PROV-1
+    // refs: DN-32.D3, ADR-20.D5
     if (role == StructuralRole::Terminator)
         consider(kBandTerminator, RetentionAxis::Terminator);
     if (level)
@@ -192,7 +192,7 @@ SalienceVerdict salience_score(std::optional<LogLevel> level, StructuralRole rol
     }
     // assert: an all-echoed template already lost its level to Unknown; skipping this tier stops
     // the echoed text being re-promoted above the real failure.
-    // refs: SRC-D-PROV-1
+    // refs: ADR-20.D5
     if (!echoed_source && looks_like_failure(tmpl))
         consider(kBandFailureCue, RetentionAxis::FailureCue);
     // note: structure and time are peer axes -- a benign line reached off-path is salient.

@@ -117,7 +117,7 @@ enum Record : std::size_t
     }
 }
 
-// refs: SRC-D-TIR-5
+// refs: F-SRC-insight-metalog:metalog.api.cppm:TemplateRegistry
 // invariant: the wire is id-only plus inline, so a template string resolves by id from the
 // engine-owned registry and must be carried out of the producing scope.
 struct TemplateBinding

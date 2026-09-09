@@ -71,7 +71,7 @@ namespace
                          std::unordered_map<TemplateId, std::optional<EventLevel>>& levels,
                          const MetaLogDocument& doc)
     {
-        // refs: SRC-D-TIR-5
+        // refs: F-SRC-insight-metalog:metalog.api.cppm:TemplateRegistry
         for (const auto& entry : doc.stats.top_k)
         {
             counts[entry.template_id] += entry.count;
@@ -305,7 +305,7 @@ namespace
             // assert: the cue tier is moot on an empty template, so the echoed gate is a no-op and
             // a composed input carries no per-line provenance anyway.
             // note: salience reads severity, not evidence quality, so provenance is not an input.
-            // refs: SRC-D-TIR-5, SRC-D-PROV-1
+            // refs: F-SRC-insight-metalog:metalog.api.cppm:TemplateRegistry, ADR-20.D5
             const auto sal{
                 salience_score(lvl ? std::optional<LogLevel>{lvl->value()} : std::nullopt,
                                info.role, std::string_view{},
@@ -515,7 +515,7 @@ namespace
             dropped > 0)
             behavior.dropped_ngram_observations = dropped;
         // note: one accumulator keyed on the scalar id replaces three sequence-keyed maps.
-        // refs: SRC-D-TIR-4, ADR-16.D1
+        // refs: F-SRC-insight-canon:canon.api.cppm:NgramId, ADR-16.D1
         struct NgramAccum
         {
             std::vector<TemplateId> sequence;
@@ -654,7 +654,7 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
     check_processing_identifier_gate(lhs.retention_profile, rhs.retention_profile,
                                      "retention_profile", "compose");
     // note: composing across different ruleset identities merges vocabularies -- refuse.
-    // refs: SRC-II-7, ADR-17.D8
+    // refs: ADR-17.D3, ADR-17.D8
     check_processing_identifier_gate(
         lhs.ruleset ? std::optional<std::string>{lhs.ruleset->semantic_identity} : std::nullopt,
         rhs.ruleset ? std::optional<std::string>{rhs.ruleset->semantic_identity} : std::nullopt,
@@ -668,7 +668,7 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
     out.retention_profile =
         carry_processing_identifier(lhs.retention_profile, rhs.retention_profile);
     // note: carried only when both inputs supplied it; omitting is the honest output.
-    // refs: SRC-II-7
+    // refs: ADR-17.D3
     out.ruleset = (lhs.ruleset && rhs.ruleset) ? lhs.ruleset : std::nullopt;
     // invariant: the transport declaration is carried only when both inputs declared the SAME
     // stack, and it is NOT a compose gate and must not become one.
@@ -701,7 +701,7 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
     // assert: the churn fold runs after the composed retained set exists.
     fold_presence_churn(out, lhs, rhs);
 
-    // refs: SRC-D-TIR-5
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:TemplateRegistry
     out.provenance = merge_provenance(lhs, rhs);
     if (auto coord{merge_coordinate(lhs, rhs)})
         out.coordinate = std::move(coord);

@@ -33,7 +33,7 @@ namespace
                                      std::chrono::seconds{60})};
         if (out_registry != nullptr)
             *out_registry =
-                // refs: SRC-D-TIR-5
+                // refs: F-SRC-insight-metalog:metalog.api.cppm:TemplateRegistry
                 engine.registry();
         return doc;
     }
@@ -41,7 +41,7 @@ namespace
     // post: whether the reservoir holds `tmpl`, by the content-derived id the masker assigns.
     // invariant: the masker is a pure function, so the expected id is recomputed from the string
     // and no registry is needed.
-    // refs: SRC-D-TIR-5
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:TemplateRegistry
     [[nodiscard]] bool reservoir_has(const meta::MetaLogDocument& doc, std::string_view tmpl)
     {
         const auto id{insight::template_id_of(tmpl)};
@@ -117,7 +117,7 @@ TEST(ReservoirTest, RareBenignNotAdmitted)
         << "rarity must never gate a benign template into the reservoir";
 }
 
-// refs: SRC-D-PROV-1
+// refs: ADR-20.D5
 TEST(ReservoirTest, RareBenignWithEmbeddedFailureSubstringNotAdmitted)
 {
     auto rare{make_event("Writing tsc-error-report.json", insight::LogLevel::Info)};
@@ -304,7 +304,7 @@ TEST(ReservoirTest, TailExcludesReservoirMembers)
         << "tail must shrink by exactly the reservoir count (no double-counting)";
 }
 
-// refs: SRC-D-RNK-2
+// refs: F-SRC-insight-metalog:metalog.api.cppm:reservoir_error_reserve
 TEST(ReservoirTest, DiversityCapCoversDistinctKinds)
 {
     const auto build_doc{
@@ -355,7 +355,7 @@ TEST(ReservoirTest, DiversityCapCoversDistinctKinds)
 
 // invariant: the reserve is admitted AHEAD of the general pool and EXEMPT from the per-kind cap, so
 // non-failure salience cannot evict a real failure.
-// refs: SRC-D-RNK-2
+// refs: F-SRC-insight-metalog:metalog.api.cppm:reservoir_error_reserve
 namespace
 {
     constexpr std::array<std::string_view, 3> kSurpriseBranches{
@@ -437,7 +437,7 @@ TEST(ReservoirTest, ErrorClassReserveRetainsFailureAgainstNonFailureStorm)
 
 // invariant: the per-kind cap governs the GENERAL pool only, so the reserve admits multiple
 // distinct failures the cap would have kept to one.
-// refs: SRC-D-RNK-2
+// refs: F-SRC-insight-metalog:metalog.api.cppm:reservoir_error_reserve
 TEST(ReservoirTest, ErrorClassReserveIsExemptFromPerKindCap)
 {
     const auto build{
@@ -482,7 +482,7 @@ TEST(ReservoirTest, ErrorClassReserveIsExemptFromPerKindCap)
 
 // invariant: a template is all-echoed only while EVERY event forming it is echoed source, so one
 // runtime occurrence makes the bucket not all-echoed.
-// refs: SRC-D-PROV-1
+// refs: ADR-20.D5
 TEST(ReservoirTest, AllEchoedFailureTemplateNotAdmittedButRuntimeOccurrenceRescues)
 {
     const auto echoed_event{[](std::string_view tmpl)

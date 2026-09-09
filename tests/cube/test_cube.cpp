@@ -366,7 +366,7 @@ two_windows(meta::TemplateRegistry* out_registry = nullptr)
     for (int i = 0; i < 5; ++i)
         engine.ingest_event(ev("pool timeout", LogLevel::Error, "db"));
     const auto cur{engine.close_window(t2)};
-    // refs: SRC-D-TIR-5
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:TemplateRegistry
     if (out_registry != nullptr)
         *out_registry = engine.registry();
     return {prev, cur};

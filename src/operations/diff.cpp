@@ -137,7 +137,7 @@ namespace
         NGramDelta ngram_delta;
         ngram_delta.ngram_size = current.behavior->ngram_size;
         // note: new and vanished are sorted explicitly because they are iterated into the output.
-        // refs: SRC-D-TIR-4, ADR-16.D1
+        // refs: F-SRC-insight-canon:canon.api.cppm:NgramId, ADR-16.D1
         struct NgramProb
         {
             std::vector<TemplateId> sequence;
@@ -548,7 +548,7 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
     check_processing_identifier_gate(previous.retention_profile, current.retention_profile,
                                      "retention_profile", "diff");
     // note: one side absent is a legacy producer and proceeds; both stamped and different refuses.
-    // refs: SRC-II-7, ADR-17.D8
+    // refs: ADR-17.D3, ADR-17.D8
     check_processing_identifier_gate(
         previous.ruleset ? std::optional<std::string>{previous.ruleset->semantic_identity}
                          : std::nullopt,

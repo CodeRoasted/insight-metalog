@@ -120,7 +120,7 @@ MetaLogEngine::content_template_id_for(const tokenization::CanonicalEvent& event
     }
 
     // note: the domain carries the POD id; the rendered string is the engine's own map key.
-    // refs: SRC-D-TIR-2
+    // refs: F-SRC-insight-metalog:metalog.cppm:template_id_for
     const TemplateId template_id{insight::template_id_of(event.template_str)};
     std::string content_id{insight::render(template_id)};
 
@@ -133,7 +133,7 @@ MetaLogEngine::content_template_id_for(const tokenization::CanonicalEvent& event
         content_template_index_.emplace(content_id, internal_id);
         // invariant: the registry is the single home of the display-only template_str, interned
         // once per id and accumulating across windows so older documents resolve by id.
-        // refs: SRC-D-TIR-5
+        // refs: F-SRC-insight-metalog:metalog.api.cppm:TemplateRegistry
         registry_.intern(template_id, event.template_str);
     }
     else
@@ -314,7 +314,7 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
     if (event.declared_level)
         ++bucket.declared_level_counts[event.level];
     // invariant: all_echoed_source is an AND-reduction -- one runtime occurrence ends it.
-    // refs: SRC-D-PROV-1
+    // refs: ADR-20.D5
     ++bucket.role_counts[event.structural_role];
     bucket.all_echoed_source = bucket.all_echoed_source && event.echoed_source;
     ++lines_observed_;
@@ -463,7 +463,6 @@ void MetaLogEngine::stamp_envelope(MetaLogDocument& doc, Timestamp start, Timest
     doc.source = source_;
 
     // note: duration tracks the reported span, not the open/close machinery times.
-    // refs: SRC-D-TIR-5
     const Timestamp reported_start{reported_bounds ? reported_bounds->start : start};
     const Timestamp reported_end{reported_bounds ? reported_bounds->end : end};
     doc.window.start_iso = format_rfc3339_utc(reported_start);
@@ -478,7 +477,7 @@ void MetaLogEngine::stamp_envelope(MetaLogDocument& doc, Timestamp start, Timest
     doc.canonicalization_version = config_.canonicalization_version;
     doc.retention_profile = config_.retention_profile;
     // note: absent for a producer whose config carries no ruleset, so the block is omitted.
-    // refs: SRC-II-7
+    // refs: ADR-17.D3
     doc.ruleset = config_.ruleset;
     // invariant: the transport declaration is stamped unconditionally -- an undeclared run carries
     // the block with an empty names[], never a dropped key.
@@ -608,7 +607,6 @@ void MetaLogEngine::build_top_k(MetaLogDocument& doc, const WindowAnalysis& anal
     {
         TopKEntry entry;
         entry.template_id = template_id_for(ordered[i].first);
-        // refs: SRC-D-TIR-5
         entry.count = ordered[i].second->count;
         entry.frequency = total > 0.0 ? static_cast<double>(entry.count) / total : 0.0;
         entry.dominant_level = dominant_event_level_of(ordered[i].second->level_counts,
@@ -708,7 +706,7 @@ MetaLogEngine::collect_reservoir_candidates(const WindowAnalysis& analysis) cons
     return candidates;
 }
 
-// refs: SRC-D-RNK-2
+// refs: F-SRC-insight-metalog:metalog.api.cppm:reservoir_error_reserve
 // note: NOLINT: one coherent determinism-critical admission routine, pinned by its test.
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& analysis,
@@ -728,7 +726,7 @@ void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& ana
                       });
 
     // note: the level half reuses the exported is_failure_level rather than a fourth copy.
-    // refs: SRC-D-RNK-2, SRC-D-OUT-4, DN-64.D3
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:reservoir_error_reserve, SRC-D-OUT-4, DN-64.D3
     const auto error_class{
         [](StructuralRole role, const std::optional<EventLevel>& level) noexcept
         { return role == StructuralRole::Terminator || is_failure_level(level); }};
@@ -749,7 +747,6 @@ void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& ana
             const Bucket& bucket{*ordered[candidate.index].second};
             ReservoirEntry entry;
             entry.template_id = template_id_for(ordered[candidate.index].first);
-            // refs: SRC-D-TIR-5
             entry.count = bucket.count;
             entry.frequency = total > 0.0 ? static_cast<double>(bucket.count) / total : 0.0;
             entry.dominant_level = level;
@@ -782,7 +779,7 @@ void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& ana
     // invariant: the error-class reserve is exempt from the per-kind cap and runs before the
     // general pool, so benign salience cannot crowd out a real failure.
     // note: the reserve buys failure DEPTH; a storm overflows it and the top by salience win.
-    // refs: SRC-D-RNK-2
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:reservoir_error_reserve
     const auto reserve{std::min(config_.reservoir_error_reserve, config_.reservoir_size)};
     if (reserve > 0)
     {

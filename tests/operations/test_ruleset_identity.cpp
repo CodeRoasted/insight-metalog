@@ -116,7 +116,7 @@ TEST(RulesetIdentity, ComposeMismatchedSemanticIdentityThrows)
     const auto lhs{build_doc_with_ruleset(kRulesetA)};
     const auto rhs{build_doc_with_ruleset(kRulesetB)};
     EXPECT_THROW(meta::compose(lhs, rhs), std::invalid_argument)
-        << "SRC-II-7: composing across mismatched composed-ruleset identities MUST fail, never "
+        << "ADR-17.D3: composing across mismatched composed-ruleset identities MUST fail, never "
            "silently merge";
 }
 
@@ -125,7 +125,7 @@ TEST(RulesetIdentity, DiffMismatchedSemanticIdentityThrows)
     const auto previous{build_doc_with_ruleset(kRulesetA)};
     const auto current{build_doc_with_ruleset(kRulesetB)};
     EXPECT_THROW(meta::diff(previous, current), std::invalid_argument)
-        << "SRC-II-7: diffing across mismatched composed-ruleset identities MUST fail (re-segment "
+        << "ADR-17.D3: diffing across mismatched composed-ruleset identities MUST fail (re-segment "
            "or "
            "refuse upstream)";
 }

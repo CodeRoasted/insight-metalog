@@ -38,7 +38,7 @@ TEST_F(StatsBlockTest, EntropyBitsOneForUniformBinary)
     EXPECT_NEAR(*doc.stats.entropy_bits, 1.0, 1e-9);
 }
 
-// refs: SRC-D-TID-3
+// refs: F-SRC-insight-canon:canon.detail.mask.cppm:StatelessTemplate
 TEST(MetaLogEngineStats, UniqueTemplateCount)
 {
     meta::MetaLogEngine engine;

@@ -9,7 +9,7 @@ namespace meta = insight::metalog;
 using insight::LogLevel;
 using insight::StructuralRole;
 
-// refs: SRC-D-TIR-2
+// refs: F-SRC-insight-canon:canon.api.cppm:template_id_of
 // invariant: label -> template_id_of(label) is injective over these fixtures, so keying by
 // TemplateId preserves every asserted value: distinct labels give distinct ids.
 [[nodiscard]] std::unordered_map<insight::TemplateId, std::uint64_t>
@@ -361,7 +361,7 @@ TEST(SalienceScore, NoveltyAloneCanMakeNonZero)
 
 TEST(SalienceScore, EchoedSourceSkipsFailureCueTier)
 {
-    // refs: SRC-D-PROV-1, DN-64.D3
+    // refs: ADR-20.D5, DN-64.D3
     // invariant: the failure-cue tier is LEVEL-BLIND, so an echoed-source line already demoted to
     // Unknown must not be re-promoted by it; its runtime peer keeps the cue band.
     // note: the runtime peer's only severity is the token lexicon, so its axis is FailureCue.
