@@ -1462,6 +1462,7 @@ deliberately not done here"*. `TransparentCubeKeyLess` is live on `cube_base_`
 cold reader read the measured before/after out of `DONE.md` — the ordinal key going 1 -> 0
 allocations per event on the ship leg. The slot's own trap paragraph about SSO is still exactly
 right and worth keeping; the *"deliberately not done here"* clause is what has been overtaken.
+DISCHARGED 2026-09-09 `coderoast ca75d4ac` — `ADR-9.D2` now records the shipped repair (`TransparentCubeKeyLess` on `cube_base_`, the transparent ordinal-key map) with `bench_ordinal_key_alloc`'s measurement, 1 → 0 allocations per event on the ship leg; the SSO trap paragraph and the rule (a non-allocating claim is measured per leg or not made) survive.
 
 **D. Nine `insight-eidos` sites cite this file by BASENAME rather than by address — for the
 `insight-eidos` lane.** *"see metalog.api.cppm (TemplateRegistry) for the contract"* appears in
@@ -1879,6 +1880,7 @@ found the slot unaided. What remains is a real question the conversion may not s
 `ADR-17.D2`'s refusal reach a TEST binary?** This one declares `insight::semantic::github` alone
 while production composes four packages, and `insight-metalog/CMakeLists.txt` marks the dependency
 *test-only*. Either the slot admits a test-binary carve-out or this test is the drift it names.
+DISCHARGED 2026-09-09 `coderoast ca75d4ac` + `insight-metalog 3f31b5c` — `ADR-17.D2` admits a TEST's set as a FIXTURE on two structural conditions (the package sits below the composition owner; the arms assert the mechanism, never the product's vocabulary), the test declares it at the site, and the product line's own border assertion against the shipped composition is Kleio's row in the plan tier.
 
 **F. Two dangling pointers in `insight-eidos`'s e2e coverage surface — for the pilot, addressed to
 the eidos lane.** Reaching for Q23, the reader found that
@@ -3289,6 +3291,7 @@ asserts a `top_k` entry's COUNT diverging between bracketings. That is the sharp
 claim: a diverging count on a RETAINED template is stronger than a diverging cardinality, and it is
 the half that carries `tail_count`, which example 1 shows AGREEING. The RFC's summary sentence is
 true across the pair and unfalsified on one side of it.
+RULED 2026-09-09 `coderoast ca75d4ac` — the arithmetic re-derived by hand at `top_k = 2` and it HOLDS (`(A∘B)∘C`: `y` 10, `tail_count` 9; `A∘(B∘C)`: `y` 14, `tail_count` 5), so the RFC body needs no edit; NOT discharged — the falsifier test is Kleio's and stays open here.
 
 ## Unit 22 — the presence-churn trio in `tests/operations/`
 
