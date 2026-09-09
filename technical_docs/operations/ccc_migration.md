@@ -3508,7 +3508,9 @@ readers scored 38/38, 40/40, 35/35, 36/36, 37/37 and 36/36 across units 20-25.
 ## The resume point — NONE. THIS REPO IS DONE.
 
 Every file is converted and the repo is armed. There is no next unit here. **The programme's next
-repo is `coderoast-server`**, whose own ledger carries its resume marker: the source tier is flat,
+repo was `coderoast-server`** (it armed the same day, 2026-09-06; the programme closed on 2026-09-09
+with all eight repos armed — `STU-18` — and since that day the gate needs no declaration,
+`OPS-8.S13`), whose own ledger carried its resume marker: the source tier is flat,
 54 test-tier files remain at 3 076 would-be violations, and its marker says to take
 `server/tests/{system,llm,util}` first because unit 15 had to declare an answer key it could not
 remove.
