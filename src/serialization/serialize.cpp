@@ -116,7 +116,7 @@ namespace dto
         };
     };
 
-    // refs: SRC-D-WHERE-2
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:dominant_component
     struct TopKEntry
     {
         std::string template_id;
@@ -180,7 +180,7 @@ namespace dto
 
     // invariant: a reservoir row is self-describing -- it carries WHY it was kept, so a consumer
     // can attribute it without the producer.
-    // refs: SRC-D-WHERE-2
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:dominant_component
     struct ReservoirEntry
     {
         std::string template_id;
@@ -210,7 +210,9 @@ namespace dto
 
     // post: all-integer, so the block is genuinely cross-machine bit-identical.
     // note: the window's raw structural facts; a consumer applies its own predicate.
-    // refs: SRC-D-WHERE-4, SRC-D-WHERE-5, SRC-D-OTEL-13, SRC-D-OTEL-11, SRC-D-OTEL-9
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:AcquisitionBlock
+    // refs: F-SRC-insight-metalog:metalog.cppm:build_acquisition, SRC-D-OTEL-13
+    // refs: SRC-D-OTEL-11, SRC-D-OTEL-9
     struct Acquisition
     {
         std::uint64_t records_with_component{0};

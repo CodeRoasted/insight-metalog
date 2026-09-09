@@ -332,7 +332,7 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
                                      event.structural_role)];
 
     // note: an empty component is not counted, so records_with_component counts located rows.
-    // refs: SRC-D-WHERE-2
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:dominant_component
     if (!event.component.empty())
     {
         // refs: ADR-9.D2
@@ -438,7 +438,8 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end,
     build_behavior(doc, analysis);
     build_stability(doc, analysis);
     build_cube(doc);
-    // refs: SRC-D-WHERE-4, SRC-D-WHERE-5
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:AcquisitionBlock
+    // refs: F-SRC-insight-metalog:metalog.cppm:build_acquisition
     build_acquisition(doc);
     // refs: SRC-D-OTEL-21
     build_service_edges(doc);
@@ -614,7 +615,7 @@ void MetaLogEngine::build_top_k(MetaLogDocument& doc, const WindowAnalysis& anal
                                                        ordered[i].second->declared_level_counts);
         // invariant: the WHERE label is computed unconditionally -- it is a property of the bucket,
         // so a conditional would make content depend on a consumer's interest.
-        // refs: SRC-D-WHERE-2
+        // refs: F-SRC-insight-metalog:metalog.api.cppm:dominant_component
         if (auto component{dominant_component_of(ordered[i].second->component_counts)};
             !component.empty())
             entry.dominant_component = std::move(component);
@@ -761,7 +762,7 @@ void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& ana
             if (config_.source_ref)
                 entry.within_window_ordinal = bucket.first_seen_index;
             // note: an empty component gives a disengaged label and the aggregated-WHERE star.
-            // refs: SRC-D-WHERE-2
+            // refs: F-SRC-insight-metalog:metalog.api.cppm:dominant_component
             {
                 auto component{dominant_component_of(bucket.component_counts)};
                 entry.cube_coord = cube::cube_location(
@@ -1137,7 +1138,8 @@ void MetaLogEngine::build_cube(MetaLogDocument& doc) const
 // post: records_with_component is the total located events and distinct_components the size of the
 // union of component values; both are order-independent.
 // note: the producer states the facts; the consumer applies the coverage predicate.
-// refs: SRC-D-WHERE-4, SRC-D-WHERE-5
+// refs: F-SRC-insight-metalog:metalog.api.cppm:AcquisitionBlock
+// refs: F-SRC-insight-metalog:metalog.cppm:build_acquisition
 void MetaLogEngine::build_acquisition(MetaLogDocument& doc) const
 {
     AcquisitionBlock acquisition;

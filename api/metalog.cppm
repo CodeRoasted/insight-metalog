@@ -77,7 +77,7 @@ class MetaLogEngine
         std::unordered_map<StructuralRole, std::uint64_t> role_counts;
         // invariant: always populated; the dominant component is the template's WHERE label.
         // note: not the cube, which is the per-EVENT joint accumulated in cube_base_.
-        // refs: SRC-D-WHERE-2, ADR-9.D2
+        // refs: F-SRC-insight-metalog:metalog.api.cppm:dominant_component, ADR-9.D2
         std::unordered_map<std::string, std::uint64_t, TransparentStringHash, std::equal_to<>>
             component_counts;
         // invariant: index i is CanonicalEvent::params[i]; populated only when
@@ -221,7 +221,7 @@ class MetaLogEngine
     // post: always built, collapse-bounded, from the per-event joint in cube_base_.
     void build_cube(MetaLogDocument& doc) const;
     // post: always built, from the buckets' component marginals.
-    // refs: SRC-D-WHERE-4, SRC-D-WHERE-5
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:AcquisitionBlock
     void build_acquisition(MetaLogDocument& doc) const;
     // post: emitted iff the window had trace substrate, sorted canonical order, top
     // max_service_edges by weight with a canonical-key tie-break, plus dropped_edges.

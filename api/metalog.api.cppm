@@ -352,7 +352,7 @@ struct TopKEntry
     // invariant: the template's dominant canon component -- the per-template WHERE label, populated
     // independently of the cube.
     // invariant: disengaged when the format carried no component, never an empty string.
-    // refs: SRC-D-WHERE-2, SRC-D-WHERE-6
+    // refs: F-SRC-insight-eidos:sift.api-change.cppm:Where
     std::optional<std::string> dominant_component;
     // invariant: empty unless MetaLogConfig::max_param_histograms > 0.
     std::vector<FieldHistogram> field_histograms;
@@ -371,7 +371,7 @@ struct TopKEntry
 // invariant: a pure function of the frozen ordered window, so the counts are order-independent and
 // bit-identical across standard libraries.
 // invariant: present on every document close_window() produces; compose() sets none.
-// refs: SRC-D-WHERE-4, SRC-D-WHERE-5
+// refs: F-SRC-insight-metalog:metalog.cppm:build_acquisition
 struct AcquisitionBlock
 {
     // invariant: events that carried a non-empty canon component, and the distinct values seen.
@@ -689,7 +689,6 @@ struct ReservoirEntry
     // invariant: the template's dominant canon component -- the WHERE label, populated
     // independently of the cube and disengaged when the format carried no component.
     // invariant: distinct from cube_coord, which is the cube's LOCATION cross.
-    // refs: SRC-D-WHERE-2
     std::optional<std::string> dominant_component;
     StructuralRole structural_role{StructuralRole::None};
     // invariant: a 0..100 band derived from the lowest-probability incoming transition in the
@@ -991,7 +990,7 @@ struct MetaLogDocument
     // invariant: set by close_window() on every raw window; compose() sets none.
     // invariant: stamped once at close and only read, so std::optional is sound despite the owned
     // per-depth vector.
-    // refs: SRC-D-WHERE-4
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:AcquisitionBlock
     std::optional<AcquisitionBlock> acquisition;
     // invariant: present iff the window had trace substrate; absent for a non-span window, and that
     // absence reads unknown.
@@ -1024,7 +1023,7 @@ struct MetaLogDocument
 
 // invariant: the cube, the per-template dominant_component WHERE leaf and the per-window
 // acquisition block are ALWAYS emitted -- there is no opt-in gate for any of them.
-// refs: SRC-D-WHERE-2
+// refs: F-SRC-insight-metalog:metalog.api.cppm:dominant_component
 struct MetaLogConfig
 {
     static constexpr std::size_t kDefaultTopKSize = 64;
