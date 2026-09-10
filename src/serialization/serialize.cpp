@@ -755,7 +755,7 @@ namespace
             row.tmpl = std::move(str);
         // invariant: the wire carries the level alone -- the provenance half is domain-only, and an
         // absence is omitted rather than rendered.
-        // refs: DN-32.D3, DN-43.D10
+        // refs: ADR-20.D19, DN-43.D10
         row.level = spec_level_of(entry.dominant_level);
         if (entry.dominant_component)
             row.component = *entry.dominant_component;
@@ -812,7 +812,7 @@ namespace
         row.frequency = entry.frequency;
         if (std::string str{resolve_template_str(registry, entry.template_id)}; !str.empty())
             row.tmpl = std::move(str);
-        // refs: DN-32.D3, DN-43.D10
+        // refs: ADR-20.D19, DN-43.D10
         row.level = spec_level_of(entry.dominant_level);
         if (entry.dominant_component)
             row.component = *entry.dominant_component;
@@ -1006,7 +1006,7 @@ namespace
     {
         dto::ReservoirDeltaEntry row;
         row.template_id = insight::render(entry.template_id);
-        // refs: DN-32.D3, DN-43.D10
+        // refs: ADR-20.D19, DN-43.D10
         row.level = spec_level_of(entry.dominant_level);
         if (entry.structural_role != StructuralRole::None)
             row.structural_role = std::string{to_string(entry.structural_role)};
@@ -1043,7 +1043,7 @@ namespace
                 dto::FrontierCrossing row;
                 row.template_id = insight::render(crossing.template_id);
                 row.direction = crossing.direction == FrontierDirection::Up ? "up" : "down";
-                // refs: DN-32.D3, DN-43.D10
+                // refs: ADR-20.D19, DN-43.D10
                 row.previous_level = spec_level_of(crossing.previous_level);
                 row.current_level = spec_level_of(crossing.current_level);
                 rows.push_back(std::move(row));

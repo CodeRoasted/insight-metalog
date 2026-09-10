@@ -170,7 +170,7 @@ SalienceVerdict salience_score(std::optional<LogLevel> level, StructuralRole rol
                                 verdict.axis = axis;
                             }
                         }};
-    // refs: DN-32.D3, ADR-20.D5
+    // refs: ADR-20.D19, ADR-20.D5
     if (role == StructuralRole::Terminator)
         consider(kBandTerminator, RetentionAxis::Terminator);
     if (level)

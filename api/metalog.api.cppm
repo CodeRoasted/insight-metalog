@@ -347,7 +347,7 @@ struct TopKEntry
     // invariant: the level AND its provenance; DECLARED means at least one observation carried the
     // level in a position whose meaning is the level.
     // invariant: the provenance half is domain-only and never serialised.
-    // refs: DN-32.D3
+    // refs: ADR-20.D19
     std::optional<EventLevel> dominant_level;
     // invariant: the template's dominant canon component -- the per-template WHERE label, populated
     // independently of the cube.
@@ -685,7 +685,7 @@ struct ReservoirEntry
     // invariant: the level AND its provenance; DECLARED means at least one observation carried the
     // level in a position whose meaning is the level.
     // invariant: the provenance half is domain-only and never serialised.
-    // refs: DN-32.D3
+    // refs: ADR-20.D19
     std::optional<EventLevel> dominant_level;
     // invariant: the template's dominant canon component -- the WHERE label, populated
     // independently of the cube and disengaged when the format carried no component.
@@ -1388,7 +1388,7 @@ struct ReservoirDeltaEntry
     TemplateId template_id;
     // invariant: the level AND its provenance, because this member is a streaming decision signal
     // and a snapshot that dropped the marker would rebuild a claim from an invisible guess.
-    // refs: DN-32.D3
+    // refs: ADR-20.D19
     std::optional<EventLevel> dominant_level;
     StructuralRole structural_role{StructuralRole::None};
     std::uint32_t salience{0};
@@ -1413,7 +1413,7 @@ struct FrontierCrossing
     FrontierDirection direction;
     // invariant: both sides carry their provenance, so a consumer can see whether the levels that
     // define the crossing were declared or inferred.
-    // refs: DN-32.D3
+    // refs: ADR-20.D19
     std::optional<EventLevel> previous_level;
     std::optional<EventLevel> current_level;
     // invariant: the two sides' occurrence counts and shares, from the salience-memory entry each

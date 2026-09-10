@@ -68,7 +68,7 @@ class MetaLogEngine
         // invariant: the same keys as level_counts, counting only events whose level came from a
         // position whose MEANING is the level rather than from content inference.
         // invariant: read by one keyed lookup, never iterated, so the map order reaches no output.
-        // refs: DN-32.D3
+        // refs: ADR-20.D19
         std::unordered_map<LogLevel, std::uint64_t> declared_level_counts;
         // invariant: AND-reduced over the window's events, so true iff every event that formed this
         // template was echoed script source and none was a real runtime occurrence.

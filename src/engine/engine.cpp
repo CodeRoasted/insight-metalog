@@ -291,7 +291,7 @@ void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
     ++bucket.level_counts[event.level];
     // invariant: the level and its declared-provenance counter are written off one event, so a
     // level can never be accumulated without its provenance.
-    // refs: DN-32.D3
+    // refs: ADR-20.D19
     if (event.declared_level)
         ++bucket.declared_level_counts[event.level];
     // invariant: all_echoed_source is an AND-reduction -- one runtime occurrence ends it.

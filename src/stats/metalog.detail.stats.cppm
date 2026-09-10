@@ -146,7 +146,7 @@ new_and_vanished(const std::unordered_map<TemplateId, std::uint64_t>& cur,
 dominant_level_of(const std::unordered_map<LogLevel, std::uint64_t>& levels);
 // post: the same argmax as dominant_level_of, marked declared iff at least one observation at the
 // winning level came from canon's declared layer.
-// refs: DN-32.D3
+// refs: ADR-20.D19
 [[nodiscard]] std::optional<EventLevel>
 dominant_event_level_of(const std::unordered_map<LogLevel, std::uint64_t>& levels,
                         const std::unordered_map<LogLevel, std::uint64_t>& declared_levels);
