@@ -71,9 +71,8 @@ constexpr std::uint64_t kBetaPerShard{3};
 
 [[nodiscard]] std::string render_top_k(const MetaLogDocument& doc)
 {
-    std::string out{"top_k[" + std::to_string(doc.stats.top_k.size()) +
-                    "] tail_count=" + std::to_string(doc.stats.tail_count) + " " +
-                    render_envelope(doc) + ":"};
+    std::string out{"top_k[" + std::to_string(doc.stats.top_k.size()) + "] tail_count=" +
+                    std::to_string(doc.stats.tail_count) + " " + render_envelope(doc) + ":"};
     for (const auto& entry : doc.stats.top_k)
         out += "\n      " + insight::render(entry.template_id) +
                " count=" + std::to_string(entry.count) + " churn=" + render(entry.presence_churn);
@@ -259,8 +258,7 @@ TEST(ComposeShardFold, ADisjointAdjacentPairStillTakesTheTemporalProduct)
         << "the control's envelopes must be DISJOINT, or it controls nothing. first="
         << render_envelope(first) << " second=" << render_envelope(second);
     ASSERT_LT(first.window.start_iso, second.window.start_iso)
-        << "and ordered. first=" << render_envelope(first)
-        << " second=" << render_envelope(second);
+        << "and ordered. first=" << render_envelope(first) << " second=" << render_envelope(second);
     ASSERT_TRUE(meta::retention_is_exhaustive(second.stats)) << render_top_k(second);
 
     const TemplatePair ids{templates_of(first)};
@@ -287,10 +285,10 @@ TEST(ComposeShardFold, ADisjointAdjacentPairStillTakesTheTemporalProduct)
 // applies the temporal product over them -- one boundary, two base windows, whatever N was.
 TEST(ComposeShardFold, TwoJoinedFleetWindowsComposeAsTwoBaseWindowsNotFour)
 {
-    const MetaLogDocument fleet_one{meta::compose(shard_document(kT0, kT60, true),
-                                                 shard_document(kT30, kT60, false))};
-    const MetaLogDocument fleet_two{meta::compose(shard_document(kT60, kT120, false),
-                                                 shard_document(kT90, kT120, false))};
+    const MetaLogDocument fleet_one{
+        meta::compose(shard_document(kT0, kT60, true), shard_document(kT30, kT60, false))};
+    const MetaLogDocument fleet_two{
+        meta::compose(shard_document(kT60, kT120, false), shard_document(kT90, kT120, false))};
 
     ASSERT_LE(fleet_one.window.end_iso, fleet_two.window.start_iso)
         << "the two fleet windows must be disjoint. one=" << render_envelope(fleet_one)

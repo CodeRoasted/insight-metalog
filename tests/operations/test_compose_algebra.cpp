@@ -901,8 +901,7 @@ TEST(ComposeAlgebraTest, TheSameDocumentsStayAssociativeWhenTheTopKCutDoesNotBit
 // divergence lands on a retained top_k entry's own count and on tail_count -- both REQUIRED.
 // invariant: the sharper claim is attribution, not conservation: total mass is 25 on both
 // bracketings and every line is accounted for, yet the same template reports 10 or 14.
-// note: counts 5/4/6/10 are pairwise distinct at every rung, so no template_id tie-break decides a
-// rank here and the arm is about truncation alone.
+// note: counts 5/4/6/10 are pairwise distinct at every rung, so no template_id tie-break runs.
 TEST(ComposeAlgebraTest, TopKTruncationBreaksAssociativityOfARetainedEntrysOwnCount)
 {
     constexpr std::size_t kCut{2};
@@ -917,8 +916,8 @@ TEST(ComposeAlgebraTest, TopKTruncationBreaksAssociativityOfARetainedEntrysOwnCo
     const insight::TemplateId y{insight::template_id_of("assoc ex2 y")};
 
     // post: the count a bracketing publishes for a template, or absent when it was cut away.
-    const auto count_of{[](const meta::MetaLogDocument& doc, const insight::TemplateId& tid)
-                        -> std::optional<std::uint64_t>
+    const auto count_of{[](const meta::MetaLogDocument& doc,
+                           const insight::TemplateId& tid) -> std::optional<std::uint64_t>
                         {
                             for (const auto& entry : doc.stats.top_k)
                                 if (entry.template_id == tid)
@@ -938,14 +937,13 @@ TEST(ComposeAlgebraTest, TopKTruncationBreaksAssociativityOfARetainedEntrysOwnCo
 
     const auto ab{meta::compose(a, b)};
     ASSERT_EQ(ab.stats.top_k.size(), 2U)
-        << "the cut must BITE at this rung, or the whole arm is vacuous:\n    "
-        << render_top_k(ab);
+        << "the cut must BITE at this rung, or the whole arm is vacuous:\n    " << render_top_k(ab);
     ASSERT_FALSE(count_of(ab, y).has_value())
         << "y (count 4) is the entry the cut removes at this rung -- if it survived, the "
            "irreversible step never happened:\n    "
         << render_top_k(ab);
-    ASSERT_EQ(ab.stats.tail_count, 4U) << "and y's whole mass becomes lumped tail:\n    "
-                                       << render_top_k(ab);
+    ASSERT_EQ(ab.stats.tail_count, 4U)
+        << "and y's whole mass becomes lumped tail:\n    " << render_top_k(ab);
 
     const auto bc{meta::compose(b, c)};
     ASSERT_EQ(bc.stats.tail_count, 0U)
@@ -955,8 +953,7 @@ TEST(ComposeAlgebraTest, TopKTruncationBreaksAssociativityOfARetainedEntrysOwnCo
     const auto ab_c{meta::compose(ab, c)};
     const auto a_bc{meta::compose(a, bc)};
 
-    // note: every conserved quantity agrees, which is what makes the divergence below a loss of
-    // ATTRIBUTION rather than a counting bug.
+    // note: every conserved quantity agrees, so the divergence below is lost ATTRIBUTION.
     EXPECT_EQ(ab_c.window.lines_observed, 25U) << "9 + 6 + 10";
     EXPECT_EQ(a_bc.window.lines_observed, 25U) << "9 + 6 + 10 either way";
     EXPECT_EQ(ab_c.stats.unique_templates, a_bc.stats.unique_templates)
@@ -972,8 +969,8 @@ TEST(ComposeAlgebraTest, TopKTruncationBreaksAssociativityOfARetainedEntrysOwnCo
     const auto right{count_of(a_bc, y)};
     ASSERT_TRUE(left.has_value()) << "y is retained on the left bracketing:\n    "
                                   << render_top_k(ab_c);
-    ASSERT_TRUE(right.has_value()) << "y is retained on the right bracketing:\n    "
-                                   << render_top_k(a_bc);
+    ASSERT_TRUE(right.has_value())
+        << "y is retained on the right bracketing:\n    " << render_top_k(a_bc);
     EXPECT_EQ(*left, 10U)
         << "(A∘B)∘C: y's four lines from A were folded into A∘B's tail, so only C's ten survive as "
            "an identity. Got "

@@ -57,14 +57,16 @@ namespace
         return kStar;
     }
 
-    // invariant: NONE is kStar; an up band is its magnitude and a down band is magnitude plus
-    // kMagnitudeBands, so up and down are distinct value-ids.
+    // invariant: NONE is kStar in BOTH directions, so the encoding is injective over the three real
+    // bands; an up band is its magnitude and a down band is that magnitude plus kMagnitudeBands.
     // note: the border reads the slot as flat categorical and never uses its value order.
     inline constexpr std::uint32_t kMagnitudeBands{3};
 
     [[nodiscard]] std::uint32_t signed_shift_id(OrdinalShift shift,
                                                 OrdinalDriftDirection direction) noexcept
     {
+        if (shift == OrdinalShift::None)
+            return kStar;
         const std::uint32_t magnitude{static_cast<std::uint32_t>(shift)};
         return direction == OrdinalDriftDirection::Down ? magnitude + kMagnitudeBands : magnitude;
     }

@@ -80,31 +80,12 @@ void MetaLogEngine::set_source(SourceBlock source)
 
 // invariant: the cross-window state -- prev_freq_, prev_window_end_iso_, registry_ -- survives
 // this call and feeds the stability block and the display vocabulary.
-// note: the span-link and service-topology accumulators are cleared at close, not here.
+// invariant: ONE reset, so opening and closing cannot clear different halves of the window state;
+// the only difference between the two is which value `window_start_` takes.
 void MetaLogEngine::open_window(Timestamp start)
 {
+    reset_window_state();
     window_start_ = start;
-    lines_observed_ = 0;
-    buckets_.clear();
-    template_str_cache_.clear();
-    content_template_index_.clear();
-    content_templates_by_internal_id_.clear();
-    global_ring_ = {};
-    trace_rings_.clear();
-    trace_ring_fifo_.clear();
-    // refs: F-SRC-insight-metalog:metalog.cppm:record_span
-    span_templates_.clear();
-    span_fifo_.clear();
-    pending_span_edges_.clear();
-    span_records_ = 0;
-    orphan_parent_edges_ = 0;
-    ngram_counts_.clear();
-    ngram_total_ = 0;
-    // note: the drop counter is per-window, like the table whose bound it records.
-    // refs: ADR-9.D3
-    ngram_observations_dropped_ = 0;
-    cube_base_.clear();
-    (*hll_state_).reset();
 }
 
 MetaLogEngine::TemplateLookup
@@ -1251,8 +1232,11 @@ void MetaLogEngine::reset_window_state()
     service_edges_.clear();
     ngram_counts_.clear();
     ngram_total_ = 0;
+    // note: the drop counter is per-window, like the table whose bound it records.
+    // refs: ADR-9.D3
     ngram_observations_dropped_ = 0;
     cube_base_.clear();
+    (*hll_state_).reset();
 }
 
 } // namespace insight::metalog

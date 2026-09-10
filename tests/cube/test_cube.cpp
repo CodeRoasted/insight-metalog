@@ -111,8 +111,9 @@ find_border(const std::vector<meta::CubeBorderCell>& cells, std::optional<std::s
 {
     std::string out{"upper border [" + std::to_string(cells.size()) + "]:"};
     for (const auto& cell : cells)
-        out += "\n      " + render_coord(cell.coord) + " prev=" +
-               std::to_string(cell.previous_count) + " cur=" + std::to_string(cell.current_count);
+        out += "\n      " + render_coord(cell.coord) +
+               " prev=" + std::to_string(cell.previous_count) +
+               " cur=" + std::to_string(cell.current_count);
     return out;
 }
 
@@ -365,7 +366,10 @@ TEST(CubeBlock, ClosureCollapsesSingleComponent)
         engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1})};
     ASSERT_TRUE(doc.has_cube);
     EXPECT_LT(doc.cube.cell_count, doc.cube.raw_cell_count)
-        << "a single-component window must collapse (redundant where-pinned cells dropped)";
+        << "a single-component window must collapse: with one component the where-STARRED "
+           "generalization repeats its where-pinned cell exactly, so the starred cells are the "
+           "ones dropped; raw="
+        << doc.cube.raw_cell_count << " kept=" << doc.cube.cell_count;
     EXPECT_NE(find_cell(doc.cube, "INFO", "auth", "None"), nullptr);
 }
 

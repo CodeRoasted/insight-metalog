@@ -1,5 +1,3 @@
-// note: bare and file-wide; measured to cover 9 diagnostics here, one a WarningsAsErrors class.
-// NOLINTBEGIN
 #include <chrono>
 #include <fstream>
 #include <iostream>
@@ -8,7 +6,7 @@
 #include <string>
 #include <vector>
 
-#if defined(_WIN32)
+#ifdef _WIN32
 // invariant: Windows stdout is text mode by default, so every newline would become CRLF and diverge
 // from the LF-only golden -- a harness artifact, never an engine difference.
 #include <fcntl.h>
@@ -31,9 +29,11 @@ import insight.metalog;
 #include "reservoir_streaming_scenario.hpp"
 #include "service_edges_overcap_scenario.hpp"
 
+// note: an escaping exception terminating this fixture IS its intended failure mode.
+// NOLINTNEXTLINE(bugprone-exception-escape)
 int main(int argc, char** argv)
 {
-#if defined(_WIN32)
+#ifdef _WIN32
     _setmode(_fileno(stdout), _O_BINARY);
 #endif
 
@@ -141,15 +141,15 @@ int main(int argc, char** argv)
         ml::latency_shift::configure(cfg);
         ml::MetaLogEngine engine{cfg};
         using Clock = std::chrono::system_clock;
-        const Clock::time_point t0{std::chrono::seconds{1700000000}};
-        const Clock::time_point t1{std::chrono::seconds{1700000060}};
-        const Clock::time_point t2{std::chrono::seconds{1700000120}};
-        engine.open_window(t0);
+        const Clock::time_point window_start{std::chrono::seconds{1700000000}};
+        const Clock::time_point window_mid{std::chrono::seconds{1700000060}};
+        const Clock::time_point window_end{std::chrono::seconds{1700000120}};
+        engine.open_window(window_start);
         ml::latency_shift::emit_window(engine, ml::latency_shift::kPreviousLatencyMs);
-        const auto previous{engine.close_window(t1)};
-        engine.open_window(t1);
+        const auto previous{engine.close_window(window_mid)};
+        engine.open_window(window_mid);
         ml::latency_shift::emit_window(engine, ml::latency_shift::kCurrentLatencyMs);
-        const auto current{engine.close_window(t2)};
+        const auto current{engine.close_window(window_end)};
         // invariant: both inputs THEN the two derived artifacts, so a reader holding only the
         // digest can re-derive the last two records from the first two.
         // invariant: ORDER IS LOAD-BEARING -- the composed record is appended AFTER the diff and
@@ -173,15 +173,15 @@ int main(int argc, char** argv)
         ml::collapse_depths::configure(cfg);
         ml::MetaLogEngine engine{cfg};
         using Clock = std::chrono::system_clock;
-        const Clock::time_point t0{std::chrono::seconds{1700000000}};
-        const Clock::time_point t1{std::chrono::seconds{1700000060}};
-        const Clock::time_point t2{std::chrono::seconds{1700000120}};
-        engine.open_window(t0);
+        const Clock::time_point window_start{std::chrono::seconds{1700000000}};
+        const Clock::time_point window_mid{std::chrono::seconds{1700000060}};
+        const Clock::time_point window_end{std::chrono::seconds{1700000120}};
+        engine.open_window(window_start);
         ml::collapse_depths::emit_previous(engine);
-        const auto previous{engine.close_window(t1)};
-        engine.open_window(t1);
+        const auto previous{engine.close_window(window_mid)};
+        engine.open_window(window_mid);
         ml::collapse_depths::emit_current(engine);
-        const auto current{engine.close_window(t2)};
+        const auto current{engine.close_window(window_end)};
         // refs: DN-56.D2
         // invariant: composing two cubes at different collapse depths is the one compose clause no
         // corpus pair reaches, since a corpus pair bands both windows alike or neither.
@@ -217,5 +217,3 @@ int main(int argc, char** argv)
               << ml::to_json(ml::compose(doc1, doc2), engine.registry()) << "\n";
     return 0;
 }
-
-// NOLINTEND

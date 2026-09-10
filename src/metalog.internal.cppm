@@ -3,12 +3,3 @@
 // imports this module plain to reach std.
 export module insight.metalog.internal;
 export import std;
-export {
-    using std::int64_t;
-    using std::ptrdiff_t;
-    using std::size_t;
-    using std::uint16_t;
-    using std::uint32_t;
-    using std::uint64_t;
-    using std::uint8_t;
-}

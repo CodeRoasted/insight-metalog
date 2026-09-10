@@ -30,8 +30,10 @@ TEST(FieldHistogramTest, DisabledByDefault_ParamsDiscarded)
 
     ASSERT_FALSE(doc.stats.top_k.empty());
     EXPECT_TRUE(doc.stats.top_k[0].field_histograms.empty())
-        << "Default config must produce no field histograms (zero-overhead guarantee). "
-           "This is the documented limitation: Drain wildcarding removes the causal axis.";
+        << "field histograms are OFF by default (max_param_histograms defaults to 0), so the "
+           "default config must carry none; it carried "
+        << doc.stats.top_k[0].field_histograms.size() << " on the top template, whose count is "
+        << doc.stats.top_k[0].count;
 }
 
 TEST(FieldHistogramTest, Enabled_CollectsParamValueCounts)

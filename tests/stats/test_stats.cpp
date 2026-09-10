@@ -211,8 +211,7 @@ TEST(DominantRole, TieBreakByEnumValueIsStable)
 {
     // invariant: at equal counts the tie breaks on the higher StructuralRole enum value, never on
     // iteration order.
-    // note: None is also dominant_role_of's SEED, so excluding it would pass for any non-None
-    // return and would not separate "the tie broke upward" from "the loop ran at all".
+    // note: None is dominant_role_of's SEED, so EXPECT_NE(None) passes for any non-None return.
     std::unordered_map<StructuralRole, std::uint64_t> roles{{StructuralRole::None, 10},
                                                             {StructuralRole::GroupBegin, 10}};
     EXPECT_EQ(meta::dominant_role_of(roles), StructuralRole::GroupBegin)
