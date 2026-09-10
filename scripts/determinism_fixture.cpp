@@ -40,7 +40,7 @@ int main(int argc, char** argv)
     // invariant: NOTHING but the emitted documents may reach this stdout -- an interleaved log
     // record makes the artifact a function of the operator rather than of the corpus.
     // note: the level stays info -- the destination was the defect, not the diagnostics.
-    // refs: DN-53.D3
+    // refs: ADR-5.D1
     insight::logging::init_logging(spdlog::level::info);
 
     if (argc < 2)
@@ -165,7 +165,7 @@ int main(int argc, char** argv)
 
     // post: emits the compare-at-min pair, whose two cubes sit at different collapse depths so the
     // diff is read at the collapsed input's axes.
-    // refs: DN-42.D18
+    // refs: ADR-27.D7
     if (std::string{argv[1]} == "--collapse-depths")
     {
         namespace ml = insight::metalog;
@@ -182,7 +182,7 @@ int main(int argc, char** argv)
         engine.open_window(window_mid);
         ml::collapse_depths::emit_current(engine);
         const auto current{engine.close_window(window_end)};
-        // refs: DN-56.D2
+        // refs: ADR-25.D5
         // invariant: composing two cubes at different collapse depths is the one compose clause no
         // corpus pair reaches, since a corpus pair bands both windows alike or neither.
         std::cout << ml::to_json(previous, engine.registry()) << "\n"
