@@ -2583,6 +2583,7 @@ half-measure is available and was deliberately not taken**: narrowing the direct
 named checks fits no single line under the 100-byte column limit, and it would bless bypassing two
 classes that a two-character edit removes. This unit therefore left the bytes alone and states the
 scope in a `note:`.
+DISCHARGED 2026-09-10 `insight-metalog f7d8372` — executed as written. The three `t0`/`t1`/`t2` timestamps are renamed `window_start`/`window_mid`/`window_end` in both blocks and the two `#if defined(_WIN32)` become `#ifdef`, which removes the eight style diagnostics at root; the ninth survives as a TIGHT `NOLINTNEXTLINE(bugprone-exception-escape)` on `main` under a `note:` saying an escaping exception terminating a fixture IS its intended failure mode. **A correction to the finding's premise:** `scripts/` is WALKED by `malf lint --all-files` but the file is NOT CHECKED — the run reports `selected 26, checked 16` and names `scripts/determinism_fixture.cpp` in its own coverage-hole banner, because `scripts/det_harness` is a separate CMake project absent from the root compilation database. The nine diagnostics were real but were measured with a hand-built compile command, never through the gate; this repair is likewise NOT verified by `malf lint`.
 
 **2. A census of malformed suppressions that searches for a SPACE cannot see the whole class — for
 Argos.** The workspace's malformed-`NOLINT` population has so far been taken as the sites spelled
