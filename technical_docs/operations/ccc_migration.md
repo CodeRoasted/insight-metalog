@@ -161,9 +161,11 @@ block is a code change and is therefore a finding, not this lane's edit.**
    golden run with the special members moved back into the interface (zero `LNK2005`, two
    anti-vacuity checks), after which they were moved into the class body — and the paragraph
    forbidding exactly that shape was left standing. It is comment-only to repair.
+   REFUSED 2026-09-10 already clean at HEAD: the prose is gone repo-wide. `rg 'OUT OF LINE|Never fold' api/ src/` returns nothing; `class TemplateRegistry` (`api/metalog.api.cppm:207-229`) declares all six special members `= default` in-class and only the six named members are out-of-line in `src/metalog.api.impl.cpp:8-35`. Lines 250-285 now hold `PresenceSymbol`/`PresenceChurn`.
 2. **`src/metalog.internal.cppm`'s `export { using std::int64_t; … }` block has no consumer in this
    repo** (measured above). Ripping dormant plumbing is `CLAUDE.md`'s standing rule and a code
    change; it belongs to the lane that owns `insight-metalog` source, not to a comment-only commit.
+   DISCHARGED 2026-09-10 `insight-metalog f7d8372` — ripped. Re-measured before the act with a PCRE sweep for unqualified fixed-width spellings over `api src tests benchmarks scripts test_package`: zero hits, against a positive control that fires on a two-line probe. `insight.metalog.internal` is imported PLAIN (never `export import`) by both api units, so the declarations never reached a downstream repo either. `export import std;` — the module's stated job — stays.
 
 **Witnesses.** Comment-only: the code token stream of both files is byte-identical to `HEAD`'s
 (`code_only_diff.py`). Grammar: `malf format --check` over the two files — 4 comment lines, forms
@@ -291,6 +293,7 @@ defect costs the next reader more than the comment did.
    2026-09-02 the attic is disposable and a pointer into it is ungated best-effort provenance, so
    the conversion simply drops these pointers; recorded because the sentences that carry them are
    the ones a later unit must check are still complete without them.
+   REFUSED 2026-09-10 moot at HEAD: `technical_docs/history/` no longer exists in this repo (it holds only `README.md`, `operations/` and `phases/`), and no source file cites either document. The conversion dropped the pointers as planned and nothing depends on the attic.
 
 **Witnesses.** Comment-only: all three files, code token stream byte-identical to `HEAD`. Grammar:
 `malf format --check` over the unit — 80 comment lines, forms `pre=1 post=15 invariant=1 assert=10
@@ -437,6 +440,7 @@ rung 1 or 2 could carry it** — reserving 0 for NONE and shifting the bands by 
 encoding total, and an `assert()` or a `std::expected` at `signed_shift_id` would make a future
 caller that drops the guard fail loudly instead of silently emitting `up_High` for a downward
 no-drift. That is a code change and is not this comment-only lane's to make.
+DISCHARGED 2026-09-10 `insight-metalog f7d8372` — closed at rung 1, not with an assert: `signed_shift_id` now returns `kStar` for `OrdinalShift::None`, which is what the function's own `invariant:` twelve characters above it already CLAIMED and the code did not implement. The encoding is injective over the three real bands; `kStar` is what an unpinned LatencyShift slot already holds, so `pinned()` and `signed_shift_label`'s `pre:` stay true and no behaviour moves at the one call site (`cube.cpp:723` already guards `shift != None`).
 
 **Witnesses.** Comment-only: code token stream byte-identical to `HEAD`. Grammar: `malf format
 --check` over the file — 98 comment lines, forms `pre=3 post=27 invariant=7 assert=10 note=16 refs=5
@@ -609,6 +613,7 @@ seventeen members appear in both functions, so the omission reads as an oversigh
 decision — nothing in the tree states an intent for it. Repairing it is a code change. The reader
 also flagged a smaller sibling: `last_window_ngram_observations_dropped_` is documented as *"valid
 between `close_window()` and the next `open_window()`"* and is cleared by neither.
+DISCHARGED 2026-09-10 `insight-metalog f7d8372` — with a correction to the rider. `open_window` now DELEGATES to `reset_window_state`, so the two entry points cannot clear different halves; the only difference left is which value `window_start_` takes. Both were partial, in opposite directions — `reset_window_state` never reset the HLL either — and the shared body now does, safely, because `build_*` reads `hll_state_->estimate` before `close_window` calls it. The rider is REFUSED: `last_window_ngram_observations_dropped_`'s live invariant says only that it is snapshotted before the reset *"so a consumer can still read it after close_window returns"*; it is the LAST CLOSED window's value and is correctly cleared by neither.
 
 **Witnesses.** Comment-only: code token stream byte-identical to `HEAD`, re-taken after the hand
 edit. Grammar: `malf format --check` over the file — 181 comment lines, forms `pre=2 post=16
@@ -749,6 +754,7 @@ directive is left byte-identical** and re-homed under a `note:` that states the 
 narrowing it would change what the linter checks, which is not a comment-only act. Repairing it —
 and deciding whether the line has a second finding the over-broad directive was hiding — is a
 finding for the lane that owns this source.
+REFUSED 2026-09-10 already clean at HEAD: `src/operations/compose.cpp:401-402` now reads `// note: NOLINT: a defensive clamp over the tail, not a min/max of two operands.` followed by a TIGHT `// NOLINTNEXTLINE(readability-use-std-min-max)`. The spaced spelling is gone.
 
 **Finding 10 — the workspace's own comment gate admits the malformed suppression, for Argos.** The
 reader checked `malf/comment_contract_lint.py`'s `NOLINT` recogniser, `^NOLINT(NEXTLINE|BEGIN|END)?\b`,
@@ -975,6 +981,7 @@ an over-SSO component; `api/metalog.api.cppm` — not converted by this unit —
 maps take a key per event, and the `metalog.cppm` site spoke about `component_counts` alone. No
 number was carried into a tagged line, so this conversion asserts neither. The `api/metalog.api.cppm`
 unit should resolve which scope its "2" is stated at.
+REFUSED 2026-09-10 moot at HEAD: neither figure survives. No allocation count and no ns/event number remains in `api/metalog.cppm` or `api/metalog.api.cppm` — the conversion deleted both prose sites, so there are no longer two scopes to reconcile. The shipped measurement lives in `ADR-9.D2`.
 
 **Witnesses.** Comment-only: code token stream byte-identical to `HEAD`, re-taken after the `refs:`
 repair. Grammar: `malf format --check` over the unit — 154 comment lines, forms
@@ -1834,6 +1841,7 @@ nothing in the file checks it; minimality is enforced only inside `border_of`'s 
 which the loop does not re-derive. This is a code change, so it is a finding and not a repair: the
 arm needs an assertion that starring any pinned dimension leaves the emergent set, or a bound that
 can fail.
+REFUSED 2026-09-10 already clean at HEAD, closed by a sibling lane at `insight-metalog 3f3461c` and never dispositioned: `tests/cube/test_cube.cpp:440-472` now asserts `EXPECT_GE(pinned_dimensions(cell.coord), 1U)` plus an explicit antichain double loop `EXPECT_FALSE(generalizes(general.coord, specific.coord))` and two named minimal-generator checks. The three-bools-summed-against-3 bound is gone.
 
 **B. An inverted assertion message in `CubeBlock.ClosureCollapsesSingleComponent` — for Kleio.**
 Its message reads *"a single-component window must collapse (redundant where-pinned cells
@@ -1843,6 +1851,7 @@ which is that fully-pinned cell alone — the file's very next assertion proves 
 `find_cell(doc.cube, "INFO", "auth", "None")` to be non-null. What is dropped is the seven
 where-**starred** generalizations. An assertion message is code, so this is a finding; the deleted
 prose above the test carried the same inversion and was not carried forward.
+DISCHARGED 2026-09-10 `insight-metalog f7d8372` — the message now says what the closure does: with one component the where-STARRED generalization repeats its where-pinned cell exactly, so the starred cells are the ones dropped, and the raw and kept cell counts print on failure.
 
 **C. Two `invariant:` lines in the already-converted `api/` unit assert an axes-equality gate that
 does not exist — repaired by this lane in a separate commit, and recorded here because it is a
@@ -2062,6 +2071,7 @@ verified at the artifact (`api/metalog.api.cppm` declares `std::unordered_map<st
 std::uint64_t> value_counts`) and written here as a `note:` at
 `ValueCountsEmittedKeySorted`; the orphaned header is `tests/engine`'s to delete when that unit
 converts.
+REFUSED 2026-09-10 already clean at HEAD: `FieldHistogramSerializationTest` now appears only where its tests live (`tests/serialization/test_serialization.cpp:13,50,68`) and nothing in `tests/engine/` carries the header. Unit 19 deleted it and recorded it narratively at this ledger's lines 2180-2183, without a disposition line.
 
 ---
 
@@ -2197,6 +2207,7 @@ default config "must produce no field histograms (zero-overhead guarantee)" and 
 `status_code` distribution being invisible downstream. The reader had to reach `LEXICON.md`, the
 api's default and Sift's own opt-in constant to settle that the opt-in default is a kept guarantee
 rather than a tracked gap. An assertion message is code, so this is a finding.
+DISCHARGED 2026-09-10 `insight-metalog f7d8372` — the message now states what the arm pins (field histograms are OFF by default, `max_param_histograms` defaults to 0) and prints the actual histogram count and the top template's count on failure. The Drain sentence, retired as stale by unit 19's own reading, is gone.
 
 **C. Two threshold pairs in this unit are fixture arithmetic with headroom and nothing derives
 them — for Kleio, informational.** `EXPECT_GE(approximate_cardinality, 5u)` for a true cardinality
@@ -3209,12 +3220,14 @@ the record so a later reader of this entry can judge that for themselves.
   `GroupBegin`, and it does not distinguish "the tie broke upward" from "the loop ran at all".
   `EXPECT_EQ(..., StructuralRole::GroupBegin)` is the assertion the name claims. Found by the reader
   from the production source, not from the test.
+  REFUSED 2026-09-10 already clean at HEAD, closed by a sibling lane at `insight-metalog 6241d25` and never dispositioned: `tests/stats/test_stats.cpp:210-220` asserts `EXPECT_EQ(meta::dominant_role_of(roles), StructuralRole::GroupBegin)` on the {None:10, GroupBegin:10} fixture, with the seed hazard as a `note:`, and a new sibling arm `TieBreakRunsUpwardBetweenTwoNonSeedRoles` pins the direction without the seed at all.
 * **Every unit in the test tier — the file header `// Unit tests: allow short identifiers and
   test-specific patterns.` is FALSE, on 27 files across two repos.** It claims an allowance from a
   tool that never opens the file, because the test tier is outside the clang-tidy surface
   unconditionally and by law (`LSRC-1`, on the Founder's ruling of 2026-08-31). Population measured
   2026-09-06: **15 in `insight-metalog/tests/operations/` and 12 across `insight-canon/core/tests/`**.
   Unit 20 deleted its one. **Delete the rest; never re-home one as a residual `note:`.**
+  REFUSED 2026-09-10 already clean for THIS repo: a sweep over `insight-metalog` returns exactly one hit for the header string and it is this ledger's own prose at line 3212 — zero source files carry it, and the 15 named in `tests/operations/` are gone. The 12 in `insight-canon/core/tests/` are a sibling repo's and are NOT covered by this line.
 
 ### One trap this unit paid for, landed in `OPS-8.S6`
 
@@ -3292,6 +3305,7 @@ claim: a diverging count on a RETAINED template is stronger than a diverging car
 the half that carries `tail_count`, which example 1 shows AGREEING. The RFC's summary sentence is
 true across the pair and unfalsified on one side of it.
 RULED 2026-09-09 `coderoast ca75d4ac` — the arithmetic re-derived by hand at `top_k = 2` and it HOLDS (`(A∘B)∘C`: `y` 10, `tail_count` 9; `A∘(B∘C)`: `y` 14, `tail_count` 5), so the RFC body needs no edit; NOT discharged — the falsifier test is Kleio's and stays open here.
+DISCHARGED 2026-09-10 `insight-metalog 17a1448` — the owed falsifier exists: `tests/operations/test_compose_algebra.cpp:906` is `TopKTruncationBreaksAssociativityOfARetainedEntrysOwnCount`, carrying example 2's seeds and pinning the retained entry's own count diverging 10 versus 14 between bracketings. Landed by a sibling lane and never dispositioned here.
 
 ## Unit 22 — the presence-churn trio in `tests/operations/`
 
@@ -3479,6 +3493,7 @@ that matches both the name and the mathematics is `EXPECT_DOUBLE_EQ(fhd.js_diver
 would pass on a real divergence of 0.009 — which is the same false-witness class `SPEC` §13.2 names
 by value when it says a divergence serialised as `1e-17` between identical distributions is a
 witness and the defect is the producer's.
+REFUSED 2026-09-10 already clean at HEAD, closed by a sibling lane at `insight-metalog 6241d25` + `4323565` and never dispositioned: `tests/operations/test_diff_blocks.cpp:117` asserts `EXPECT_DOUBLE_EQ(fhd.js_divergence, 0.0)`, and line 112 adds `ASSERT_FALSE(d.field_histogram_deltas.empty())` so the loop cannot be vacuous.
 
 ## THE REPO IS ARMED — 2026-09-06
 
@@ -3549,3 +3564,77 @@ spawned it, so a checkpoint sweep of a lane's working tree can land a unit and s
 declare a witness missing that is minutes from arriving. The cheap check is the same one that
 catches the other direction — ask the lane before sweeping its tree, and if it cannot answer, say
 what is unknown rather than what is missing.
+
+---
+
+## The 2026-09-10 findings drain — the arithmetic, and what a sibling lane closed without saying so
+
+Worked by the five-repo Hephaïstos lane. Every finding this ledger raised against a source or
+design artifact was enumerated and re-derived at that artifact before any act.
+
+**Arithmetic. 45 findings raised against source/design artifacts. 2 dispositioned before this
+wave (the `ADR-9.D2` cube-key allocation, the `ADR-17.D2` composition rule) and 1 explicitly
+withdrawn by the lane that raised it (the HyperLogLog error figure). 16 dispositioned here.
+26 open after.** A further 22 items in this ledger's `OPS-8` verdict sections are findings against
+the RUNBOOK and its instruments, not against this repo; they are Argos's and the pilot's and are
+untouched here.
+
+**Eight of the sixteen closed on evidence, not on work.** They were already clean at HEAD and had
+never been dispositioned — six of them closed by a sibling test lane's commits of 2026-09-09
+(`6241d25`, `3f3461c`, `3e82a84`, `4323565`, `17a1448`), which landed the fix and left this
+ledger's finding standing. **A ledger that under-reports its own progress makes the next reader
+re-derive every closure**, and that is the cost this drain paid before it could act.
+
+**Open after this wave, grouped by what unblocks each.**
+
+* **Needs a measurement this lane could not afford.** `Cell::operator==` in
+  `src/cube/metalog.detail.cube.cppm:58` still carries `// note: not = default: a defaulted friend
+  operator== on an import-std type is a GNU defect.` with no bug id, no reproducer and no compile
+  test — an unsourced attribution on a live claim. The experiment that closes it is exact and
+  cheap for whoever holds a build slot: flip the operator to `= default`, build on gcc-16.2, and
+  either record the diagnostic in a `refs:` or delete the note. Until then the note stands
+  unpinned and a future simplification could break the ship leg. **Hephaïstos, with a slot.**
+* **Claim-boundary and design tier** — `MetaLogConfig::reservoir_error_reserve` ships a retention
+  policy whose justifying measurement lived only in the now-deleted attic; `RetentionAxisCensus`'s
+  mutation controls likewise; a composed document carries NO `acquisition` block although eidos
+  reads one for WHERE admissibility; the W1 octave thresholds are called pre-registered with no
+  record of the order; the `≤ 4 KB per million lines` headline is scoped to a stats-only document
+  the repo's benchmark does not build. **Eqya and Daidalos.**
+* **Test tier, all still holding** — `kPrecision` is bound to no error-rate arm;
+  `ReservoirTest.TerminatorRoleIsSalient` sets `Error` and `Terminator` together so the level band
+  alone carries it; `bench_ordinal_key_alloc`'s `allocs_per_event` is compared to no threshold
+  anywhere; `bench_metalog.cpp` draws from `std::*_distribution` at three sites and advances its
+  seed per iteration, so its published figures are not comparable across the two toolchains;
+  `kBytesPerValueEntryUpperBound{96}` has no provenance; the mid-string injection point rests on an
+  unrecorded claim about Glaze's codegen; the dropped-observation fixture cannot separate its two
+  quantities; two threshold pairs are fixture arithmetic with headroom. **Kleio.**
+* **Cross-repo, not this repo's to close** — nine `insight-eidos` sites cite this file by
+  BASENAME, two line-number citations into it are dead, an eidos measurement tool quotes deleted
+  prose verbatim, three design notes quote deleted trailing comments and `DN-63` attributes a
+  `ReservoirDelta` sentence to `TailDelta`, and 12 `insight-canon` test files still carry the false
+  short-identifier header. **The pilot dispatches these; they are named here so they are not lost.**
+* `scripts/corpus_windows_scenario.hpp`'s `configure()` never sets `cfg.ruleset`, so a document
+  composed against an empty semantic set is indistinguishable on the wire from a legacy producer's.
+  **The producer's owning lane.**
+
+**Two new findings, raised here.**
+
+1. **`malf format --check insight-metalog` was RED at HEAD** — four comment-grammar violations (a
+   `note:` carrying an illegal continuation, an `assert:` carrying two) in
+   `test_compose_algebra.cpp`, `test_diff_blocks.cpp` and `test_stats.cpp`, plus clang-format drift
+   in `test_compose_algebra.cpp` and `test_compose_shard_envelope_join.cpp`. All from the
+   2026-09-09 test-lane commits. This repo is ARMED, so those lines would have redded the tag.
+   Repaired in `insight-metalog f7d8372`.
+2. **`malf lint --all-files` reads 2 findings and 10 of 26 selected files are NOT CHECKED.**
+   `readability-avoid-nested-conditional-operator` at `src/operations/compose.cpp:509` and
+   `readability-convert-member-functions-to-static` on `build_presence_churn`
+   (`src/engine/engine.cpp:860`). Both verified pre-existing — `build_presence_churn`'s body is
+   byte-identical to `HEAD`'s and `compose.cpp` was not touched. The coverage hole matters more
+   than the two findings: everything under `scripts/` is selected and never checked, so no
+   suppression there has ever been judged by the gate. **Argos**, with the `malf lint` surface.
+
+**Behaviour at the close of this wave, verbatim.** `malf test insight-metalog` — **301 of 306**,
+and the five failures are exactly the intended gates-before-code arms of `ComposeShardFold`
+(ctest 113, 116, 117, 118, 119) for the sharded-compose defect, unchanged in number and in
+identity. `malf format --check insight-metalog` — 71 of 71 files clang-format clean, 2 953 comment
+lines, **0 would-be violations**.
