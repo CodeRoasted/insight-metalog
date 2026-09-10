@@ -1,6 +1,6 @@
 // invariant: every byte this writer emits into a declared encoding is legal there -- a MUST on the
 // emitting surface, over ALL string inputs, never a precondition on an upstream producer.
-// refs: DN-65.D1, DN-65.D5
+// refs: ADR-26.D12, ADR-24.D8
 // refs: F-SRC-insight-eidos:change_report_test.cpp:JsonStripsAnsiAndEscapesSurvivingControlBytes
 #include <gtest/gtest.h>
 

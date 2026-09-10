@@ -13,7 +13,7 @@ int main(int argc, char** argv)
     // invariant: logging is silenced for the whole binary -- an emitted record does not merely land
     // in the wrong place, it perturbs the number a benchmark reports.
     // note: safe under call_once because nothing else in a bench binary calls init_logging.
-    // refs: DN-53.D7
+    // refs: ADR-5.D1
     insight::logging::init_logging(spdlog::level::off);
 
     benchmark::Initialize(&argc, argv);

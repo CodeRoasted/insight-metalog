@@ -1,7 +1,7 @@
 module;
 #include <glaze/glaze.hpp>
 
-// refs: DN-65.D2
+// refs: ADR-26.D12
 #include "json_egress.hpp"
 
 module insight.metalog;
@@ -571,7 +571,7 @@ namespace
 {
 
     // note: presentational only -- the egress wrapper forces the escape member regardless.
-    // refs: DN-65.D2
+    // refs: ADR-26.D12
     constexpr glz::opts kWriteOpts{.skip_null_members = true};
 
     dto::Source make_source(const SourceBlock& src)
