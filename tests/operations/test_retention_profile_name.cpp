@@ -51,7 +51,7 @@ TEST(RetentionProfileName, TheSameTupleAlwaysDerivesTheSameName)
     EXPECT_EQ(meta::retention_profile_name(assembled), first);
 }
 
-// refs: DN-52
+// refs: ADR-20.D17
 // invariant: injectivity is what the comparability gate rests on: two different retention tuples
 // must never collide onto one name, or the gate certifies a comparability that does not hold.
 // note: each axis moves on its own, so a forgotten member is named by its own arm.
