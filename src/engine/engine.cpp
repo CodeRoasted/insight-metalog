@@ -708,7 +708,7 @@ void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& ana
 
     // note: the level half reuses the exported is_failure_level rather than a fourth copy.
     // refs: F-SRC-insight-metalog:metalog.api.cppm:reservoir_error_reserve
-    // refs: F-SRC-insight-canon:canon.api.cppm:is_verdict_anchored, DN-64.D3
+    // refs: F-SRC-insight-canon:canon.api.cppm:is_verdict_anchored, ADR-25.D8
     const auto error_class{
         [](StructuralRole role, const std::optional<EventLevel>& level) noexcept
         { return role == StructuralRole::Terminator || is_failure_level(level); }};

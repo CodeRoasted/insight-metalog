@@ -374,7 +374,7 @@ TEST(SalienceScore, NoveltyAloneCanMakeNonZero)
 
 TEST(SalienceScore, EchoedSourceSkipsFailureCueTier)
 {
-    // refs: ADR-20.D5, DN-64.D3
+    // refs: ADR-20.D5, ADR-25.D8
     // invariant: the failure-cue tier is LEVEL-BLIND, so an echoed-source line already demoted to
     // Unknown must not be re-promoted by it; its runtime peer keeps the cue band.
     // note: the runtime peer's only severity is the token lexicon, so its axis is FailureCue.

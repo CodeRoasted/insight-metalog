@@ -181,7 +181,7 @@ class MetaLogEngine
         std::uint32_t structural_surprise;
         std::uint32_t novelty;
         // invariant: the argmax salience_score's axis, stamped so a consumer never re-derives it.
-        // refs: DN-64.D3
+        // refs: ADR-25.D8
         std::optional<RetentionAxis> retention_axis;
     };
 
@@ -336,7 +336,7 @@ class MetaLogEngine
 // yields one byte sequence.
 // pre: `registry` contains every id the document references; engine.registry() does.
 // note: this seam emits the per-entry inline template mode; the others were never wired.
-// refs: ADR-9.D4, DN-65.D1, DN-65.D5, F-SRC-insight-metalog:metalog.api.cppm:TemplateRegistry
+// refs: ADR-9.D4, ADR-26.D12, ADR-24.D8, F-SRC-insight-metalog:metalog.api.cppm:TemplateRegistry
 [[nodiscard]] std::string to_json(const MetaLogDocument& doc, const TemplateRegistry& registry);
 
 // post: the same omit-empty discipline and the same RFC 8259 guarantee as the document overload,
@@ -349,7 +349,7 @@ class MetaLogEngine
 // none being skipped rather than read as zero.
 // invariant: stability is dropped and the result is id-only, so the display string resolves by id
 // from the engine registry.
-// refs: DN-56.D2, DN-56.D3, F-SRC-insight-metalog:metalog.api.cppm:TemplateRegistry
+// refs: ADR-25.D5, F-SRC-insight-metalog:metalog.api.cppm:TemplateRegistry
 [[nodiscard]] MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs);
 
 // post: delta is current minus previous, with `previous` the earlier document.

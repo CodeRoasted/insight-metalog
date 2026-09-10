@@ -4,7 +4,7 @@
 // compose's re-derivation -- and each admits only under a positive salience score.
 // invariant: the verdict stops being current the day an inbound path mints entries no salience
 // computation produced; the property then narrows to those two producers.
-// refs: DN-64.D6, DN-64.D3
+// refs: ADR-25.D8
 #include <gtest/gtest.h>
 
 import insight.metalog.test;
@@ -116,7 +116,7 @@ constexpr TemplateSet kSecondWindow{.steady_a = "delta request accepted",
 }
 } // namespace
 
-// refs: DN-64.D6
+// refs: ADR-25.D8
 TEST(RetentionAxisCensus, EveryEntryClosedByCloseWindowCarriesAnEngagedAxis)
 {
     const auto doc{close_window_with_three_causes(/*top_k=*/3, /*reservoir_size=*/8, kFirstWindow)};
@@ -149,7 +149,7 @@ TEST(RetentionAxisCensus, EveryEntryClosedByCloseWindowCarriesAnEngagedAxis)
 // admission gate rather than the first producer's output travelling through.
 // invariant: both inputs are real engine documents -- a hand-built pair is exactly the population
 // whose entries legitimately have no axis.
-// refs: DN-64.D6
+// refs: ADR-25.D8
 TEST(RetentionAxisCensus, EveryEntryRederivedByComposeCarriesAnEngagedAxis)
 {
     const auto lhs{close_window_with_three_causes(/*top_k=*/3, /*reservoir_size=*/8, kFirstWindow)};

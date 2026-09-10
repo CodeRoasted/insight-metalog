@@ -168,7 +168,7 @@ TEST(CubeCollapse, GuardrailBoundsAnExplodingWindowByLevelBanding)
     EXPECT_EQ(doc.cube, build().cube) << "the collapse policy must be deterministic (ADR-31.D8)";
 }
 
-// refs: DN-42.D17
+// refs: ADR-24.D7
 TEST(CubeCollapse, CompareAtMinDiffsAcrossDifferentCollapseDepths)
 {
     const auto t0{std::chrono::system_clock::time_point{}};

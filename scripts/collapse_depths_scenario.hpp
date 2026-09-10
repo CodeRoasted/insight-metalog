@@ -3,7 +3,7 @@
 // invariant: ingested identically by the in-suite guard and the cross-compiler fixture, so the two
 // oracles can never drift onto different windows.
 // note: previous reuses the cardinality-explosion scenario rather than re-authoring it.
-// refs: DN-42.D18
+// refs: ADR-27.D7
 #ifndef INSIGHT_METALOG_COLLAPSE_DEPTHS_SCENARIO_HPP
 #define INSIGHT_METALOG_COLLAPSE_DEPTHS_SCENARIO_HPP
 

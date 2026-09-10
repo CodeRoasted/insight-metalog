@@ -184,7 +184,7 @@ TEST_F(BehaviorBlockTest, BoundedNgramKeysCapDistinctEntries)
         << *clean_doc.behavior->dropped_ngram_observations;
 }
 
-// refs: F-SRC-metalog-spec:SPEC.md, DN-56.D6
+// refs: F-SRC-metalog-spec:SPEC.md, ADR-25.D5
 TEST_F(BehaviorBlockTest, ComposeSumsDroppedNgramObservationsAndOmitsAZeroSum)
 {
     constexpr std::size_t kTinyCap{4};

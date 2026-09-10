@@ -154,14 +154,14 @@ struct BaseRow
 // post: emits containment -- the reference axes at the pair's minimal common collapse plus the
 // latency_shift differential axis; this verb never refuses a pair.
 // note: unequal axes are the mandated case: the diff reads the pair's minimal common collapse.
-// refs: DN-42.D17
+// refs: ADR-24.D7
 [[nodiscard]] CubeDiffBlock
 cube_diff_of(const CubeBlock& previous, const CubeBlock& current,
              const std::unordered_map<std::string, OrdinalDrift>& current_shift_by_component = {});
 
 // post: counts merge distributively and the cube is re-closed from the recovered base; the pair is
 // rolled to its minimal common collapse rather than refused.
-// refs: DN-42.D17
+// refs: ADR-24.D7
 [[nodiscard]] CubeBlock compose_cubes(const CubeBlock& lhs, const CubeBlock& rhs);
 
 } // namespace insight::metalog::cube

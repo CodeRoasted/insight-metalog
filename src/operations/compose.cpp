@@ -34,7 +34,7 @@ namespace
     // post: the MINIMUM over the inputs' declared caps, because a merge is never finer than its
     // coarsest member; an input that declares nothing is SKIPPED, never folded in as a zero.
     // note: min is symmetric, which is what makes the commutativity MUST hold on the cap fields.
-    // refs: DN-56.D2, DN-56.D6
+    // refs: ADR-25.D5
     [[nodiscard]] std::optional<std::size_t> min_declared_cap(std::optional<std::size_t> lhs,
                                                               std::optional<std::size_t> rhs)
     {
@@ -327,7 +327,7 @@ namespace
     // post: the rare-salient templates ride through composition instead of dropping into the tail,
     // in salience order with a template_id tie-break, bounded by the cap C declares.
     // note: the composed reservoir is NON-ASSOCIATIVE by ruling: the key moves with scope.
-    // refs: DN-56.D2, DN-56.D3
+    // refs: ADR-25.D5
     void rederive_reservoir(MetaLogDocument& out, ComposeState& state, const MetaLogDocument& lhs,
                             const MetaLogDocument& rhs)
     {
@@ -429,7 +429,7 @@ namespace
     // to carry or average from the inputs.
     // assert: each input's own tail_count enters as ONE residual bucket, so the denominator stays
     // lines_observed and no mass is dropped or attributed to a template.
-    // refs: DN-56.D7
+    // refs: ADR-25.D5
     void recompute_composed_entropy(MetaLogDocument& out, const ComposeState& state,
                                     const MetaLogDocument& lhs, const MetaLogDocument& rhs)
     {
@@ -502,7 +502,7 @@ namespace
         BehaviorBlock behavior;
         behavior.ngram_size = lhs.behavior ? lhs.behavior->ngram_size : rhs.behavior->ngram_size;
         // note: the cap comes from the one side that has a behavior block when only one does.
-        // refs: DN-56.D2
+        // refs: ADR-25.D5
         behavior.top_ngrams_size =
             (lhs.behavior && rhs.behavior)
                 ? std::min(lhs.behavior->top_ngrams_size, rhs.behavior->top_ngrams_size)
@@ -690,7 +690,7 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
     ComposeState state;
     aggregate_and_order(state, lhs, rhs);
     // invariant: the top_k cap is declared here because both composed builders cut at it.
-    // refs: DN-56.D2
+    // refs: ADR-25.D5
     out.stats.top_k_size = std::min(lhs.stats.top_k_size, rhs.stats.top_k_size);
     out.stats.unique_templates = state.ordered.size();
 

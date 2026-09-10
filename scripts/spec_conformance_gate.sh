@@ -348,7 +348,7 @@ roster_over "$COMPOSED_PART" "composed document in the golden's section"
 echo "  roster: every committed corpus file's section carries a composed document as well as its diff"
 echo
 
-# ── THE POPULATION (DN-42.D18). A diff arm whose corpus happens to hold only 3-D borders would go
+# ── THE POPULATION (ADR-27.D7). A diff arm whose corpus happens to hold only 3-D borders would go
 # green and be blind on exactly the shape that failed — the same SUBJECT-INCOMPLETE one level down.
 # So three shapes are REQUIRED witnesses, and a missing one is exit 2 ("the corpus cannot answer"),
 # never a smaller green:
@@ -386,7 +386,7 @@ echo
 # MUST carry previous_count 0 and MUST sit under `emerging`. That is a producer defect (exit 1),
 # not an instrument failure, and it is NOT SPEC §8 — it is a house invariant, fenced and labelled
 # as one so no reader mistakes it for something the standard decided.
-echo "── population: the shapes DN-42.D18 requires, and the §13.6 falsifier ──"
+echo "── population: the shapes ADR-27.D7 requires, and the §13.6 falsifier ──"
 census_rc=0
 python3 - "$GOLDEN" <<'CENSUS' || census_rc=$?
 import json
@@ -565,7 +565,7 @@ if unpaired:
 empty = [shape for shape in witnesses if not witnesses[shape]]
 if empty:
     print(f"::error::the diff corpus carries NO witness for {sorted(empty)}. The gate refuses to "
-          f"pass: an arm that has never seen a shape is silent about it, and DN-42.D18 makes these "
+          f"pass: an arm that has never seen a shape is silent about it, and ADR-27.D7 makes these "
           f"three a precondition rather than a hope. Add the emitting scenario in "
           f"determinism_bitidentity.sh; do NOT drop the requirement.", file=sys.stderr)
     rc = 2
@@ -574,7 +574,7 @@ if empty_composed:
     print(f"::error::the COMPOSED corpus carries NO witness for {sorted(empty_composed)}. Every "
           f"composed document in this digest merges two cubes of identical shape, so §12's "
           f"re-closure at the coarser collapse depth is replayed by nothing and this gate is "
-          f"silent about it — the same blindness DN-42.D18 refuses one population over "
+          f"silent about it — the same blindness ADR-27.D7 refuses one population over "
           f"(DN-82.D4). The emitting section is a window PAIR whose two cubes sit at different "
           f"depths; restore it in determinism_fixture.cpp, do NOT drop the requirement.",
           file=sys.stderr)

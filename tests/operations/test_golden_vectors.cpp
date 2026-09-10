@@ -447,7 +447,7 @@ TEST_P(GoldenVector, ComposedRecordObeysSection12Arithmetic)
         << "[" << corpus.name
         << "] SPEC 12.1: a composed document MUST omit `stability`; one was emitted.";
 
-    // refs: DN-56.D2
+    // refs: ADR-25.D5
     // invariant: a composed document declares its caps as the MINIMUM over the caps the inputs
     // declared, and both inputs share one config, so an inequality is a defect.
     EXPECT_EQ(c.stats.top_k_size, std::min(a.stats.top_k_size, b.stats.top_k_size))

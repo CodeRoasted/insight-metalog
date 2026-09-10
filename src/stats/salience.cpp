@@ -160,7 +160,7 @@ SalienceVerdict salience_score(std::optional<LogLevel> level, StructuralRole rol
 {
     // assert: the call order is the tie-break -- strict > keeps the first axis to offer a band, and
     // kBandTerminator and kBandStrongOffPath both hold 90.
-    // refs: DN-64.D3
+    // refs: ADR-25.D8
     SalienceVerdict verdict;
     const auto consider{[&verdict](std::uint32_t band, RetentionAxis axis) noexcept
                         {

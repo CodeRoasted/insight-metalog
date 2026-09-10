@@ -234,7 +234,7 @@ TEST(ReservoirTest, EmptyReservoirOmittedFromJson)
     EXPECT_FALSE((*parsed)["stats"].contains("reservoir")) << json;
 }
 
-// refs: DN-56.D2
+// refs: ADR-25.D5
 TEST(ReservoirTest, SurvivesComposeWithStructuralSurprise)
 {
     const auto t0{std::chrono::system_clock::now()};

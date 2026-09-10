@@ -610,7 +610,7 @@ struct CubeCardinalityStat
 // and is NOT a failure, so this is a membership test and never a >= Error compare.
 // invariant: exported rather than TU-local, so the two halves of one report cannot decide failure
 // differently.
-// refs: DN-64.D3
+// refs: ADR-25.D8
 [[nodiscard]] constexpr bool is_failure_level(LogLevel level) noexcept
 {
     return level == LogLevel::Error || level == LogLevel::Fatal;
@@ -624,14 +624,14 @@ struct CubeCardinalityStat
 // consumer spells its own literal to divide by.
 // invariant: the product of the two ladders salience_score multiplies, static_asserted in
 // salience.cpp against those rungs.
-// refs: DN-64.D3
+// refs: ADR-25.D8
 inline constexpr std::uint32_t kSalienceFullScale{10000U};
 
 // invariant: WHICH axis retained a template -- the argmax of the soft max salience_score takes over
 // its five peer axes, stamped where the max is taken.
 // invariant: the two published ordinals are two of three severity inputs, so a consumer re-deriving
 // the argmax from them cannot name the level, terminator or failure-cue arms.
-// refs: DN-64.D3
+// refs: ADR-25.D8
 enum class RetentionAxis : std::uint8_t
 {
     // invariant: the dominant_level's severity band.
@@ -651,7 +651,7 @@ enum class RetentionAxis : std::uint8_t
 // absence reads as.
 // invariant: the tail names the not-an-axis state rather than guessing, and stays distinct from any
 // absence word.
-// refs: DN-64.D6
+// refs: ADR-25.D8
 [[nodiscard]] inline std::string_view to_string(RetentionAxis axis) noexcept
 {
     switch (axis)
@@ -708,7 +708,7 @@ struct ReservoirEntry
     // no argmax, and the honest reading is that this entry does not say.
     // invariant: every entry this package emits engages it, because both filling sites admit a
     // candidate only under a positive salience score, which is when the verdict is engaged.
-    // refs: DN-64.D3, DN-64.D6
+    // refs: ADR-25.D8
     std::optional<RetentionAxis> retention_axis;
     // invariant: the reconciled first-seen ordinal of this template within the window, bounded by
     // the reservoir size; populated only when a re-derivation coordinate is configured.
@@ -772,7 +772,7 @@ struct StatsBlock
     // invariant: a declaring producer owes the clause -- the array MUST be bounded by the value.
     // invariant: compose() sets it to the minimum over the caps its inputs actually declared, and
     // omits it only when both inputs declared none.
-    // refs: DN-56.D2
+    // refs: ADR-25.D5
     std::optional<std::size_t> reservoir_size;
 };
 
@@ -981,7 +981,7 @@ struct MetaLogDocument
     // EITHER input omitted a cube, which is the only way it is ever cleared.
     // invariant: the axis SET is frozen per canonicalization_version, but the per-window collapse
     // stamps are not, so compose and diff read the pair at its minimal common collapse.
-    // refs: DN-42.D17
+    // refs: ADR-24.D7
     // invariant: an explicit presence flag plus an inline value, NOT std::optional<CubeBlock>: MSVC
     // miscompiles the synthesized optional copy in consumer module translation units.
     bool has_cube{false};
@@ -1352,7 +1352,7 @@ struct CubeBorder
 // order-convex and bounded by a (lower, upper) border pair.
 // invariant: emitted whenever BOTH documents carried a cube; unequal collapse stamps are the
 // mandated case and the pair is read at its minimal common collapse.
-// refs: F-SRC-metalog-spec:SPEC.md, DN-42.D17
+// refs: F-SRC-metalog-spec:SPEC.md, ADR-24.D7
 struct CubeDiffBlock
 {
     std::vector<CubeAxis> axes;
@@ -1396,11 +1396,11 @@ struct ReservoirDeltaEntry
     // invariant: the template's SHARE of the window that owns this snapshot, so a consumer can rank
     // the row without re-reading the documents.
     // invariant: domain-only -- the wire row does not carry it.
-    // refs: DN-64.D4
+    // refs: ADR-25.D8
     double frequency{0.0};
     // invariant: the snapshot's retention argmax, carried from the owning side's entry.
     // invariant: domain-only -- the wire row does not carry it.
-    // refs: DN-64.D3
+    // refs: ADR-25.D8
     std::optional<RetentionAxis> retention_axis;
     [[nodiscard]] bool operator==(const ReservoirDeltaEntry&) const noexcept = default;
 };
@@ -1419,7 +1419,7 @@ struct FrontierCrossing
     // invariant: the two sides' occurrence counts and shares, from the salience-memory entry each
     // side owns, so a consumer attributes the crossing without re-reading the documents.
     // invariant: domain-only -- the wire row carries the ids and levels alone.
-    // refs: DN-64.D4
+    // refs: ADR-25.D8
     std::uint64_t previous_count{0};
     std::uint64_t current_count{0};
     double previous_frequency{0.0};

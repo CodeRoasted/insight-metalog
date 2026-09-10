@@ -538,7 +538,7 @@ namespace
     // post: a flat categorical axis over the signed band vocabulary; a stored cube never carries
     // it, so compare-at-min never compares it.
     // note: kind is a value-SHAPE discriminator, so a string-valued ordinal axis is categorical.
-    // refs: DN-42.D17
+    // refs: ADR-24.D7
     [[nodiscard]] CubeAxis latency_shift_axis()
     {
         return CubeAxis{.name = "latency_shift",

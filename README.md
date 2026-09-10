@@ -59,7 +59,7 @@ sitting under a truthful green for as long as the gate had a subject that exclud
 **What the diff row cost, since a green that was once red is worth its history.** The failing
 document was the `--latency-shift` pair, whose `cube_diff` declared the diff-only differential
 axis with `kind: "ordinal"` while both schemas close that enum to `["categorical","chain"]`. It
-was ruled at the producer and not at the standard (`DN-42.D17`): `kind` is a value-SHAPE
+was ruled at the producer and not at the standard (`ADR-24.D7`): `kind` is a value-SHAPE
 discriminator — SPEC §16.4 states normatively that a `categorical` axis value is a string and a
 `chain` axis value is a prefix-path array — while `ordinal` is a comparison property, so minting
 a third value would have destroyed the one question `kind` answers. The axis's coord value is a
@@ -69,7 +69,7 @@ while declaring `level`'s `kind` `categorical`. Both commands above are run toge
 `scripts/spec_conformance_gate.sh`, which **exits 0**. The number to watch is that diff row: it
 must never be taught to look away, and it must never go back to reporting a smaller corpus.
 
-The gate also refuses to pass unless its diff corpus witnesses three shapes (`DN-42.D18`): a
+The gate also refuses to pass unless its diff corpus witnesses three shapes (`ADR-27.D7`): a
 `cube_diff` carrying a **differential axis** with a border cell pinning it, a diff of two cubes
 at **different collapse depths** (§16.10 compare-at-min), and a `cube_diff` with `axes` and **no
 border at all** — this producer's ordinary no-change output. A corpus holding only plain 3-D

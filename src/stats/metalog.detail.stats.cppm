@@ -171,7 +171,7 @@ dominant_component_of(const std::unordered_map<std::string, std::uint64_t, Trans
                                          std::uint64_t count) noexcept;
 
 // invariant: axis is engaged iff score > 0 -- a template with no salient axis has no argmax.
-// refs: DN-64.D3
+// refs: ADR-25.D8
 struct SalienceVerdict
 {
     std::uint32_t score{0};

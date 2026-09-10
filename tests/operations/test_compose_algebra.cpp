@@ -1,9 +1,9 @@
 
-// refs: DN-56.O3, F-SRC-metalog-spec:SPEC.md
+// refs: ADR-25.D5, F-SRC-metalog-spec:SPEC.md
 // invariant: SPEC 12.2's three clauses carry three different modal strengths and are therefore
 // separate arms: commutativity MUST, identity MUST, associativity SHOULD.
 // note: associativity is not uniformly SHOULD: behavior ordering MAY differ, its counts MUST agree.
-// invariant: the associativity arms assert the exact scope-dependence DN-56.D3 rules, from BOTH
+// invariant: the associativity arms assert the exact scope-dependence ADR-25.D5 rules, from BOTH
 // sides; every magnitude is derived from the frozen band ladder and none is read off a run.
 // note: homed as a unit test: compose() is a pure function of two documents, crossing no seam.
 // invariant: the oracle is the algebra, never a second call into compose(); each relational arm
@@ -78,7 +78,7 @@ reservoir_signature(const meta::MetaLogDocument& doc)
     return nullptr;
 }
 
-// refs: DN-56.D6, DN-56.D2
+// refs: ADR-25.D5
 // invariant: SPEC 12.2 MUST -- compose(A,B) and compose(B,A) agree on all required fields, and
 // stats.top_k_size and behavior.top_ngrams_size are both required by the published schema.
 // invariant: it holds because the composed cap is min over the DECLARED caps and min is symmetric;
@@ -144,7 +144,7 @@ TEST(ComposeAlgebraTest, CommutativityHoldsOnTheRequiredCapFields)
     EXPECT_EQ(ab.stats.top_k_size, ba.stats.top_k_size)
         << "SPEC §12.2 commutativity is a MUST over REQUIRED fields, and `stats.top_k_size` is "
            "required (schema stats.required). compose(A,B) and compose(B,A) declared different "
-           "caps for the same pair — the composed cap is taken from `lhs` (DN-56.D6).\n"
+           "caps for the same pair — the cap was inherited from `lhs` (ADR-25.D5 forbids it).\n"
         << "    compose(wide, narrow): " << render_top_k(ab) << "\n"
         << "    compose(narrow, wide): " << render_top_k(ba);
     EXPECT_EQ(top_k_signature(ab), top_k_signature(ba))
@@ -157,7 +157,7 @@ TEST(ComposeAlgebraTest, CommutativityHoldsOnTheRequiredCapFields)
         << "both compositions must carry a behavior block for the n-gram cap arm to mean anything";
     EXPECT_EQ(ab.behavior->top_ngrams_size, ba.behavior->top_ngrams_size)
         << "`behavior.top_ngrams_size` is required too (schema behavior.required), and "
-           "merge_behavior takes it from `lhs` (DN-56.D6). Got "
+           "merge_behavior inherited it from `lhs`, which ADR-25.D5 forbids. Got "
         << ab.behavior->top_ngrams_size << " vs " << ba.behavior->top_ngrams_size
         << " (top_ngrams arrays: " << ab.behavior->top_ngrams.size() << " vs "
         << ba.behavior->top_ngrams.size() << " entries)";
@@ -184,7 +184,7 @@ TEST(ComposeAlgebraTest, CommutativityHoldsOnTheRequiredCapFields)
         << "min(8, 2) = 2; got " << ab.behavior->top_ngrams_size;
 }
 
-// refs: DN-56.O3
+// refs: ADR-25.D5
 // invariant: SPEC 12.2 MUST -- compose(A, ZERO) equals A. Literal document equality is refused by
 // 12.1, which orders provenance and coordinate constructed, so those two blocks are excluded.
 // invariant: identity is asserted over every required field plus every optional field A declares.
@@ -267,7 +267,7 @@ TEST(ComposeAlgebraTest, IdentityPreservesTheDocumentIncludingItsDeclaredReservo
            "A's own salience.\n    A:        "
         << render_reservoir(doc_a) << "\n    composed: " << render_reservoir(composed);
 
-    // refs: DN-56.O3
+    // refs: ADR-25.D5
     // note: entropy_bits has its own arm below, so one red is never ambiguous between two clauses.
     EXPECT_EQ(composed.stats.reservoir_size, doc_a.stats.reservoir_size)
         << "SPEC §12.2 identity is a MUST: compose(A, ZERO) must equal A, and A declared a "
@@ -283,15 +283,15 @@ TEST(ComposeAlgebraTest, IdentityPreservesTheDocumentIncludingItsDeclaredReservo
         << render_reservoir(doc_a) << "\n    composed: " << render_reservoir(composed);
 }
 
-// refs: DN-56.D2, DN-56.D3
+// refs: ADR-25.D5
 // invariant: the composed reservoir is NOT associative by design; these arms assert the exact
-// scope-dependence DN-56.D3 rules and the equality it rules where no cap binds.
+// scope-dependence ADR-25.D5 rules and the equality it rules where no cap binds.
 // invariant: top-M selection is associative only under a FIXED total order, and SPEC 12.1
 // re-derives salience over the merged counts, so the ranking key moves with merge scope.
 // note: bands 75 off-path, 80 error, 90 strong-off-path, 100 fatal; rarity 90 uncommon, 100 rare.
 // invariant: under an admission bound an entry cut at a low rung folds into tail_count and can
 // never re-enter at the scale where it would have ranked.
-// note: the divergence also reaches the REQUIRED field stats.unique_templates, which DN-56 omits.
+// note: the divergence also reaches stats.unique_templates, a REQUIRED field (ADR-25.D5).
 // invariant: salience is severity times rarity, so a flip on widening needs 0.9*sev_Q < sev_P <
 // sev_Q.
 namespace
@@ -433,7 +433,7 @@ TEST(ComposeAlgebraTest, ComposedReservoirStaysAssociativeWhenNoCapBinds)
     const auto ab{meta::compose(doc_a, doc_b)};
     ASSERT_EQ(ab.window.lines_observed, 2405U) << "the narrow rung's line total is the band input";
     ASSERT_EQ(ab.stats.reservoir_size, std::optional<std::size_t>{kSlackCap})
-        << "min(8, 8) = 8 — the composed document declares its own cap (DN-56.D2)";
+        << "min(8, 8) = 8 — the composed document declares its own cap (ADR-25.D5)";
     ASSERT_EQ(ab.stats.reservoir.size(), 2U)
         << "both salient templates must survive, or this arm proves nothing about a cap that does "
            "not bind.\n    "
@@ -491,8 +491,8 @@ TEST(ComposeAlgebraTest, ComposedReservoirStaysAssociativeWhenNoCapBinds)
         << "    A∘(B∘C): " << render_reservoir(a_bc);
 }
 
-// refs: DN-56.D3
-// invariant: the band pair 75/80 is DN-56.D3's STRICT flip, ratio 1.067, inside the flip window;
+// refs: ADR-25.D5
+// invariant: the band pair 75/80 is the STRICT flip ADR-25.D5's disclosure predicts, ratio 1.067;
 // the only change from the arm above is that A and B declare a reservoir cap of 1.
 // invariant: A.B at 2405 keeps the off-path (7500 over 7200) and B.C at 2403 keeps the error at
 // 7200, while A.(B.C) at 3605 inverts to the error at 8000.
@@ -523,7 +523,7 @@ TEST(ComposeAlgebraTest, ComposedReservoirCapBreaksAssociativityExactlyAsDN56D3R
     const auto ab{meta::compose(doc_a, doc_b)};
     ASSERT_EQ(ab.window.lines_observed, 2405U);
     EXPECT_EQ(ab.stats.reservoir_size, std::optional<std::size_t>{kBindingCap})
-        << "min(1, 1) = 1 — DN-56.D2: a composed document declares its own cap, so SPEC §8 "
+        << "min(1, 1) = 1 — ADR-25.D5: a composed document declares its own cap, so SPEC §8 "
            "clause 4 now makes a checkable claim about the array (it made none before).\n    "
         << render_reservoir(ab);
     ASSERT_EQ(ab.stats.reservoir.size(), 1U)
@@ -553,7 +553,7 @@ TEST(ComposeAlgebraTest, ComposedReservoirCapBreaksAssociativityExactlyAsDN56D3R
            "line counts rather than about the cap";
     EXPECT_EQ(bc.stats.reservoir_size, std::optional<std::size_t>{kBindingCap})
         << "C declares no cap at all, and an absent declaration is skipped rather than read as a "
-           "bound of zero — so B∘C carries B's 1 (DN-56.D2). Got "
+           "bound of zero — so B∘C carries B's 1 (ADR-25.D5). Got "
         << (bc.stats.reservoir_size ? std::to_string(*bc.stats.reservoir_size)
                                     : std::string{"<absent>"});
 
@@ -571,14 +571,14 @@ TEST(ComposeAlgebraTest, ComposedReservoirCapBreaksAssociativityExactlyAsDN56D3R
         << render_reservoir(a_bc);
     EXPECT_NE(reservoir_signature(abc), reservoir_signature(a_bc))
         << "SPEC §12.2 associativity (SHOULD) DOES NOT HOLD under a binding cap, and that is "
-           "DN-56.D3's ruled and disclosed trade, not a regression. If this arm ever reds by the "
+           "ADR-25.D5's ruled and disclosed trade, not a regression. If this arm ever reds by the "
            "two sides AGREEING, associativity was restored — check whether the cap was removed "
-           "(the thing DN-56.D2 forbids) before believing it is an improvement.\n"
+           "(the thing ADR-25.D5 forbids) before believing it is an improvement.\n"
         << "    (A∘B)∘C: " << render_reservoir(abc) << "\n"
         << "    A∘(B∘C): " << render_reservoir(a_bc);
 
-    // invariant: the cut reaches a REQUIRED field too: DN-56.D3 argues what yields is a property of
-    // an OPTIONAL block, so the disclosure owed is wider than it states.
+    // invariant: the cut reaches a REQUIRED field too: ADR-25.D5 lists unique_templates among the
+    // retained-set quantities, so the disclosure owed is the required field's, not a block's.
     EXPECT_EQ(abc.stats.unique_templates, 7U)
         << "6 fillers + the off-path; the error is not in the union because A∘B dropped it. Got "
         << abc.stats.unique_templates;
@@ -589,10 +589,10 @@ TEST(ComposeAlgebraTest, ComposedReservoirCapBreaksAssociativityExactlyAsDN56D3R
         << "the SAME three documents, bracketed two ways, disagree on a REQUIRED field";
 }
 
-// refs: DN-56.D3
+// refs: ADR-25.D5
 // invariant: the band pair 90/100 sits exactly ON the flip window's lower edge, so the narrow rung
 // is an EXACT tie (90x100 = 9000 = 100x90) and the wide rung a strict win for the fatal (10000).
-// note: DN-56.D3's prose places the tie at the WIDENED rung; the arithmetic puts it at the NARROW.
+// note: the tie sits at the NARROW rung -- measured on documents, correcting the first reading.
 // invariant: under a cap of 1 an exact tie allocates the single slot by template_id ascending, a
 // content hash that is deterministic and MEANING-BLIND.
 // invariant: with today's ids the tie-break keeps the FATAL and the two bracketings agree, so
@@ -684,7 +684,7 @@ TEST(ComposeAlgebraTest, ComposedReservoirCapResolvesAnExactTieByTheMeaningBlind
         << a_bc.stats.unique_templates;
 }
 
-// refs: DN-56.D5, F-SRC-metalog-spec:GOVERNANCE.md
+// refs: ADR-25.D5, F-SRC-metalog-spec:GOVERNANCE.md
 // invariant: SPEC 12.1 states entropy_bits is recomputed from the merged counts and compose() never
 // assigned it, so GOVERNANCE 3 rules the implementation buggy and the spec text stands.
 // note: kept out of the identity arm so one red is never ambiguous between two clauses.
@@ -781,7 +781,7 @@ TEST(ComposeAlgebraTest, ComposedEntropyBitsIsRecomputedFromTheMergedCounts)
         << "zero lines is an absent distribution, not an entropy of zero";
 }
 
-// refs: DN-56.D8, DN-57.O1
+// refs: ADR-25.D5, DN-57.O1
 // invariant: the RFC asserts to external implementers that 12.2's associativity is violated BY THE
 // FORMAT, so the falsifier must reach the property with the reservoir mechanism out of the picture.
 // invariant: these documents declare no reservoir cap and carry no reservoir entry, so every line
@@ -846,7 +846,7 @@ TEST(ComposeAlgebraTest, TopKTruncationAloneBreaksAssociativityWithNoReservoirAn
         << "§12.2's associativity SHOULD, violated on a REQUIRED field with the reservoir "
            "mechanism entirely inert: (A∘B)∘C = "
         << ab_c.stats.unique_templates << ", A∘(B∘C) = " << a_bc.stats.unique_templates
-        << ". If these ever agree, DN-56.D8 problem (e) is WRONG and the `0.10.0` RFC body must be "
+        << ". If these ever agree, ADR-25.D5's partition is WRONG and the RFC body must be "
            "re-derived before it is posted.";
     EXPECT_EQ(ab_c.stats.tail_unique, 1U) << "only d is a visible tail template on this side";
     EXPECT_EQ(a_bc.stats.tail_unique, 2U)
@@ -1007,9 +1007,9 @@ TEST(ComposeAlgebraTest, TopKTruncationBreaksAssociativityOfARetainedEntrysOwnCo
         << "right bracketing must account for every line:\n    " << render_top_k(a_bc);
 }
 
-// refs: DN-56.D2, DN-56.O3
-// invariant: DN-56.D2 argued the stamp makes the two caps equal in every normal case; that is FALSE
-// -- build_reservoir returns early when every template fit in top-K, declaring no cap.
+// refs: ADR-25.D5
+// invariant: the stamp does NOT make the two caps equal in the normal case (ADR-25.D5's absent-cap
+// branch): build_reservoir returns early when every template fit in top-K, declaring no cap.
 // invariant: a stamp gates VALUES and never PRESENCE, so an ordinary run mixes declared-cap and
 // absent-cap documents constantly and that pair is the ordinary path, not an edge.
 // invariant: a min folding absence in as zero would make the composed cap zero and silently drop
@@ -1093,7 +1093,7 @@ TEST(ComposeAlgebraTest, MinOverDeclaredCapsSurvivesASameProducerAbsentCapPair)
         << render_reservoir(quiet_busy) << "\n    right: " << render_reservoir(busy_quiet);
 }
 
-// refs: DN-56.D2, F-SRC-insight-eidos:insight_pipeline.cpp
+// refs: ADR-25.D5, F-SRC-insight-eidos:insight_pipeline.cpp
 // invariant: when both inputs are STAMPED, compose() never reaches the min at two of the three cap
 // sites: top_k_size is axis k and reservoir_size is axis m, so a difference throws at the gate.
 // invariant: behavior.top_ngrams_size is in NO stamp axis, so it is the ONE declared-cap min that

@@ -447,7 +447,7 @@ namespace
     }
 
     // note: one side's record carries everything the frontier compare and the row need.
-    // refs: DN-64.D3
+    // refs: ADR-25.D8
     struct SalienceMemoryEntry
     {
         std::optional<EventLevel> level;
@@ -586,7 +586,7 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
     diff_service_edge_delta(out, previous, current);
     // assert: the ONE gate is that both carried a cube; there is no axes-equality gate, since the
     // contract freezes the axis SET, not the collapse stamps.
-    // refs: DN-42.D17
+    // refs: ADR-24.D7
     if (previous.has_cube && current.has_cube)
     {
         // note: the shift map is empty when neither document carries comparable duration data.
