@@ -8,14 +8,10 @@ on:
 
 jobs:
   lint:
-    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-lint.yml@6e6b27c976f7e7ab462f3d4673adde17c5787157
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-lint.yml@b5e15eee5e2cc9a2709309850f845b28ba8d9e58
+    # PUBLIC repo: no runs-on passthrough and no checkout token — a fork PR runs this job.
     with:
-      # `lint` (clang-tidy) is OFF, and it is a MECHANISM gap rather than a findings one. That gate
-      # builds a clang-21 compile database, and this repo's recipes require first-party packages
-      # that live in OTHER repos: a standalone CI checkout has no siblings to register as editables,
-      # and the vendored release assets cannot stand in — they are linux-gcc16-release binaries, and
-      # a conan package_id is keyed on the compiler. So the gate could not PASS here for any source,
-      # which is strictly worse than an absent one: a red that is not about the code is how a gate
-      # stops being read. Owner: Argos; `coderoast-lint-tidy`'s own description names the shape that
-      # closes it (the sibling-checkout layout insight-twin/ci.yml already uses).
-      lint: false
+      # clang-tidy runs (the default), over a clang-21 source build of this repo's whole first-party
+      # closure. These are the repos that closure reaches, held to packages.yml by the superproject's
+      # pin_coherence.py INV-13. A private one would fail its clone loudly, never be skipped.
+      lint-siblings: insight-canon
