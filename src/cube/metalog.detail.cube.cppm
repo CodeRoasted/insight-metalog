@@ -55,11 +55,7 @@ struct Cell
     {
         return static_cast<std::size_t>(std::popcount(pinned_mask()));
     }
-    // note: not = default: a defaulted friend operator== on an import-std type is a GNU defect.
-    friend constexpr bool operator==(const Cell& lhs, const Cell& rhs) noexcept
-    {
-        return lhs.value == rhs.value;
-    }
+    friend constexpr bool operator==(const Cell& lhs, const Cell& rhs) noexcept = default;
 };
 
 // post: the canonical total order -- pinned-mask first, then the value tuple, kStar last.
