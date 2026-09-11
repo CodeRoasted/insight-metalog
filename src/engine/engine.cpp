@@ -857,7 +857,7 @@ void MetaLogEngine::build_tail_and_entropy(MetaLogDocument& doc, const WindowAna
 // Present, Present.
 // note: an event-free window stamps nothing, so silence reads as continuous presence.
 // refs: DN-50.D4
-void MetaLogEngine::build_presence_churn(MetaLogDocument& doc) const
+void MetaLogEngine::build_presence_churn(MetaLogDocument& doc)
 {
     if (doc.window.lines_observed == 0)
         return;

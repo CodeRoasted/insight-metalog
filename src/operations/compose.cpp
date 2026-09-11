@@ -501,12 +501,14 @@ namespace
             return std::nullopt;
         BehaviorBlock behavior;
         behavior.ngram_size = lhs.behavior ? lhs.behavior->ngram_size : rhs.behavior->ngram_size;
-        // note: the cap comes from the one side that has a behavior block when only one does.
-        // refs: ADR-25.D5
-        behavior.top_ngrams_size =
-            (lhs.behavior && rhs.behavior)
-                ? std::min(lhs.behavior->top_ngrams_size, rhs.behavior->top_ngrams_size)
-                : (lhs.behavior ? lhs.behavior->top_ngrams_size : rhs.behavior->top_ngrams_size);
+        if (lhs.behavior && rhs.behavior)
+            behavior.top_ngrams_size =
+                std::min(lhs.behavior->top_ngrams_size, rhs.behavior->top_ngrams_size);
+        else
+            // note: the cap comes from the one side that has a behavior block when only one does.
+            // refs: ADR-25.D5
+            behavior.top_ngrams_size =
+                lhs.behavior ? lhs.behavior->top_ngrams_size : rhs.behavior->top_ngrams_size;
         // invariant: the sum is OMITTED at zero -- an absent key AFFIRMS nothing was dropped, so a
         // written 0 and a silent omission on inputs that did drop are both wrong.
         if (const std::uint64_t dropped{

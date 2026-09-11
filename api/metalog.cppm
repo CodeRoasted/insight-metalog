@@ -216,7 +216,7 @@ class MetaLogEngine
     // opens the document's roll-up.
     // pre: the tail is already built, since the roll-up's honesty rests on knowing it.
     // refs: DN-50.D4
-    void build_presence_churn(MetaLogDocument& doc) const;
+    static void build_presence_churn(MetaLogDocument& doc);
     // post: always built, collapse-bounded, from the per-event joint in cube_base_.
     void build_cube(MetaLogDocument& doc) const;
     // post: always built, from the buckets' component marginals.
