@@ -761,6 +761,7 @@ reader checked `malf/comment_contract_lint.py`'s `NOLINT` recogniser, `^NOLINT(N
 and it matches the spaced spelling — so the CCC gate counts a suppress-everything directive as a
 well-formed tool form. A one-character tightening of that pattern would make the class visible
 workspace-wide; how many other sites carry it is unmeasured.
+DISCHARGED 2026-09-11 `malf-toolchain 0069258` — the recogniser requires the check list tight against the token and classes anything else `nolint-unscoped` (both spellings: a space before the parenthesis, and a label with no parenthesis), with four new selftest rows; the 22 such lines then in the workspace were measured first and the 20 in gated repos repaired (`logcraft dba325c`, `insight-canon f892779`), so all eight C++ repos read 0 violations under it. Consumers pin the toolchain past it (`malf-toolchain 6e6b27c`, e.g. `insight-metalog 914b291`).
 
 **Witnesses.** Comment-only: both files, code token stream byte-identical to `HEAD`, re-taken after
 the hand edit. Grammar:
@@ -1081,6 +1082,7 @@ The `pre:` now names that. `OPS-8.S7` steps 2 and 3 re-run after both edits.
   `BM_MetaLogCompress` additionally advances its seed per iteration, so its corpus is not fixed even
   within one run. Its figures are therefore not comparable across the two toolchains they are
   measured on, and `coderoast-hub/benchmarks/` publishes them.
+  PARTIAL. REFUSED 2026-09-11 for the Argos half (do the published numbers move): not from this defect — `coderoast-hub/benchmarks/METHODOLOGY.md` publishes the GCC-16.2 ship leg only and compares cut to cut on that one toolchain, so a draw sequence that differs between libstdc++ and libc++ never meets itself across the published series, and the per-iteration `seed++` is the same sequence every run. When Kleio replaces the distributions the corpus changes once and that cut's figures move with it, which the next cut's publish records. The benchmark itself is Kleio's.
 * **A standing guard that nothing enforces — for Kleio.** `bench_ordinal_key_alloc.cpp` is described
   as the regression guard for zero allocations per event, and the reader confirmed that **nothing in
   the tree compares `allocs_per_event` to a threshold**: a run reading 1 again blocks nothing and has
@@ -2339,6 +2341,7 @@ polling.
 **And there is a case for moving this out of the runbook entirely**: the acquire already computes
 both halves of the comparison it would need (`_malf_slot_anchor_is_shared`), so it could **warn when
 its derived anchor is not the session**. That is Argos's call, not this lane's.
+REFUSED 2026-09-11 (Argos's call, made with a measurement): the tool cannot tell a session from a reaper. A detached acquire was reproduced in an isolated `MALF_BUILD_SLOT_DIR`: the orphaned script was adopted by WSL's per-session init relay (`/init`, a long-lived non-shell process), and the anchor walk resolved to it — so an in-tool warning keyed on "the anchor is not the session" cannot fire on this box, and one keyed on "the walk ended at a shell" fires only where no subreaper exists. A guard that fires on some hosts and reads as protection on all is worse than the rule `OPS-8.S1.1` already carries (acquire in the foreground, or pin `MALF_BUILD_SLOT_ANCHOR`).
 
 ## 2. `OPS-8.S1.5` says the shared scripts "carry no path constants at all" — measured FALSE for half of them
 
@@ -2595,6 +2598,7 @@ both as bare and suppresses everything — reached by another door. The pattern 
 one bare pair in `scripts/determinism_fixture.cpp`. The workspace-wide number is unmeasured here.
 Whoever tightens `malf/comment_contract_lint.py`'s recogniser should tighten it against BOTH
 spellings, or the second class stays invisible to the instrument after the first is fixed.
+DISCHARGED 2026-09-11 `malf-toolchain 0069258` — tightened against BOTH spellings exactly as asked: any directive token not immediately followed by `(` is `nolint-unscoped`. The workspace census that preceded it used the both-spellings pattern and found 22 lines (logcraft 17, insight-canon 3, coderoast-corpora 2 in format-excluded measurement code), not the 11 carried in the plan tier.
 
 **3. A benchmark that breaks the rule its sibling states — for Kleio, with Argos to say whether the
 published numbers move.** `benchmarks/bench_compose_diff_cube.cpp` refuses a `std::*_distribution`
@@ -2607,6 +2611,7 @@ additionally advances its seed per iteration (`seed++` at line 86), so its corpu
 within one run. The engine is portable; the distributions are not. Its figures are therefore not
 comparable across the two toolchains they are measured on, and `coderoast-hub/benchmarks/` publishes
 them.
+PARTIAL. REFUSED 2026-09-11 for the Argos half — the same finding as unit 12's, dispositioned there: the hub publishes the GCC-16.2 leg only, so the published series is not moved by the cross-library difference. Kleio's half stands.
 
 **4. A standing regression guard that nothing enforces — for Kleio.**
 `benchmarks/bench_ordinal_key_alloc.cpp` is the regression guard for zero allocations per event on
@@ -3414,6 +3419,7 @@ pinned"*. The reader read `scripts/build_showcase_samples.py` and reports that `
 inside `reservoir_delta` rows. That clause was not carried into any converted line, so nothing false
 is in the tree — but **Argos or whoever owns that gate should know the two-tier description was
 understated**, because the same sentence may sit in its own docs.
+REFUSED 2026-09-11 already clean at HEAD: the gate's own source states it — `scripts/build_showcase_samples.py` frees `{"template_id", "count"}` inside `reservoir_delta` rows (`_RAW_RESERVOIR_FREE_FIELDS`, with the argument beside it), and its *"Everything else is pinned exactly"* comment governs the `ranked_changes` tier, where it is true. A sweep for the understated sentence elsewhere in the workspace finds none.
 
 ## Unit 24 — comparison outcome, stability-vs-diff divergence, shift sample floor
 
@@ -3579,6 +3585,7 @@ withdrawn by the lane that raised it (the HyperLogLog error figure). 16 disposit
 26 open after.** A further 22 items in this ledger's `OPS-8` verdict sections are findings against
 the RUNBOOK and its instruments, not against this repo; they are Argos's and the pilot's and are
 untouched here.
+REFUSED 2026-09-11 (Argos) as an attribution, not a finding: those items are the `OPS-8` verdict sections, addressed in their own text to the runbook, and the programme they fed closed on 2026-09-09 (`STU-18`) with `OPS-8` carrying its measured traps (spot-checked 2026-09-11: 11 of 12 keyed items — digit separator, inbound census leg, `render()`, path constants, leading blank line, capped sweep, law-block quoting, and more — are present in the runbook). The one verdict item that names Argos in its own text, the slot-anchor warning, carries its own line above.
 
 **Eight of the sixteen closed on evidence, not on work.** They were already clean at HEAD and had
 never been dispositioned — six of them closed by a sibling test lane's commits of 2026-09-09
@@ -3633,6 +3640,7 @@ re-derive every closure**, and that is the cost this drain paid before it could 
    byte-identical to `HEAD`'s and `compose.cpp` was not touched. The coverage hole matters more
    than the two findings: everything under `scripts/` is selected and never checked, so no
    suppression there has ever been judged by the gate. **Argos**, with the `malf lint` surface.
+   PARTIAL. REFUSED 2026-09-11 for the Argos half (the coverage hole): not a gate hole — the NOT-CHECKED files were a PARTIAL root database, which `malf lint --all-files` refuses to pass by design. After a whole `malf build insight-metalog` the inventory cell `scripts/det_harness` folds into the root database (111 entries), and all 17 selected translation units, `scripts/determinism_fixture.cpp` included, have a compile command. The two diagnostics still stand at HEAD (`readability-avoid-nested-conditional-operator` in `compose.cpp` and `readability-convert-member-functions-to-static` on `build_presence_churn`, both warnings) and are Hephaïstos's.
 
 **Behaviour at the close of this wave, verbatim.** `malf test insight-metalog` — **301 of 306**,
 and the five failures are exactly the intended gates-before-code arms of `ComposeShardFold`
