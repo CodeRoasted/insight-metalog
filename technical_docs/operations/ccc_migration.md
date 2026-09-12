@@ -281,12 +281,14 @@ defect costs the next reader more than the comment did.
    for it, and `tests/engine/test_hll_cardinality.cpp` asserts only loose ranges (`> 0`, `>= 5` for
    50 distinct values, `> 50` past a 10-value cap) — a smoke check, not an error-rate measurement.
    Changing `kPrecision` today reds nothing.
+   DISCHARGED 2026-09-12 `insight-metalog f2b1f36` — `tests/stats/test_hyperloglog.cpp` witnesses the SHOULD on the sketch itself. `HyperLogLogSketch.PrecisionAndRegisterCountAreTheSpecsDeclaredValues` pins p = 14 and 16 384 registers; `HyperLogLogSketch.StandardErrorStaysWithinTheSpecCeilingAcrossFourCardinalities` measures the root-mean-square relative error over 32 disjoint key sets at 1 000, 10 000, 50 000 and 100 000 keys and requires each at most 1.5 % (a Python model of the same hash and estimator read 0.52 %, 0.52 %, 0.97 % and 1.00 % over 16 sets). Red first at `kPrecision` 10: 3.12 %, 2.30 %, 2.93 % and 3.26 %. `malf test insight-metalog`: 307/312 on clang-21 and 307/312 on gcc-16.2, the 5 being the `ComposeShardFold` gates-before-code arms, unchanged from the 301/306 baseline.
 4. **`ReservoirTest.TerminatorRoleIsSalient` would still pass with the code it names deleted — for
    Kleio.** The cold reader found that it sets `LogLevel::Error` **and**
    `StructuralRole::Terminator` together, so the `Error` band alone carries it; no test isolates
    the `StructuralRole::Terminator` arm of `salience_score`. The arm is the one that stamps
    `RetentionAxis::Terminator` and outranks the level band 90 to 80, and it is exactly the arm the
    deleted prose spent twenty-four lines defending.
+   DISCHARGED 2026-09-12 `insight-metalog f2b1f36` — `ReservoirTest.TerminatorRoleIsSalient` now isolates the arm: a benign Info line with no failure cue, which must stay OUT without the role (the control) and must be retained on `RetentionAxis::Terminator` with it. The original Error-plus-Terminator fixture became `ReservoirTest.TerminatorRoleOutranksTheErrorBand`, which pins the retained axis, so the 90-over-80 ranking is asserted rather than implied. Red first with the Terminator arm removed from `salience_score`: the benign line was not retained, and the failing line was retained on axis `level`. `malf test insight-metalog`: 307/312 on clang-21 and 307/312 on gcc-16.2, the 5 being the `ComposeShardFold` gates-before-code arms, unchanged from the 301/306 baseline.
 5. **Two documents cited from `insight-metalog` source exist only in the attic** — informational,
    for whoever converts `src/cube/`. `cube_differential_axes.md` and `cube_perf_and_collapse.md`
    resolve only under `technical_docs/history/architecture-v1/`. Under the Founder's ruling of
@@ -1083,11 +1085,13 @@ The `pre:` now names that. `OPS-8.S7` steps 2 and 3 re-run after both edits.
   within one run. Its figures are therefore not comparable across the two toolchains they are
   measured on, and `coderoast-hub/benchmarks/` publishes them.
   PARTIAL. REFUSED 2026-09-11 for the Argos half (do the published numbers move): not from this defect — `coderoast-hub/benchmarks/METHODOLOGY.md` publishes the GCC-16.2 ship leg only and compares cut to cut on that one toolchain, so a draw sequence that differs between libstdc++ and libc++ never meets itself across the published series, and the per-iteration `seed++` is the same sequence every run. When Kleio replaces the distributions the corpus changes once and that cut's figures move with it, which the next cut's publish records. The benchmark itself is Kleio's.
+  DISCHARGED 2026-09-12 for the Kleio half `insight-metalog f2b1f36` — the three `std::*_distribution` draws on `std::mt19937` are replaced by ONE `SplitMix64` exported from `benchmarks/metalog.bench.cppm` (moved there from `bench_compose_diff_cube.cpp`, which now imports it), `BM_MetaLogCompress` keeps one seed for every iteration, and each window opens at a fixed epoch instead of the wall clock. Red first, measured on the old binaries: `json_bytes` at 1 000 events × top-k 32 read 18 122 then 18 042 on two runs of ONE clang-21 binary, and 17 929 then 18 131 on gcc-16.2, because the seed advanced with an iteration count the timer chose. After: 18 052, 18 566 and 18 721 at 1 000, 10 000 and 100 000 events, identical across two runs on each toolchain and across the two toolchains. The published figures move once, at the next cut.
 * **A standing guard that nothing enforces — for Kleio.** `bench_ordinal_key_alloc.cpp` is described
   as the regression guard for zero allocations per event, and the reader confirmed that **nothing in
   the tree compares `allocs_per_event` to a threshold**: a run reading 1 again blocks nothing and has
   to be noticed by a human. A search over `insight-metalog`, `coderoast-hub`, `.github` and `malf`
   finds the identifier only in the two benchmark sources and one published column header.
+  DISCHARGED 2026-09-12 `insight-metalog f2b1f36` — enforced by a runnable arm in `malf test`, no bench wiring needed. `OrdinalKeyAllocation.SteadyStateIngestAllocatesNothingPerEvent` (`tests/engine/test_ordinal_key_alloc.cpp`) runs the benchmark's five key-length arms through a warm lap and a counted lap and requires ZERO allocations; the probe is the bench's own `heap_probe.cpp`, compiled into the test binary as well (`CMakeLists.txt`), and `OrdinalKeyAllocation.TheProbeCountsAnAllocationItCanSee` is its positive control. That control FAILED on its first run: clang-21 elided a local 23-byte string's allocation, so the control now makes the string escape into a static. Red first with the accumulator lookup building a `std::string` key: the 23-byte arm read 1 000 allocations over 1 000 events on clang-21 (libc++ keeps 16 bytes inline, so the 16-byte arm reds only on the gcc-16.2 ship leg). `malf test insight-metalog`: 307/312 on clang-21 and 307/312 on gcc-16.2, the 5 being the `ComposeShardFold` gates-before-code arms, unchanged from the 301/306 baseline.
 * **A gap in `heap_probe`'s own statement — for whoever next touches it.** The reader observed that
   the nothrow allocation forms are named nowhere, so the tree does not say whether they are counted.
   The old prose did not say either, so nothing was lost; the gap is pre-existing.
@@ -1626,6 +1630,7 @@ the `compose` arm alone, which is precisely the two-producer partition the armin
 for — are recorded only in `technical_docs/history/1.10.3.md`. The reader found them and flagged
 the provenance as best-effort in the same breath. What survives the attic is the arms themselves and
 their assertion messages; the evidence that they can go red does not.
+DISCHARGED 2026-09-12 `insight-metalog f2b1f36` — the two mutation controls re-run, and the evidence now lives outside the attic, in this line and in an `assert:` at the head of `tests/reservoir/test_retention_axis_census.cpp`. With `engine.cpp`'s axis stamp dropped, `EveryEntryClosedByCloseWindowCarriesAnEngagedAxis` went red (3 of 3 entries DISENGAGED) and `EveryEntryRederivedByComposeCarriesAnEngagedAxis` stayed green. With `compose.cpp`'s dropped, the compose arm went red (6 of 6) and the close_window arm stayed green. The partition holds; nothing is left for the co-addressee on this item.
 
 ---
 
@@ -2056,6 +2061,7 @@ The constant occurs exactly once, and the bound it builds (`top_k_count × 2 × 
 to about 6.3 MB against a real overhead the test prints and never asserts. Either it was measured
 and the measurement is unrecorded, or it is a round number — and the arm's strength depends on
 which. The `note:` now says only what is checkable; the number's ground is the finding.
+DISCHARGED 2026-09-12 `insight-metalog f2b1f36` — it was a round number, and the arm could not fail: the fixture's slots held 20 and 6 values under a cap of 64, so the cap never bound, and the ceiling carried 19.6× headroom (321 536 B measured against 6 291 456 B). `FieldHistogramSerializationTest.BoundedDocumentOverhead` now drives 100 distinct values into each of two slots, so the cap binds on both (asserted), and derives the ceiling PER SLOT from the fixture's longest value, the widest count, JSON member syntax and the four SPEC §3.5 member names: 2 481 B per template against 2 203 B measured (1 127 936 B in all, identical on both toolchains). Red first with the value cap removed: 1 717 248 B against a ceiling of 1 270 272 B. `malf test insight-metalog`: 307/312 on clang-21 and 307/312 on gcc-16.2, the 5 being the `ComposeShardFold` gates-before-code arms, unchanged from the 301/306 baseline.
 
 **B. The mid-string injection point rests on an unrecorded claim about Glaze's codegen — for
 Kleio.** The deleted prose justified placing the byte between a marker and a literal tail with a
@@ -2063,6 +2069,7 @@ measurement about a vectorised body and a scalar tail corrupting differently. If
 it is recorded nowhere; if it was reasoned, the placement's extra value over an end-of-string
 injection is unproven. The fixture is unchanged either way — this is a request for the measurement
 or for the claim to be dropped, not for a code change.
+DISCHARGED 2026-09-12 `insight-metalog f2b1f36` — the claim is no longer needed: both egress arms now drive every C0 byte at BOTH placements, interior (followed by a literal tail) and terminal (the string's last byte), 64 rows each, and a row counts as reached only if the injected byte itself follows the marker on the wire, raw or escaped. Red first with `json_egress.hpp`'s escape option dropped: 54 of 64 rows, 27 at each placement, the 5 bytes Glaze escapes regardless staying green. `malf test insight-metalog`: 307/312 on clang-21 and 307/312 on gcc-16.2, the 5 being the `ComposeShardFold` gates-before-code arms, unchanged from the 301/306 baseline.
 
 **C. An orphaned rationale in `tests/engine/test_field_histograms.cpp`, carried across the unit
 boundary into this one — recorded because the carry is unusual.** That file ends with a
@@ -2202,6 +2209,7 @@ refused distinct KEYS. True of the engine — but in this fixture all 20 templat
 all 19 bigrams are distinct and the 15 refused observations are also 15 distinct refused keys. The
 reader stated it plainly: a fixture that repeats a refused key would be needed to separate them.
 The distinction is real and the arm does not witness it.
+DISCHARGED 2026-09-12 `insight-metalog f2b1f36` — `BehaviorBlockTest.DroppedNgramObservationsCountsEveryRepeatOfARefusedKey` fills the cap of 4 with a b c d e, then repeats x five times: nine bigrams, four admitted, five refused observations over two distinct refused keys (ex, xx), and the engine counter and the document field must both read 5. Red first with the refused branch counting distinct keys: both read 2. `malf test insight-metalog`: 307/312 on clang-21 and 307/312 on gcc-16.2, the 5 being the `ComposeShardFold` gates-before-code arms, unchanged from the 301/306 baseline.
 
 **B. `TEST(FieldHistogramTest, DisabledByDefault_ParamsDiscarded)`'s assertion message reads as
 pinning a limitation, while the assertion pins a guarantee — for Kleio.** The message says the
@@ -2217,6 +2225,7 @@ of 50, and `tail_entropy_bits < 0.4` / `tail_max_rate > 0.32` against computed v
 0.161 and 0.3267. The reader derived the second pair exactly from the fixture; neither pair has a
 stated derivation, and the sibling test one section away pins its own value exactly (`3.0/14.0`),
 which is the shape that makes the looseness visible.
+DISCHARGED 2026-09-12 `insight-metalog f2b1f36` — all three are now derived values. `tail_max_rate` is 98/300 exactly; the two tail entropies are the reference entropies of {98, 1, 1} and {3, 1}, computed in the test, within 1e-9 (the engine's reduction is 40-fractional-bit fixed point); the 50-value HLL estimate must sit within three standard errors at SPEC §3.5.1's 1.5 % ceiling. Red first under mutations the old bounds could not see: the max rate over the tail mass read 0.98 (old: `> 0.32` passes); the entropy normalised over one count too many read 0.174 (old: `< 0.4` passes); the sketch without its small-range correction estimated 11 840 for 50 (old: `>= 5` passes). `malf test insight-metalog`: 307/312 on clang-21 and 307/312 on gcc-16.2, the 5 being the `ComposeShardFold` gates-before-code arms, unchanged from the 301/306 baseline.
 
 ---
 
@@ -2612,6 +2621,7 @@ within one run. The engine is portable; the distributions are not. Its figures a
 comparable across the two toolchains they are measured on, and `coderoast-hub/benchmarks/` publishes
 them.
 PARTIAL. REFUSED 2026-09-11 for the Argos half — the same finding as unit 12's, dispositioned there: the hub publishes the GCC-16.2 leg only, so the published series is not moved by the cross-library difference. Kleio's half stands.
+DISCHARGED 2026-09-12 for the Kleio half `insight-metalog f2b1f36` — the same repair as unit 12's entry above: one fixed-seed `SplitMix64` from the bench module and a fixed epoch, and `json_bytes` now reads one number per argument on every run and on both toolchains.
 
 **4. A standing regression guard that nothing enforces — for Kleio.**
 `benchmarks/bench_ordinal_key_alloc.cpp` is the regression guard for zero allocations per event on
@@ -2619,6 +2629,7 @@ both toolchains. Nothing in the tree compares `allocs_per_event` to a threshold:
 again blocks nothing and has to be noticed by a person. A search over `insight-metalog`,
 `coderoast-hub`, `.github` and `malf` finds the identifier only in the two benchmark sources and one
 published column header.
+DISCHARGED 2026-09-12 `insight-metalog f2b1f36` — the same guard as unit 12's entry above, and dispositioned there: `OrdinalKeyAllocation.SteadyStateIngestAllocatesNothingPerEvent` enforces the zero in `malf test`, red first with a `std::string` lookup key.
 
 **5. The `≤ 4 KB per million lines` target has a live home and this repo's benchmark is outside its
 scope — for Eqya.** `metalog-spec/SPEC.md` § 11.5 scopes the headline to a `stats`-only document, no
@@ -3617,6 +3628,7 @@ re-derive every closure**, and that is the cost this drain paid before it could 
   `kBytesPerValueEntryUpperBound{96}` has no provenance; the mid-string injection point rests on an
   unrecorded claim about Glaze's codegen; the dropped-observation fixture cannot separate its two
   quantities; two threshold pairs are fixture arithmetic with headroom. **Kleio.**
+  REFUSED 2026-09-12 not a finding: a summary re-listing eight test-tier findings, each of which now carries its own line at its entry — all eight DISCHARGED at `insight-metalog f2b1f36`.
 * **Cross-repo, not this repo's to close** — nine `insight-eidos` sites cite this file by
   BASENAME, two line-number citations into it are dead, an eidos measurement tool quotes deleted
   prose verbatim, three design notes quote deleted trailing comments and `DN-63` attributes a
