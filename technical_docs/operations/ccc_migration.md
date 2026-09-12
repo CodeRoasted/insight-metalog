@@ -1456,6 +1456,7 @@ document. `insight-eidos/sift/src/engine/diff_engine.cpp` reads exactly that blo
 self-assessment and NEVER synthesized here"*. Whether a composed document should carry a merged
 self-assessment, or whether the consumer's absent-block path is the correct posture, is a design
 question with two repos in it. The comment now states the truth rather than *"Always present."*
+  PARTIAL. DISCHARGED 2026-09-12 for Eqya's claim half — no public claim requires a composed document to carry a self-assessment, and the consumer's absent-block posture (WHERE not admissible when unassessed) is the precision-first default. Whether compose should merge one is Daidalos's.
 
 **B. The W1 octave thresholds are described as pre-registered and nothing records a
 pre-registration — for Eqya as claim-boundary owner, with Daidalos.** The deleted prose asserted
@@ -1466,6 +1467,7 @@ constant, and `DN-11` quoting them as a derivation input. Anti-endogamy is a cla
 the constant fixed before the data — and the tree carries no record of that order for these three
 numbers. Either the record exists somewhere this search did not reach, or the anti-endogamy
 framing is unearned; both are decisions, not comments.
+  PARTIAL. DISCHARGED 2026-09-12 for Eqya's claim half, by ruling — with no record of the order, the thresholds are CALIBRATED (frozen from scenario 35's measured numerators), not pre-registered, and no document may call them pre-registered or anti-endogamous. Daidalos owes correcting any design-tier wording that does.
 
 **C. `ADR-9.D2` states the cube-key allocation is UNFIXED, and the fix has shipped — for
 Daidalos.** That slot reads *"`cube_base_`'s keys are plain `std::string` on `std::allocator` —
@@ -1622,6 +1624,7 @@ without prompting that `CLAUDE.md` declares `technical_docs/history/` disposable
 source witness is a comment in **another repo** — `insight-eidos/sift/api/sift.api-config.cppm` —
 which names the same case at its forwarding field. A retention policy that ships in the product has
 its justifying measurement recorded nowhere that is owed to survive.
+  PARTIAL. DISCHARGED 2026-09-12 for Eqya's claim half — a shipped policy needs a live witness, not a record. Kleio owes a deterministic arm demonstrating the eviction the reserve exists for: an error-class template evicted from both `top_k` and the reservoir without the reserve, and retained with it.
 
 **I. The falsifiability record for the retention-axis gate has the same problem — for Kleio, with
 Eqya.** The two mutation controls that show `RetentionAxisCensus`'s arms are not vacuously green —
@@ -2638,6 +2641,7 @@ scope — for Eqya.** `metalog-spec/SPEC.md` § 11.5 scopes the headline to a `s
 `max_ngram_keys = 4096` with the cube always on, and the published 100 000-line arm reads about
 **156 KB per million lines** — roughly forty times the headline, against a scope the headline does
 not govern. Whether the repo wants an arm that IS in scope is a plan-tier question, not a comment.
+  PARTIAL. DISCHARGED 2026-09-12 for Eqya's plan-tier question — yes, the repo owes an IN-SCOPE arm: a stats-only document (no reservoir, behaviour or cube) at `top_k_size ≤ 32` inline, so the implementation witnesses `SPEC.md` § 11.5's headline. Kleio owes it. If the arm cannot meet ≤ 4 KB per million lines, that is a finding for `metalog-spec`'s owner, not a claim we make.
 
 **6. An empty composition is not declared on the wire — for the lane that owns the producer.**
 `scripts/corpus_windows_scenario.hpp` composes against an empty semantic set on purpose, so the
