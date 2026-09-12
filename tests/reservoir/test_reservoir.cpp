@@ -469,6 +469,9 @@ TEST(ReservoirTest, ErrorClassReserveRetainsFailureAgainstNonFailureStorm)
         << ") — that is the whole point of the reserve";
 
     const auto no_reserve{build_high_card_window(/*error_reserve=*/0)};
+    EXPECT_FALSE(top_k_has(no_reserve, "connection refused to db"))
+        << "negative control broken: the failure must be outside top_k too, or the eviction is not "
+           "from BOTH retention tiers and the reserve is not what separates the two windows";
     EXPECT_FALSE(reservoir_has(no_reserve, "connection refused to db"))
         << "negative control broken: without the reserve, non-failure salience must evict the "
            "real failure — that eviction is the loss the reserve exists to close";
