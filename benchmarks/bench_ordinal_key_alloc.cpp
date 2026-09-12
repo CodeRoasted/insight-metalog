@@ -1,5 +1,7 @@
 // invariant: every arm reads 0 allocations per event on both toolchains; an arm reading 1 again is
 // the accumulator's key construction coming back.
+// invariant: the zero is ENFORCED by the unit suite's `OrdinalKeyAllocation` arms over the same
+// probe; this file reports what the lookup costs.
 // invariant: every arm carries exactly ONE ordinal observation per event, so the key LENGTH is the
 // only variable across arms.
 // note: the 23-char arm proves the instrument sees an allocation on the dev leg too.

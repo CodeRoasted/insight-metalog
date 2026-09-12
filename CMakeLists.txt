@@ -145,7 +145,11 @@ if(INSIGHT_METALOG_BUILD_TESTS)
         # (interface units + impl .cpp) + the test TUs, so a test may import the sealed detail
         # module (via the insight.metalog.test aggregate) WITHOUT the lib exporting it;
         # CXX_MODULE_STD ON provides the same std module.
-        add_executable(insight_metalog_tests ${TEST_SOURCES} ${METALOG_IMPL_SOURCES})
+        # The allocation probe is the benchmarks' one replacement of the global allocation functions,
+        # compiled into this binary too so the zero-allocation guard and its measurement read the
+        # same instrument; a program replaces them once, and each binary is its own program.
+        add_executable(insight_metalog_tests ${TEST_SOURCES} ${METALOG_IMPL_SOURCES}
+                       ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/heap_probe.cpp)
         target_sources(insight_metalog_tests
             PRIVATE
                 FILE_SET cxx_modules TYPE CXX_MODULES
@@ -170,7 +174,8 @@ if(INSIGHT_METALOG_BUILD_TESTS)
             insight::canon glaze::glaze picosha2::picosha2
             GTest::gtest GTest::gtest_main)
         target_include_directories(insight_metalog_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
-            ${CMAKE_CURRENT_SOURCE_DIR}/scripts) # the shared ADR-31.D8 scenarios (reservoir_nearfull / reservoir_streaming)
+            ${CMAKE_CURRENT_SOURCE_DIR}/scripts # the shared ADR-31.D8 scenarios (reservoir_nearfull / reservoir_streaming)
+            ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks) # heap_probe.hpp, the allocation probe
         target_compile_features(insight_metalog_tests PRIVATE cxx_std_23)
         set_target_properties(insight_metalog_tests PROPERTIES CXX_SCAN_FOR_MODULES ON CXX_MODULE_STD ON)
         target_compile_options(insight_metalog_tests PRIVATE

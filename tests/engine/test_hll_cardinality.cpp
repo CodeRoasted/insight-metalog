@@ -35,7 +35,13 @@ TEST(HllCardinalityTest, ApproximateCardinalityIsNonZeroWhenHistogramsEnabled)
 
     EXPECT_GT(fh.approximate_cardinality, 0u)
         << "HLL approximate_cardinality must be non-zero after 50 distinct values";
-    EXPECT_GE(fh.approximate_cardinality, 5u) << "HLL estimate too low for 50 distinct values";
+    // invariant: the tolerance is DERIVED — three standard errors at SPEC §3.5.1's 1.5 % ceiling
+    // around the true 50, so a sketch that lost its small-range correction is red here.
+    constexpr double kTrueCardinality{50.0};
+    constexpr double kSpecStandardErrorCeiling{0.015};
+    EXPECT_NEAR(static_cast<double>(fh.approximate_cardinality), kTrueCardinality,
+                3.0 * kSpecStandardErrorCeiling * kTrueCardinality)
+        << "HLL estimate for 50 distinct values is " << fh.approximate_cardinality;
 }
 
 TEST(HllCardinalityTest, ApproximateCardinalityIsZeroWhenHistogramsDisabled)

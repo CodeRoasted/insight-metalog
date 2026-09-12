@@ -100,12 +100,53 @@ TEST(ReservoirTest, RareErrorRetainedAtGenerousTopKWithoutReservoir)
     EXPECT_TRUE(doc.stats.reservoir.empty()) << "no reservoir was configured";
 }
 
+// refs: ADR-20.D19, ADR-25.D8
+// invariant: the TERMINATOR arm alone — a benign Info line with no failure cue, whose only salient
+// axis is the role, so the level band and the lexicon cannot carry it into the reservoir.
+// invariant: the same line WITHOUT the role is the control: it must stay out, or the arm measures
+// rarity instead of the role.
 TEST(ReservoirTest, TerminatorRoleIsSalient)
 {
-    auto rare{make_event("##[error]Process completed with exit code 2.", insight::LogLevel::Error)};
+    constexpr std::string_view kBenignEnd{"Job finished"};
+    const auto control{run_with_rare_event(make_event(kBenignEnd), 3, 8)};
+    ASSERT_FALSE(reservoir_has(control, kBenignEnd))
+        << "the control: without the role this line has no salient axis, so it must stay out — "
+           "otherwise the arm below measures something other than the Terminator role";
+
+    auto terminator{make_event(kBenignEnd)};
+    terminator.structural_role = insight::StructuralRole::Terminator;
+    const auto doc{run_with_rare_event(terminator, 3, 8)};
+    ASSERT_TRUE(reservoir_has(doc, kBenignEnd)) << "a rare Info line whose ONLY salient axis is "
+                                                   "StructuralRole::Terminator was not retained";
+    for (const auto& entry : doc.stats.reservoir)
+        if (entry_is(entry, kBenignEnd))
+        {
+            ASSERT_TRUE(entry.retention_axis.has_value());
+            EXPECT_EQ(*entry.retention_axis, meta::RetentionAxis::Terminator)
+                << "retained on axis " << meta::to_string(*entry.retention_axis)
+                << " — only the Terminator arm can admit this line";
+        }
+}
+
+// refs: ADR-20.D19, ADR-25.D8
+// invariant: the Terminator band OUTRANKS the Error band, 90 to 80, so a failing terminal line that
+// carries both is retained on the role's axis — echoing strips the level and keeps the role.
+TEST(ReservoirTest, TerminatorRoleOutranksTheErrorBand)
+{
+    constexpr std::string_view kFailedEnd{"##[error]Process completed with exit code 2."};
+    auto rare{make_event(kFailedEnd, insight::LogLevel::Error)};
     rare.structural_role = insight::StructuralRole::Terminator;
     const auto doc{run_with_rare_event(rare, 3, 8)};
-    ASSERT_TRUE(reservoir_has(doc, "##[error]Process completed with exit code 2."));
+    ASSERT_TRUE(reservoir_has(doc, kFailedEnd));
+    for (const auto& entry : doc.stats.reservoir)
+        if (entry_is(entry, kFailedEnd))
+        {
+            ASSERT_TRUE(entry.retention_axis.has_value());
+            EXPECT_EQ(*entry.retention_axis, meta::RetentionAxis::Terminator)
+                << "retained on axis " << meta::to_string(*entry.retention_axis)
+                << " — an Error line carrying the Terminator role must be retained on the role's "
+                   "band, which outranks the level's";
+        }
 }
 
 TEST(ReservoirTest, RareBenignNotAdmitted)

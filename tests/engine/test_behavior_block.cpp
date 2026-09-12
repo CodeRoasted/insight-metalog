@@ -184,6 +184,36 @@ TEST_F(BehaviorBlockTest, BoundedNgramKeysCapDistinctEntries)
         << *clean_doc.behavior->dropped_ngram_observations;
 }
 
+// refs: F-SRC-metalog-spec:SPEC.md, ADR-9.D3
+// invariant: the counter counts refused OBSERVATIONS, never refused distinct KEYS — a fixture of
+// distinct templates cannot tell the two apart, so this one REPEATS a refused key.
+// invariant: a b c d e fill the cap of four with ab bc cd de; x five times then adds ex once and xx
+// four times — five refused observations over two distinct refused keys.
+TEST_F(BehaviorBlockTest, DroppedNgramObservationsCountsEveryRepeatOfARefusedKey)
+{
+    constexpr std::uint64_t kRefusedObservations{5};
+    constexpr std::uint64_t kRefusedDistinctKeys{2};
+    meta::MetaLogEngine engine{meta::MetaLogConfig{
+        .top_k_size = 16,
+        .top_ngrams_size = 16,
+        .max_ngram_keys = 4,
+    }};
+    engine.open_window(start_);
+    for (const std::string_view name : {"a", "b", "c", "d", "e", "x", "x", "x", "x", "x"})
+        engine.ingest_event(make_event(name));
+    const auto doc{engine.close_window(start_ + std::chrono::seconds(1))};
+
+    EXPECT_EQ(engine.last_window_ngram_observations_dropped(), kRefusedObservations)
+        << "ten events make nine bigrams and four are admitted, so five OBSERVATIONS are refused; "
+           "a counter reading "
+        << kRefusedDistinctKeys << " counts distinct refused KEYS (ex, xx) instead";
+    ASSERT_TRUE(doc.behavior.has_value());
+    ASSERT_TRUE(doc.behavior->dropped_ngram_observations.has_value())
+        << "the cap bound this window, so the document must carry the drop count";
+    EXPECT_EQ(*doc.behavior->dropped_ngram_observations, kRefusedObservations)
+        << "the document must carry the engine's observation count";
+}
+
 // refs: F-SRC-metalog-spec:SPEC.md, ADR-25.D5
 TEST_F(BehaviorBlockTest, ComposeSumsDroppedNgramObservationsAndOmitsAZeroSum)
 {

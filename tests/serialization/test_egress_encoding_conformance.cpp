@@ -373,11 +373,26 @@ constexpr std::string_view kMarker{"kleioEgressProbe"};
         .reservoir_size = 8, .reservoir_per_kind_cap = 4, .emit_stability = false};
 }
 
-[[nodiscard]] std::string tainted_component(std::uint8_t injected)
+// invariant: the byte is driven both inside the string, with literal bytes after it, and as its
+// last byte, so no claim about how the writer walks a string is needed to cover either.
+enum class Placement : std::uint8_t
+{
+    Interior,
+    Terminal,
+};
+constexpr std::array<Placement, 2> kPlacements{Placement::Interior, Placement::Terminal};
+
+[[nodiscard]] std::string_view placement_name(Placement placement)
+{
+    return placement == Placement::Interior ? "interior" : "terminal";
+}
+
+[[nodiscard]] std::string tainted_component(std::uint8_t injected, Placement placement)
 {
     std::string out{kMarker};
     out.push_back(static_cast<char>(injected));
-    out += "tail";
+    if (placement == Placement::Interior)
+        out += "tail";
     return out;
 }
 
@@ -391,11 +406,11 @@ struct BuiltDocument
 constexpr std::chrono::system_clock::time_point kEpoch{};
 constexpr std::chrono::seconds kWindowSpan{60};
 
-[[nodiscard]] std::unique_ptr<BuiltDocument> build_tainted_document(std::uint8_t injected,
-                                                                    bool include_tainted)
+[[nodiscard]] std::unique_ptr<BuiltDocument>
+build_tainted_document(std::uint8_t injected, Placement placement, bool include_tainted)
 {
     auto built{std::make_unique<BuiltDocument>()};
-    built->component = tainted_component(injected);
+    built->component = tainted_component(injected, placement);
     built->engine.open_window(kEpoch);
     for (int repeat{0}; repeat < 3; ++repeat)
     {
@@ -410,9 +425,15 @@ constexpr std::chrono::seconds kWindowSpan{60};
     return built;
 }
 
-[[nodiscard]] bool wire_carries_marker(std::string_view json)
+// post: true when the marker reaches the wire followed by the injected byte, raw or escaped — so
+// the row measured the byte and not merely the string that carried it.
+[[nodiscard]] bool wire_carries_injected_byte(std::string_view json, std::uint8_t injected)
 {
-    return json.find(kMarker) != std::string_view::npos;
+    const std::size_t marker{json.find(kMarker)};
+    if (marker == std::string_view::npos || marker + kMarker.size() >= json.size())
+        return false;
+    const char next{json[marker + kMarker.size()]};
+    return next == '\\' || static_cast<std::uint8_t>(next) == injected;
 }
 
 TEST(EgressEncodingConformance, TheScannerAcceptsLegalJsonAndRejectsARawControlByte)
@@ -442,37 +463,40 @@ TEST(EgressEncodingConformance, MetaLogDocumentEmitsConformantJsonForEveryC0Byte
     std::vector<std::string> failures;
     std::size_t reached_the_wire{0};
 
-    for (std::uint16_t value{0}; value <= 0x1FU; ++value)
-    {
-        const auto injected{static_cast<std::uint8_t>(value)};
-        const auto built{build_tainted_document(injected, /*include_tainted=*/true)};
-        const std::string json{meta::to_json(built->document, built->engine.registry())};
-
-        if (!wire_carries_marker(json))
+    for (const Placement placement : kPlacements)
+        for (std::uint16_t value{0}; value <= 0x1FU; ++value)
         {
-            failures.push_back("byte 0x" + ConformanceScanner::hex_byte(injected) +
-                               ": the tainted component never reached the wire — this row would "
-                               "have been VACUOUS, not passing");
-            continue;
+            const auto injected{static_cast<std::uint8_t>(value)};
+            const auto built{build_tainted_document(injected, placement, /*include_tainted=*/true)};
+            const std::string json{meta::to_json(built->document, built->engine.registry())};
+            const std::string row{std::string{placement_name(placement)} + " byte 0x" +
+                                  ConformanceScanner::hex_byte(injected)};
+
+            if (!wire_carries_injected_byte(json, injected))
+            {
+                failures.push_back(row +
+                                   ": the injected byte never reached the wire — this row would "
+                                   "have been VACUOUS, not passing");
+                continue;
+            }
+            ++reached_the_wire;
+
+            if (const auto broken{ConformanceScanner{json}.scan()})
+                failures.push_back(row + ": " + broken->reason + " at offset " +
+                                   std::to_string(broken->offset) + "\n    " +
+                                   hex_window(json, broken->offset));
         }
-        ++reached_the_wire;
 
-        if (const auto broken{ConformanceScanner{json}.scan()})
-            failures.push_back("byte 0x" + ConformanceScanner::hex_byte(injected) + ": " +
-                               broken->reason + " at offset " + std::to_string(broken->offset) +
-                               "\n    " + hex_window(json, broken->offset));
-    }
-
-    EXPECT_EQ(reached_the_wire, 32U)
-        << "all 32 C0 injections must reach the wire, or the arm proves nothing about the ones "
-           "that did not.";
+    EXPECT_EQ(reached_the_wire, 64U)
+        << "all 32 C0 injections at both placements must reach the wire, or the arm proves "
+           "nothing about the ones that did not.";
 
     std::string report;
     for (const auto& line : failures)
         report += "  " + line + "\n";
     EXPECT_TRUE(failures.empty())
         << "metalog::to_json(MetaLogDocument) emitted non-conformant JSON for " << failures.size()
-        << " of 32 C0 bytes driven into a `where` coordinate:\n"
+        << " of 64 rows (32 C0 bytes x 2 placements) driven into a `where` coordinate:\n"
         << report;
 }
 
@@ -481,38 +505,44 @@ TEST(EgressEncodingConformance, MetaLogDiffEmitsConformantJsonForEveryC0Byte)
     std::vector<std::string> failures;
     std::size_t reached_the_wire{0};
 
-    for (std::uint16_t value{0}; value <= 0x1FU; ++value)
-    {
-        const auto injected{static_cast<std::uint8_t>(value)};
-        const auto baseline{build_tainted_document(injected, /*include_tainted=*/false)};
-        const auto current{build_tainted_document(injected, /*include_tainted=*/true)};
-        const std::string json{meta::to_json(meta::diff(baseline->document, current->document))};
-
-        if (!wire_carries_marker(json))
+    for (const Placement placement : kPlacements)
+        for (std::uint16_t value{0}; value <= 0x1FU; ++value)
         {
-            failures.push_back("byte 0x" + ConformanceScanner::hex_byte(injected) +
-                               ": the tainted component never reached the diff wire — this row "
-                               "would have been VACUOUS, not passing");
-            continue;
+            const auto injected{static_cast<std::uint8_t>(value)};
+            const auto baseline{
+                build_tainted_document(injected, placement, /*include_tainted=*/false)};
+            const auto current{
+                build_tainted_document(injected, placement, /*include_tainted=*/true)};
+            const std::string json{
+                meta::to_json(meta::diff(baseline->document, current->document))};
+            const std::string row{std::string{placement_name(placement)} + " byte 0x" +
+                                  ConformanceScanner::hex_byte(injected)};
+
+            if (!wire_carries_injected_byte(json, injected))
+            {
+                failures.push_back(row + ": the injected byte never reached the diff wire — this "
+                                         "row would have been VACUOUS, not passing");
+                continue;
+            }
+            ++reached_the_wire;
+
+            if (const auto broken{ConformanceScanner{json}.scan()})
+                failures.push_back(row + ": " + broken->reason + " at offset " +
+                                   std::to_string(broken->offset) + "\n    " +
+                                   hex_window(json, broken->offset));
         }
-        ++reached_the_wire;
 
-        if (const auto broken{ConformanceScanner{json}.scan()})
-            failures.push_back("byte 0x" + ConformanceScanner::hex_byte(injected) + ": " +
-                               broken->reason + " at offset " + std::to_string(broken->offset) +
-                               "\n    " + hex_window(json, broken->offset));
-    }
-
-    EXPECT_EQ(reached_the_wire, 32U)
-        << "all 32 C0 injections must reach the diff wire, or the arm proves nothing about the "
-           "ones that did not.";
+    EXPECT_EQ(reached_the_wire, 64U)
+        << "all 32 C0 injections at both placements must reach the diff wire, or the arm proves "
+           "nothing about the ones that did not.";
 
     std::string report;
     for (const auto& line : failures)
         report += "  " + line + "\n";
     EXPECT_TRUE(failures.empty())
         << "metalog::to_json(MetaLogDiff) emitted non-conformant JSON for " << failures.size()
-        << " of 32 C0 bytes driven into a `where` coordinate — these are the bytes Sift embeds "
+        << " of 64 rows (32 C0 bytes x 2 placements) driven into a `where` coordinate — these are "
+           "the bytes Sift embeds "
            "verbatim as glz::raw_json and the Action feeds to JSON.parse:\n"
         << report;
 }

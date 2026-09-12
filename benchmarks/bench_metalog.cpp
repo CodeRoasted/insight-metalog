@@ -1,6 +1,8 @@
 // post: reports the produced JSON envelope's size for a synthesised window whose template
 // distribution is Zipf-ish, so the byte cost can be diffed across changes.
 // note: the spec's 4 KB-per-million target is stats-only, so this arm is not measured on it.
+// invariant: every corpus is a FIXED-seed splitmix64 draw and every window opens at a fixed epoch,
+// so the reported bytes are one number on every run and on both toolchains.
 // refs: F-SRC-metalog-spec:SPEC.md
 #include <benchmark/benchmark.h>
 
@@ -11,6 +13,9 @@ namespace
 
 namespace tok = insight::tokenization;
 namespace meta = insight::metalog;
+using insight::metalog::bench::SplitMix64;
+
+constexpr std::chrono::system_clock::time_point kEpoch{std::chrono::seconds{1'700'000'000}};
 
 // invariant: owns the synthetic template strings, so every CanonicalEvent string_view stays valid
 // for the whole benchmark loop.
@@ -34,20 +39,19 @@ SyntheticCorpus make_corpus(std::size_t n_templates)
 // post: opens a window, ingests n_events, closes it, and writes the envelope size and the line
 // count into the out-params.
 void run_once(const SyntheticCorpus& corpus, std::size_t n_events,
-              const meta::MetaLogConfig& config, std::uint32_t seed, std::size_t& out_bytes,
+              const meta::MetaLogConfig& config, std::uint64_t seed, std::size_t& out_bytes,
               std::uint64_t& out_lines, std::size_t& out_unique)
 {
     meta::MetaLogEngine engine{config};
-    const auto t0{std::chrono::system_clock::now()};
+    const auto t0{kEpoch};
     engine.open_window(t0);
 
-    std::mt19937 rng{seed};
+    SplitMix64 rng{seed};
     const std::size_t n_templates = corpus.templates.size();
 
     for (std::size_t i = 0; i < n_events; ++i)
     {
-        const double u = std::uniform_real_distribution<double>{0.0, 1.0}(rng);
-        const std::size_t t_idx = static_cast<std::size_t>(u * u * n_templates) % n_templates;
+        const std::size_t t_idx = rng.skewed(n_templates);
 
         tok::CanonicalEvent ev;
         ev.template_str = corpus.templates[t_idx];
@@ -79,11 +83,13 @@ void BM_MetaLogCompress(benchmark::State& state)
     std::size_t last_bytes = 0;
     std::uint64_t last_lines = 0;
     std::size_t last_unique = 0;
-    std::uint32_t seed = 0x5A1F00D;
+    // invariant: ONE seed for every iteration, so the corpus — and the bytes reported from the last
+    // iteration — never depend on how many iterations the timer chose.
+    constexpr std::uint64_t kSeed{0x5A1F00D};
 
     for (auto _ : state)
     {
-        run_once(corpus, n_events, config, seed++, last_bytes, last_lines, last_unique);
+        run_once(corpus, n_events, config, kSeed, last_bytes, last_lines, last_unique);
         benchmark::DoNotOptimize(last_bytes);
     }
 
@@ -130,12 +136,11 @@ void BM_MetaLogIngest_FieldHistograms(benchmark::State& state)
     std::vector<Fixture> fixtures;
     fixtures.reserve(kEvents);
     {
-        std::mt19937 rng{0x1A2B3C4D};
-        std::uniform_int_distribution<int> coin{0, 4};
+        SplitMix64 rng{0x1A2B3C4D};
         for (std::size_t i{0}; i < kEvents; ++i)
         {
             Fixture f;
-            f.owned = {"GET", "/api/users", coin(rng) == 0 ? "500" : "200"};
+            f.owned = {"GET", "/api/users", rng.below(5) == 0 ? "500" : "200"};
             for (const auto& s : f.owned)
                 f.views.push_back(s);
             f.event.template_str = "GET <*> -> <*>";
@@ -145,7 +150,7 @@ void BM_MetaLogIngest_FieldHistograms(benchmark::State& state)
         }
     }
 
-    const auto t0{std::chrono::system_clock::now()};
+    const auto t0{kEpoch};
     std::int64_t total_events{0};
 
     for (auto _ : state)
@@ -184,12 +189,11 @@ void BM_MetaLogIngest_Where(benchmark::State& state)
     std::vector<tok::CanonicalEvent> events;
     events.reserve(kEvents);
     {
-        std::mt19937 rng{0x7E57C0DE};
-        std::uniform_int_distribution<std::size_t> pick{0, kComponents.size() - 1};
+        SplitMix64 rng{0x7E57C0DE};
         for (std::size_t i{0}; i < kEvents; ++i)
         {
             tok::CanonicalEvent ev;
-            const std::size_t idx{pick(rng)};
+            const std::size_t idx{rng.below(kComponents.size())};
             ev.template_str = kTemplates[idx];
             // invariant: a static-storage view, so it stays valid for the whole run.
             ev.component = kComponents[idx];
@@ -198,7 +202,7 @@ void BM_MetaLogIngest_Where(benchmark::State& state)
         }
     }
 
-    const auto t0{std::chrono::system_clock::now()};
+    const auto t0{kEpoch};
     std::int64_t total_events{0};
 
     for (auto _ : state)

@@ -10,6 +10,26 @@ namespace tok = insight::tokenization;
 namespace meta = insight::metalog;
 using insight::metalog::test::make_event;
 
+// invariant: the engine's entropy is a 40-fractional-bit fixed-point reduction, a few 2^-40 units
+// from the real value, so 1e-9 bounds it with room and still reds a normalisation off by one.
+constexpr double kEntropyTolerance{1e-9};
+
+// post: the Shannon entropy in bits of a count vector, sum of p * log2(1 / p) — the reference
+// the fixed-point reduction approximates, computed in the test and never in the engine.
+[[nodiscard]] double entropy_bits_of(std::initializer_list<std::uint64_t> counts)
+{
+    double total{0.0};
+    for (const std::uint64_t count : counts)
+        total += static_cast<double>(count);
+    double bits{0.0};
+    for (const std::uint64_t count : counts)
+    {
+        const double share{static_cast<double>(count) / total};
+        bits -= share * std::log2(share);
+    }
+    return bits;
+}
+
 class StatsBlockTest : public ::testing::Test
 {
   protected:
@@ -128,8 +148,9 @@ TEST(MetaLogEngineStats, TailSummaryPresentAndMaxRateMatchesTopTailTemplate)
     EXPECT_EQ(doc.stats.tail_summary->tail_template_count, doc.stats.tail_unique);
     EXPECT_EQ(doc.stats.tail_summary->tail_template_count, 2U);
     EXPECT_DOUBLE_EQ(doc.stats.tail_summary->tail_max_rate, 3.0 / 14.0);
-    EXPECT_GT(doc.stats.tail_summary->tail_entropy_bits, 0.7);
-    EXPECT_LT(doc.stats.tail_summary->tail_entropy_bits, 0.9);
+    EXPECT_NEAR(doc.stats.tail_summary->tail_entropy_bits, entropy_bits_of({3, 1}),
+                kEntropyTolerance)
+        << "the tail is {3, 1}, so its entropy is the two-outcome entropy at 3/4";
 }
 
 TEST(MetaLogEngineStats, TailSummaryEntropyCollapsesWhenOneTemplateDominatesTail)
@@ -145,8 +166,13 @@ TEST(MetaLogEngineStats, TailSummaryEntropyCollapsesWhenOneTemplateDominatesTail
     engine.ingest_event(make_event("noise_b"));
     auto doc{engine.close_window(t0 + std::chrono::seconds(1))};
     ASSERT_TRUE(doc.stats.tail_summary.has_value());
-    EXPECT_LT(doc.stats.tail_summary->tail_entropy_bits, 0.4);
-    EXPECT_GT(doc.stats.tail_summary->tail_max_rate, 0.32);
+    // invariant: both values are DERIVED from the fixture — the tail is {98, 1, 1} over 300 lines —
+    // so a normalisation off by one count is red, which a bound with headroom never was.
+    EXPECT_NEAR(doc.stats.tail_summary->tail_entropy_bits, entropy_bits_of({98, 1, 1}),
+                kEntropyTolerance)
+        << "entropy is normalised over the tail's own mass (100), never over lines_observed";
+    EXPECT_DOUBLE_EQ(doc.stats.tail_summary->tail_max_rate, 98.0 / 300.0)
+        << "the max rate is the top tail template's count over lines_observed, never over the tail";
 }
 
 TEST(MetaLogEngineStats, TailSummarySerialisedToJsonAtomically)

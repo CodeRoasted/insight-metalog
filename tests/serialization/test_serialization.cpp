@@ -65,14 +65,22 @@ TEST(FieldHistogramSerializationTest, OmittedWhenDisabled)
         << json;
 }
 
+// refs: F-SRC-metalog-spec:SPEC.md
+// invariant: the ceiling is DERIVED, never chosen — the cap binds on BOTH slots, so a histogram
+// holds kMaxValues entries, each bounded by the longest value, widest count and member syntax.
+// invariant: per SLOT, not one worst case for all: an under-filled slot would lend its unused
+// allowance to the other and hide a broken cap.
 TEST(FieldHistogramSerializationTest, BoundedDocumentOverhead)
 {
     constexpr std::size_t kTemplates{512};
     constexpr std::size_t kMaxHist{2};
     constexpr std::size_t kMaxValues{64};
-    constexpr std::size_t kPaths{20};
-    constexpr std::size_t kCodes{6};
-    constexpr std::size_t kEventsPerTemplate{40};
+    constexpr std::size_t kDistinctPerSlot{100};
+    constexpr std::size_t kEventsPerTemplate{kDistinctPerSlot};
+    static_assert(kDistinctPerSlot > kMaxValues,
+                  "the cap must bind, or the bound is not the cap's");
+    constexpr std::string_view kPathStem{"/api/resource_"};
+    constexpr std::string_view kIdStem{"req_"};
 
     const auto build{
         [&](std::size_t max_param_histograms)
@@ -83,16 +91,16 @@ TEST(FieldHistogramSerializationTest, BoundedDocumentOverhead)
                 .max_param_histograms = max_param_histograms,
                 .max_histogram_values = kMaxValues,
             }};
-            const auto t0{std::chrono::system_clock::now()};
+            const std::chrono::system_clock::time_point t0{std::chrono::seconds{1'700'000'000}};
             engine.open_window(t0);
             for (std::size_t tmpl{0}; tmpl < kTemplates; ++tmpl)
             {
-                const std::string tstr{"t" + std::to_string(tmpl) + " path=<*> code=<*>"};
+                const std::string tstr{"t" + std::to_string(tmpl) + " path=<*> id=<*>"};
                 for (std::size_t ev{0}; ev < kEventsPerTemplate; ++ev)
                 {
-                    const std::string path{"/api/resource_" + std::to_string(ev % kPaths)};
-                    const std::string code{std::to_string(200 + (ev % kCodes) * 100)};
-                    auto pe{ParamEvent::make(tstr, {path, code})};
+                    const std::string path{std::string{kPathStem} + std::to_string(ev)};
+                    const std::string id{std::string{kIdStem} + std::to_string(ev)};
+                    auto pe{ParamEvent::make(tstr, {path, id})};
                     engine.ingest_event(pe.event);
                 }
             }
@@ -105,24 +113,65 @@ TEST(FieldHistogramSerializationTest, BoundedDocumentOverhead)
     const std::string json_with{meta::to_json(doc_with, reg_with)};
     const std::string json_without{meta::to_json(doc_without, reg_without)};
 
-    ASSERT_FALSE(doc_with.stats.top_k.empty());
+    ASSERT_EQ(doc_with.stats.top_k.size(), kTemplates);
+    std::size_t unsaturated{0};
+    std::size_t widest{0};
+    for (const auto& entry : doc_with.stats.top_k)
+    {
+        ASSERT_EQ(entry.field_histograms.size(), kMaxHist);
+        for (const auto& hist : entry.field_histograms)
+        {
+            unsaturated += hist.value_counts.size() == kMaxValues ? 0U : 1U;
+            widest = std::max(widest, hist.value_counts.size());
+        }
+    }
+    EXPECT_EQ(unsaturated, 0U) << unsaturated << " of " << kTemplates * kMaxHist
+                               << " histograms do not hold exactly " << kMaxValues
+                               << " values (widest " << widest
+                               << ") — the fixture's premise, or the cap broke";
     ASSERT_GT(json_with.size(), json_without.size()) << "histograms must add bytes";
-    const std::size_t top_k_count{doc_with.stats.top_k.size()};
     const std::size_t overhead{json_with.size() - json_without.size()};
 
-    std::cout << "[ SIZE ] templates=" << top_k_count << " doc_without=" << json_without.size()
-              << "B doc_with=" << json_with.size() << "B overhead=" << overhead
-              << "B per_template=" << (overhead / top_k_count) << "B overhead_pct="
-              << (100.0 * static_cast<double>(overhead) / static_cast<double>(json_without.size()))
-              << "%\n";
+    const auto digits{[](std::size_t value)
+                      {
+                          std::size_t count{1};
+                          for (; value >= 10U; value /= 10U)
+                              ++count;
+                          return count;
+                      }};
+    // invariant: `"value":count,` — two quotes, a colon and a separator around the value and count.
+    constexpr std::size_t kEntrySyntaxBytes{4};
+    const std::size_t count_digits{digits(kEventsPerTemplate)};
+    const std::size_t path_entry{kPathStem.size() + digits(kDistinctPerSlot - 1) + count_digits +
+                                 kEntrySyntaxBytes};
+    const std::size_t id_entry{kIdStem.size() + digits(kDistinctPerSlot - 1) + count_digits +
+                               kEntrySyntaxBytes};
+    // invariant: a histogram's envelope is its four SPEC §3.5 members, each `"name":` plus a
+    // separator, three braces, and three numbers — index, total and a cardinality under 2x.
+    constexpr std::array<std::string_view, 4> kMembers{"param_index", "value_counts", "total",
+                                                       "approximate_cardinality"};
+    std::size_t envelope{2 + 1 + digits(kMaxHist) + count_digits + digits(2 * kDistinctPerSlot)};
+    for (const std::string_view member : kMembers)
+        envelope += member.size() + 3 + 1;
+    // invariant: per template, `,"param_histograms":[` and `]` around the histograms and one comma
+    // between each pair of them.
+    constexpr std::string_view kArrayKey{"param_histograms"};
+    const std::size_t array_envelope{kArrayKey.size() + 6 + (kMaxHist - 1)};
+    const std::size_t per_template{array_envelope + kMaxHist * envelope +
+                                   kMaxValues * (path_entry + id_entry)};
+    const std::size_t cap_bound{kTemplates * per_template};
 
-    // note: a cap-derived ceiling, not the measured overhead, which is printed and never asserted.
-    constexpr std::size_t kBytesPerValueEntryUpperBound{96};
-    const std::size_t cap_bound{top_k_count * kMaxHist * kMaxValues *
-                                kBytesPerValueEntryUpperBound};
+    std::cout << "[ SIZE ] templates=" << kTemplates << " doc_without=" << json_without.size()
+              << "B doc_with=" << json_with.size() << "B overhead=" << overhead
+              << "B per_template=" << (overhead / kTemplates)
+              << "B bound_per_template=" << per_template << "B\n";
+
     EXPECT_LE(overhead, cap_bound)
-        << "param_histograms overhead must stay within the cap-derived bound. overhead=" << overhead
-        << "B cap_bound=" << cap_bound << "B";
+        << "param_histograms overhead exceeds the ceiling derived from the cap and the fixture: "
+           "overhead="
+        << overhead << "B cap_bound=" << cap_bound << "B (" << kTemplates << " templates x ("
+        << array_envelope << " + " << kMaxHist << " x " << envelope << " + " << kMaxValues << " x ("
+        << path_entry << " + " << id_entry << ")))";
 }
 
 namespace

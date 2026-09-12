@@ -1,7 +1,7 @@
 // post: attributes the per-call cost of compose() and diff() to three pieces -- the map and string
 // union plumbing, the reduction tail, and the cube re-closure.
-// invariant: the corpus draws from a local splitmix64 and never a std distribution, whose draw
-// sequence is unspecified and differs across standard libraries.
+// invariant: the corpus draws from the bench module's splitmix64 and never a std distribution,
+// whose draw sequence is unspecified and differs across standard libraries.
 // refs: ADR-19.D1
 #include <benchmark/benchmark.h>
 
@@ -15,25 +15,7 @@ namespace cube = insight::metalog::cube;
 namespace tok = insight::tokenization;
 using insight::LogLevel;
 using insight::StructuralRole;
-
-struct SplitMix64
-{
-    std::uint64_t state;
-    [[nodiscard]] std::uint64_t next() noexcept
-    {
-        state += 0x9E3779B97F4A7C15ULL;
-        std::uint64_t z{state};
-        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
-        z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
-        return z ^ (z >> 31);
-    }
-    [[nodiscard]] std::size_t skewed(std::size_t n) noexcept
-    {
-        const std::uint64_t x{next() >> 32};
-        const std::uint64_t sq{(x * x) >> 32};
-        return static_cast<std::size_t>((sq * n) >> 32);
-    }
-};
+using insight::metalog::bench::SplitMix64;
 
 constexpr std::size_t kComponentCount{16};
 constexpr std::size_t kTemplateCount{256};

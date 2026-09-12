@@ -4,6 +4,8 @@
 // compose's re-derivation -- and each admits only under a positive salience score.
 // invariant: the verdict stops being current the day an inbound path mints entries no salience
 // computation produced; the property then narrows to those two producers.
+// assert: red-capability OBSERVED 2026-09-12, mutations reverted — dropping either producer's axis
+// stamp reds that producer's arm ALONE, which is the two-producer partition the census exists for.
 // refs: ADR-25.D8
 #include <gtest/gtest.h>
 
