@@ -117,7 +117,8 @@ struct OrdinalDrift
 
     // invariant: frozen octave bands compared by exact integer cross-multiply -- 5 octaves HIGH, 2
     // MED, 0.5 LOW -- and biased conservative, so a real regime shift never reads None.
-    // refs: STU-3.A1
+    // note: calibrated on scenario 35, not pre-registered; a re-cut on gate data voids the gate.
+    // refs: DN-11.D20
     constexpr std::int64_t kHighNum{5}, kHighDen{1};
     constexpr std::int64_t kMedNum{2}, kMedDen{1};
     constexpr std::int64_t kLowNum{1}, kLowDen{2};
