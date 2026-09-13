@@ -409,4 +409,64 @@ TEST(ComparisonOutcomeProducer, AChangedPairAssertsChangedAndCarriesTheWitness)
         << json;
 }
 
+// invariant: the withheld clause on the REAL producer: param histograms on, one parameterised
+// template, the same events on both sides except the values `current_values` names.
+// invariant: the template counts and sequence are equal on both sides, so every carried signal
+// property lands on its vacuous value and the withheld clause alone decides the outcome.
+[[nodiscard]] std::pair<meta::MetaLogDocument, meta::MetaLogDocument>
+param_bearing_pair(std::span<const std::string_view> previous_values,
+                   std::span<const std::string_view> current_values)
+{
+    const auto t0{insight::Timestamp{} + std::chrono::hours{1}};
+    const auto t1{t0 + std::chrono::seconds{60}};
+    const auto t2{t1 + std::chrono::seconds{60}};
+    const meta::MetaLogConfig histograms_on{.max_param_histograms = 1};
+
+    const auto window{[&](std::span<const std::string_view> values, insight::Timestamp open,
+                          insight::Timestamp close)
+                      {
+                          meta::MetaLogEngine engine{histograms_on};
+                          engine.open_window(open);
+                          for (const std::string_view value : values)
+                          {
+                              const auto login{insight::metalog::test::ParamEvent::make(
+                                  "user <*> logged in", {value})};
+                              engine.ingest_event(login.event);
+                          }
+                          return engine.close_window(close);
+                      }};
+    return {window(previous_values, t0, t1), window(current_values, t1, t2)};
+}
+
+// invariant: a moved value distribution is the finding the document cannot carry, so the real
+// producer must assert changed AND name the withheld signal that decided it.
+TEST(ComparisonOutcomeProducer, AMovedParamDistributionAloneAssertsChangedThroughTheWithheldSignal)
+{
+    const std::array<std::string_view, 8> previous_values{"alice", "bob", "alice", "bob",
+                                                          "alice", "bob", "alice", "bob"};
+    const std::array<std::string_view, 8> current_values{"alice", "carol", "alice", "carol",
+                                                         "alice", "carol", "alice", "carol"};
+    const auto [previous, current] = param_bearing_pair(previous_values, current_values);
+    const auto diff{meta::diff(previous, current)};
+
+    // pre: no carried property witnesses, so the outcome below is the withheld clause's alone.
+    ASSERT_TRUE(diff.kl_divergence.has_value() && diff.js_divergence.has_value());
+    ASSERT_EQ(*diff.kl_divergence, 0.0);
+    ASSERT_EQ(*diff.js_divergence, 0.0);
+    ASSERT_TRUE(diff.new_templates.empty() && diff.vanished_templates.empty());
+    for (const auto& row : diff.template_deltas)
+        ASSERT_EQ(row.delta, 0) << "template " << insight::render(row.template_id) << " moved";
+    ASSERT_FALSE(diff.field_histogram_deltas.empty())
+        << "the moved distribution produced no field histogram row";
+    EXPECT_GT(diff.field_histogram_deltas.front().js_divergence, 0.0);
+
+    EXPECT_TRUE(outcome_is(diff, ComparisonOutcome::Changed));
+    EXPECT_EQ(meta::withheld_signals_of(diff),
+              (std::vector<std::string>{"field_histogram_deltas"}));
+    const std::string json{meta::to_json(diff)};
+    EXPECT_NE(json.find(R"("comparison_outcome":"changed")"), std::string::npos) << json;
+    EXPECT_NE(json.find(R"("withheld_signals":["field_histogram_deltas"])"), std::string::npos)
+        << json;
+}
+
 } // namespace
