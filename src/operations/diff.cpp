@@ -599,11 +599,24 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
     return out;
 }
 
-// post: true iff the diff computed field-histogram rows that never reach the wire.
-// note: its declared vacuity is an empty array, so ANY row is a finding.
+namespace
+{
+    // post: whether the row's slot moved between the two windows: its divergence, its entropy or
+    // its cardinality differs.
+    // note: the sample counts are the divergence's confidence basis, never a finding.
+    [[nodiscard]] bool field_histogram_row_moved(const FieldHistogramDelta& row) noexcept
+    {
+        return row.js_divergence != 0.0 || row.previous_entropy_bits != row.current_entropy_bits ||
+               row.cardinality_delta != 0;
+    }
+} // namespace
+
+// post: true iff the diff computed a field-histogram row that moved, which never reaches the wire.
+// invariant: the schema declares the property vacuous when no slot's distribution moved, so an
+// unmoved row is no finding; diff() still emits it, and consumers observe it as a zero divergence.
 [[nodiscard]] bool withholds_field_histogram_deltas(const MetaLogDiff& diff) noexcept
 {
-    return !diff.field_histogram_deltas.empty();
+    return std::ranges::any_of(diff.field_histogram_deltas, field_histogram_row_moved);
 }
 
 // note: the contract and the two deltas that deliberately do not decide are on the header.

@@ -229,6 +229,53 @@ TEST(ComparisonOutcomeRule, WithheldFieldHistogramDeltasWitnessThroughWithheldSi
               (std::vector<std::string>{"field_histogram_deltas"}));
 }
 
+// invariant: a row whose divergence, entropy and cardinality agree on both sides carries no
+// movement, so it withholds nothing even when its sample counts differ.
+// invariant: each of the three moving alone makes the row a finding the document withholds.
+TEST(ComparisonOutcomeRule, AnUnmovedFieldHistogramRowWithholdsNothingAndEachMovementWithholds)
+{
+    meta::FieldHistogramDelta unmoved;
+    unmoved.template_id = insight::template_id_of("user <*> logged in");
+    unmoved.param_index = 0;
+    unmoved.js_divergence = 0.0;
+    unmoved.previous_entropy_bits = 1.0;
+    unmoved.current_entropy_bits = 1.0;
+    unmoved.previous_sample_count = 8;
+    unmoved.current_sample_count = 16;
+    unmoved.previous_cardinality = 2;
+    unmoved.current_cardinality = 2;
+    unmoved.cardinality_delta = 0;
+
+    auto diff{bare_diff()};
+    diff.field_histogram_deltas.push_back(unmoved);
+    EXPECT_TRUE(meta::withheld_signals_of(diff).empty())
+        << "a row that carries no movement was named withheld; a sample-count change alone is "
+           "template_deltas' finding, not this property's";
+    EXPECT_TRUE(outcome_is(diff, ComparisonOutcome::Unchanged));
+
+    auto diverged{unmoved};
+    diverged.js_divergence = 0.01;
+    auto entropy_moved{unmoved};
+    entropy_moved.current_entropy_bits = 1.5;
+    auto cardinality_moved{unmoved};
+    cardinality_moved.current_cardinality = 3;
+    cardinality_moved.cardinality_delta = 1;
+    for (const auto& [movement, row] :
+         {std::pair{std::string_view{"js_divergence"}, diverged},
+          std::pair{std::string_view{"entropy_bits"}, entropy_moved},
+          std::pair{std::string_view{"cardinality_delta"}, cardinality_moved}})
+    {
+        auto moved{bare_diff()};
+        moved.field_histogram_deltas.push_back(unmoved);
+        moved.field_histogram_deltas.push_back(row);
+        EXPECT_EQ(meta::withheld_signals_of(moved),
+                  (std::vector<std::string>{"field_histogram_deltas"}))
+            << movement << " moved alone and was not named withheld";
+        EXPECT_TRUE(outcome_is(moved, ComparisonOutcome::Changed))
+            << movement << " moved alone and the outcome was not changed";
+    }
+}
+
 // invariant: what may be NAMED is narrower than everything this producer drops: a member must be in
 // the witness set and must not already witness in the document.
 // note: one candidate is not in the standard at all and the other IS carried, under extensions.
@@ -436,6 +483,47 @@ param_bearing_pair(std::span<const std::string_view> previous_values,
                           return engine.close_window(close);
                       }};
     return {window(previous_values, t0, t1), window(current_values, t1, t2)};
+}
+
+// post: whether the document's first top_k entry carries a field histogram.
+[[nodiscard]] bool tracks_a_field_histogram(const meta::MetaLogDocument& document)
+{
+    return !document.stats.top_k.empty() && !document.stats.top_k.front().field_histograms.empty();
+}
+
+// post: one line per field-histogram row, for a failure message.
+[[nodiscard]] std::string describe_field_histogram_rows(const meta::MetaLogDiff& diff)
+{
+    std::string rows;
+    for (const auto& row : diff.field_histogram_deltas)
+        rows +=
+            std::format("\n  param {} js_divergence {:.17g} cardinality {} -> {}", row.param_index,
+                        row.js_divergence, row.previous_cardinality, row.current_cardinality);
+    return rows;
+}
+
+// invariant: identical histograms are not a finding, so a producer that computes them must still
+// assert unchanged and name nothing withheld.
+TEST(ComparisonOutcomeProducer, IdenticalParamHistogramsAssertUnchangedAndWithholdNothing)
+{
+    const std::array<std::string_view, 8> values{"alice", "bob", "alice", "bob",
+                                                 "alice", "bob", "alice", "bob"};
+    const auto [previous, current] = param_bearing_pair(values, values);
+
+    // pre: without a histogram on both sides the withheld clause has nothing to read.
+    ASSERT_TRUE(tracks_a_field_histogram(previous) && tracks_a_field_histogram(current))
+        << "fixture must carry a field histogram on both sides, or the withheld clause is untested";
+
+    const auto diff{meta::diff(previous, current)};
+    const std::string rows{describe_field_histogram_rows(diff)};
+
+    EXPECT_TRUE(outcome_is(diff, ComparisonOutcome::Unchanged))
+        << "two identical windows; field_histogram_deltas rows:" << rows;
+    EXPECT_TRUE(meta::withheld_signals_of(diff).empty())
+        << "a withheld signal named between two identical windows; rows:" << rows;
+    const std::string json{meta::to_json(diff)};
+    EXPECT_NE(json.find(R"("comparison_outcome":"unchanged")"), std::string::npos) << json;
+    EXPECT_EQ(json.find(R"("withheld_signals")"), std::string::npos) << json;
 }
 
 // invariant: a moved value distribution is the finding the document cannot carry, so the real
