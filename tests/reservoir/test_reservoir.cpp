@@ -3,6 +3,8 @@
 
 import insight.metalog.test;
 
+#include "../written_or_fail.hpp"
+
 namespace
 {
 
@@ -246,7 +248,7 @@ TEST(ReservoirTest, SerialisedToJsonWithAttribution)
     const auto doc{run_with_rare_event(rare, /*top_k=*/3, /*reservoir_size=*/8, &registry)};
     ASSERT_FALSE(doc.stats.reservoir.empty());
 
-    const std::string json = meta::to_json(doc, registry);
+    const std::string json = written_or_fail(meta::to_json(doc, registry));
     auto parsed = glz::read_json<glz::generic>(json);
     ASSERT_TRUE(parsed.has_value()) << "serialised output did not parse: " << json;
     ASSERT_TRUE((*parsed)["stats"].contains("reservoir")) << json;
@@ -269,7 +271,7 @@ TEST(ReservoirTest, EmptyReservoirOmittedFromJson)
     for (int i = 0; i < 10; ++i)
         engine.ingest_event(make_event("steady"));
     const auto doc{engine.close_window(t0 + std::chrono::seconds(1))};
-    const std::string json = meta::to_json(doc, engine.registry());
+    const std::string json = written_or_fail(meta::to_json(doc, engine.registry()));
     auto parsed = glz::read_json<glz::generic>(json);
     ASSERT_TRUE(parsed.has_value()) << json;
     EXPECT_FALSE((*parsed)["stats"].contains("reservoir")) << json;
@@ -655,7 +657,7 @@ TEST(ReDerivationCoordinate, SerialisesCoordinate)
     engine.open_window(start);
     engine.ingest_event(make_event("alpha"));
     const auto doc{engine.close_window(start + std::chrono::seconds(1))};
-    const std::string json{meta::to_json(doc, engine.registry())};
+    const std::string json{written_or_fail(meta::to_json(doc, engine.registry()))};
 
     const auto parsed{glz::read_json<glz::generic>(json)};
     ASSERT_TRUE(parsed.has_value()) << "serialised output did not parse: " << json;
@@ -746,7 +748,7 @@ TEST(ReDerivationCoordinate, ComposedSerialisesAsChildrenOnlyXOR)
         meta::compose(build("seed=1", t0), build("seed=2", t0 + std::chrono::seconds(30)))};
     // assert: this arm asserts the coordinate encoding and not template strings, so an empty
     // registry is sufficient.
-    const std::string json{meta::to_json(composed, meta::TemplateRegistry{})};
+    const std::string json{written_or_fail(meta::to_json(composed, meta::TemplateRegistry{}))};
 
     const auto parsed{glz::read_json<glz::generic>(json)};
     ASSERT_TRUE(parsed.has_value()) << "serialised composed doc did not parse: " << json;

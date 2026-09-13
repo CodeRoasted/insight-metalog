@@ -1183,12 +1183,13 @@ namespace
 
 } // namespace
 
-std::string to_json(const MetaLogDocument& doc, const TemplateRegistry& registry)
+std::expected<std::string, std::string> to_json(const MetaLogDocument& doc,
+                                                const TemplateRegistry& registry)
 {
     return json_egress::to_string<kWriteOpts>(make_document(doc, registry));
 }
 
-std::string to_json(const MetaLogDiff& diff)
+std::expected<std::string, std::string> to_json(const MetaLogDiff& diff)
 {
     return json_egress::to_string<kWriteOpts>(make_diff(diff));
 }

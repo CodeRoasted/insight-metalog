@@ -337,11 +337,14 @@ class MetaLogEngine
 // pre: `registry` contains every id the document references; engine.registry() does.
 // note: this seam emits the per-entry inline template mode; the others were never wired.
 // refs: ADR-9.D4, ADR-26.D12, ADR-24.D8, F-SRC-insight-metalog:metalog.api.cppm:TemplateRegistry
-[[nodiscard]] std::string to_json(const MetaLogDocument& doc, const TemplateRegistry& registry);
+// post: a document holding a NaN or an infinity is refused before any byte is written, the error
+// naming the path of its first such number (DN-99.D8).
+[[nodiscard]] std::expected<std::string, std::string> to_json(const MetaLogDocument& doc,
+                                                              const TemplateRegistry& registry);
 
-// post: the same omit-empty discipline and the same RFC 8259 guarantee as the document overload,
-// both writing through the one entry point that forces the escape.
-[[nodiscard]] std::string to_json(const MetaLogDiff& diff);
+// post: the same omit-empty discipline, RFC 8259 guarantee and non-finite refusal as the
+// document overload, both writing through the one entry point that walks and escapes.
+[[nodiscard]] std::expected<std::string, std::string> to_json(const MetaLogDiff& diff);
 
 // post: required fields are preserved -- lines_observed, the unique_templates union and the
 // time-axis envelope; a non-empty tail on either input makes the merge lossy.

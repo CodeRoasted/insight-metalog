@@ -2,6 +2,8 @@
 
 import insight.metalog.test;
 
+#include "../written_or_fail.hpp"
+
 namespace
 {
 
@@ -22,7 +24,7 @@ TEST(FieldHistogramSerializationTest, ValueCountsEmittedKeySorted)
         engine.ingest_event(ev.event);
     }
     const auto doc{engine.close_window(t0 + std::chrono::seconds(1))};
-    const std::string json{meta::to_json(doc, engine.registry())};
+    const std::string json{written_or_fail(meta::to_json(doc, engine.registry()))};
 
     ASSERT_NE(json.find("\"param_histograms\""), std::string::npos)
         << "param_histograms must be emitted when max_param_histograms > 0.\n"
@@ -43,7 +45,7 @@ TEST(FieldHistogramSerializationTest, ValueCountsEmittedKeySorted)
         << "param_histograms must serialise integer-only & key-sorted (no entropy_bits).\n"
         << json;
 
-    EXPECT_EQ(meta::to_json(doc, engine.registry()), json)
+    EXPECT_EQ(written_or_fail(meta::to_json(doc, engine.registry())), json)
         << "serialisation must be byte-identical on repeat.";
 }
 
@@ -58,7 +60,7 @@ TEST(FieldHistogramSerializationTest, OmittedWhenDisabled)
         engine.ingest_event(ev.event);
     }
     const auto doc{engine.close_window(t0 + std::chrono::seconds(1))};
-    const std::string json{meta::to_json(doc, engine.registry())};
+    const std::string json{written_or_fail(meta::to_json(doc, engine.registry()))};
 
     EXPECT_EQ(json.find("param_histograms"), std::string::npos)
         << "param_histograms must be omitted on the default path (byte-unchanged docs).\n"
@@ -110,8 +112,8 @@ TEST(FieldHistogramSerializationTest, BoundedDocumentOverhead)
 
     const auto [doc_with, reg_with]{build(kMaxHist)};
     const auto [doc_without, reg_without]{build(0)};
-    const std::string json_with{meta::to_json(doc_with, reg_with)};
-    const std::string json_without{meta::to_json(doc_without, reg_without)};
+    const std::string json_with{written_or_fail(meta::to_json(doc_with, reg_with))};
+    const std::string json_without{written_or_fail(meta::to_json(doc_without, reg_without))};
 
     ASSERT_EQ(doc_with.stats.top_k.size(), kTemplates);
     std::size_t unsaturated{0};
@@ -210,7 +212,7 @@ TEST(DeclaredCapSerializationTest, EveryEmittedCappedBlockDeclaresItsCapAndHonou
                                                            .emit_stability = false,
                                                            .top_branching_size = kBranchingCap},
                                        registry)};
-    const std::string json{meta::to_json(doc, registry)};
+    const std::string json{written_or_fail(meta::to_json(doc, registry))};
 
     ASSERT_FALSE(doc.stats.reservoir.empty()) << "fixture must populate the reservoir.\n" << json;
     ASSERT_TRUE(doc.behavior.has_value()) << json;
@@ -253,7 +255,7 @@ TEST(DeclaredCapSerializationTest, ABlockThatIsNotEmittedDeclaresNoCap)
         meta::MetaLogConfig{
             .top_k_size = 3, .reservoir_size = 0, .emit_stability = false, .top_branching_size = 0},
         registry)};
-    const std::string json{meta::to_json(doc, registry)};
+    const std::string json{written_or_fail(meta::to_json(doc, registry))};
 
     ASSERT_TRUE(doc.stats.reservoir.empty()) << json;
     ASSERT_TRUE(doc.behavior.has_value()) << "behavior still carries top_ngrams.\n" << json;
@@ -291,7 +293,7 @@ TEST(DroppedNgramObservationsWireTest, ACappedWindowWritesTheRefusedObservationC
 {
     meta::TemplateRegistry registry;
     const auto doc{window_of_twenty_distinct_templates(/*cap=*/4, registry)};
-    const std::string json{meta::to_json(doc, registry)};
+    const std::string json{written_or_fail(meta::to_json(doc, registry))};
 
     ASSERT_TRUE(doc.behavior.has_value()) << json;
     EXPECT_NE(json.find("\"dropped_ngram_observations\":15"), std::string::npos)
@@ -305,7 +307,7 @@ TEST(DroppedNgramObservationsWireTest, AnUncappedWindowOmitsTheKeyRatherThanWrit
     meta::TemplateRegistry registry;
     const auto doc{
         window_of_twenty_distinct_templates(meta::MetaLogConfig{}.max_ngram_keys, registry)};
-    const std::string json{meta::to_json(doc, registry)};
+    const std::string json{written_or_fail(meta::to_json(doc, registry))};
 
     ASSERT_TRUE(doc.behavior.has_value()) << "the block must be PRESENT, or the absence below is "
                                              "the block's, not the field's.\n"

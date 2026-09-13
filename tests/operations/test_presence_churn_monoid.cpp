@@ -17,6 +17,8 @@
 
 import insight.metalog.test;
 
+#include "../written_or_fail.hpp"
+
 namespace
 {
 
@@ -410,12 +412,12 @@ TEST(PresenceChurnWire, TheSpanOneBlockIsOmittedAndTheComposedOneIsEmitted)
         engine_b.ingest_event(make_event("alpha steady event"));
     const auto later{engine_b.close_window(kT2)};
 
-    const std::string base_json{meta::to_json(earlier, engine_a.registry())};
+    const std::string base_json{written_or_fail(meta::to_json(earlier, engine_a.registry()))};
     EXPECT_EQ(base_json.find("fr.coderoast.presence_churn"), std::string::npos)
         << "a single-window document must carry no churn block at all";
 
     const std::string composed_json{
-        meta::to_json(meta::compose(earlier, later), engine_a.registry())};
+        written_or_fail(meta::to_json(meta::compose(earlier, later), engine_a.registry()))};
     EXPECT_NE(composed_json.find("\"fr.coderoast.presence_churn\""), std::string::npos)
         << "the composed document must carry the per-row block";
     EXPECT_NE(composed_json.find("\"fr.coderoast.presence_churn_summary\""), std::string::npos)

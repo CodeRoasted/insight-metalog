@@ -9,6 +9,8 @@
 
 import insight.metalog.test;
 
+#include "../written_or_fail.hpp"
+
 namespace
 {
 
@@ -199,7 +201,7 @@ TEST(ReservoirDeltaTest, OmittedFromJsonWhenBothMemoriesEmpty)
     const auto d{meta::diff(prev, curr)};
     EXPECT_TRUE(d.reservoir_delta.empty());
 
-    const std::string json{meta::to_json(d)};
+    const std::string json{written_or_fail(meta::to_json(d))};
     EXPECT_EQ(json.find("reservoir_delta"), std::string::npos)
         << "empty reservoir_delta must be omitted from the wire; json was:\n"
         << json;

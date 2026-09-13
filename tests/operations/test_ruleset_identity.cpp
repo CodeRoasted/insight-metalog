@@ -12,6 +12,8 @@
 
 import insight.metalog.test;
 
+#include "../written_or_fail.hpp"
+
 namespace
 {
 namespace meta = insight::metalog;
@@ -63,7 +65,7 @@ TEST(RulesetIdentity, RoundTripsThroughGenericJson)
 {
     meta::TemplateRegistry registry;
     const auto doc{build_doc_with_ruleset(kRulesetA, &registry)};
-    const std::string json{meta::to_json(doc, registry)};
+    const std::string json{written_or_fail(meta::to_json(doc, registry))};
 
     const auto parsed{glz::read_json<glz::generic>(json)};
     ASSERT_TRUE(parsed.has_value()) << json;
@@ -96,7 +98,7 @@ TEST(RulesetIdentity, LegacyProducerEmitsNoBlock)
     const auto doc{build_doc_with_ruleset(std::nullopt, &registry)};
     EXPECT_FALSE(doc.ruleset.has_value());
 
-    const std::string json{meta::to_json(doc, registry)};
+    const std::string json{written_or_fail(meta::to_json(doc, registry))};
     const auto parsed{glz::read_json<glz::generic>(json)};
     ASSERT_TRUE(parsed.has_value()) << json;
     EXPECT_FALSE((*parsed).contains("ruleset"))

@@ -15,6 +15,8 @@
 
 import insight.metalog.test;
 
+#include "../written_or_fail.hpp"
+
 namespace
 {
 
@@ -468,7 +470,8 @@ TEST(EgressEncodingConformance, MetaLogDocumentEmitsConformantJsonForEveryC0Byte
         {
             const auto injected{static_cast<std::uint8_t>(value)};
             const auto built{build_tainted_document(injected, placement, /*include_tainted=*/true)};
-            const std::string json{meta::to_json(built->document, built->engine.registry())};
+            const std::string json{
+                written_or_fail(meta::to_json(built->document, built->engine.registry()))};
             const std::string row{std::string{placement_name(placement)} + " byte 0x" +
                                   ConformanceScanner::hex_byte(injected)};
 
@@ -514,7 +517,7 @@ TEST(EgressEncodingConformance, MetaLogDiffEmitsConformantJsonForEveryC0Byte)
             const auto current{
                 build_tainted_document(injected, placement, /*include_tainted=*/true)};
             const std::string json{
-                meta::to_json(meta::diff(baseline->document, current->document))};
+                written_or_fail(meta::to_json(meta::diff(baseline->document, current->document)))};
             const std::string row{std::string{placement_name(placement)} + " byte 0x" +
                                   ConformanceScanner::hex_byte(injected)};
 

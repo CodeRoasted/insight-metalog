@@ -63,7 +63,7 @@ int main(int argc, char** argv)
         engine.open_window(Clock::time_point{std::chrono::seconds{1700000000}});
         ml::cube_collapse::emit_window(engine);
         const auto doc{engine.close_window(Clock::time_point{std::chrono::seconds{1700000060}})};
-        std::cout << ml::to_json(doc, engine.registry()) << "\n";
+        std::cout << ml::to_json(doc, engine.registry()).value() << "\n";
         return 0;
     }
 
@@ -79,7 +79,7 @@ int main(int argc, char** argv)
         engine.open_window(Clock::time_point{std::chrono::seconds{1700000000}});
         ml::nearfull::emit_window(engine);
         const auto doc{engine.close_window(Clock::time_point{std::chrono::seconds{1700000060}})};
-        std::cout << ml::to_json(doc, engine.registry()) << "\n";
+        std::cout << ml::to_json(doc, engine.registry()).value() << "\n";
         return 0;
     }
 
@@ -95,7 +95,7 @@ int main(int argc, char** argv)
         engine.open_window(Clock::time_point{std::chrono::seconds{1700000000}});
         ml::streaming_nearfull::emit_window(engine);
         const auto doc{engine.close_window(Clock::time_point{std::chrono::seconds{1700000060}})};
-        std::cout << ml::to_json(doc, engine.registry()) << "\n";
+        std::cout << ml::to_json(doc, engine.registry()).value() << "\n";
         return 0;
     }
 
@@ -111,7 +111,7 @@ int main(int argc, char** argv)
         engine.open_window(Clock::time_point{std::chrono::seconds{1700000000}});
         ml::ngram_cap::emit_window(engine);
         const auto doc{engine.close_window(Clock::time_point{std::chrono::seconds{1700000060}})};
-        std::cout << ml::to_json(doc, engine.registry()) << "\n";
+        std::cout << ml::to_json(doc, engine.registry()).value() << "\n";
         return 0;
     }
 
@@ -127,7 +127,7 @@ int main(int argc, char** argv)
         engine.open_window(Clock::time_point{std::chrono::seconds{1700000000}});
         ml::service_edges_overcap::emit_window(engine);
         const auto doc{engine.close_window(Clock::time_point{std::chrono::seconds{1700000060}})};
-        std::cout << ml::to_json(doc, engine.registry()) << "\n";
+        std::cout << ml::to_json(doc, engine.registry()).value() << "\n";
         return 0;
     }
 
@@ -156,10 +156,10 @@ int main(int argc, char** argv)
         // the operands are (previous, current), never reversed.
         // note: a digest is a replay artifact, not the place to assert an algebra.
         // refs: DN-82.D2
-        std::cout << ml::to_json(previous, engine.registry()) << "\n"
-                  << ml::to_json(current, engine.registry()) << "\n"
-                  << ml::to_json(ml::diff(previous, current)) << "\n"
-                  << ml::to_json(ml::compose(previous, current), engine.registry()) << "\n";
+        std::cout << ml::to_json(previous, engine.registry()).value() << "\n"
+                  << ml::to_json(current, engine.registry()).value() << "\n"
+                  << ml::to_json(ml::diff(previous, current)).value() << "\n"
+                  << ml::to_json(ml::compose(previous, current), engine.registry()).value() << "\n";
         return 0;
     }
 
@@ -185,10 +185,10 @@ int main(int argc, char** argv)
         // refs: ADR-25.D5
         // invariant: composing two cubes at different collapse depths is the one compose clause no
         // corpus pair reaches, since a corpus pair bands both windows alike or neither.
-        std::cout << ml::to_json(previous, engine.registry()) << "\n"
-                  << ml::to_json(current, engine.registry()) << "\n"
-                  << ml::to_json(ml::diff(previous, current)) << "\n"
-                  << ml::to_json(ml::compose(previous, current), engine.registry()) << "\n";
+        std::cout << ml::to_json(previous, engine.registry()).value() << "\n"
+                  << ml::to_json(current, engine.registry()).value() << "\n"
+                  << ml::to_json(ml::diff(previous, current)).value() << "\n"
+                  << ml::to_json(ml::compose(previous, current), engine.registry()).value() << "\n";
         return 0;
     }
 
@@ -211,9 +211,9 @@ int main(int argc, char** argv)
     // log text rather than a synthetic window.
     // invariant: both derived records are emitted after their inputs, so the section stays
     // self-contained.
-    std::cout << ml::to_json(doc1, engine.registry()) << "\n"
-              << ml::to_json(doc2, engine.registry()) << "\n"
-              << ml::to_json(ml::diff(doc1, doc2)) << "\n"
-              << ml::to_json(ml::compose(doc1, doc2), engine.registry()) << "\n";
+    std::cout << ml::to_json(doc1, engine.registry()).value() << "\n"
+              << ml::to_json(doc2, engine.registry()).value() << "\n"
+              << ml::to_json(ml::diff(doc1, doc2)).value() << "\n"
+              << ml::to_json(ml::compose(doc1, doc2), engine.registry()).value() << "\n";
     return 0;
 }

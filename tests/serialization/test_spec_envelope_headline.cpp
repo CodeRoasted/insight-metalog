@@ -11,6 +11,8 @@
 
 import insight.metalog.test;
 
+#include "../written_or_fail.hpp"
+
 namespace
 {
 namespace meta = insight::metalog;
@@ -75,10 +77,10 @@ struct Measured
 
     Measured out;
     out.doc = engine.close_window(kEpoch + std::chrono::seconds{60});
-    out.emitted_bytes = meta::to_json(out.doc, engine.registry()).size();
+    out.emitted_bytes = written_or_fail(meta::to_json(out.doc, engine.registry())).size();
     out.doc.has_cube = false;
     out.doc.acquisition.reset();
-    out.in_scope_json = meta::to_json(out.doc, engine.registry());
+    out.in_scope_json = written_or_fail(meta::to_json(out.doc, engine.registry()));
     out.in_scope_bytes = out.in_scope_json.size();
     return out;
 }

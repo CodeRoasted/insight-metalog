@@ -6,6 +6,8 @@
 
 import insight.metalog.test;
 
+#include "../written_or_fail.hpp"
+
 // refs: F-SRC-insight-metalog:determinism_fixture.cpp
 // invariant: every scenario header below is shared with the cross-leg fixture, so this coverage and
 // the gate replay the identical window; the near-full arm is the M=128 admit/evict boundary.
@@ -437,7 +439,7 @@ TEST(MetaLogDocument, LatencyShiftPairEmitsTheDifferentialAxisOnTheWire)
         << "a 10-octave UP move must land in the HIGH band; got " << *shifted->coord.latency_shift;
 
     // note: the WIRE, not the struct: this separates engine computed one from digest carries one.
-    const std::string wire{meta::to_json(delta)};
+    const std::string wire{written_or_fail(meta::to_json(delta))};
     EXPECT_NE(wire.find("\"cube_diff\""), std::string::npos)
         << "to_json(MetaLogDiff) dropped the cube_diff block — the domain object has it and the "
            "serialized artifact the gate judges does not.\n  wire: "

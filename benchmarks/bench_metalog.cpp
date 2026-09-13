@@ -60,7 +60,7 @@ void run_once(const SyntheticCorpus& corpus, std::size_t n_events,
     }
 
     auto doc{engine.close_window(t0 + std::chrono::seconds(60))};
-    const std::string serialized{to_json(doc, engine.registry())};
+    const std::string serialized{to_json(doc, engine.registry()).value()};
     out_bytes = serialized.size();
     out_lines = doc.window.lines_observed;
     out_unique = doc.stats.unique_templates;

@@ -57,7 +57,10 @@ TEST(InsightMetaLogPackage, ProducesSpecConformantDocument)
 
     // invariant: the serialised string is re-parsed generically rather than compared to the
     // document, so what is asserted is the on-the-wire contract an external consumer reads.
-    const std::string serialized = to_json(doc, engine.registry());
+    const auto written = to_json(doc, engine.registry());
+    ASSERT_TRUE(written.has_value())
+        << "the document was refused: a NaN or an infinity at '" << written.error() << "'";
+    const std::string& serialized = *written;
     auto parsed = glz::read_json<glz::generic>(serialized);
     ASSERT_TRUE(parsed.has_value()) << "serialised output did not parse: " << serialized;
     auto& json = *parsed;
@@ -110,7 +113,10 @@ TEST(InsightMetaLogPackage, SecondWindowEmitsStability)
     EXPECT_LT(d2.stability->js_divergence, 1e-6);
     EXPECT_GT(d2.stability->stability_score, 0.999);
 
-    const std::string serialized = to_json(d2, engine.registry());
+    const auto written = to_json(d2, engine.registry());
+    ASSERT_TRUE(written.has_value()) << "the composed document was refused: a NaN or an infinity "
+                                     << "at '" << written.error() << "'";
+    const std::string& serialized = *written;
     auto parsed = glz::read_json<glz::generic>(serialized);
     ASSERT_TRUE(parsed.has_value()) << "serialised output did not parse: " << serialized;
     auto& json = *parsed;

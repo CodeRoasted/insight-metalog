@@ -26,6 +26,8 @@
 import insight.metalog.test;
 import insight.semantic.github;
 
+#include "../written_or_fail.hpp"
+
 namespace
 {
 
@@ -99,7 +101,7 @@ struct Arm
 
     auto doc{engine.close_window(window_end)};
     meta::TemplateRegistry registry{engine.registry()};
-    std::string json{meta::to_json(doc, registry)};
+    std::string json{written_or_fail(meta::to_json(doc, registry))};
     return Arm{.doc = std::move(doc), .registry = std::move(registry), .json = std::move(json)};
 }
 

@@ -48,6 +48,8 @@
 
 import insight.metalog.test;
 
+#include "../written_or_fail.hpp"
+
 // note: after the imports, plain TU: the construction shared with the cross-leg fixture.
 #include "corpus_windows_scenario.hpp"
 
@@ -183,10 +185,13 @@ void collect_templates(const meta::MetaLogDocument& doc, const meta::TemplateReg
     produced.composed = meta::compose(produced.previous, produced.current);
 
     produced.records.resize(kRecordCount);
-    produced.records[kPreviousDocument] = meta::to_json(produced.previous, engine.registry());
-    produced.records[kCurrentDocument] = meta::to_json(produced.current, engine.registry());
-    produced.records[kDiff] = meta::to_json(produced.diffed);
-    produced.records[kComposed] = meta::to_json(produced.composed, engine.registry());
+    produced.records[kPreviousDocument] =
+        written_or_fail(meta::to_json(produced.previous, engine.registry()));
+    produced.records[kCurrentDocument] =
+        written_or_fail(meta::to_json(produced.current, engine.registry()));
+    produced.records[kDiff] = written_or_fail(meta::to_json(produced.diffed));
+    produced.records[kComposed] =
+        written_or_fail(meta::to_json(produced.composed, engine.registry()));
 
     collect_templates(produced.previous, engine.registry(), produced.templates);
     collect_templates(produced.current, engine.registry(), produced.templates);
@@ -596,7 +601,8 @@ TEST_P(GoldenVector, ReversedDiffDoesNotReproduceTheVector)
     ASSERT_EQ(golden->size(), static_cast<std::size_t>(kRecordCount));
 
     const auto produced{produce_from(*lines)};
-    const auto reversed{meta::to_json(meta::diff(produced.current, produced.previous))};
+    const auto reversed{
+        written_or_fail(meta::to_json(meta::diff(produced.current, produced.previous)))};
     EXPECT_NE((*golden)[kDiff], reversed)
         << "[" << corpus.name
         << "] diff(current, previous) serialises to the SAME bytes as the golden "
@@ -620,8 +626,8 @@ TEST_P(GoldenVector, SelfComposeDoesNotReproduceTheVector)
     config.producer_version = std::string{kVectorProducerVersion};
     meta::MetaLogEngine engine{config};
     const auto pair{cw::build(engine, *lines)};
-    const auto self_composed{
-        meta::to_json(meta::compose(pair.previous, pair.previous), engine.registry())};
+    const auto self_composed{written_or_fail(
+        meta::to_json(meta::compose(pair.previous, pair.previous), engine.registry()))};
     EXPECT_NE((*golden)[kComposed], self_composed)
         << "[" << corpus.name
         << "] compose(previous, previous) serialises to the SAME bytes as the golden "

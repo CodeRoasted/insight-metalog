@@ -6,6 +6,8 @@
 
 import insight.metalog.test;
 
+#include "../written_or_fail.hpp"
+
 namespace
 {
 
@@ -44,7 +46,7 @@ using Clock = std::chrono::system_clock;
     }
 
     const auto doc{engine.close_window(window_end)};
-    return meta::to_json(doc, engine.registry());
+    return written_or_fail(meta::to_json(doc, engine.registry()));
 }
 
 } // namespace

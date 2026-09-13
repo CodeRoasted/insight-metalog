@@ -16,6 +16,8 @@
 
 import insight.metalog.test;
 
+#include "../written_or_fail.hpp"
+
 namespace
 {
 
@@ -398,7 +400,7 @@ TEST(ComparisonOutcomeProducer, IdenticalWindowsAssertUnchangedAndCarryNoWitness
 
     EXPECT_TRUE(outcome_is(diff, ComparisonOutcome::Unchanged));
 
-    const std::string json{meta::to_json(diff)};
+    const std::string json{written_or_fail(meta::to_json(diff))};
     EXPECT_NE(json.find(R"("comparison_outcome":"unchanged")"), std::string::npos) << json;
     EXPECT_NE(json.find(R"("cube_diff")"), std::string::npos)
         << "the cube_diff must still be published — it is vacuous, not absent:\n"
@@ -449,7 +451,7 @@ TEST(ComparisonOutcomeProducer, AChangedPairAssertsChangedAndCarriesTheWitness)
         << "fixture must introduce a template, or this case does not test a change";
     EXPECT_TRUE(outcome_is(diff, ComparisonOutcome::Changed));
 
-    const std::string json{meta::to_json(diff)};
+    const std::string json{written_or_fail(meta::to_json(diff))};
     EXPECT_NE(json.find(R"("comparison_outcome":"changed")"), std::string::npos) << json;
     EXPECT_NE(json.find(R"("new_templates")"), std::string::npos)
         << "the witness that decided \"changed\" must be in the document:\n"
@@ -521,7 +523,7 @@ TEST(ComparisonOutcomeProducer, IdenticalParamHistogramsAssertUnchangedAndWithho
         << "two identical windows; field_histogram_deltas rows:" << rows;
     EXPECT_TRUE(meta::withheld_signals_of(diff).empty())
         << "a withheld signal named between two identical windows; rows:" << rows;
-    const std::string json{meta::to_json(diff)};
+    const std::string json{written_or_fail(meta::to_json(diff))};
     EXPECT_NE(json.find(R"("comparison_outcome":"unchanged")"), std::string::npos) << json;
     EXPECT_EQ(json.find(R"("withheld_signals")"), std::string::npos) << json;
 }
@@ -551,7 +553,7 @@ TEST(ComparisonOutcomeProducer, AMovedParamDistributionAloneAssertsChangedThroug
     EXPECT_TRUE(outcome_is(diff, ComparisonOutcome::Changed));
     EXPECT_EQ(meta::withheld_signals_of(diff),
               (std::vector<std::string>{"field_histogram_deltas"}));
-    const std::string json{meta::to_json(diff)};
+    const std::string json{written_or_fail(meta::to_json(diff))};
     EXPECT_NE(json.find(R"("comparison_outcome":"changed")"), std::string::npos) << json;
     EXPECT_NE(json.find(R"("withheld_signals":["field_histogram_deltas"])"), std::string::npos)
         << json;

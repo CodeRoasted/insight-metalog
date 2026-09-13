@@ -3,6 +3,8 @@
 
 import insight.metalog.test;
 
+#include "../written_or_fail.hpp"
+
 namespace
 {
 
@@ -100,7 +102,7 @@ TEST_F(WindowingSeamTest, AnAbsentLevelIsOmittedFromTheWireRatherThanRenderedAsI
     }
     const auto doc{engine.close_window(t1)};
 
-    const std::string json{meta::to_json(doc, engine.registry())};
+    const std::string json{written_or_fail(meta::to_json(doc, engine.registry()))};
     EXPECT_EQ(json.find("\"level\": \"INFO\""), std::string::npos)
         << "an absence was published as the fact INFO; document:\n"
         << json;
