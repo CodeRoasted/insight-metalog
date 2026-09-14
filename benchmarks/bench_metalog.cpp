@@ -1,6 +1,5 @@
 // post: reports the produced JSON envelope's size for a synthesised window whose template
 // distribution is Zipf-ish, so the byte cost can be diffed across changes.
-// note: the spec's 4 KB-per-million target is stats-only, so this arm is not measured on it.
 // invariant: every corpus is a FIXED-seed splitmix64 draw and every window opens at a fixed epoch,
 // so the reported bytes are one number on every run and on both toolchains.
 // refs: F-SRC-metalog-spec:SPEC.md

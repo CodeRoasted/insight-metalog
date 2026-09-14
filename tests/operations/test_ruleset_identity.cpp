@@ -106,9 +106,11 @@ TEST(RulesetIdentity, LegacyProducerEmitsNoBlock)
     // invariant: the container itself may exist, the engine stamping a transport declaration on
     // every document, so the assertion is on the ruleset KEY and not on the container.
     if ((*parsed).contains("extensions"))
+    {
         EXPECT_FALSE((*parsed)["extensions"].contains("fr.coderoast.ruleset"))
             << "a legacy producer must emit NO ruleset block under the §7 container either: "
             << json;
+    }
 }
 
 // invariant: two documents with DIFFERENT semantic_identity are not comparable and the gate fails
@@ -117,7 +119,7 @@ TEST(RulesetIdentity, ComposeMismatchedSemanticIdentityThrows)
 {
     const auto lhs{build_doc_with_ruleset(kRulesetA)};
     const auto rhs{build_doc_with_ruleset(kRulesetB)};
-    EXPECT_THROW(meta::compose(lhs, rhs), std::invalid_argument)
+    EXPECT_THROW((void)meta::compose(lhs, rhs), std::invalid_argument)
         << "ADR-17.D3: composing across mismatched composed-ruleset identities MUST fail, never "
            "silently merge";
 }
@@ -126,7 +128,7 @@ TEST(RulesetIdentity, DiffMismatchedSemanticIdentityThrows)
 {
     const auto previous{build_doc_with_ruleset(kRulesetA)};
     const auto current{build_doc_with_ruleset(kRulesetB)};
-    EXPECT_THROW(meta::diff(previous, current), std::invalid_argument)
+    EXPECT_THROW((void)meta::diff(previous, current), std::invalid_argument)
         << "ADR-17.D3: diffing across mismatched composed-ruleset identities MUST fail (re-segment "
            "or "
            "refuse upstream)";
