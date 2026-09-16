@@ -89,7 +89,7 @@ TEST(ReservoirTest, RareErrorNotRetainedWithoutReservoir)
     EXPECT_FALSE(top_k_has(doc, "connection refused to db"))
         << "the rare error is below top_k by frequency (one occurrence vs the steady benign 100s)";
     EXPECT_FALSE(reservoir_has(doc, "connection refused to db"))
-        << "with the reservoir off the rare severe event is tail dust — retained nowhere (the F1 "
+        << "with the reservoir off the rare severe event is tail dust — retained nowhere (the FLAW-1 "
            "recall=0 baseline the salience reservoir flips to 1)";
 }
 
