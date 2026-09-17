@@ -13,5 +13,6 @@ jobs:
     with:
       # clang-tidy runs (the default), over a clang-21 source build of this repo's whole first-party
       # closure. These are the repos that closure reaches, held to packages.yml by the superproject's
-      # pin_coherence.py INV-13. A private one would fail its clone loudly, never be skipped.
+      # pin_coherence check module's INV-13. A private one would fail its clone loudly, never be
+      # skipped.
       lint-siblings: insight-canon
