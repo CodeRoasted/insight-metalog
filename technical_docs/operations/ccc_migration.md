@@ -1245,7 +1245,7 @@ one questionnaire over 200 blocks is two interrogations pretending to be one.
 comment token in this repo were enumerated first: `malf/comment_contract_lint.py` (the CCC tool
 forms), clang-tidy (`NOLINT` in all spellings, `/*name*/`, `/*name=*/`), clang-format
 (`clang-format off`/`on`, the namespace closer), the `wallclock` and
-`random_determinism` check modules (`DETERMINISM-ALLOW`), `scripts/log_seat_routing_lint.py`
+`random_determinism` check modules (`DETERMINISM-ALLOW`), the `log_seat_routing` check module
 (`LOG-SEAT-ALLOW`), `scripts/retired_structure_lint.py` (its `allow` marker, whose regex does not
 require an HTML comment and can therefore sit in C++), plus `wall-clock:` and
 `SPDX-License-Identifier:`. Two scope facts fell out of that walk and are recorded because they
