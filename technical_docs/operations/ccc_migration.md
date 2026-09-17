@@ -1244,7 +1244,7 @@ one questionnaire over 200 blocks is two interrogations pretending to be one.
 **Census (`OPS-8.S4`), derived rather than taken from the written list.** The gates that read a
 comment token in this repo were enumerated first: `malf/comment_contract_lint.py` (the CCC tool
 forms), clang-tidy (`NOLINT` in all spellings, `/*name*/`, `/*name=*/`), clang-format
-(`clang-format off`/`on`, the namespace closer), `scripts/wallclock_lint.py` and
+(`clang-format off`/`on`, the namespace closer), the `wallclock` check module and
 `scripts/random_determinism_lint.py` (`DETERMINISM-ALLOW`), `scripts/log_seat_routing_lint.py`
 (`LOG-SEAT-ALLOW`), `scripts/retired_structure_lint.py` (its `allow` marker, whose regex does not
 require an HTML comment and can therefore sit in C++), plus `wall-clock:` and
