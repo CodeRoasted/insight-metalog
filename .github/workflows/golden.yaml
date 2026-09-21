@@ -32,6 +32,15 @@ name: Determinism Golden Proof
 #
 # Runs on every PR to main (full matrix — determinism caught in the PR) + the Release gate
 # (workflow_call) + a weekly drift catch + manual dispatch.
+#
+# WHICH insight-canon THE TOWER BUILDS — the source ref resolves in this order, and the order is the contract:
+#   1. `inputs.canon_ref` — a manual dispatch of THIS workflow (an epic branch for a cross-repo cascade);
+#   2. `github.ref_name` when `github.ref_type == 'tag'` — release.yaml fired by a tag push (under
+#      `workflow_call` the `github` context is the CALLER's, so this is the package tag itself);
+#   3. `main` — the schedule and pull_request (whose ref_name is `N/merge`, never a sibling ref).
+# 2 pins insight-canon to the SAME tag as this repo's: the cut tags in lockstep (canon in Wave 1, metalog in
+# Wave 2, eidos in Wave 3), so the sibling tag exists before this gate runs, and a tag-time gate never
+# reads a moving `main`. A missing sibling tag is a checkout RED, never a fallback.
 
 permissions:
   contents: read
@@ -144,7 +153,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: CodeRoasted/insight-canon
-          ref: ${{ inputs.canon_ref || 'main' }}
+          ref: ${{ inputs.canon_ref || (github.ref_type == 'tag' && github.ref_name) || 'main' }}
           path: _canon
           fetch-depth: 1
           persist-credentials: false
@@ -273,7 +282,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: CodeRoasted/insight-canon
-          ref: ${{ inputs.canon_ref || 'main' }}
+          ref: ${{ inputs.canon_ref || (github.ref_type == 'tag' && github.ref_name) || 'main' }}
           path: _canon
           persist-credentials: false
 
