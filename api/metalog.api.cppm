@@ -866,6 +866,7 @@ struct ReportedWindowBounds
 // invariant: a compile definition here would let a consumer's build of the api module disagree with
 // the linked engine.
 // refs: OPS-1.S15
+// invariant: pin-coherence: mirrors insight_metalog -- the recipe version is the authority.
 inline constexpr std::string_view kProducerVersion{"1.10.4"};
 
 // invariant: the specification edition this producer writes against, stamped into metalog_version.
@@ -874,6 +875,7 @@ inline constexpr std::string_view kProducerVersion{"1.10.4"};
 // metalog-spec rather than by this workspace's release baseline.
 // invariant: hand-carried for kProducerVersion's reason, which applies unchanged.
 // refs: F-SRC-metalog-spec:SPEC.md
+// invariant: pin-coherence: mirrors metalog-spec/SPEC.md -- its first line is the authority.
 inline constexpr std::string_view kMetaLogSpecVersion{"0.10.0"};
 
 struct ProducerBlock
