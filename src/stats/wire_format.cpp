@@ -11,6 +11,67 @@ import insight.canon;
 namespace insight::metalog
 {
 
+namespace
+{
+    // invariant: the byte layout format_rfc3339_utc writes -- `YYYY-MM-DDTHH:MM:SSZ`.
+    struct Rfc3339UtcLayout
+    {
+        static constexpr std::size_t kWidth{20};
+        static constexpr std::size_t kYearOffset{0};
+        static constexpr std::size_t kYearDigits{4};
+        static constexpr std::size_t kMonthOffset{5};
+        static constexpr std::size_t kDayOffset{8};
+        static constexpr std::size_t kHourOffset{11};
+        static constexpr std::size_t kMinuteOffset{14};
+        static constexpr std::size_t kSecondOffset{17};
+        static constexpr std::size_t kFieldDigits{2};
+        static constexpr std::array<std::pair<std::size_t, char>, 6> kSeparators{
+            {{4, '-'}, {7, '-'}, {10, 'T'}, {13, ':'}, {16, ':'}, {19, 'Z'}}};
+    };
+
+    // post: the unsigned decimal spelled by EXACTLY text[offset, offset + digits), or nullopt when
+    // any byte of it is not a digit.
+    // pre: offset + digits <= text.size().
+    [[nodiscard]] std::optional<unsigned> decimal_field(std::string_view text, std::size_t offset,
+                                                        std::size_t digits) noexcept
+    {
+        const char* const first{text.data() + offset};
+        const char* const last{first + digits};
+        unsigned value{0};
+        const auto [end, error]{std::from_chars(first, last, value)};
+        if (error != std::errc{} || end != last)
+            return std::nullopt;
+        return value;
+    }
+} // namespace
+
+std::optional<std::chrono::sys_seconds> parse_rfc3339_utc(std::string_view text)
+{
+    using Layout = Rfc3339UtcLayout;
+    if (text.size() != Layout::kWidth)
+        return std::nullopt;
+    for (const auto& [offset, separator] : Layout::kSeparators)
+        if (text[offset] != separator)
+            return std::nullopt;
+    const auto year{decimal_field(text, Layout::kYearOffset, Layout::kYearDigits)};
+    const auto month{decimal_field(text, Layout::kMonthOffset, Layout::kFieldDigits)};
+    const auto day{decimal_field(text, Layout::kDayOffset, Layout::kFieldDigits)};
+    const auto hour{decimal_field(text, Layout::kHourOffset, Layout::kFieldDigits)};
+    const auto minute{decimal_field(text, Layout::kMinuteOffset, Layout::kFieldDigits)};
+    const auto second{decimal_field(text, Layout::kSecondOffset, Layout::kFieldDigits)};
+    if (!year || !month || !day || !hour || !minute || !second)
+        return std::nullopt;
+    const std::chrono::year_month_day date{std::chrono::year{static_cast<int>(*year)},
+                                           std::chrono::month{*month}, std::chrono::day{*day}};
+    const std::chrono::hours hours{*hour};
+    const std::chrono::minutes minutes{*minute};
+    const std::chrono::seconds seconds{*second};
+    if (!date.ok() || hours >= std::chrono::days{1} || minutes >= std::chrono::hours{1} ||
+        seconds >= std::chrono::minutes{1})
+        return std::nullopt;
+    return std::chrono::sys_days{date} + hours + minutes + seconds;
+}
+
 std::string format_rfc3339_utc(Timestamp timestamp)
 {
     const auto secs{std::chrono::time_point_cast<std::chrono::seconds>(timestamp)};

@@ -190,6 +190,12 @@ struct SalienceVerdict
 // post: RFC 3339 UTC with fixed field widths and a trailing 'Z'.
 [[nodiscard]] std::string format_rfc3339_utc(Timestamp timestamp);
 
+// post: the mirror of format_rfc3339_utc -- the instant the 20-byte `YYYY-MM-DDTHH:MM:SSZ` form
+// names, or nullopt for any other width, separator, digit or calendar-invalid field.
+// invariant: pure integer calendar arithmetic -- no <ctime>, no locale, no wall clock.
+// refs: DN-50.D13
+[[nodiscard]] std::optional<std::chrono::sys_seconds> parse_rfc3339_utc(std::string_view text);
+
 // post: total over LogLevel; Unknown renders as its own token, never an omission.
 // note: an absent cube axis already means AGGREGATED, so a coord needs a token; a row omits.
 // refs: DN-43.D10

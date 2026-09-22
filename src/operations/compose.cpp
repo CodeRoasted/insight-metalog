@@ -13,7 +13,8 @@ namespace insight::metalog
 
 namespace
 {
-    // pre: both are fixed-width RFC 3339 UTC strings, so a lexicographic compare orders them.
+    // pre: both are fixed-width RFC 3339 UTC strings, so a lexicographic compare orders them;
+    // compose() checks that form with stamped_envelope() before either is called.
     [[nodiscard]] std::string_view iso_min(std::string_view lhs, std::string_view rhs)
     {
         if (lhs.empty())
@@ -566,29 +567,95 @@ namespace
         return behavior;
     }
 
-    // post: the orientation is derived from the two documents' OWN window envelopes, so an argument
-    // order that disagrees with time order cannot change the result.
-    // invariant: the churn product is not commutative, so a wrong-order fold is deterministic and
-    // WRONG -- the one failure shape a determinism gate cannot see.
-    // refs: DN-50.D4
-    [[nodiscard]] bool lhs_is_earlier(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
+    // invariant: a document's window envelope as two instants -- both bounds, or none at all.
+    struct StampedEnvelope
     {
-        if (lhs.window.start_iso.empty() || rhs.window.start_iso.empty())
-            return true;
-        if (lhs.window.start_iso != rhs.window.start_iso)
-            return lhs.window.start_iso < rhs.window.start_iso;
-        return true;
+        std::chrono::sys_seconds start;
+        std::chrono::sys_seconds end;
+    };
+
+    // post: nullopt for an UNSTAMPED envelope (both bounds empty), the two instants otherwise.
+    // post: throws std::invalid_argument on any other bound, an empty one beside a stamped one
+    // included, so iso_min/iso_max never order a width the 20-byte form does not have.
+    // refs: DN-50.D13
+    [[nodiscard]] std::optional<StampedEnvelope> stamped_envelope(const MetaLogDocument& doc,
+                                                                  std::string_view side)
+    {
+        const auto& window{doc.window};
+        if (window.start_iso.empty() && window.end_iso.empty())
+            return std::nullopt;
+        const auto refuse{[side](std::string_view bound, const std::string& value)
+                          {
+                              return std::invalid_argument{
+                                  std::string{"metalog::compose: "} + std::string{side} +
+                                  " window." + std::string{bound} + " \"" + value +
+                                  "\" is not a 20-byte RFC 3339 UTC instant (SPEC §2.2)"};
+                          }};
+        const auto start{parse_rfc3339_utc(window.start_iso)};
+        if (!start)
+            throw refuse("start_iso", window.start_iso);
+        const auto end{parse_rfc3339_utc(window.end_iso)};
+        if (!end)
+            throw refuse("end_iso", window.end_iso);
+        return StampedEnvelope{.start = *start, .end = *end};
     }
 
-    // post: one monoid product per template of the composed retained set, plus the root roll-up.
-    // note: the scratch indices are sized by the inputs' already-declared salience memory.
-    // refs: DN-50.D4
-    void fold_presence_churn(MetaLogDocument& out, const MetaLogDocument& lhs,
-                             const MetaLogDocument& rhs)
+    // post: the merged envelope's span, end - start, on every pair of stamped envelopes; the
+    // stamped side's own duration when the other is unstamped; 0 when neither is stamped.
+    // note: an inverted merged span reads 0, the clamp stamp_envelope applies to one window.
+    // refs: DN-50.D13, F-SRC-insight-metalog:engine.cpp:stamp_envelope
+    [[nodiscard]] std::uint64_t composed_duration_seconds(
+        const MetaLogDocument& lhs, const std::optional<StampedEnvelope>& lhs_envelope,
+        const MetaLogDocument& rhs, const std::optional<StampedEnvelope>& rhs_envelope)
     {
-        const bool in_order{lhs_is_earlier(lhs, rhs)};
-        const MetaLogDocument& earlier{in_order ? lhs : rhs};
-        const MetaLogDocument& later{in_order ? rhs : lhs};
+        if (!lhs_envelope && !rhs_envelope)
+            return 0;
+        if (!lhs_envelope)
+            return rhs.window.duration_seconds;
+        if (!rhs_envelope)
+            return lhs.window.duration_seconds;
+        const auto span{std::max(lhs_envelope->end, rhs_envelope->end) -
+                        std::min(lhs_envelope->start, rhs_envelope->start)};
+        return span.count() < 0 ? 0 : static_cast<std::uint64_t>(span.count());
+    }
+
+    // invariant: Unordered covers every pair with no derivable time order -- overlapping, nested,
+    // identical, equal-start, or either side unstamped.
+    enum class WindowOrder : std::uint8_t
+    {
+        LhsEarlier,
+        RhsEarlier,
+        Unordered,
+    };
+
+    // post: an order exists only between DISJOINT envelopes, `earlier.end <= later.start` with
+    // `earlier.start < later.start`; argument order never supplies one.
+    // refs: DN-50.D11
+    [[nodiscard]] WindowOrder window_order(const std::optional<StampedEnvelope>& lhs,
+                                           const std::optional<StampedEnvelope>& rhs)
+    {
+        if (!lhs || !rhs)
+            return WindowOrder::Unordered;
+        if (lhs->end <= rhs->start && lhs->start < rhs->start)
+            return WindowOrder::LhsEarlier;
+        if (rhs->end <= lhs->start && rhs->start < lhs->start)
+            return WindowOrder::RhsEarlier;
+        return WindowOrder::Unordered;
+    }
+
+    // post: one product per template of the composed retained set, plus the root roll-up -- the
+    // time-ordered monoid product over a DISJOINT pair, the symmetric spatial join otherwise.
+    // invariant: the churn product is not commutative, so a wrong-order fold is deterministic and
+    // WRONG -- the failure shape a determinism gate cannot see; the join has no order to get wrong.
+    // note: the scratch indices are sized by the inputs' already-declared salience memory.
+    // refs: DN-50.D4, DN-50.D11
+    void fold_presence_churn(MetaLogDocument& out, const MetaLogDocument& lhs,
+                             const MetaLogDocument& rhs, WindowOrder order)
+    {
+        const bool joined{order == WindowOrder::Unordered};
+        const bool rhs_first{order == WindowOrder::RhsEarlier};
+        const MetaLogDocument& earlier{rhs_first ? rhs : lhs};
+        const MetaLogDocument& later{rhs_first ? lhs : rhs};
 
         const auto span_of{[](const MetaLogDocument& doc) -> std::uint32_t
                            { return doc.presence_churn ? doc.presence_churn->span_windows : 0U; }};
@@ -623,21 +690,25 @@ namespace
                                   return found != index.end() ? found->second : absent;
                               }};
 
-        PresenceChurnSummary summary{.span_windows = earlier_span + later_span,
+        PresenceChurnSummary summary{.span_windows = joined ? std::max(earlier_span, later_span)
+                                                            : earlier_span + later_span,
                                      .templates_with_churn = 0,
                                      .total_transitions = 0,
                                      .total_indeterminate = 0};
-        const auto fold_row{[&](const TemplateId& tid)
-                            {
-                                const PresenceChurn folded{compose_presence_churn(
-                                    element_of(earlier_index, earlier_absent, tid),
-                                    element_of(later_index, later_absent, tid))};
-                                summary.total_transitions += folded.transitions;
-                                summary.total_indeterminate += folded.indeterminate;
-                                if (folded.transitions > 0)
-                                    ++summary.templates_with_churn;
-                                return folded;
-                            }};
+        const auto fold_row{
+            [&](const TemplateId& tid)
+            {
+                const PresenceChurn earlier_element{element_of(earlier_index, earlier_absent, tid)};
+                const PresenceChurn later_element{element_of(later_index, later_absent, tid)};
+                const PresenceChurn folded{
+                    joined ? join_presence_churn(earlier_element, later_element)
+                           : compose_presence_churn(earlier_element, later_element)};
+                summary.total_transitions += folded.transitions;
+                summary.total_indeterminate += folded.indeterminate;
+                if (folded.transitions > 0)
+                    ++summary.templates_with_churn;
+                return folded;
+            }};
         for (TopKEntry& entry : out.stats.top_k)
             entry.presence_churn = fold_row(entry.template_id);
         for (ReservoirEntry& entry : out.stats.reservoir)
@@ -661,6 +732,8 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
         lhs.ruleset ? std::optional<std::string>{lhs.ruleset->semantic_identity} : std::nullopt,
         rhs.ruleset ? std::optional<std::string>{rhs.ruleset->semantic_identity} : std::nullopt,
         "semantic_identity", "compose");
+    const auto lhs_envelope{stamped_envelope(lhs, "lhs")};
+    const auto rhs_envelope{stamped_envelope(rhs, "rhs")};
 
     MetaLogDocument out;
     out.metalog_version = lhs.metalog_version;
@@ -682,11 +755,9 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
     out.window.start_iso = iso_min(lhs.window.start_iso, rhs.window.start_iso);
     out.window.end_iso = iso_max(lhs.window.end_iso, rhs.window.end_iso);
     out.window.lines_observed = lhs.window.lines_observed + rhs.window.lines_observed;
-    // note: duration sums when the windows are disjoint and takes the max when they overlap.
-    out.window.duration_seconds =
-        std::max(lhs.window.duration_seconds, rhs.window.duration_seconds);
-    if (lhs.window.start_iso != rhs.window.start_iso || lhs.window.end_iso != rhs.window.end_iso)
-        out.window.duration_seconds = lhs.window.duration_seconds + rhs.window.duration_seconds;
+    // post: the merged envelope's real-time span in every geometry, never a sum of the inputs'.
+    // refs: DN-50.D13
+    out.window.duration_seconds = composed_duration_seconds(lhs, lhs_envelope, rhs, rhs_envelope);
     out.source = common_source(lhs.source, rhs.source);
 
     ComposeState state;
@@ -701,7 +772,7 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
     build_composed_tail(out, state, lhs, rhs);
     recompute_composed_entropy(out, state, lhs, rhs);
     // assert: the churn fold runs after the composed retained set exists.
-    fold_presence_churn(out, lhs, rhs);
+    fold_presence_churn(out, lhs, rhs, window_order(lhs_envelope, rhs_envelope));
 
     // refs: F-SRC-insight-metalog:metalog.api.cppm:TemplateRegistry
     out.provenance = merge_provenance(lhs, rhs);

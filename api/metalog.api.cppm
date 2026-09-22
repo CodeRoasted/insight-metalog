@@ -295,8 +295,9 @@ presence_churn_of_unretained_range(std::uint32_t span_windows, bool retention_ex
             .last = PresenceSymbol::Unretained};
 }
 
-// pre: earlier and later are the two operands IN WINDOW ORDER; compose() establishes that from the
-// documents' window envelopes rather than trusting a caller.
+// pre: earlier and later cover DISJOINT window envelopes, IN WINDOW ORDER; compose() establishes
+// both from the documents' own envelopes and takes join_presence_churn() when they do not hold.
+// refs: DN-50.D11
 [[nodiscard]] constexpr PresenceChurn compose_presence_churn(const PresenceChurn& earlier,
                                                              const PresenceChurn& later) noexcept
 {
@@ -315,6 +316,39 @@ presence_churn_of_unretained_range(std::uint32_t span_windows, bool retention_ex
                 earlier.indeterminate + later.indeterminate + (boundary_readable ? 0U : 1U),
             .first = earlier.first,
             .last = later.last};
+}
+
+// post: Present if either side is Present, the other side where one is EmptyRange, Absent where
+// both are Absent, and Unretained otherwise -- symmetric by construction.
+// refs: DN-50.D11
+[[nodiscard]] constexpr PresenceSymbol join_presence_symbol(PresenceSymbol lhs,
+                                                            PresenceSymbol rhs) noexcept
+{
+    if (lhs == PresenceSymbol::Present || rhs == PresenceSymbol::Present)
+        return PresenceSymbol::Present;
+    if (lhs == PresenceSymbol::EmptyRange)
+        return rhs;
+    if (rhs == PresenceSymbol::EmptyRange)
+        return lhs;
+    if (lhs == PresenceSymbol::Absent && rhs == PresenceSymbol::Absent)
+        return PresenceSymbol::Absent;
+    return PresenceSymbol::Unretained;
+}
+
+// pre: lhs and rhs cover NON-DISJOINT window envelopes -- one interval seen from two sources --
+// so no boundary lies between them and the product has no orientation to apply.
+// post: the max span, the sums of the operands' own transitions and indeterminates, and first and
+// last joined symbol-wise; the empty range is its identity, and it is symmetric.
+// note: exact over two base windows (the shard fold); a declared approximation over wider ranges.
+// refs: DN-50.D11
+[[nodiscard]] constexpr PresenceChurn join_presence_churn(const PresenceChurn& lhs,
+                                                          const PresenceChurn& rhs) noexcept
+{
+    return {.span_windows = std::max(lhs.span_windows, rhs.span_windows),
+            .transitions = lhs.transitions + rhs.transitions,
+            .indeterminate = lhs.indeterminate + rhs.indeterminate,
+            .first = join_presence_symbol(lhs.first, rhs.first),
+            .last = join_presence_symbol(lhs.last, rhs.last)};
 }
 
 // invariant: the document-root roll-up of per-template churn over the declared horizon.
