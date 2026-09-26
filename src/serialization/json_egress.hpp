@@ -10,6 +10,7 @@
 #include <utility>
 
 #include <glaze/glaze.hpp>
+#include <utf8/well_formed.hpp>
 
 namespace insight::metalog::json_egress
 {
@@ -150,8 +151,9 @@ namespace detail
 
 } // namespace detail
 
-// refs: DN-99.D8, ADR-26.D12
+// refs: DN-99.D8, ADR-26.D12, DN-43.D20
 // post: RFC 8259-conformant JSON for every string input, including log-derived bytes below 0x20.
+// post: well-formed UTF-8, each maximal ill-formed subpart of a string replaced by one U+FFFD.
 // post: a NaN or an infinity refuses the document before any byte, the error naming its path.
 // note: 5 of the 32 C0 bytes escape via char_escape_table regardless; the option governs 27.
 template <auto Opts = glz::opts{}, class Value>
@@ -163,7 +165,7 @@ template <auto Opts = glz::opts{}, class Value>
     // assert: a walked document written into a growable string has no reachable failure -- the
     // error channel carries fixed-capacity buffer exhaustion and user-writer errors, neither here.
     (void)glz::write<conformant<Opts>>(value, buffer);
-    return buffer;
+    return insight::utf8::replace_ill_formed(std::move(buffer));
 }
 
 } // namespace insight::metalog::json_egress

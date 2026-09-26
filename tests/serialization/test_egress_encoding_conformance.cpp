@@ -1,21 +1,38 @@
 // invariant: every byte this writer emits into a declared encoding is legal there -- a MUST on the
 // emitting surface, over ALL string inputs, never a precondition on an upstream producer.
-// refs: ADR-26.D12, ADR-24.D8
+// refs: ADR-26.D12, ADR-24.D8, DN-43.D20
 // refs: F-SRC-insight-eidos:change_report_test.cpp:JsonStripsAnsiAndEscapesSurvivingControlBytes
 #include <gtest/gtest.h>
 
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include <glaze/glaze.hpp>
+
+#include "serialization/json_egress.hpp"
+
 import insight.metalog.test;
 
 #include "../written_or_fail.hpp"
+
+// note: a NAMED namespace — clang refuses glaze reflection over anonymous-namespace types.
+namespace metalog_utf8_fixture
+{
+
+struct Carrier
+{
+    std::map<std::string, std::string> keyed;
+    std::string value;
+};
+
+} // namespace metalog_utf8_fixture
 
 namespace
 {
@@ -32,9 +49,9 @@ struct Violation
 };
 
 // invariant: independent of the writer under test -- it shares no code, table or header with it.
-// invariant: its scope is the RFC 8259 grammar plus the ban on unescaped U+0000..U+001F inside a
-// string; UTF-8 well-formedness is a different claim and is not checked here.
-// refs: DN-65.D7
+// invariant: its scope is the RFC 8259 grammar, the ban on unescaped U+0000..U+001F inside a
+// string, and UTF-8 well-formedness, decoded here rather than read from any table the writer uses.
+// refs: DN-65.D7, DN-43.D20
 class ConformanceScanner
 {
   public:
@@ -232,8 +249,74 @@ class ConformanceScanner
                        " inside a JSON string (RFC 8259 §7 forbids unescaped U+0000..U+001F)");
                 return false;
             }
+            if (byte >= 0x80U)
+            {
+                if (!parse_utf8_character())
+                    return false;
+                continue;
+            }
             ++position_;
         }
+    }
+
+    // post: consumes one well-formed UTF-8 character, or records why the bytes at the cursor are
+    // not one: a bad lead, a missing continuation, an overlong form, a surrogate, or > U+10FFFF.
+    [[nodiscard]] bool parse_utf8_character()
+    {
+        const std::uint8_t lead{peek()};
+        std::size_t length{0};
+        std::uint32_t code_point{0};
+        if ((lead & 0xE0U) == 0xC0U)
+        {
+            length = 2;
+            code_point = lead & 0x1FU;
+        }
+        else if ((lead & 0xF0U) == 0xE0U)
+        {
+            length = 3;
+            code_point = lead & 0x0FU;
+        }
+        else if ((lead & 0xF8U) == 0xF0U)
+        {
+            length = 4;
+            code_point = lead & 0x07U;
+        }
+        else
+        {
+            record(std::string{"ill-formed UTF-8: 0x"} + hex_byte(lead) +
+                   " cannot lead a character");
+            return false;
+        }
+        for (std::size_t index{1}; index < length; ++index)
+        {
+            if (position_ + index >= text_.size() ||
+                (static_cast<std::uint8_t>(text_[position_ + index]) & 0xC0U) != 0x80U)
+            {
+                record(std::string{"ill-formed UTF-8: the character led by 0x"} + hex_byte(lead) +
+                       " is missing continuation byte " + std::to_string(index));
+                return false;
+            }
+            code_point =
+                (code_point << 6U) | (static_cast<std::uint8_t>(text_[position_ + index]) & 0x3FU);
+        }
+        constexpr std::array<std::uint32_t, 5> kShortestForm{0, 0, 0x80U, 0x800U, 0x10000U};
+        if (code_point < kShortestForm[length])
+        {
+            record("ill-formed UTF-8: an overlong " + std::to_string(length) + "-byte form");
+            return false;
+        }
+        if (code_point >= 0xD800U && code_point <= 0xDFFFU)
+        {
+            record("ill-formed UTF-8: an encoded surrogate");
+            return false;
+        }
+        if (code_point > 0x10FFFFU)
+        {
+            record("ill-formed UTF-8: a code point above U+10FFFF");
+            return false;
+        }
+        position_ += length;
+        return true;
     }
 
     [[nodiscard]] bool parse_escape()
@@ -458,6 +541,132 @@ TEST(EgressEncodingConformance, TheScannerAcceptsLegalJsonAndRejectsARawControlB
         << hex_window(illegal, 0);
     EXPECT_EQ(dirty->offset, 15U) << "expected the violation at the injected byte.\n"
                                   << hex_window(illegal, dirty->offset);
+}
+
+[[nodiscard]] std::string bytes_of(std::string_view hex)
+{
+    std::string out;
+    for (std::size_t at{0}; at + 1 < hex.size(); at += 2)
+        out.push_back(static_cast<char>(std::stoi(std::string{hex.substr(at, 2)}, nullptr, 16)));
+    return out;
+}
+
+[[nodiscard]] std::string hex_of(std::string_view bytes)
+{
+    std::string out;
+    for (const char byte : bytes)
+        out += ConformanceScanner::hex_byte(static_cast<std::uint8_t>(byte));
+    return out;
+}
+
+// invariant: the ill-formed shapes the wiring arms drive, each a maximal-subpart case of its own.
+constexpr std::array<std::string_view, 6> kIllFormed{"80",     "C341",     "8022",
+                                                     "EDA080", "F4908080", "E282"};
+
+TEST(EgressEncodingConformance, TheScannerRejectsIllFormedUtf8AndAcceptsWellFormedText)
+{
+    const std::string legal{"[\"" + bytes_of("C3A9E282ACF09F9880EFBFBD") + "\"]"};
+    const auto clean{ConformanceScanner{legal}.scan()};
+    EXPECT_FALSE(clean.has_value())
+        << "the scanner rejected well-formed UTF-8 at offset " << (clean ? clean->offset : 0U)
+        << ": " << (clean ? clean->reason : std::string{}) << "\n"
+        << hex_window(legal, 0);
+
+    for (const std::string_view hex : {"80", "C341", "C0AF", "EDA080", "F4908080", "E282"})
+    {
+        const std::string illegal{"[\"x" + bytes_of(hex) + "\"]"};
+        const auto dirty{ConformanceScanner{illegal}.scan()};
+        ASSERT_TRUE(dirty.has_value())
+            << "the scanner accepted the ill-formed bytes " << hex
+            << " — the oracle is blind to UTF-8, so every UTF-8 row in this file is vacuous.\n"
+            << hex_window(illegal, 0);
+        EXPECT_EQ(dirty->offset, 3U) << hex << ": " << dirty->reason << "\n"
+                                     << hex_window(illegal, dirty->offset);
+    }
+}
+
+// refs: DN-43.D20
+// invariant: A2 for this package's one write entry point — a string value AND a map key carrying
+// every shape in kIllFormed, checked against exact bytes; the quote after `80` stays escaped.
+// note: expected bytes from CPython 3.12.3 decode('utf-8', 'replace') over the escaped string.
+TEST(EgressEncodingConformance, TheWrapperReplacesIllFormedUtf8InAValueAndAKeyWithExactBytes)
+{
+    const std::string hostile{bytes_of("61"
+                                       "80"
+                                       "62"
+                                       "C341"
+                                       "63"
+                                       "8022"
+                                       "64"
+                                       "EDA080"
+                                       "65"
+                                       "F4908080"
+                                       "66"
+                                       "E282")};
+    const std::string replaced{
+        bytes_of("61EFBFBD62EFBFBD4163EFBFBD5C2264EFBFBDEFBFBDEFBFBD65EFBFBDEFBFBDEFBFBDEFBFBD66"
+                 "EFBFBD")};
+    const metalog_utf8_fixture::Carrier carrier{.keyed = {{hostile, hostile}}, .value = hostile};
+
+    const std::string written{
+        written_or_fail(insight::metalog::json_egress::to_string<glz::opts{}>(carrier))};
+    const std::string expected{R"({"keyed":{")" + replaced + R"(":")" + replaced +
+                               R"("},"value":")" + replaced + R"("})"};
+    EXPECT_EQ(hex_of(written), hex_of(expected))
+        << "expected:\n  " << hex_of(expected) << "\nactual:\n  " << hex_of(written);
+    const auto broken{ConformanceScanner{written}.scan()};
+    EXPECT_FALSE(broken.has_value()) << (broken ? broken->reason : std::string{}) << "\n"
+                                     << hex_window(written, broken ? broken->offset : 0U);
+}
+
+// refs: DN-43.D20
+// invariant: the two production callers, document and diff, emit well-formed UTF-8 when the
+// `where` coordinate carries ill-formed bytes, and the bytes reach the wire as U+FFFD.
+TEST(EgressEncodingConformance, MetaLogDocumentAndDiffEmitWellFormedUtf8ForIllFormedBytes)
+{
+    const std::string replacement{bytes_of("EFBFBD")};
+    std::vector<std::string> failures;
+    for (const std::string_view hex : kIllFormed)
+    {
+        const std::string component{std::string{kMarker} + bytes_of(hex) + "tail"};
+        const auto baseline{build_tainted_document(0x20U, Placement::Interior, false)};
+        const auto current{std::make_unique<BuiltDocument>()};
+        current->component = component;
+        current->engine.open_window(kEpoch);
+        for (int repeat{0}; repeat < 4; ++repeat)
+            current->engine.ingest_event(
+                make_event("upload failed", LogLevel::Error, current->component));
+        current->document = current->engine.close_window(kEpoch + kWindowSpan);
+
+        const std::array<std::pair<std::string_view, std::string>, 2> wires{
+            std::pair{
+                std::string_view{"document"},
+                written_or_fail(meta::to_json(current->document, current->engine.registry()))},
+            std::pair{std::string_view{"diff"}, written_or_fail(meta::to_json(meta::diff(
+                                                    baseline->document, current->document)))}};
+        for (const auto& [name, json] : wires)
+        {
+            const std::size_t marker{json.find(kMarker)};
+            if (marker == std::string::npos ||
+                json.compare(marker + kMarker.size(), replacement.size(), replacement) != 0)
+            {
+                failures.push_back(std::string{name} + " " + std::string{hex} +
+                                   ": the marker is not followed by U+FFFD on the wire\n    " +
+                                   hex_window(json, marker == std::string::npos ? 0 : marker));
+                continue;
+            }
+            if (const auto broken{ConformanceScanner{json}.scan()})
+                failures.push_back(std::string{name} + " " + std::string{hex} + ": " +
+                                   broken->reason + " at offset " + std::to_string(broken->offset) +
+                                   "\n    " + hex_window(json, broken->offset));
+        }
+    }
+    std::string report;
+    for (const auto& line : failures)
+        report += "  " + line + "\n";
+    EXPECT_TRUE(failures.empty()) << failures.size() << " of " << (kIllFormed.size() * 2)
+                                  << " rows (6 ill-formed shapes x document and diff) failed:\n"
+                                  << report;
 }
 
 TEST(EgressEncodingConformance, MetaLogDocumentEmitsConformantJsonForEveryC0Byte)
