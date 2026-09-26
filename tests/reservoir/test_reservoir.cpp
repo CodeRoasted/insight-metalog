@@ -629,8 +629,11 @@ TEST(ReDerivationCoordinate, StampsWindowEventTimeBounds)
     cfg.source_ref = meta::SourceRef{.resolver_kind = "logcraft", .handle = "scenario#seed=7"};
     cfg.canonicalization_version = "canon-1";
     meta::MetaLogEngine engine{cfg};
-    const auto start{std::chrono::system_clock::now()};
-    const auto end{start + std::chrono::seconds(60)};
+    // note: a sub-microsecond instant, so a tick coarser than the nanosecond cannot pass.
+    constexpr std::uint64_t kStartNanos{1'790'434'049'749'013'123};
+    constexpr std::uint64_t kEndNanos{1'790'434'109'749'013'123};
+    const insight::Timestamp start{std::chrono::nanoseconds{kStartNanos}};
+    const insight::Timestamp end{start + std::chrono::seconds(60)};
     engine.open_window(start);
     engine.ingest_event(make_event("alpha"));
     const auto doc{engine.close_window(end)};
@@ -640,10 +643,10 @@ TEST(ReDerivationCoordinate, StampsWindowEventTimeBounds)
     EXPECT_EQ(doc.coordinate->source_ref->resolver_kind, "logcraft");
     EXPECT_EQ(doc.coordinate->source_ref->handle, "scenario#seed=7");
     ASSERT_TRUE(doc.coordinate->bounds.has_value());
-    EXPECT_EQ(doc.coordinate->bounds->start_tick,
-              static_cast<std::uint64_t>(start.time_since_epoch().count()));
-    EXPECT_EQ(doc.coordinate->bounds->end_tick,
-              static_cast<std::uint64_t>(end.time_since_epoch().count()));
+    EXPECT_EQ(doc.coordinate->bounds->start_tick, kStartNanos)
+        << "a bounds tick is one nanosecond since the epoch on every build leg";
+    EXPECT_EQ(doc.coordinate->bounds->end_tick, kEndNanos)
+        << "a bounds tick is one nanosecond since the epoch on every build leg";
     EXPECT_EQ(doc.coordinate->canonicalization_version, "canon-1");
     EXPECT_FALSE(doc.coordinate->children.has_value()) << "a raw coordinate has no children";
 }

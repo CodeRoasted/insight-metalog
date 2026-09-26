@@ -950,6 +950,8 @@ struct EventTimeBounds
 {
     // invariant: the window is [start_tick, end_tick) in EVENT-TIME integer ticks, bit-identical
     // across replays.
+    // invariant: a tick is one nanosecond since the Unix epoch, insight::Timestamp's grain on every
+    // build leg.
     // invariant: window membership MUST be by event time only, never the global sequence counter or
     // replay depth.
     std::uint64_t start_tick{0};
