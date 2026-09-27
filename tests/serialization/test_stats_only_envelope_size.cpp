@@ -25,7 +25,7 @@ constexpr std::chrono::system_clock::time_point kEpoch{std::chrono::seconds{1'70
 
 // invariant: a CHARACTERIZATION pin, measured by this arm and never guessed; a move is a change to
 // the producer's bytes, re-measured and never refitted.
-constexpr std::size_t kStatsOnlyBytes{6'113};
+constexpr std::size_t kStatsOnlyBytes{6'121};
 constexpr std::string_view kInlineTemplateKey{"\"template\":\"Synthetic template #"};
 
 struct Measured

@@ -916,7 +916,7 @@ struct ProducerBlock
 {
     std::string name{"insight"};
     std::string version{kProducerVersion};
-    std::string implementation_uri{"https://github.com/CodeRoasted/insight"};
+    std::string implementation_uri{"https://github.com/CodeRoasted/insight-metalog"};
 };
 
 struct SourceBlock
