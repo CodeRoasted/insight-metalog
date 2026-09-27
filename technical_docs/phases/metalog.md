@@ -17,6 +17,8 @@ auto doc = engine.close_window(window_end);
 
 Input events are `CanonicalEvent` records from insight-canon tokenization, optionally enriched by insight-canon sequence behavior summaries through the shared event stream. Source metadata can be attached with `set_source()` before closing a window.
 
+A host that bounds the template registry ingests through `ingest_event(event, admission)` (`DN-103.D19`), `admission` a `NewTemplateAdmission`: its `admit()` is asked with a template's text once per event whose template the registry does not hold yet, before anything of the event is ingested, and a refusal returns `false` with nothing ingested or interned. `discard_window()` then drops the window in progress without closing it and keeps the registry and the previous window's frequencies. No document byte depends on either: a refused event is simply absent, and a discarded window produces no document.
+
 ## Output
 
 The primary output is `MetaLogDocument` with `metalog_version == "0.9.0"`:

@@ -88,16 +88,37 @@ void MetaLogEngine::open_window(Timestamp start)
     window_start_ = start;
 }
 
-MetaLogEngine::TemplateLookup
-MetaLogEngine::content_template_id_for(const tokenization::CanonicalEvent& event)
+NewTemplateAdmission::~NewTemplateAdmission() = default;
+
+namespace
+{
+    // invariant: the admission of the one-argument ingest_event, which refuses nothing.
+    class AdmitEveryTemplate final : public NewTemplateAdmission
+    {
+      public:
+        [[nodiscard]] bool admit(std::string_view /*template_str*/) override
+        {
+            return true;
+        }
+    };
+} // namespace
+
+void MetaLogEngine::discard_window()
+{
+    reset_window_state();
+}
+
+std::optional<MetaLogEngine::TemplateLookup>
+MetaLogEngine::content_template_id_for(const tokenization::CanonicalEvent& event,
+                                       NewTemplateAdmission& admission)
 {
     // assert: template_str is the content-deterministic identity, so a cache hit returns without
     // recomputing the hash.
     if (auto cached{template_str_cache_.find(event.template_str)};
         cached != template_str_cache_.end())
     {
-        return {.content_id = &cached->second.content_id,
-                .internal_id = cached->second.internal_id};
+        return TemplateLookup{.content_id = &cached->second.content_id,
+                              .internal_id = cached->second.internal_id};
     }
 
     // note: the domain carries the POD id; the rendered string is the engine's own map key.
@@ -109,6 +130,10 @@ MetaLogEngine::content_template_id_for(const tokenization::CanonicalEvent& event
     InternalTemplateID internal_id{};
     if (index_it == content_template_index_.end())
     {
+        // refs: DN-103.D19
+        // assert: asked before any window state moves, so a refusal leaves the engine as it was.
+        if (!registry_.contains(template_id) && !admission.admit(event.template_str))
+            return std::nullopt;
         internal_id = static_cast<InternalTemplateID>(content_templates_by_internal_id_.size());
         content_templates_by_internal_id_.push_back(template_id);
         content_template_index_.emplace(content_id, internal_id);
@@ -126,8 +151,8 @@ MetaLogEngine::content_template_id_for(const tokenization::CanonicalEvent& event
         std::string{event.template_str},
         TemplateCacheEntry{.content_id = std::move(content_id), .internal_id = internal_id})};
     (void)inserted;
-    return {.content_id = &iterator->second.content_id,
-            .internal_id = iterator->second.internal_id};
+    return TemplateLookup{.content_id = &iterator->second.content_id,
+                          .internal_id = iterator->second.internal_id};
 }
 
 void MetaLogEngine::account_ngram(const NGramKey& key)
@@ -271,15 +296,30 @@ void MetaLogEngine::resolve_span_edges()
     }
 }
 
-// note: NOLINT: one coherent hot-path accumulator; a split fragments the path's locality.
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
+{
+    AdmitEveryTemplate admit_every;
+    // assert: an admission that admits every template never refuses, so the answer is always true.
+    (void)ingest_event(event, admit_every);
+}
+
+bool MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event,
+                                 NewTemplateAdmission& admission)
 {
     if (!window_start_)
         throw std::logic_error{"MetaLogEngine::ingest_event called before open_window"};
+    const auto lookup{content_template_id_for(event, admission)};
+    if (!lookup.has_value())
+        return false;
+    ingest_looked_up_event(event, *lookup);
+    return true;
+}
 
-    const TemplateLookup lookup = content_template_id_for(event);
-
+// note: NOLINT: one coherent hot-path accumulator; a split fragments the path's locality.
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+void MetaLogEngine::ingest_looked_up_event(const tokenization::CanonicalEvent& event,
+                                           const TemplateLookup& lookup)
+{
     auto [bucket_it, inserted]{buckets_.try_emplace(*lookup.content_id)};
     auto& bucket{bucket_it->second};
     if (inserted)

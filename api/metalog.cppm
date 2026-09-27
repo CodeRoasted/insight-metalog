@@ -7,6 +7,23 @@ export import insight.metalog.api;
 export namespace insight::metalog
 {
 
+// refs: DN-103.D19
+// invariant: asked with a template's text once per event whose template the registry does not
+// hold yet, before any of that event is ingested; false refuses the event.
+class NewTemplateAdmission
+{
+  public:
+    virtual ~NewTemplateAdmission();
+    [[nodiscard]] virtual bool admit(std::string_view template_str) = 0;
+
+  protected:
+    NewTemplateAdmission() = default;
+    NewTemplateAdmission(const NewTemplateAdmission&) = default;
+    NewTemplateAdmission(NewTemplateAdmission&&) = default;
+    NewTemplateAdmission& operator=(const NewTemplateAdmission&) = default;
+    NewTemplateAdmission& operator=(NewTemplateAdmission&&) = default;
+};
+
 // invariant: not thread-safe, and at most one window is open at a time.
 class MetaLogEngine
 {
@@ -30,6 +47,18 @@ class MetaLogEngine
     // post: first sight interns the template; every later occurrence only bumps its count.
     // refs: ADR-16.D5
     void ingest_event(const tokenization::CanonicalEvent& event);
+
+    // refs: DN-103.D19, ADR-16.D5
+    // pre: as the one-argument ingest_event.
+    // post: false, with nothing ingested and nothing interned, when the event's template is new to
+    // the registry and `admission` refuses it; otherwise the one-argument ingest_event, and true.
+    [[nodiscard]] bool ingest_event(const tokenization::CanonicalEvent& event,
+                                    NewTemplateAdmission& admission);
+
+    // refs: DN-103.D19
+    // post: the in-flight window is discarded, never closed, and no window is open; the registry
+    // and the previous window's frequencies are kept.
+    void discard_window();
 
     // post: the engine returns to no-open-window and keeps this window's frequencies for the next
     // window's stability.
@@ -134,7 +163,14 @@ class MetaLogEngine
         InternalTemplateID internal_id{};
     };
 
-    [[nodiscard]] TemplateLookup content_template_id_for(const tokenization::CanonicalEvent& event);
+    // post: the event's lookup, interning its template on first sight; nullopt, with nothing
+    // changed, when the template is new to the registry and `admission` refuses it.
+    [[nodiscard]] std::optional<TemplateLookup>
+    content_template_id_for(const tokenization::CanonicalEvent& event,
+                            NewTemplateAdmission& admission);
+    // pre: `lookup` is content_template_id_for's answer for `event`.
+    void ingest_looked_up_event(const tokenization::CanonicalEvent& event,
+                                const TemplateLookup& lookup);
     void account_ngram(const NGramKey& key);
     // post: the same accounting for the global ring and for each per-trace ring, so the n-gram
     // graph is identical for non-OTEL input and trace-scoped for OTEL input.
