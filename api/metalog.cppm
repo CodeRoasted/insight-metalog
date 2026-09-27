@@ -73,6 +73,14 @@ class MetaLogEngine
         return registry_;
     }
 
+    // refs: DN-103.D22
+    // pre: nothing reads this engine's registry after the call.
+    // post: the registry, moved out for a consumer that outlives this engine.
+    [[nodiscard]] TemplateRegistry take_registry() && noexcept
+    {
+        return std::move(registry_);
+    }
+
     // pre: read only between close_window() and the next open_window().
     // post: OBSERVATIONS refused at the cap, not distinct keys -- the distinct count is strictly
     // smaller and is not knowable here.
