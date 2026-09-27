@@ -1,6 +1,6 @@
 #pragma once
 
-// refs: DN-99.D8
+// refs: ADR-26.D12
 // pre: included by a gtest TU after its module import, so gtest and std are visible.
 // post: the written document, or an empty string after a recorded failure naming the path of the
 // NaN or infinity that refused it.

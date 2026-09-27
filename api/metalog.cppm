@@ -382,7 +382,7 @@ class MetaLogEngine
 // note: this seam emits the per-entry inline template mode; the others were never wired.
 // refs: ADR-9.D4, ADR-26.D12, ADR-24.D8, F-SRC-insight-metalog:metalog.api.cppm:TemplateRegistry
 // post: a document holding a NaN or an infinity is refused before any byte is written, the error
-// naming the path of its first such number (DN-99.D8).
+// naming the path of its first such number (ADR-26.D12).
 [[nodiscard]] std::expected<std::string, std::string> to_json(const MetaLogDocument& doc,
                                                               const TemplateRegistry& registry);
 

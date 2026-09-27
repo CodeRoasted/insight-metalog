@@ -1,4 +1,4 @@
-// refs: DN-99.D8
+// refs: ADR-26.D12
 // invariant: the metalog egress refuses a document whose NaN, +inf or -inf sits behind any category
 // the walk dispatches, naming the path the writer would have written, a renamed key included.
 // invariant: an empty optional is not refused, a finite document's bytes are the unwalked writer's,

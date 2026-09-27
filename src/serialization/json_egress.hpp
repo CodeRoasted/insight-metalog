@@ -42,7 +42,7 @@ namespace detail
         else if constexpr (std::integral<Key>)
             return std::to_string(key);
         else
-            static_assert(false, "DN-99.D8: a map key the walk cannot spell as a path segment");
+            static_assert(false, "ADR-26.D12: a map key the walk cannot spell as a path segment");
     }
 
     template <class Value>
@@ -90,7 +90,7 @@ namespace detail
     [[nodiscard]] std::optional<std::string> find_in_struct(const Struct& value)
     {
         static_assert(!glz::meta_has_skip<Struct> && !glz::meta_has_skip_if<Struct>,
-                      "DN-99.D8: a skip hook would make the walk see a member the writer skips");
+                      "ADR-26.D12: a skip hook would make the walk see a member the writer skips");
         std::optional<std::string> found;
         glz::for_each<glz::reflect<Struct>::size>(
             [&]<std::size_t Index>()
@@ -103,7 +103,7 @@ namespace detail
         return found;
     }
 
-    // refs: DN-99.D8
+    // refs: ADR-26.D12
     // post: the path of the first NaN or infinite number in the order glaze writes the document,
     // or nullopt; the path is built only while a hit unwinds, so a finite document allocates none.
     // invariant: every category is glaze's own, and a category the walk does not dispatch fails to
@@ -144,14 +144,14 @@ namespace detail
         }
         else
         {
-            static_assert(false, "DN-99.D8: a document member of a category the walk does not "
+            static_assert(false, "ADR-26.D12: a document member of a category the walk does not "
                                  "dispatch");
         }
     }
 
 } // namespace detail
 
-// refs: DN-99.D8, ADR-26.D12, DN-43.D20
+// refs: ADR-26.D12, DN-43.D20
 // post: RFC 8259-conformant JSON for every string input, including log-derived bytes below 0x20.
 // post: well-formed UTF-8, each maximal ill-formed subpart of a string replaced by one U+FFFD.
 // post: a NaN or an infinity refuses the document before any byte, the error naming its path.
