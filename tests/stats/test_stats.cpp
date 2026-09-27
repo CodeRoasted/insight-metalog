@@ -418,7 +418,7 @@ TEST(WireFormat, AllLevelsMapToSpecStrings)
     EXPECT_EQ(meta::level_to_spec_string(LogLevel::Fatal), "FATAL");
 }
 
-// refs: DN-43.D10, F-SRC-metalog-spec:SPEC.md
+// refs: ADR-19.D4, F-SRC-metalog-spec:SPEC.md
 // invariant: the two tests below are a PAIR -- the cube's need for a distinct token and the row's
 // need to omit are different acts and must never collapse into one.
 TEST(WireFormat, UnknownGetsItsOwnCubeAxisTokenRatherThanBorrowingInfo)

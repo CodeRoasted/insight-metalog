@@ -198,7 +198,7 @@ struct SalienceVerdict
 
 // post: total over LogLevel; Unknown renders as its own token, never an omission.
 // note: an absent cube axis already means AGGREGATED, so a coord needs a token; a row omits.
-// refs: DN-43.D10
+// refs: ADR-19.D4
 [[nodiscard]] std::string level_to_spec_string(LogLevel level);
 
 // post: nullopt when no level was observed -- a disengaged optional or EventLevel{} -- so the wire

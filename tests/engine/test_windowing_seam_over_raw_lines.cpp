@@ -82,7 +82,7 @@ TEST_F(WindowingSeamTest, AnAllInfoWindowFollowedByAnAllErrorWindowPublishesNewT
     EXPECT_EQ(doc2.acquisition->level_cardinality, 2U) << "window 2 observed ERROR and WARN";
 }
 
-// refs: DN-43.D10, F-SRC-metalog-spec:SPEC.md
+// refs: ADR-19.D4, F-SRC-metalog-spec:SPEC.md
 TEST_F(WindowingSeamTest, AnAbsentLevelIsOmittedFromTheWireRatherThanRenderedAsInfo)
 {
     meta::MetaLogConfig cfg;

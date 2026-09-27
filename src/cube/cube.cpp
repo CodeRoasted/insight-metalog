@@ -395,7 +395,7 @@ namespace
     // invariant: level banding never crosses the Error/Fatal frontier, so those two are never
     // banded together.
     // note: Unknown sits above Fatal, so no floor reaches it -- it is not a severity.
-    // refs: DN-43.D10
+    // refs: ADR-19.D4
     inline constexpr std::uint32_t kMaxLevelBandFloor{static_cast<std::uint32_t>(LogLevel::Error)};
     // note: the WHERE tree is one depth-1 chain today, so truncation degenerates to a drop.
     inline constexpr std::uint32_t kFullWhereDepth{1};
@@ -687,7 +687,7 @@ CubeCoord cube_location(std::optional<LogLevel> level, std::string_view componen
     CubeCoord coord;
     // assert: an engaged optional carrying Unknown is a location whose level was never observed; a
     // disengaged optional stars the axis by omission.
-    // refs: DN-43.D10
+    // refs: ADR-19.D4
     if (level)
         coord.level = level_to_spec_string(*level);
     if (!component.empty())
