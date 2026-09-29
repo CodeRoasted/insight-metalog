@@ -1,10 +1,10 @@
 name: Release
 
-# On a vX.Y.Z tag (or manual re-run): Lint -> CI -> Determinism Golden Proof (gate) -> Release ->
+# On a vX.Y.Z tag (or manual re-run): attest -> CI -> Determinism Golden Proof (gate) -> Release ->
 # attach the golden. The golden gate runs the 5-leg cross-toolchain/ISA/OS matrix (canon+metalog tower
 # from source) and only proceeds if every leg's digest is byte-identical; the agreed digest (the
 # validated golden) is then attached to the Release as a per-release artifact (never committed). CI is
-# the single tag entry point.
+# the single tag entry point. The lint is step 0's (ADR-2.D3): this tag re-runs none of it.
 
 on:
   push:
@@ -131,8 +131,8 @@ jobs:
         #
         # AND A DISPATCH FROM ANY OTHER COMMIT IS REFUSED, NOT NOTED. Attesting the tag's commit was
         # half of it: every job that checks out without naming the tag builds the commit the run
-        # was dispatched FROM, and this repository's own `ci.yml`, `golden.yaml` and `lint.yml` name
-        # no ref. So a re-dispatch from `main` after the tag gated `main` and published the tag —
+        # was dispatched FROM, and this repository's own `ci.yml` and `golden.yaml` name no
+        # ref. So a re-dispatch from `main` after the tag gated `main` and published the tag —
         # two trees under one attestation. Dispatched ON the tag (`--ref <tag>`), the two are one
         # commit, and that is the only dispatch this step admits.
         #
@@ -392,13 +392,8 @@ jobs:
       # INV-22-DELTA release-step
       # INV-22-DELTA-END release-step
 
-  lint:
-    needs: attest
-    uses: ./.github/workflows/lint.yml
-    secrets: inherit
-
   ci:
-    needs: [attest, lint]
+    needs: attest
     uses: ./.github/workflows/ci.yml
     secrets: inherit
 
