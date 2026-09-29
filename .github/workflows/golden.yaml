@@ -71,7 +71,7 @@ jobs:
     name: "section roster ≡ fixture dispatch"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 1
           persist-credentials: false
@@ -89,7 +89,7 @@ jobs:
     name: "digest writer ≡ fixture exit status"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 1
           persist-credentials: false
@@ -138,19 +138,19 @@ jobs:
       # `github.workspace`/malf by definition of actions/checkout.
       MALF_TOOLCHAIN_DIR: ${{ github.workspace }}/malf
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Check out malf-toolchain into malf/ (conan profiles + global.conf; public, anonymous — stays forkable)
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: CodeRoasted/malf-toolchain
-          ref: 852e3f6383eaaab5fb2d147bc9198668f7776a23
+          ref: a18e1e6f5f8f7ec01911c43105d1efe79204b2a6
           path: malf
           fetch-depth: 1
           persist-credentials: false
 
       - name: Check out insight-canon SOURCE into _canon/ (the tower's from-source canon; public, anonymous)
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: CodeRoasted/insight-canon
           ref: ${{ inputs.canon_ref || (github.ref_type == 'tag' && github.ref_name) || 'main' }}
@@ -160,11 +160,11 @@ jobs:
 
       - name: Provision gcc-16.2 toolchain (OUR OWN published asset; arm64 auto-picked by uname -m)
         if: matrix.leg == 'gcc'
-        uses: CodeRoasted/malf-toolchain/.github/actions/setup-gcc@852e3f6383eaaab5fb2d147bc9198668f7776a23
+        uses: CodeRoasted/malf-toolchain/.github/actions/setup-gcc@a18e1e6f5f8f7ec01911c43105d1efe79204b2a6
 
       - name: Provision clang-21 + libc++-21
         if: matrix.leg == 'clang'
-        uses: CodeRoasted/malf-toolchain/.github/actions/setup-clang21-libcxx@852e3f6383eaaab5fb2d147bc9198668f7776a23
+        uses: CodeRoasted/malf-toolchain/.github/actions/setup-clang21-libcxx@a18e1e6f5f8f7ec01911c43105d1efe79204b2a6
 
       - name: Base — ninja + CMake 4.3.x (+ gcc-16.2 /opt wiring on the gcc leg)
         run: |
@@ -188,7 +188,7 @@ jobs:
           fi
 
       - name: Setup Conan
-        uses: conan-io/setup-conan@v1
+        uses: conan-io/setup-conan@ed3942a6883243f4af84e13e49c972f9440fa1c2 # v1.4.0
         with:
           version: "2.28.1"
           home: ${{ env.CONAN_HOME }}
@@ -196,7 +196,7 @@ jobs:
           profile_detect: false
 
       - name: Cache conan dep binaries (keyed per arch/leg on the tower's dep set)
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ${{ env.CONAN_HOME }}
           key: conan-golden-${{ matrix.arch }}-${{ matrix.leg }}-${{ runner.os }}-${{ hashFiles('conanfile.py', '_canon/core/conanfile.py') }}
@@ -236,7 +236,7 @@ jobs:
         run: bash scripts/determinism_bitidentity.sh
 
       - name: Upload this leg's digest
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: golden-digest-${{ matrix.arch }}-${{ matrix.leg }}
           path: digest-${{ matrix.arch }}-${{ matrix.leg }}.txt
@@ -267,19 +267,19 @@ jobs:
       # `github.workspace`/malf by definition of actions/checkout.
       MALF_TOOLCHAIN_DIR: ${{ github.workspace }}/malf
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Check out malf-toolchain into malf/ (conan profile; public, anonymous)
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: CodeRoasted/malf-toolchain
-          ref: 852e3f6383eaaab5fb2d147bc9198668f7776a23
+          ref: a18e1e6f5f8f7ec01911c43105d1efe79204b2a6
           path: malf
           fetch-depth: 1
           persist-credentials: false
 
       - name: Check out insight-canon SOURCE into _canon/ (the tower's from-source canon; public, anonymous)
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: CodeRoasted/insight-canon
           ref: ${{ inputs.canon_ref || (github.ref_type == 'tag' && github.ref_name) || 'main' }}
@@ -287,7 +287,7 @@ jobs:
           persist-credentials: false
 
       - name: Install + activate MSVC 14.52 (the C++23-modules fix floor; not pre-installed)
-        uses: CodeRoasted/malf-toolchain/.github/actions/setup-msvc1452@852e3f6383eaaab5fb2d147bc9198668f7776a23
+        uses: CodeRoasted/malf-toolchain/.github/actions/setup-msvc1452@a18e1e6f5f8f7ec01911c43105d1efe79204b2a6
 
       - name: Verify the active toolset is MSVC 14.52, not a fallback
         shell: pwsh
@@ -306,7 +306,7 @@ jobs:
           cmake --version
 
       - name: Setup Conan
-        uses: conan-io/setup-conan@v1
+        uses: conan-io/setup-conan@ed3942a6883243f4af84e13e49c972f9440fa1c2 # v1.4.0
         with:
           version: "2.29.0"
           home: ${{ env.CONAN_HOME }}
@@ -314,7 +314,7 @@ jobs:
           profile_detect: false
 
       - name: Cache conan dep binaries
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ${{ env.CONAN_HOME }}
           key: conan-golden-msvc1452-${{ runner.os }}-${{ hashFiles('**/conanfile.py', '_canon/core/conanfile.py', 'malf/profiles/windows-msvc-release') }}
@@ -442,7 +442,7 @@ jobs:
           Write-Host "MSVC digest sha256: $((Get-FileHash -Algorithm SHA256 -Path digest-msvc.txt).Hash.ToLower())"
 
       - name: Upload the MSVC digest
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: golden-digest-msvc
           path: digest-msvc.txt
@@ -458,7 +458,7 @@ jobs:
       # Checked out FIRST: this action cleans its destination, and `digests/` lands here below.
       # The checkout is what lets the conformance gate rebuild the section roster from the corpus
       # files on disk instead of carrying a hand-kept list of them.
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 1
           persist-credentials: false
@@ -469,7 +469,7 @@ jobs:
       # deliberately decoupled version line and never carries the uniform vX.Y.Z tag, so a tag ref
       # would 404. That does mean the oracle can move under a fixed producer; see the gate's header.
       - name: Check out metalog-spec into _spec/ (the schema + its validator; PUBLIC, anonymous)
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: CodeRoasted/metalog-spec
           path: _spec
@@ -478,20 +478,20 @@ jobs:
           persist-credentials: false
 
       - name: Download every leg's digest
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           path: digests
           pattern: golden-digest-*
 
       - name: Compare + validate the golden (all 5 legs must be byte-identical)
-        uses: CodeRoasted/malf-toolchain/.github/actions/coderoast-golden-compare@852e3f6383eaaab5fb2d147bc9198668f7776a23
+        uses: CodeRoasted/malf-toolchain/.github/actions/coderoast-golden-compare@a18e1e6f5f8f7ec01911c43105d1efe79204b2a6
         with:
           digests-dir: digests
           min-legs: '5'
           out: ${{ github.workspace }}/determinism-golden.txt
 
       - name: Set up Python for the validator
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.12'
 
@@ -526,7 +526,7 @@ jobs:
           SPEC_ROOT: ${{ github.workspace }}/_spec
 
       - name: Upload the validated golden (the Release attaches it)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: determinism-golden
           path: determinism-golden.txt

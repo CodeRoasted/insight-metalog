@@ -404,7 +404,7 @@ jobs:
 
   release:
     needs: [attest, golden]
-    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-release.yml@852e3f6383eaaab5fb2d147bc9198668f7776a23
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-release.yml@a18e1e6f5f8f7ec01911c43105d1efe79204b2a6
     with:
       tag: ${{ github.event.inputs.tag || github.ref_name }}
       packages: 'insight_metalog:.'
@@ -426,7 +426,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download the validated golden
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: determinism-golden
 
