@@ -21,8 +21,11 @@ name: Determinism Golden Proof
 # toolchain/ISA/OS, so each leg checks out insight-canon SOURCE (public, anonymous) and the det_harness
 # rebuilds it from source under the cell's flags — the real determinism test hits canon's codegen too.
 #
-# PUBLIC + anonymous (no secrets): anyone can fork metalog + canon and reproduce it. arm64 + msvc run on
-# HOSTED runners only (a self-hosted runner on a public repo = fork-PR RCE); hosted minutes are free.
+# PUBLIC + anonymous: anyone can fork metalog + canon and reproduce it. arm64 + msvc run on HOSTED runners
+# only (a self-hosted runner on a public repo = fork-PR RCE); hosted minutes are free. ONE secret is read,
+# on ONE path: the pre-tag reading's `subjects` job downloads step 0's record with the org secret
+# BUILD_RECORD_READ_TOKEN (`Actions: Read-only` on CodeRoasted/coderoast), on a hosted runner that runs
+# nothing else — only a maintainer's `workflow_dispatch` can take that path, and a fork has no secret.
 #
 # The `compare` job carries a SECOND, independent gate over the same artifact: the agreed digest is
 # validated against the PUBLISHED MetaLog schema (metalog-spec SPEC §8 clauses 1 and 4) before it is
@@ -33,7 +36,14 @@ name: Determinism Golden Proof
 # Runs on every PR to main (full matrix — determinism caught in the PR) + the Release gate
 # (workflow_call) + a weekly drift catch + manual dispatch.
 #
-# WHICH insight-canon THE TOWER BUILDS — the source ref resolves in this order, and the order is the contract:
+# WHICH insight-canon (and metalog-spec) THE TOWER READS — the `subjects` job resolves the source ref in this
+# order, and the order is the contract:
+#   0. `inputs.record-run` — THE PRE-TAG READING (ROADMAP N263): `gh workflow run golden.yaml --ref main
+#      -f record-run=<the step 0 run>`. Canon has no tag of this cut yet before Wave 1, so the tower is
+#      built from the commit step 0's record verified, which `DN-108.D7` makes the tag, and the compare
+#      validates against the metalog-spec commit the record names; this commit must be the one the
+#      record names for insight-metalog, and the run's title names the step 0 run, which is how
+#      `pharos cut` counts it. An unreadable record refuses; it never falls back to `main`;
 #   1. `inputs.canon_ref` — a manual dispatch of THIS workflow (an epic branch for a cross-repo cascade);
 #   2. `github.ref_name` when `github.ref_type == 'tag'` — release.yaml fired by a tag push (under
 #      `workflow_call` the `github` context is the CALLER's, so this is the package tag itself);
@@ -41,6 +51,10 @@ name: Determinism Golden Proof
 # 2 pins insight-canon to the SAME tag as this repo's: the cut tags in lockstep (canon in Wave 1, metalog in
 # Wave 2, eidos in Wave 3), so the sibling tag exists before this gate runs, and a tag-time gate never
 # reads a moving `main`. A missing sibling tag is a checkout RED, never a fallback.
+
+run-name: >-
+  ${{ inputs.record-run && format('Determinism Golden Proof — step 0 run {0}', inputs.record-run)
+  || 'Determinism Golden Proof' }}
 
 permissions:
   contents: read
@@ -52,6 +66,14 @@ on:
       canon_ref:
         description: 'Ref to build the insight-canon SOURCE dep at — main (default) or an epic branch when validating a cross-repo cascade (the tower is mid-flight on that branch).'
         default: 'main'
+        required: false
+      record-run:
+        description: >-
+          THE PRE-TAG READING: the pharos-build run id of this cut's step 0 in CodeRoasted/coderoast.
+          Canon and metalog-spec are read at the commits its record verified, and the run's title
+          names it for `pharos cut`. Dispatch on the commit the record names for insight-metalog.
+        type: string
+        default: ''
         required: false
   pull_request:
     branches: [main]
@@ -95,8 +117,54 @@ jobs:
           persist-credentials: false
       - run: bash scripts/determinism_emit_check.sh
 
+  subjects:
+    name: Resolve the insight-canon and metalog-spec this run reads
+    # Hosted, and nothing else runs in it: on the pre-tag reading it holds the record-read token.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      canon: ${{ steps.resolve.outputs.canon }}
+      spec: ${{ steps.resolve.outputs.spec }}
+    steps:
+      - name: Resolve (GATING — on the pre-tag reading an unread record refuses, never main)
+        id: resolve
+        env:
+          RECORD_RUN: ${{ inputs.record-run }}
+          NAMED_REF: ${{ inputs.canon_ref || (github.ref_type == 'tag' && github.ref_name) || 'main' }}
+          RECORD_TOKEN: ${{ secrets.BUILD_RECORD_READ_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$RECORD_RUN" ]; then
+            # metalog-spec at `main`, never a tag: it is on a deliberately decoupled version line and
+            # never carries the uniform vX.Y.Z tag, so a tag ref would 404.
+            printf 'canon=%s\nspec=main\n' "$NAMED_REF" >> "$GITHUB_OUTPUT"
+            echo "insight-canon at $NAMED_REF, metalog-spec at main"
+            exit 0
+          fi
+          if [ -z "$RECORD_TOKEN" ]; then
+            echo "::error::BUILD_RECORD_READ_TOKEN is not set, so step 0's record cannot be read — and without it this reading would build commits nobody recorded"
+            exit 1
+          fi
+          record="$RUNNER_TEMP/pharos-build-record"
+          GH_TOKEN="$RECORD_TOKEN" gh run download "$RECORD_RUN" --repo CodeRoasted/coderoast \
+            --name pharos-build-record --dir "$record"
+          python3 - "$record/preflight.json" >> "$GITHUB_OUTPUT" <<'PY'
+          import json, os, re, sys
+          repos = json.load(open(sys.argv[1], encoding="utf-8")).get("repos", {})
+          commits = {name: repos.get(name) for name in ("insight-metalog", "insight-canon", "metalog-spec")}
+          for name, sha in commits.items():
+              if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
+                  sys.exit(f"step 0 run {os.environ['RECORD_RUN']}'s record names no commit for {name}")
+          if commits["insight-metalog"] != os.environ["GITHUB_SHA"]:
+              sys.exit(f"step 0 run {os.environ['RECORD_RUN']} recorded insight-metalog at {commits['insight-metalog']} and this run is at {os.environ['GITHUB_SHA']}: dispatch it while main is the recorded commit, or the reading judges a commit no tag will carry")
+          print(f"canon={commits['insight-canon']}")
+          print(f"spec={commits['metalog-spec']}")
+          print(f"the pre-tag reading of step 0 run {os.environ['RECORD_RUN']}: insight-canon {commits['insight-canon']}, metalog-spec {commits['metalog-spec']}", file=sys.stderr)
+          PY
+
   proof-linux:
-    needs: [roster-guard, emit-guard]
+    needs: [subjects, roster-guard, emit-guard]
     name: ${{ matrix.label }}
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -153,7 +221,7 @@ jobs:
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: CodeRoasted/insight-canon
-          ref: ${{ inputs.canon_ref || (github.ref_type == 'tag' && github.ref_name) || 'main' }}
+          ref: ${{ needs.subjects.outputs.canon }}
           path: _canon
           fetch-depth: 1
           persist-credentials: false
@@ -243,7 +311,7 @@ jobs:
           if-no-files-found: error
 
   proof-msvc:
-    needs: [roster-guard, emit-guard]
+    needs: [subjects, roster-guard, emit-guard]
     name: "msvc-14.52 · O2-fast"
     runs-on: windows-2025
     env:
@@ -282,7 +350,7 @@ jobs:
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: CodeRoasted/insight-canon
-          ref: ${{ inputs.canon_ref || (github.ref_type == 'tag' && github.ref_name) || 'main' }}
+          ref: ${{ needs.subjects.outputs.canon }}
           path: _canon
           persist-credentials: false
 
@@ -449,7 +517,7 @@ jobs:
           if-no-files-found: error
 
   compare:
-    needs: [proof-linux, proof-msvc]
+    needs: [subjects, proof-linux, proof-msvc]
     # PUBLIC repo: pinned to hosted — a self-hosted runner reachable from a fork PR is an RCE. Never vars.CI_RUNS_ON here.
     runs-on: ubuntu-latest
     permissions:
@@ -465,15 +533,17 @@ jobs:
 
       # The STANDARD this producer declares it writes against, plus the validator SPEC §8 clause 1
       # calls "the test" — which since v0.9.0 also decides clause 4. PUBLIC + anonymous, exactly like the malf-toolchain and insight-canon
-      # checkouts above — the workflow stays forkable. `main`, never a tag: metalog-spec is on a
-      # deliberately decoupled version line and never carries the uniform vX.Y.Z tag, so a tag ref
-      # would 404. That does mean the oracle can move under a fixed producer; see the gate's header.
+      # checkouts above — the workflow stays forkable. `main` (the `subjects` job's answer off the
+      # pre-tag reading), never a tag: metalog-spec is on a deliberately decoupled version line and
+      # never carries the uniform vX.Y.Z tag, so a tag ref would 404. That does mean the oracle can
+      # move under a fixed producer; see the gate's header. The pre-tag reading takes the commit
+      # step 0 recorded instead, the standard the rest of that step 0 judged against.
       - name: Check out metalog-spec into _spec/ (the schema + its validator; PUBLIC, anonymous)
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: CodeRoasted/metalog-spec
           path: _spec
-          ref: main
+          ref: ${{ needs.subjects.outputs.spec }}
           fetch-depth: 1
           persist-credentials: false
 
@@ -507,10 +577,10 @@ jobs:
       # no path (not even "download it from the failed run") by which those bytes reach a reader.
       #
       # Until this existed, conformance was checked in exactly ONE place: the superproject's
-      # `metalog-conformance` job, over the coderoast-hub bytes at `ref: main` — i.e. AFTER
-      # tag → release → publish. That job answers "what is a reader exposed to right now" and it
-      # stays; this one answers "does what we are about to publish still match the standard", which
-      # is a question no gate was asking.
+      # `metalog-conformance` job of step 0, over the coderoast-hub bytes step 0 recorded — i.e. the
+      # evidence already published by earlier releases. That job answers "does the standing evidence
+      # conform" and it stays; this one answers "does what we are about to publish still match the
+      # standard", which is a question no gate was asking.
       #
       # The logic is a committed script rather than inline YAML because a gate nobody can run at the
       # desk is a gate nobody can prove reds. It carries its own arming step (the validator's
