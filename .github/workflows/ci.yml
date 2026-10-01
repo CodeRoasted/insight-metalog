@@ -1,8 +1,24 @@
 name: CI
 
 on:
+  # `deps` declares how the upstream first-party packages reach the cache. The release workflow
+  # passes `vendor` (the tarballs of the waves cut before it), so a caller must say it; a dispatch
+  # defaults to `build` (each upstream created from its repository's main), because between two
+  # cuts the open version has no release to download. A pull_request run carries no inputs and
+  # takes the same `build`.
   workflow_call:
+    inputs:
+      deps:
+        description: 'vendor (release tarballs) | build (upstreams from their main)'
+        type: string
+        required: true
   workflow_dispatch:
+    inputs:
+      deps:
+        description: 'vendor (release tarballs) | build (upstreams from their main)'
+        type: choice
+        options: [build, vendor]
+        default: build
   pull_request:
     branches: [ main ]
 
@@ -11,14 +27,16 @@ jobs:
     permissions:
       contents: read
       actions: read
-    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-ci.yml@7dfbd00df7715672d5bd537c3f4208598b985a0c
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-ci.yml@b0c09342ef9e4bda9aa821d8b89e97adea6c14d6
     with:
-      # metalog vendors insight_canon from its PUBLIC release, then builds the single root package
+      # metalog takes insight_canon from the PUBLIC canon repository (its release under `deps: vendor`,
+      # its main under `deps: build`), then builds the single root package
       # (test=true runs the full gtest suite; create=true verifies packaging + test_package).
-      # insight_semantic_github is a SEPARATE package (ADR-17.D8 — canon is multi-package) shipped in
-      # the SAME canon release; the vendor loop restores one package per row, so it needs its own row
+      # insight_semantic_github is a SEPARATE package (ADR-17.D8 — canon is multi-package) from the
+      # SAME canon repository; the vendor loop handles one package per row, so it needs its own row
       # even though it comes from the same repo+tag. metalog test_requires it (conanfile.py) — without
       # the row the gtest suite cannot resolve it. Keep both rows pinned together on a canon bump.
+      deps: ${{ inputs.deps || 'build' }}
       vendor: |
         insight_canon 1.10.6 CodeRoasted/insight-canon public
         insight_semantic_github 1.10.6 CodeRoasted/insight-canon public
@@ -38,7 +56,7 @@ jobs:
     permissions:
       pull-requests: write
       actions: read
-    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-sift-post.yml@7dfbd00df7715672d5bd537c3f4208598b985a0c
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-sift-post.yml@b0c09342ef9e4bda9aa821d8b89e97adea6c14d6
     with:
       run-id: ${{ github.run_id }}
     secrets: inherit
