@@ -115,7 +115,7 @@ TEST(ComparisonOutcomeRule, TemplateDeltasWitnessOnANonZeroDeltaNotOnARow)
 
 // invariant: branching_delta declares maxItems 0, so the ARRAY is the finding and any row witnesses
 // even one whose entropy did not move.
-// note: it is a union too, so emitting it unconditionally would witness on two identical documents.
+// note: unmoved rows survive beside a moved one, so an unconditional array witnesses on identity.
 TEST(ComparisonOutcomeRule, BranchingDeltaWitnessesOnAnyRowIncludingAZeroOne)
 {
     auto diff{bare_diff()};
@@ -410,8 +410,8 @@ TEST(ComparisonOutcomeProducer, IdenticalWindowsAssertUnchangedAndCarryNoWitness
         << json;
 }
 
-// invariant: the producer-side half of the branching rule: the array is a union over both windows'
-// branching maps, so before this rule it was non-empty on every branching-bearing pair.
+// invariant: the producer-side half of the branching rule: the array spans every template branching
+// in both windows, so before this rule it was non-empty on every branching-bearing pair.
 TEST(ComparisonOutcomeProducer, EmitsNoBranchingDeltaWhenNoEntropyMoved)
 {
     const auto [previous, current] = identical_pair();

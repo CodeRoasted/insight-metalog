@@ -75,7 +75,8 @@ struct Corpus
 constexpr std::array<Corpus, 3> kCorpora{{
     {"service_a",
      "the RICH shape: 9 -> 12 unique templates across the split, so the diff carries "
-     "new_templates, vanished_templates, branching_delta and ngram_delta together, and the "
+     "new_templates, vanished_templates and ngram_delta together, and NO branching_delta: the two "
+     "windows branch on disjoint template sets, so no entropy is comparable (DN-126.D9); the "
      "documents carry populated per-slot param_histograms (SPEC 3.5)"},
     {"service_b",
      "the COLLAPSE shape: 6 -> 1 unique templates, a vanish-dominated diff with NO "

@@ -1534,6 +1534,9 @@ struct MetaLogDiff
     std::vector<TemplateDelta> template_deltas;
     std::vector<TemplateId> new_templates;
     std::vector<TemplateId> vanished_templates;
+    // invariant: one row per template with a behavior.branching entry in BOTH documents, emitted
+    // only when one of those rows moved; a one-sided template has no row, never a zero entropy.
+    // refs: DN-126.D9, F-SRC-metalog-spec:SPEC.md
     std::vector<BranchingDelta> branching_delta;
     std::optional<NGramDelta> ngram_delta;
     // invariant: present ONLY when both documents carried a service_edges block; absence reads

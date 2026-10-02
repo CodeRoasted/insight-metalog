@@ -1,6 +1,8 @@
 
 // invariant: field_histogram_deltas carries a per-param JS divergence when histograms are enabled,
 // and tail_delta is populated only when BOTH documents carry a tail summary.
+// invariant: branching_delta carries a row only for a template with a branching entry in BOTH
+// documents, and the array is emitted only when one of those rows moved.
 #include <gtest/gtest.h>
 
 import insight.metalog.test;
@@ -157,6 +159,94 @@ TEST(TailDeltaDiffTest, AbsentWhenEitherDocLacksTailSummary)
     EXPECT_FALSE(meta::diff(with_tail, without_tail).tail_delta.has_value())
         << "a one-sided tail is appearance/vanishing, not a tail delta";
     EXPECT_FALSE(meta::diff(without_tail, with_tail).tail_delta.has_value());
+}
+
+// refs: DN-126.D9
+// invariant: a branching-only document — a behavior block whose branching entries are the given
+// (template, entropy) pairs; the rest of the document stays at its defaults.
+[[nodiscard]] meta::MetaLogDocument
+branching_doc(const std::vector<std::pair<std::string_view, double>>& entries)
+{
+    meta::MetaLogDocument doc;
+    doc.window.lines_observed = 1000;
+    std::vector<meta::BranchingEntry> branching;
+    for (const auto& [name, entropy] : entries)
+        branching.push_back(meta::BranchingEntry{.template_id = insight::template_id_of(name),
+                                                 .fanout = 2,
+                                                 .total_outgoing = 10,
+                                                 .entropy_bits = entropy});
+    doc.behavior = meta::BehaviorBlock{};
+    doc.behavior->branching = std::move(branching);
+    doc.behavior->branching_size = entries.size();
+    return doc;
+}
+
+[[nodiscard]] std::string render_rows(const std::vector<meta::BranchingDelta>& rows)
+{
+    std::string text;
+    for (const auto& row : rows)
+        text += "\n  " + insight::render(row.template_id) + " " +
+                std::to_string(row.previous_entropy_bits) + " -> " +
+                std::to_string(row.current_entropy_bits) + " (" + std::to_string(row.delta_bits) +
+                ")";
+    return text.empty() ? std::string{" <none>"} : text;
+}
+
+[[nodiscard]] bool has_row(const std::vector<meta::BranchingDelta>& rows, std::string_view name)
+{
+    const auto template_id{insight::template_id_of(name)};
+    return std::ranges::any_of(rows, [&template_id](const meta::BranchingDelta& row)
+                               { return row.template_id == template_id; });
+}
+
+// invariant: C branches only in the current window, so it has no row; A moved and B did not, and
+// both branch on both sides, so both have one.
+TEST(BranchingDeltaDiffTest, ATemplateBranchingOnlyInTheCurrentWindowHasNoRow)
+{
+    const auto previous{branching_doc({{"alpha <*>", 1.0}, {"beta <*>", 0.5}})};
+    const auto current{branching_doc({{"alpha <*>", 2.0}, {"beta <*>", 0.5}, {"gamma <*>", 1.58}})};
+
+    const auto rows{meta::diff(previous, current).branching_delta};
+
+    EXPECT_EQ(rows.size(), 2U) << "expected rows for alpha and beta only; got" << render_rows(rows);
+    EXPECT_TRUE(has_row(rows, "alpha <*>")) << "alpha moved 1.0 -> 2.0; got" << render_rows(rows);
+    EXPECT_TRUE(has_row(rows, "beta <*>"))
+        << "beta branches on both sides and survives unmoved beside alpha; got"
+        << render_rows(rows);
+    EXPECT_FALSE(has_row(rows, "gamma <*>"))
+        << "gamma has no previous branching entry, so no entropy shift is comparable; got"
+        << render_rows(rows);
+}
+
+// invariant: the mirror — C branches only in the previous window, so it has no row either.
+TEST(BranchingDeltaDiffTest, ATemplateBranchingOnlyInThePreviousWindowHasNoRow)
+{
+    const auto previous{
+        branching_doc({{"alpha <*>", 1.0}, {"beta <*>", 0.5}, {"gamma <*>", 1.58}})};
+    const auto current{branching_doc({{"alpha <*>", 2.0}, {"beta <*>", 0.5}})};
+
+    const auto rows{meta::diff(previous, current).branching_delta};
+
+    EXPECT_EQ(rows.size(), 2U) << "expected rows for alpha and beta only; got" << render_rows(rows);
+    EXPECT_TRUE(has_row(rows, "alpha <*>")) << "alpha moved 1.0 -> 2.0; got" << render_rows(rows);
+    EXPECT_TRUE(has_row(rows, "beta <*>")) << "beta survives unmoved; got" << render_rows(rows);
+    EXPECT_FALSE(has_row(rows, "gamma <*>"))
+        << "gamma has no current branching entry, so no entropy shift is comparable; got"
+        << render_rows(rows);
+}
+
+// invariant: the vacuity rule reads the two-sided rows only — when the one entropy that differs
+// belongs to a template branching on one side, nothing moved and the array is empty.
+TEST(BranchingDeltaDiffTest, AOneSidedTemplateAloneDoesNotMakeTheArrayAppear)
+{
+    const auto previous{branching_doc({{"alpha <*>", 1.0}, {"beta <*>", 0.5}})};
+    const auto current{branching_doc({{"alpha <*>", 1.0}, {"beta <*>", 0.5}, {"gamma <*>", 1.58}})};
+
+    const auto diff{meta::diff(previous, current)};
+
+    EXPECT_TRUE(diff.branching_delta.empty())
+        << "alpha and beta are unmoved and gamma is one-sided, so no row may be emitted; got"
+        << render_rows(diff.branching_delta);
 }
 
 } // namespace

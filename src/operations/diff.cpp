@@ -80,7 +80,10 @@ namespace
         std::ranges::sort(out.vanished_templates);
     }
 
-    // note: a missing branching row means not comparable, never zero entropy.
+    // post: a row per template with a branching entry in BOTH documents, by |delta| desc, id asc;
+    // a template absent from one side's branching has no row, whatever the reason.
+    // note: a missing branching entry means not comparable, never zero entropy.
+    // refs: DN-126.D9
     void diff_branching_delta(MetaLogDiff& out, const MetaLogDocument& previous,
                               const MetaLogDocument& current)
     {
@@ -91,23 +94,17 @@ namespace
             std::unordered_map<TemplateId, double> prev_h;
             for (const auto& branch : *previous.behavior->branching)
                 prev_h[branch.template_id] = branch.entropy_bits;
-            std::unordered_map<TemplateId, double> cur_h;
+            out.branching_delta.reserve(
+                std::min(prev_h.size(), current.behavior->branching->size()));
             for (const auto& branch : *current.behavior->branching)
-                cur_h[branch.template_id] = branch.entropy_bits;
-            std::unordered_set<TemplateId> ids;
-            for (const auto& [key, _sink] : prev_h)
-                ids.insert(key);
-            for (const auto& [key, _sink] : cur_h)
-                ids.insert(key);
-            out.branching_delta.reserve(ids.size());
-            for (const auto& template_id : ids)
             {
+                const auto prev_it{prev_h.find(branch.template_id)};
+                if (prev_it == prev_h.end())
+                    continue;
                 BranchingDelta branch_delta;
-                branch_delta.template_id = template_id;
-                branch_delta.previous_entropy_bits =
-                    prev_h.contains(template_id) ? prev_h[template_id] : 0.0;
-                branch_delta.current_entropy_bits =
-                    cur_h.contains(template_id) ? cur_h[template_id] : 0.0;
+                branch_delta.template_id = branch.template_id;
+                branch_delta.previous_entropy_bits = prev_it->second;
+                branch_delta.current_entropy_bits = branch.entropy_bits;
                 branch_delta.delta_bits =
                     branch_delta.current_entropy_bits - branch_delta.previous_entropy_bits;
                 out.branching_delta.push_back(branch_delta);
@@ -120,7 +117,7 @@ namespace
                                   return lhs.template_id < rhs.template_id;
                               });
             // invariant: emitted only when some entropy moved -- the declared vacuity is the EMPTY
-            // array, so emitting an unmoved union would publish a false witness.
+            // array, so emitting an unmoved array would publish a false witness.
             // note: rows that did not move survive beside those that did; the array is the finding.
             if (std::ranges::none_of(out.branching_delta, [](const BranchingDelta& row)
                                      { return row.delta_bits != 0.0; }))
