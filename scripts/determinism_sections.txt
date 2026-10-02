@@ -61,7 +61,7 @@
 # artifact species this producer serializes, the one insight-eidos republishes verbatim as
 # `raw[].diff` in every Sift change report. The fourth record is the SECOND published OPERATION
 # (DN-82.D2), which is what puts a §12 result under the public schema at all. A single-window
-# section composes with nothing, which is why only the two PAIR rows below carry a fourth record
+# section composes with nothing, which is why only the PAIR rows below carry a fourth record
 # and the five single rows above do not.
 #
 # WHAT THIS ROW DOES NOT BUY, measured at the artifact rather than reasoned: §12.1's
@@ -69,7 +69,7 @@
 # pair section declares `stats.reservoir_size` — the only two sections that declare one are
 # --reservoir-nearfull (128) and --reservoir-streaming (64), and both are SINGLE-window, so they
 # compose with nothing. `behavior.top_ngrams_size` is 32 on every operand and `stats.top_k_size`
-# is equal on both operands of every pair (64 on eight, 16 on --collapse-depths). So `min` is
+# is equal on both operands of every pair (64 on nine, 16 on --collapse-depths). So `min` is
 # replayed only on its equal-operands and neither-declared branches. Closing the asymmetric branch
 # needs a reservoir-bearing PAIR, which is a new roster row — a decision for DN-082's owner, not a
 # repair, and it is written here so the gap is not re-discovered as a surprise.
@@ -78,3 +78,11 @@
 # The §16.10 compare-at-min PAIR, whose two cubes sit at DIFFERENT collapse depths so the diff's
 # axes equal neither input's — the shape §13.6's example text denies and §16.10 mandates.
 --collapse-depths (Sec16.10 compare-at-min, axes equal neither input)
+
+# The only order-3 PAIR with span records, the one shape in which two n-gram lengths coexist in
+# top_ngrams: two-id span edges beside three-id log trigrams opening with the same ids. Each
+# sequence's probability conditions on its own first size - 1 ids among sequences of its own length
+# (DN-126.D10), and the pair moves both lengths' conditionals, so the diff's rate_changed and the
+# composed mean carry them too. Every other section is order 2 or span-free and cannot see that rule.
+# Appended LAST so every earlier section's bytes stay where they were.
+--span-order3 (DN-126.D10 order-3 span edges beside trigrams, length-scoped probability)

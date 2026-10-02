@@ -178,7 +178,7 @@ fi
 # added tomorrow is demanded on arrival, and one that stopped emitting is a red instead
 # of a smaller green. Containment, not equality — the driver's synthetic scenario
 # sections (--reservoir-nearfull, --reservoir-streaming, --cube-collapse, --ngram-cap,
-# --service-edges, --latency-shift) are extra sections
+# --service-edges, --latency-shift, --collapse-depths, --span-order3) are extra sections
 # by design, and demanding an exact set would red this gate the day a scenario is added.
 #
 # `roster_over` takes the file to check and a noun for the message, so the SAME loop runs

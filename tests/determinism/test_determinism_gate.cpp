@@ -4,6 +4,8 @@
 // note: these tests keep the replayed scenarios non-hollow and pin derived VALUES, never bytes.
 #include <gtest/gtest.h>
 
+#include <set>
+
 import insight.metalog.test;
 
 #include "../written_or_fail.hpp"
@@ -22,6 +24,8 @@ import insight.metalog.test;
 #include "latency_shift_scenario.hpp"
 // note: two cubes at different collapse depths.
 #include "collapse_depths_scenario.hpp"
+// note: the only scenario here whose documents carry two n-gram lengths at once.
+#include "span_order3_scenario.hpp"
 
 namespace
 {
@@ -630,6 +634,52 @@ TEST(MetaLogDocument, ADifferentialAxisOnlyEverPinsAnEmergingCellFromZero)
     EXPECT_EQ(depth_cells, 0U)
         << "a pair with no differential axis must pin no differential coordinate; got "
         << depth_cells;
+}
+
+// refs: DN-126.D10
+// invariant: both documents carry two-id span edges beside three-id trigrams and the diff moves
+// both lengths' conditionals, or the digest's length-scoped denominator section goes hollow.
+TEST(MetaLogDocument, SpanOrder3PairCarriesBothLengthsAndMovesBothRates)
+{
+    meta::MetaLogConfig cfg;
+    meta::span_order3::configure(cfg);
+    meta::MetaLogEngine engine{cfg};
+
+    using Clock = std::chrono::system_clock;
+    const Clock::time_point t0{std::chrono::seconds{1700000000}};
+    const Clock::time_point t1{std::chrono::seconds{1700000060}};
+    const Clock::time_point t2{std::chrono::seconds{1700000120}};
+    engine.open_window(t0);
+    meta::span_order3::emit_window(engine, meta::span_order3::kPrevious);
+    const auto previous{engine.close_window(t1)};
+    engine.open_window(t1);
+    meta::span_order3::emit_window(engine, meta::span_order3::kCurrent);
+    const auto current{engine.close_window(t2)};
+
+    const auto lengths_of = [](const auto& sequences)
+    {
+        std::set<std::size_t> lengths;
+        for (const auto& row : sequences)
+            lengths.insert(row.sequence.size());
+        return lengths;
+    };
+    const std::set<std::size_t> both{2U, meta::span_order3::kNgramSize};
+    for (const auto* doc : {&previous, &current})
+    {
+        const char* const side{doc == &previous ? "previous" : "current"};
+        ASSERT_TRUE(doc->behavior.has_value()) << side << " carries no behavior block";
+        EXPECT_EQ(doc->behavior->ngram_size, meta::span_order3::kNgramSize) << side;
+        ASSERT_TRUE(doc->acquisition.has_value()) << side << " carries no acquisition block";
+        EXPECT_GT(doc->acquisition->span_records, 0U)
+            << side << " observed no span record, so no span edge enters top_ngrams";
+        EXPECT_EQ(lengths_of(doc->behavior->top_ngrams), both)
+            << side << " must carry span edges (2 ids) and trigrams (3 ids) together";
+    }
+    const auto delta{meta::diff(previous, current)};
+    ASSERT_TRUE(delta.ngram_delta.has_value()) << "the pair moved no n-gram at all";
+    EXPECT_EQ(lengths_of(delta.ngram_delta->rate_changed), both)
+        << "rate_changed must carry a span edge and a trigram, else the section witnesses only one "
+           "of the two denominators";
 }
 
 } // namespace

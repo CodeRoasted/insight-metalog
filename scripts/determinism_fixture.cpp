@@ -28,6 +28,7 @@ import insight.metalog;
 #include "reservoir_nearfull_scenario.hpp"
 #include "reservoir_streaming_scenario.hpp"
 #include "service_edges_overcap_scenario.hpp"
+#include "span_order3_scenario.hpp"
 
 // note: an escaping exception terminating this fixture IS its intended failure mode.
 // NOLINTNEXTLINE(bugprone-exception-escape)
@@ -47,7 +48,7 @@ int main(int argc, char** argv)
     {
         std::cerr << "usage: determinism_fixture <corpus | --reservoir-nearfull | "
                      "--reservoir-streaming | --cube-collapse | --service-edges | "
-                     "--ngram-cap | --latency-shift | --collapse-depths>\n";
+                     "--ngram-cap | --latency-shift | --collapse-depths | --span-order3>\n";
         return 2;
     }
 
@@ -185,6 +186,32 @@ int main(int argc, char** argv)
         // refs: ADR-25.D5
         // invariant: composing two cubes at different collapse depths is the one compose clause no
         // corpus pair reaches, since a corpus pair bands both windows alike or neither.
+        std::cout << ml::to_json(previous, engine.registry()).value() << "\n"
+                  << ml::to_json(current, engine.registry()).value() << "\n"
+                  << ml::to_json(ml::diff(previous, current)).value() << "\n"
+                  << ml::to_json(ml::compose(previous, current), engine.registry()).value() << "\n";
+        return 0;
+    }
+
+    // post: emits the order-3 span pair, its diff and its composition -- the only documents in
+    // this digest whose top_ngrams hold two lengths, each conditioned among its own length.
+    // refs: DN-126.D10
+    if (std::string{argv[1]} == "--span-order3")
+    {
+        namespace ml = insight::metalog;
+        ml::MetaLogConfig cfg;
+        ml::span_order3::configure(cfg);
+        ml::MetaLogEngine engine{cfg};
+        using Clock = std::chrono::system_clock;
+        const Clock::time_point window_start{std::chrono::seconds{1700000000}};
+        const Clock::time_point window_mid{std::chrono::seconds{1700000060}};
+        const Clock::time_point window_end{std::chrono::seconds{1700000120}};
+        engine.open_window(window_start);
+        ml::span_order3::emit_window(engine, ml::span_order3::kPrevious);
+        const auto previous{engine.close_window(window_mid)};
+        engine.open_window(window_mid);
+        ml::span_order3::emit_window(engine, ml::span_order3::kCurrent);
+        const auto current{engine.close_window(window_end)};
         std::cout << ml::to_json(previous, engine.registry()).value() << "\n"
                   << ml::to_json(current, engine.registry()).value() << "\n"
                   << ml::to_json(ml::diff(previous, current)).value() << "\n"

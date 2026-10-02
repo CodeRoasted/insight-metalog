@@ -1,7 +1,10 @@
 // refs: F-SRC-insight-metalog:metalog.cppm:record_span
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
+#include <initializer_list>
+#include <string>
 
 import insight.metalog.test;
 
@@ -37,6 +40,22 @@ using insight::metalog::test::make_event;
             ngram.sequence[1] == insight::template_id_of(to))
             return true;
     return false;
+}
+
+[[nodiscard]] const meta::NGramEntry* find_ngram(const meta::MetaLogDocument& doc,
+                                                 std::initializer_list<std::string_view> templs)
+{
+    if (!doc.behavior.has_value())
+        return nullptr;
+    for (const auto& ngram : doc.behavior->top_ngrams)
+    {
+        if (ngram.sequence.size() != templs.size())
+            continue;
+        if (std::ranges::equal(ngram.sequence, templs, {}, {}, [](std::string_view templ)
+                               { return insight::template_id_of(templ); }))
+            return &ngram;
+    }
+    return nullptr;
 }
 
 const insight::Timestamp kT0{std::chrono::system_clock::now()};
@@ -152,4 +171,68 @@ TEST(SpanEdges, ObservedGraphReplaysBitIdentically)
             << "observed n-gram " << i << " diverged across replays";
     EXPECT_EQ(first.acquisition->span_records, second.acquisition->span_records);
     EXPECT_EQ(first.acquisition->orphan_parent_edges, second.acquisition->orphan_parent_edges);
+}
+
+// invariant: at order 3 a span edge (two ids) sits beside log trigrams (three ids), and each
+// sequence's probability conditions on its own first size - 1 ids among sequences of its length.
+// refs: DN-126.D10
+TEST(SpanEdges, Order3ProbabilityConditionsOnPrefixOfItsOwnLength)
+{
+    meta::MetaLogEngine engine{
+        meta::MetaLogConfig{.top_k_size = 16, .ngram_size = 3, .top_ngrams_size = 32}};
+    engine.open_window(kT0);
+    engine.ingest_event(make_span("a", /*span=*/1, /*parent=*/0));
+    engine.ingest_event(make_span("b", /*span=*/2, /*parent=*/1));
+    engine.ingest_event(make_span("e", /*span=*/3, /*parent=*/1));
+    engine.ingest_event(make_span("a", /*span=*/4, /*parent=*/0));
+    engine.ingest_event(make_span("b", /*span=*/5, /*parent=*/4));
+    engine.ingest_event(make_span("a", /*span=*/6, /*parent=*/0));
+    engine.ingest_event(make_span("b", /*span=*/7, /*parent=*/6));
+    for (const std::string_view templ : {"a", "b", "c", "a", "b", "d", "a", "b", "c"})
+        engine.ingest_event(make_event(templ));
+    const auto doc{engine.close_window(kT1)};
+    ASSERT_TRUE(doc.behavior.has_value());
+    ASSERT_EQ(doc.behavior->ngram_size, 3U);
+
+    struct Expected
+    {
+        std::initializer_list<std::string_view> sequence;
+        std::string label;
+        std::uint64_t count;
+        double probability;
+    };
+    const std::array<Expected, 4> expected{{
+        {{"a", "b"}, "span edge (a,b)", 3U, 3.0 / 4.0},
+        {{"a", "e"}, "span edge (a,e)", 1U, 1.0 / 4.0},
+        {{"a", "b", "c"}, "trigram (a,b,c)", 2U, 2.0 / 3.0},
+        {{"a", "b", "d"}, "trigram (a,b,d)", 1U, 1.0 / 3.0},
+    }};
+
+    const auto name_of = [](const insight::TemplateId& id) -> std::string
+    {
+        for (const std::string_view templ : {"a", "b", "c", "d", "e"})
+            if (id == insight::template_id_of(templ))
+                return std::string{templ};
+        return "?";
+    };
+    std::string dump;
+    for (const auto& ngram : doc.behavior->top_ngrams)
+    {
+        dump += "  [";
+        for (const auto& id : ngram.sequence)
+            dump += name_of(id) + " ";
+        dump += "] count=" + std::to_string(ngram.count) +
+                " probability=" + std::to_string(ngram.probability) + "\n";
+    }
+    for (const auto& row : expected)
+    {
+        const meta::NGramEntry* const actual{find_ngram(doc, row.sequence)};
+        ASSERT_NE(actual, nullptr) << row.label << " is absent from top_ngrams:\n" << dump;
+        EXPECT_EQ(actual->count, row.count) << row.label << "\n" << dump;
+        EXPECT_DOUBLE_EQ(actual->probability, row.probability)
+            << row.label << ": actual " << actual->probability << ", expected " << row.probability
+            << " (count over the summed count of the sequences of the SAME "
+            << "length sharing its first size - 1 ids)\n"
+            << dump;
+    }
 }

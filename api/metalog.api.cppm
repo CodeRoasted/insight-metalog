@@ -832,10 +832,11 @@ struct NGramEntry
 {
     std::vector<TemplateId> sequence;
     std::uint64_t count{0};
-    // invariant: count over the summed count of every counted n-gram opening with the same first
-    // ngram_size - 1 ids: p(last | prefix) for a log-order n-gram.
-    // invariant: at order 3 a span edge's two ids are that whole prefix, so its value is no
-    // conditional of its last id.
+    // invariant: count over the summed count of the counted sequences of the SAME length opening
+    // with the same first size - 1 ids: p(last | prefix), taken before the top_ngrams_size cut.
+    // invariant: at order 3 a span edge's value is therefore p(child | parent) among span edges,
+    // and a log trigram's never counts a span edge.
+    // refs: DN-126.D10
     double probability{0.0};
 };
 

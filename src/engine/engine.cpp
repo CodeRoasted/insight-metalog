@@ -940,19 +940,23 @@ void MetaLogEngine::build_behavior(MetaLogDocument& doc, const WindowAnalysis& a
     doc.behavior = std::move(behavior);
 }
 
-// post: the highest-count n-grams with p(last | prefix).
+// post: the highest-count n-grams, each with p(last | its own first size - 1 ids) among the counted
+// sequences of its own length.
+// refs: DN-126.D10
 void MetaLogEngine::build_top_ngrams(BehaviorBlock& behavior) const
 {
+    // note: the prefix keeps its own size, so a two-id span edge and a trigram never share a total.
+    const auto prefix_of = [](const NGramKey& key) noexcept
+    {
+        NGramKey prefix{.size = static_cast<std::uint8_t>(key.size - 1)};
+        for (std::size_t index = 0; index < prefix.size; ++index)
+            prefix.ids[index] = key.ids[index];
+        return prefix;
+    };
     std::unordered_map<NGramKey, std::uint64_t, NGramKeyHash> prefix_totals;
     prefix_totals.reserve(ngram_counts_.size());
-    const std::size_t prefix_size = config_.ngram_size - 1;
     for (const auto& [key, count] : ngram_counts_)
-    {
-        NGramKey prefix{.size = static_cast<std::uint8_t>(prefix_size)};
-        for (std::size_t index = 0; index < prefix_size; ++index)
-            prefix.ids[index] = key.ids[index];
-        prefix_totals[prefix] += count;
-    }
+        prefix_totals[prefix_of(key)] += count;
 
     std::vector<NGramEntry> entries;
     entries.reserve(ngram_counts_.size());
@@ -966,10 +970,7 @@ void MetaLogEngine::build_top_ngrams(BehaviorBlock& behavior) const
                 entry.sequence.push_back(content_templates_by_internal_id_[key.ids[index]]);
         }
         entry.count = count;
-        NGramKey prefix{.size = static_cast<std::uint8_t>(prefix_size)};
-        for (std::size_t index = 0; index < prefix_size; ++index)
-            prefix.ids[index] = key.ids[index];
-        const auto prefix_it{prefix_totals.find(prefix)};
+        const auto prefix_it{prefix_totals.find(prefix_of(key))};
         const auto prefix_total{prefix_it == prefix_totals.end() ? 0 : prefix_it->second};
         entry.probability =
             prefix_total > 0 ? static_cast<double>(count) / static_cast<double>(prefix_total) : 0.0;
