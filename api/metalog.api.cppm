@@ -823,12 +823,19 @@ struct StatsBlock
     return stats.tail_count == 0 && stats.tail_unique == 0;
 }
 
-// invariant: sequence holds the content-derived template ids in observed order, sized ngram_size.
+// invariant: sequence holds content-derived template ids in observed order, ngram_size of them for
+// a log-order n-gram.
+// invariant: a declared span edge is a two-id sequence at every ngram_size, so an order-3 window
+// that observed spans carries both lengths in top_ngrams.
+// refs: F-SRC-insight-metalog:engine.cpp:resolve_span_edges
 struct NGramEntry
 {
     std::vector<TemplateId> sequence;
     std::uint64_t count{0};
-    // invariant: p(last | prefix).
+    // invariant: count over the summed count of every counted n-gram opening with the same first
+    // ngram_size - 1 ids: p(last | prefix) for a log-order n-gram.
+    // invariant: at order 3 a span edge's two ids are that whole prefix, so its value is no
+    // conditional of its last id.
     double probability{0.0};
 };
 
