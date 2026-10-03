@@ -35,7 +35,7 @@ using Clock = std::chrono::system_clock;
 
     const insight::semantic::ComposedSemantics composed{insight::semantic::compose({})};
     tok::ArenaAllocator arena{std::size_t{1} << 20};
-    tok::Tokenizer tokenizer{arena, tok::MaskConfig{}, composed};
+    tok::Tokenizer tokenizer{arena, tok::MaskConfig{}, composed, tok::StreamContext{}};
     for (const std::string_view raw : kStream)
     {
         const auto event{tokenizer.process_line(raw)};

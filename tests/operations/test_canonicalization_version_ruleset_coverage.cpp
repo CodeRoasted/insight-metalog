@@ -89,7 +89,7 @@ struct Arm
     engine.open_window(window_start);
 
     tok::ArenaAllocator arena{std::size_t{1} << 22};
-    tok::Tokenizer tokenizer{arena, tok::MaskConfig{}, composed};
+    tok::Tokenizer tokenizer{arena, tok::MaskConfig{}, composed, tok::StreamContext{}};
     for (const std::string_view raw : kStream)
     {
         const auto event{tokenizer.process_line(raw)};

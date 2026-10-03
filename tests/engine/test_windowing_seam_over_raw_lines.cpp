@@ -33,7 +33,7 @@ class WindowingSeamTest : public ::testing::Test
 
     tok::ArenaAllocator arena{kArenaBytes};
     insight::semantic::ComposedSemantics composed{insight::semantic::compose({})};
-    tok::Tokenizer tokenizer{arena, tok::MaskConfig{}, composed};
+    tok::Tokenizer tokenizer{arena, tok::MaskConfig{}, composed, tok::StreamContext{}};
 
     void ingest(meta::MetaLogEngine& engine, std::span<const std::string_view> lines)
     {

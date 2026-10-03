@@ -63,7 +63,7 @@ struct DeclaredCell
     engine.open_window(start);
 
     tok::ArenaAllocator arena{std::size_t{1} << 22};
-    tok::Tokenizer tokenizer{arena, tok::MaskConfig{}, composed};
+    tok::Tokenizer tokenizer{arena, tok::MaskConfig{}, composed, tok::StreamContext{}};
     for (const auto& line : lines)
     {
         const auto event{tokenizer.process_line(line)};

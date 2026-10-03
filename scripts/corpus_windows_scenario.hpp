@@ -64,7 +64,7 @@ struct WindowPair
 
     tk::ArenaAllocator arena{kArenaBytes};
     const insight::semantic::ComposedSemantics composed{insight::semantic::compose({})};
-    tk::Tokenizer tokenizer{arena, tk::MaskConfig{}, composed};
+    tk::Tokenizer tokenizer{arena, tk::MaskConfig{}, composed, tk::StreamContext{}};
 
     std::vector<tk::CanonicalEvent> events;
     events.reserve(lines.size());
