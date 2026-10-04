@@ -266,14 +266,16 @@ BENCHMARK(BM_CubeDiffOf)->Unit(benchmark::kMicrosecond);
     return LogLevel::Info;
 }
 
+// post: the role whose canon name is `text`, None for an unknown or absent one.
+// invariant: derived from canon's own `to_string` over every enumerator, so a role canon appends
+// is read here with no second table to keep in step.
+// refs: ADR-2.D7, DN-134.D9
 [[nodiscard]] StructuralRole role_from_string_replica(std::string_view text) noexcept
 {
-    if (text == "GroupBegin")
-        return StructuralRole::GroupBegin;
-    if (text == "GroupEnd")
-        return StructuralRole::GroupEnd;
-    if (text == "Terminator")
-        return StructuralRole::Terminator;
+    constexpr auto kLastRole{static_cast<std::uint8_t>(StructuralRole::Progress)};
+    for (std::uint8_t ordinal{0}; ordinal <= kLastRole; ++ordinal)
+        if (const auto role{static_cast<StructuralRole>(ordinal)}; insight::to_string(role) == text)
+            return role;
     return StructuralRole::None;
 }
 
