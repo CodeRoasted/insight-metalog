@@ -477,6 +477,36 @@ struct ServiceEdgeBlock
     [[nodiscard]] bool operator==(const ServiceEdgeBlock&) const noexcept = default;
 };
 
+// invariant: one DECLARED parent-to-child link at template granularity: the parent span's template
+// id, the child span's, and how many resolved links joined them this window.
+// invariant: a declared edge and a log-order adjacency are different facts, so a span edge rides
+// this vendor block and never a standard behavior member.
+// refs: DN-126.D18, ADR-24.D7
+struct SpanEdge
+{
+    TemplateId parent;
+    TemplateId child;
+    std::uint64_t count{0};
+    [[nodiscard]] bool operator==(const SpanEdge&) const noexcept = default;
+};
+
+// invariant: present iff the window had trace substrate; a non-span window OMITS the block, and a
+// present-but-empty edges array means no parent resolved.
+// invariant: edges are ordered by count descending, then parent id, then child id, and cut to
+// span_edges_size, a RANKING cut every dropped entry of which was counted.
+// invariant: dropped_span_edge_observations counts the link OBSERVATIONS refused at
+// MetaLogConfig::max_span_edge_keys before being counted, on SPEC section 4's accounting principle.
+// invariant: it is engaged only when greater than zero, and omitted when nothing was refused.
+// invariant: compose() sets none, as it sets no acquisition and no service_edges.
+// refs: DN-126.D18, ADR-9.D3
+struct SpanEdgeBlock
+{
+    std::vector<SpanEdge> edges;
+    std::size_t span_edges_size{0};
+    std::optional<std::uint64_t> dropped_span_edge_observations;
+    [[nodiscard]] bool operator==(const SpanEdgeBlock&) const noexcept = default;
+};
+
 // invariant: the identity of the semantic ruleset that SEGMENTED this document -- the comparability
 // key.
 // invariant: an additive flag-gated block, so absence means a legacy producer and no wire version
@@ -823,19 +853,15 @@ struct StatsBlock
     return stats.tail_count == 0 && stats.tail_unique == 0;
 }
 
-// invariant: sequence holds content-derived template ids in observed order, ngram_size of them for
-// a log-order n-gram.
-// invariant: a declared span edge is a two-id sequence at every ngram_size, so an order-3 window
-// that observed spans carries both lengths in top_ngrams.
-// refs: F-SRC-insight-metalog:engine.cpp:resolve_span_edges
+// invariant: sequence holds ngram_size content-derived template ids, consecutive records of one
+// observation stream in observed order; a declared span edge is never one.
+// refs: DN-126.D18, F-SRC-insight-metalog:metalog.api.cppm:SpanEdgeBlock
 struct NGramEntry
 {
     std::vector<TemplateId> sequence;
     std::uint64_t count{0};
-    // invariant: count over the summed count of the counted sequences of the SAME length opening
-    // with the same first size - 1 ids: p(last | prefix), taken before the top_ngrams_size cut.
-    // invariant: at order 3 a span edge's value is therefore p(child | parent) among span edges,
-    // and a log trigram's never counts a span edge.
+    // invariant: count over the summed count of the counted sequences opening with the same first
+    // ngram_size - 1 ids: p(last | prefix), taken before the top_ngrams_size cut.
     // refs: DN-126.D10
     double probability{0.0};
 };
@@ -1046,6 +1072,12 @@ struct MetaLogDocument
     // vector.
     // refs: F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeBlock
     std::optional<ServiceEdgeBlock> service_edges;
+    // invariant: present iff the window had trace substrate; absent for a non-span window, and that
+    // absence reads unknown.
+    // invariant: stamped once at close and only read, so std::optional is sound despite the owned
+    // vector.
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:SpanEdgeBlock
+    std::optional<SpanEdgeBlock> span_edges;
     // invariant: the semantic_identity and package list of the ruleset that segmented this
     // document; absent means a legacy producer.
     // invariant: stamped once at close and only read, so std::optional is sound.
@@ -1086,6 +1118,11 @@ struct MetaLogConfig
     // invariant: the service_edges emit cap.
     // refs: F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeBlock
     static constexpr std::size_t kDefaultMaxServiceEdges = 4096;
+    // invariant: the span_edges ranking cut and accounting bound, the two bounds a declared edge
+    // was held to while it rode top_ngrams.
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:SpanEdgeBlock
+    static constexpr std::size_t kDefaultSpanEdgesSize = kDefaultTopNgramsSize;
+    static constexpr std::size_t kDefaultMaxSpanEdgeKeys = kDefaultMaxNgramKeys;
 
     // invariant: max entries kept in stats.top_k; the rest are summarised into tail_count and
     // tail_unique. 0 skips top_k emission and the document stays bounded.
@@ -1145,6 +1182,15 @@ struct MetaLogConfig
     // invariant: the accumulator itself is bounded by topology squared; this is the wire cap.
     // refs: F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeBlock
     std::size_t max_service_edges{kDefaultMaxServiceEdges};
+
+    // invariant: max entries kept in span_edges, a ranking cut declared on the block.
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:SpanEdgeBlock
+    std::size_t span_edges_size{kDefaultSpanEdgesSize};
+
+    // invariant: max distinct declared (parent, child) template edges accounted; past the cap,
+    // counts on existing edges keep updating and a new edge's observation is refused and counted.
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:SpanEdgeBlock, ADR-9.D3
+    std::size_t max_span_edge_keys{kDefaultMaxSpanEdgeKeys};
 
     // invariant: when true, the engine remembers the previous closed window's template frequencies
     // and emits a stability block on every subsequent window.
@@ -1303,6 +1349,18 @@ struct ServiceEdgeDelta
     std::vector<ServiceEdge> emerged;
     std::vector<ServiceEdge> vanished;
     std::vector<ServiceEdgeWeightChange> weight_changed;
+};
+
+// invariant: its OWN diff pass over the two windows' span_edges blocks: an edge, keyed (parent,
+// child), on the current side only is new, on the previous side only vanished.
+// invariant: each carries its count on the side holding it; both lists sorted by (parent, child).
+// invariant: present ONLY when BOTH documents carried a span_edges block and an edge appeared or
+// vanished; absence reads unknown or no change, never that every edge appeared.
+// refs: DN-126.D18, F-SRC-insight-metalog:metalog.api.cppm:SpanEdgeBlock
+struct SpanEdgeDelta
+{
+    std::vector<SpanEdge> new_edges;
+    std::vector<SpanEdge> vanished_edges;
 };
 
 // invariant: the per-(template_id, param_index) JS divergence between two windows' value_counts
@@ -1545,6 +1603,10 @@ struct MetaLogDiff
     // by name.
     // refs: F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeDelta
     std::optional<ServiceEdgeDelta> service_edge_delta;
+    // invariant: present ONLY when both documents carried a span_edges block; serialised under the
+    // extensions container.
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:SpanEdgeDelta
+    std::optional<SpanEdgeDelta> span_edge_delta;
     // invariant: empty unless both documents tracked histograms and share a template; sorted by
     // js_divergence descending.
     std::vector<FieldHistogramDelta> field_histogram_deltas;

@@ -139,10 +139,12 @@ class MetaLogEngine
             ordinal_accumulators;
     };
 
+    // invariant: the first config_.ngram_size ids are the sequence and the rest stay zero, so every
+    // key of one engine has one length.
+    // refs: DN-126.D18
     struct NGramKey
     {
         std::array<InternalTemplateID, kMaxTrackedNgramSize> ids{};
-        std::uint8_t size{};
 
         [[nodiscard]] bool operator==(const NGramKey& other) const noexcept = default;
     };
@@ -192,12 +194,16 @@ class MetaLogEngine
     // invariant: a span never enters an adjacency ring -- its causality is declared.
     // refs: ADR-29.D2
     void record_span(const tokenization::CanonicalEvent& event, InternalTemplateID internal_id);
-    // post: each queued parent edge resolves into ngram_counts_ as template -> template; an
+    // post: each queued parent edge resolves into span_edge_counts_ as template -> template; an
     // unresolved parent increments orphan_parent_edges_.
     // invariant: counts are commutative and integer-only with no wall-clock read, so the resolution
     // order cannot move a byte.
     // refs: F-SRC-insight-metalog:metalog.cppm:record_span
     void resolve_span_edges();
+    // post: the declared edge's count rises; a new edge past config_.max_span_edge_keys is refused
+    // and its observation counted in span_edge_observations_dropped_.
+    // refs: ADR-9.D3
+    void account_span_edge(InternalTemplateID parent, InternalTemplateID child);
 
     // invariant: computed once per close_window and owned by a local there, so it lives exactly as
     // long as the close it serves.
@@ -270,6 +276,10 @@ class MetaLogEngine
     // max_service_edges by weight with a canonical-key tie-break, plus dropped_edges.
     // refs: F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeBlock
     void build_service_edges(MetaLogDocument& doc) const;
+    // post: emitted iff the window had trace substrate: the top span_edges_size declared edges by
+    // count descending then (parent, child) id, plus the refused-observation count when non-zero.
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:SpanEdgeBlock
+    void build_span_edges(MetaLogDocument& doc) const;
     void stash_prev_window(const MetaLogDocument& doc);
     void reset_window_state();
 
@@ -301,8 +311,9 @@ class MetaLogEngine
 
     // invariant: point-lookup only, never iterated; span_fifo_ carries the eviction order and
     // pending_span_edges_ the ingest order, so nothing rests on the map's own order.
-    // invariant: a declared parent resolves into the SAME bounded ngram_counts_ graph, so there is
-    // one fingerprint and no second graph.
+    // invariant: a declared parent resolves into span_edge_counts_, never into the log-order
+    // ngram_counts_ graph.
+    // refs: DN-126.D18
     // note: component is owned; canon's string_view is arena-stable only in the record.
     // refs: F-SRC-insight-metalog:metalog.cppm:record_span
     // refs: F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeBlock, ADR-29.D2
@@ -345,6 +356,14 @@ class MetaLogEngine
     // block emits.
     // refs: F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeBlock
     std::map<std::pair<std::string, std::string>, std::uint64_t> service_edges_;
+    // invariant: declared (parent, child) template edges keyed by per-window internal ids, bounded
+    // by config_.max_span_edge_keys and cleared per window.
+    // note: the content ids and the wire order are fixed only when the block is built.
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:SpanEdgeBlock
+    std::map<std::pair<InternalTemplateID, InternalTemplateID>, std::uint64_t> span_edge_counts_;
+    // invariant: declared-edge observations refused at config_.max_span_edge_keys this window.
+    // refs: ADR-9.D3
+    std::uint64_t span_edge_observations_dropped_{0};
 
     // invariant: keyed by compact per-window internal ids; the content-derived spec ids are
     // substituted only when the document is built.

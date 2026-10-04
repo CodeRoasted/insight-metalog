@@ -67,9 +67,9 @@ MetaLogEngine::~MetaLogEngine() = default;
 
 std::size_t MetaLogEngine::NGramKeyHash::operator()(const NGramKey& key) const noexcept
 {
-    std::size_t seed = key.size;
-    for (std::size_t index = 0; index < key.size; ++index)
-        seed = mix(seed, key.ids[index]);
+    std::size_t seed = 0;
+    for (const InternalTemplateID ident : key.ids)
+        seed = mix(seed, ident);
     return seed;
 }
 
@@ -182,14 +182,14 @@ void MetaLogEngine::account_ngram_into(NgramRing& ring, InternalTemplateID inter
     // note: a bigram needs one prior id in the ring and a trigram two.
     if (config_.ngram_size == 2 && ring.filled >= 1)
     {
-        NGramKey key{.size = 2};
+        NGramKey key;
         key.ids[0] = ring.recent[0];
         key.ids[1] = internal_id;
         account_ngram(key);
     }
     else if (config_.ngram_size == 3 && ring.filled >= 2)
     {
-        NGramKey key{.size = 3};
+        NGramKey key;
         key.ids[0] = ring.recent[1];
         key.ids[1] = ring.recent[0];
         key.ids[2] = internal_id;
@@ -264,12 +264,10 @@ void MetaLogEngine::resolve_span_edges()
             ++orphan_parent_edges_;
             continue;
         }
-        // invariant: a declared span edge enters the SAME bounded graph as an inferred bigram, so
-        // dominant_path and structural_surprise consume it transparently.
-        NGramKey key{.size = 2};
-        key.ids[0] = parent_it->second.template_id;
-        key.ids[1] = edge.child_template;
-        account_ngram(key);
+        // invariant: a declared span edge is accounted in its OWN bounded table and never enters
+        // the log-order graph top_ngrams, branching, dominant_path and structural_surprise read.
+        // refs: DN-126.D18
+        account_span_edge(parent_it->second.template_id, edge.child_template);
 
         // note: an unknown endpoint and a self-edge are excluded -- neither is topology.
         // refs: F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeBlock
@@ -294,6 +292,26 @@ void MetaLogEngine::resolve_span_edges()
         if (!caller.empty() && !callee.empty() && caller != callee)
             ++service_edges_[{caller, callee}];
     }
+}
+
+void MetaLogEngine::account_span_edge(InternalTemplateID parent, InternalTemplateID child)
+{
+    const std::pair<InternalTemplateID, InternalTemplateID> key{parent, child};
+    auto iterator{span_edge_counts_.find(key)};
+    if (iterator == span_edge_counts_.end())
+    {
+        if (span_edge_counts_.size() >= config_.max_span_edge_keys)
+        {
+            // invariant: a refused edge is COUNTED, so a consumer can tell a complete declared-edge
+            // table from a truncated one.
+            // refs: ADR-9.D3
+            ++span_edge_observations_dropped_;
+            return;
+        }
+        span_edge_counts_.emplace(key, 1);
+        return;
+    }
+    ++iterator->second;
 }
 
 void MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event)
@@ -441,8 +459,8 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end,
     MetaLogDocument doc;
     stamp_envelope(doc, *window_start_, end, reported_bounds);
 
-    // assert: the queued span edges resolve before the graph is analyzed, so the observed DAG feeds
-    // dominant_path and structural_surprise like any other edge.
+    // assert: the queued span edges resolve into their own table before the vendor blocks are
+    // built.
     // refs: F-SRC-insight-metalog:metalog.cppm:record_span
     resolve_span_edges();
 
@@ -464,6 +482,8 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end,
     build_acquisition(doc);
     // refs: F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeBlock
     build_service_edges(doc);
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:SpanEdgeBlock
+    build_span_edges(doc);
 
     // assert: the n-gram drop count is snapshotted before reset_window_state clears the live
     // counter, which the consumer reads after this returns.
@@ -558,11 +578,7 @@ void MetaLogEngine::build_transition_graph(WindowAnalysis& analysis) const
     const auto node_count{content_templates_by_internal_id_.size()};
     transitions.reserve(node_count);
     for (const auto& [key, count] : ngram_counts_)
-    {
-        if (key.size < 2)
-            continue;
         transitions[key.ids[0]][key.ids[1]] += count;
-    }
     // note: ratios are compared by cross-multiply, exact integer math.
     incoming_surprise.assign(node_count, 0U);
     std::vector<std::uint64_t> best_c(node_count, 0);
@@ -940,16 +956,15 @@ void MetaLogEngine::build_behavior(MetaLogDocument& doc, const WindowAnalysis& a
     doc.behavior = std::move(behavior);
 }
 
-// post: the highest-count n-grams, each with p(last | its own first size - 1 ids) among the counted
-// sequences of its own length.
+// post: the highest-count n-grams, each with p(last | its first ngram_size - 1 ids).
 // refs: DN-126.D10
 void MetaLogEngine::build_top_ngrams(BehaviorBlock& behavior) const
 {
-    // note: the prefix keeps its own size, so a two-id span edge and a trigram never share a total.
-    const auto prefix_of = [](const NGramKey& key) noexcept
+    const std::size_t length{config_.ngram_size};
+    const auto prefix_of = [length](const NGramKey& key) noexcept
     {
-        NGramKey prefix{.size = static_cast<std::uint8_t>(key.size - 1)};
-        for (std::size_t index = 0; index < prefix.size; ++index)
+        NGramKey prefix;
+        for (std::size_t index = 0; index + 1 < length; ++index)
             prefix.ids[index] = key.ids[index];
         return prefix;
     };
@@ -963,8 +978,8 @@ void MetaLogEngine::build_top_ngrams(BehaviorBlock& behavior) const
     for (const auto& [key, count] : ngram_counts_)
     {
         NGramEntry entry;
-        entry.sequence.reserve(key.size);
-        for (std::size_t index = 0; index < key.size; ++index)
+        entry.sequence.reserve(length);
+        for (std::size_t index = 0; index < length; ++index)
         {
             if (key.ids[index] < content_templates_by_internal_id_.size())
                 entry.sequence.push_back(content_templates_by_internal_id_[key.ids[index]]);
@@ -1235,6 +1250,40 @@ void MetaLogEngine::build_service_edges(MetaLogDocument& doc) const
     doc.service_edges = std::move(block);
 }
 
+// post: emitted iff the window had trace substrate; a present-but-empty block says no declared
+// parent resolved, never "unknown".
+// refs: F-SRC-insight-metalog:metalog.api.cppm:SpanEdgeBlock
+void MetaLogEngine::build_span_edges(MetaLogDocument& doc) const
+{
+    if (span_records_ == 0)
+        // refs: F-SRC-insight-metalog:metalog.api.cppm:span_records
+        return;
+
+    SpanEdgeBlock block;
+    block.span_edges_size = config_.span_edges_size;
+    // invariant: declared at the window whose bound it describes and OMITTED when that bound
+    // refused nothing.
+    // refs: ADR-9.D3
+    if (span_edge_observations_dropped_ > 0)
+        block.dropped_span_edge_observations = span_edge_observations_dropped_;
+    block.edges.reserve(span_edge_counts_.size());
+    for (const auto& [pair, count] : span_edge_counts_)
+        block.edges.push_back(SpanEdge{.parent = content_templates_by_internal_id_[pair.first],
+                                       .child = content_templates_by_internal_id_[pair.second],
+                                       .count = count});
+    // invariant: a total order over the block's contents, so no map order reaches the wire.
+    std::ranges::sort(block.edges,
+                      [](const SpanEdge& lhs, const SpanEdge& rhs)
+                      {
+                          if (lhs.count != rhs.count)
+                              return lhs.count > rhs.count;
+                          return std::tie(lhs.parent, lhs.child) < std::tie(rhs.parent, rhs.child);
+                      });
+    if (block.edges.size() > config_.span_edges_size)
+        block.edges.resize(config_.span_edges_size);
+    doc.span_edges = std::move(block);
+}
+
 void MetaLogEngine::stash_prev_window(const MetaLogDocument& doc)
 {
     // note: this window's frequency map is stashed for the next window's stability.
@@ -1271,6 +1320,8 @@ void MetaLogEngine::reset_window_state()
     // refs: ADR-29.D2, F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeBlock
     pending_link_edges_.clear();
     service_edges_.clear();
+    span_edge_counts_.clear();
+    span_edge_observations_dropped_ = 0;
     ngram_counts_.clear();
     ngram_total_ = 0;
     // note: the drop counter is per-window, like the table whose bound it records.

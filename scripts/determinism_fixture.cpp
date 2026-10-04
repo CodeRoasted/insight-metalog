@@ -193,9 +193,9 @@ int main(int argc, char** argv)
         return 0;
     }
 
-    // post: emits the order-3 span pair, its diff and its composition -- the only documents in
-    // this digest whose top_ngrams hold two lengths, each conditioned among its own length.
-    // refs: DN-126.D10
+    // post: emits the order-3 span pair, its diff and its composition: declared edges in
+    // fr.coderoast.span_edges, log trigrams alone in top_ngrams, and a span-edge delta.
+    // refs: DN-126.D18
     if (std::string{argv[1]} == "--span-order3")
     {
         namespace ml = insight::metalog;

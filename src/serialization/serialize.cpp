@@ -243,6 +243,25 @@ namespace dto
         std::uint64_t dropped_edges{0};
     };
 
+    // invariant: a present-but-empty edges array means no declared parent resolved and is NOT
+    // absence; block absence is the optional on the document.
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:SpanEdgeBlock
+    struct SpanEdge
+    {
+        std::string parent;
+        std::string child;
+        std::uint64_t count{0};
+    };
+
+    struct SpanEdgeBlock
+    {
+        std::vector<SpanEdge> edges;
+        std::size_t span_edges_size{0};
+        // invariant: engaged implies greater than zero, held by the producer and passed through.
+        // refs: ADR-9.D3
+        std::optional<std::uint64_t> dropped_span_edge_observations;
+    };
+
     // invariant: names is a plain vector and never an optional -- the EMPTY array is the payload
     // for an undeclared run, and omitting it would erase the statement being made.
     // note: a name without its catalogue version is unresolvable by a later reader.
@@ -273,6 +292,7 @@ namespace dto
     {
         std::optional<Acquisition> acquisition;
         std::optional<ServiceEdgeBlock> service_edges;
+        std::optional<SpanEdgeBlock> span_edges;
         std::optional<TransportDeclaration> transport;
         std::optional<RulesetIdentity> ruleset;
         std::optional<PresenceChurnSummary> presence_churn_summary;
@@ -282,8 +302,9 @@ namespace dto
             using T = DocumentExtensions;
             static constexpr auto value = glz::object(
                 "fr.coderoast.acquisition", &T::acquisition, "fr.coderoast.service_edges",
-                &T::service_edges, "fr.coderoast.transport", &T::transport, "fr.coderoast.ruleset",
-                &T::ruleset, "fr.coderoast.presence_churn_summary", &T::presence_churn_summary);
+                &T::service_edges, "fr.coderoast.span_edges", &T::span_edges,
+                "fr.coderoast.transport", &T::transport, "fr.coderoast.ruleset", &T::ruleset,
+                "fr.coderoast.presence_churn_summary", &T::presence_churn_summary);
         };
     };
 
@@ -512,17 +533,28 @@ namespace dto
         std::optional<std::vector<ServiceEdgeWeightChange>> weight_changed;
     };
 
-    // note: a diff of vendor data is vendor data, which is why the topology delta sits here.
+    // invariant: the whole block is present iff BOTH documents carried a span_edges block and an
+    // edge appeared or vanished; an empty list is omitted.
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:SpanEdgeDelta
+    struct SpanEdgeDelta
+    {
+        std::optional<std::vector<SpanEdge>> new_edges;
+        std::optional<std::vector<SpanEdge>> vanished_edges;
+    };
+
+    // note: a diff of vendor data is vendor data, which is why the topology deltas sit here.
     // refs: F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeBlock
     struct DiffExtensions
     {
         std::optional<ServiceEdgeDelta> service_edge_delta;
+        std::optional<SpanEdgeDelta> span_edge_delta;
 
         struct glaze
         {
             using T = DiffExtensions;
             static constexpr auto value =
-                glz::object("fr.coderoast.service_edge_delta", &T::service_edge_delta);
+                glz::object("fr.coderoast.service_edge_delta", &T::service_edge_delta,
+                            "fr.coderoast.span_edge_delta", &T::span_edge_delta);
         };
     };
 
@@ -903,6 +935,25 @@ namespace
         return prov;
     }
 
+    std::vector<dto::SpanEdge> span_edge_rows(const std::vector<SpanEdge>& edges)
+    {
+        std::vector<dto::SpanEdge> rows;
+        rows.reserve(edges.size());
+        for (const SpanEdge& edge : edges)
+            rows.push_back({.parent = insight::render(edge.parent),
+                            .child = insight::render(edge.child),
+                            .count = edge.count});
+        return rows;
+    }
+
+    dto::SpanEdgeBlock make_span_edge_block(const SpanEdgeBlock& block)
+    {
+        return dto::SpanEdgeBlock{.edges = span_edge_rows(block.edges),
+                                  .span_edges_size = block.span_edges_size,
+                                  .dropped_span_edge_observations =
+                                      block.dropped_span_edge_observations};
+    }
+
     dto::Document make_document(const MetaLogDocument& doc, const TemplateRegistry& registry)
     {
         dto::Document out;
@@ -959,6 +1010,8 @@ namespace
                     {.caller = edge.caller, .callee = edge.callee, .weight = edge.weight});
             extensions.service_edges = std::move(block);
         }
+        if (doc.span_edges)
+            extensions.span_edges = make_span_edge_block(*doc.span_edges);
         // note: present on every produced document; absent only on a disagreeing compose.
         // refs: ADR-23.D1
         if (doc.transport)
@@ -987,8 +1040,8 @@ namespace
                 .horizon = std::string{PresenceChurnSummary::kHorizon}};
         // invariant: the container is emitted when ANY member is present, never gated on a SUBSET
         // -- a conditionally-present key is indistinguishable from a dead one to any gate.
-        if (extensions.acquisition || extensions.service_edges || extensions.transport ||
-            extensions.ruleset || extensions.presence_churn_summary)
+        if (extensions.acquisition || extensions.service_edges || extensions.span_edges ||
+            extensions.transport || extensions.ruleset || extensions.presence_churn_summary)
             out.extensions = std::move(extensions);
         // note: spec_run_outcome_of, never insight::to_string -- the two tokens differ.
         // refs: LSRC-8
@@ -1107,6 +1160,16 @@ namespace
         return delta;
     }
 
+    dto::SpanEdgeDelta make_span_edge_delta(const SpanEdgeDelta& edges_delta)
+    {
+        dto::SpanEdgeDelta delta;
+        if (!edges_delta.new_edges.empty())
+            delta.new_edges = span_edge_rows(edges_delta.new_edges);
+        if (!edges_delta.vanished_edges.empty())
+            delta.vanished_edges = span_edge_rows(edges_delta.vanished_edges);
+        return delta;
+    }
+
     dto::Diff make_diff(const MetaLogDiff& diff)
     {
         dto::Diff out;
@@ -1175,8 +1238,10 @@ namespace
         dto::DiffExtensions extensions;
         if (diff.service_edge_delta)
             extensions.service_edge_delta = make_service_edge_delta(*diff.service_edge_delta);
+        if (diff.span_edge_delta)
+            extensions.span_edge_delta = make_span_edge_delta(*diff.span_edge_delta);
         // note: emitted when ANY member is present -- the document gate discipline.
-        if (extensions.service_edge_delta)
+        if (extensions.service_edge_delta || extensions.span_edge_delta)
             out.extensions = std::move(extensions);
         return out;
     }

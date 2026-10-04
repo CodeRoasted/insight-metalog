@@ -636,10 +636,11 @@ TEST(MetaLogDocument, ADifferentialAxisOnlyEverPinsAnEmergingCellFromZero)
         << depth_cells;
 }
 
-// refs: DN-126.D10
-// invariant: both documents carry two-id span edges beside three-id trigrams and the diff moves
-// both lengths' conditionals, or the digest's length-scoped denominator section goes hollow.
-TEST(MetaLogDocument, SpanOrder3PairCarriesBothLengthsAndMovesBothRates)
+// refs: DN-126.D18
+// invariant: both documents carry their declared edges in span_edges and log trigrams alone in
+// top_ngrams, or the digest's order-3 span section goes hollow.
+// invariant: the diff carries a span-edge delta and trigram rate moves, for the same reason.
+TEST(MetaLogDocument, SpanOrder3PairRidesDeclaredEdgesApartFromTrigrams)
 {
     meta::MetaLogConfig cfg;
     meta::span_order3::configure(cfg);
@@ -663,23 +664,30 @@ TEST(MetaLogDocument, SpanOrder3PairCarriesBothLengthsAndMovesBothRates)
             lengths.insert(row.sequence.size());
         return lengths;
     };
-    const std::set<std::size_t> both{2U, meta::span_order3::kNgramSize};
+    const std::set<std::size_t> trigrams_only{meta::span_order3::kNgramSize};
     for (const auto* doc : {&previous, &current})
     {
         const char* const side{doc == &previous ? "previous" : "current"};
         ASSERT_TRUE(doc->behavior.has_value()) << side << " carries no behavior block";
         EXPECT_EQ(doc->behavior->ngram_size, meta::span_order3::kNgramSize) << side;
         ASSERT_TRUE(doc->acquisition.has_value()) << side << " carries no acquisition block";
-        EXPECT_GT(doc->acquisition->span_records, 0U)
-            << side << " observed no span record, so no span edge enters top_ngrams";
-        EXPECT_EQ(lengths_of(doc->behavior->top_ngrams), both)
-            << side << " must carry span edges (2 ids) and trigrams (3 ids) together";
+        EXPECT_GT(doc->acquisition->span_records, 0U) << side << " observed no span record";
+        EXPECT_EQ(lengths_of(doc->behavior->top_ngrams), trigrams_only)
+            << side << " top_ngrams must hold the log trigrams alone";
+        ASSERT_TRUE(doc->span_edges.has_value()) << side << " carries no span_edges block";
+        EXPECT_EQ(doc->span_edges->edges.size(), 2U)
+            << side << " must carry exactly its two declared (checkout, child) edges";
     }
     const auto delta{meta::diff(previous, current)};
+    ASSERT_TRUE(delta.span_edge_delta.has_value()) << "the declared edge set moved no edge";
+    ASSERT_EQ(delta.span_edge_delta->new_edges.size(), 1U);
+    EXPECT_EQ(delta.span_edge_delta->new_edges.front().child, insight::template_id_of("refund"));
+    ASSERT_EQ(delta.span_edge_delta->vanished_edges.size(), 1U);
+    EXPECT_EQ(delta.span_edge_delta->vanished_edges.front().child,
+              insight::template_id_of("notify"));
     ASSERT_TRUE(delta.ngram_delta.has_value()) << "the pair moved no n-gram at all";
-    EXPECT_EQ(lengths_of(delta.ngram_delta->rate_changed), both)
-        << "rate_changed must carry a span edge and a trigram, else the section witnesses only one "
-           "of the two denominators";
+    EXPECT_EQ(lengths_of(delta.ngram_delta->rate_changed), trigrams_only)
+        << "rate_changed must carry the trigram conditionals and never a declared edge";
 }
 
 } // namespace

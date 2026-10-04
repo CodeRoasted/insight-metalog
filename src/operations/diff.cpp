@@ -220,6 +220,37 @@ namespace
             out.service_edge_delta = std::move(delta);
     }
 
+    // post: defined ONLY when both documents carried a span_edges block and an edge appeared or
+    // vanished; an edge is keyed (parent, child), and each list is sorted by that key.
+    // note: a count-only move mints nothing here, as the declared edge set is the finding.
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:SpanEdgeDelta
+    void diff_span_edge_delta(MetaLogDiff& out, const MetaLogDocument& previous,
+                              const MetaLogDocument& current)
+    {
+        if (!previous.span_edges || !current.span_edges)
+            return;
+        const auto keyed{[](const SpanEdgeBlock& block)
+                         {
+                             std::map<std::pair<TemplateId, TemplateId>, std::uint64_t> edges;
+                             for (const SpanEdge& edge : block.edges)
+                                 edges.emplace(std::pair{edge.parent, edge.child}, edge.count);
+                             return edges;
+                         }};
+        const auto prev_edges{keyed(*previous.span_edges)};
+        const auto cur_edges{keyed(*current.span_edges)};
+        SpanEdgeDelta delta;
+        for (const auto& [key, count] : cur_edges)
+            if (!prev_edges.contains(key))
+                delta.new_edges.push_back(
+                    {.parent = key.first, .child = key.second, .count = count});
+        for (const auto& [key, count] : prev_edges)
+            if (!cur_edges.contains(key))
+                delta.vanished_edges.push_back(
+                    {.parent = key.first, .child = key.second, .count = count});
+        if (!delta.new_edges.empty() || !delta.vanished_edges.empty())
+            out.span_edge_delta = std::move(delta);
+    }
+
     // post: the histogram for that wildcard slot, or nullptr.
     [[nodiscard]] const FieldHistogram* find_param_histogram(const TopKEntry& entry,
                                                              std::uint32_t param_index)
@@ -581,6 +612,7 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
     diff_tail_delta(out, previous, current);
     diff_reservoir_delta(out, previous, current);
     diff_service_edge_delta(out, previous, current);
+    diff_span_edge_delta(out, previous, current);
     // assert: the ONE gate is that both carried a cube; there is no axes-equality gate, since the
     // contract freezes the axis SET, not the collapse stamps.
     // refs: ADR-24.D7

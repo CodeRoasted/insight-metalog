@@ -79,10 +79,10 @@
 # axes equal neither input's — the shape §13.6's example text denies and §16.10 mandates.
 --collapse-depths (Sec16.10 compare-at-min, axes equal neither input)
 
-# The only order-3 PAIR with span records, the one shape in which two n-gram lengths coexist in
-# top_ngrams: two-id span edges beside three-id log trigrams opening with the same ids. Each
-# sequence's probability conditions on its own first size - 1 ids among sequences of its own length
-# (DN-126.D10), and the pair moves both lengths' conditionals, so the diff's rate_changed and the
-# composed mean carry them too. Every other section is order 2 or span-free and cannot see that rule.
+# The only order-3 PAIR with span records, whose declared span edges share their ids with the log
+# trigrams. The edges ride fr.coderoast.span_edges and never top_ngrams, which holds the trigrams
+# alone (DN-126.D18); the declared edge set moves between the windows, so the diff carries a
+# fr.coderoast.span_edge_delta with a new and a vanished edge, and the trigram conditionals move,
+# so rate_changed and the composed mean carry them. Every other section is order 2 or span-free.
 # Appended LAST so every earlier section's bytes stay where they were.
---span-order3 (DN-126.D10 order-3 span edges beside trigrams, length-scoped probability)
+--span-order3 (DN-126.D18 order-3 declared span edges in their own block, trigrams in top_ngrams)
