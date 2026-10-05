@@ -484,13 +484,27 @@ namespace
         return composed;
     }
 
+    // post: both inputs' dropped_ngram_observations summed, an absent block or count adding zero.
+    [[nodiscard]] std::uint64_t dropped_ngram_sum(const MetaLogDocument& lhs,
+                                                  const MetaLogDocument& rhs) noexcept
+    {
+        return (lhs.behavior ? lhs.behavior->dropped_ngram_observations.value_or(0) : 0) +
+               (rhs.behavior ? rhs.behavior->dropped_ngram_observations.value_or(0) : 0);
+    }
+
     // post: top_ngrams merged by summing counts on identical sequences; branching, dominant_path
     // and graph_edge_count are deliberately NOT re-derived.
+    // post: nullopt when both inputs carry a block at DIFFERENT ngram_size: two orders' keys
+    // denote different objects, so it is omitted, never a min and never one side's block (§12.1).
+    // invariant: reached only by unstamped pairs; the retention_profile gate refuses a stamped one.
     // note: structural signals are diffed at raw scales; salient structure rides the reservoir.
+    // refs: DN-56.D11
     std::optional<BehaviorBlock> merge_behavior(const MetaLogDocument& lhs,
                                                 const MetaLogDocument& rhs)
     {
         if (!lhs.behavior && !rhs.behavior)
+            return std::nullopt;
+        if (lhs.behavior && rhs.behavior && lhs.behavior->ngram_size != rhs.behavior->ngram_size)
             return std::nullopt;
         BehaviorBlock behavior;
         behavior.ngram_size = lhs.behavior ? lhs.behavior->ngram_size : rhs.behavior->ngram_size;
@@ -504,10 +518,7 @@ namespace
                 lhs.behavior ? lhs.behavior->top_ngrams_size : rhs.behavior->top_ngrams_size;
         // invariant: the sum is OMITTED at zero -- an absent key AFFIRMS nothing was dropped, so a
         // written 0 and a silent omission on inputs that did drop are both wrong.
-        if (const std::uint64_t dropped{
-                (lhs.behavior ? lhs.behavior->dropped_ngram_observations.value_or(0) : 0) +
-                (rhs.behavior ? rhs.behavior->dropped_ngram_observations.value_or(0) : 0)};
-            dropped > 0)
+        if (const std::uint64_t dropped{dropped_ngram_sum(lhs, rhs)}; dropped > 0)
             behavior.dropped_ngram_observations = dropped;
         // note: one accumulator keyed on the scalar id replaces three sequence-keyed maps.
         // refs: F-SRC-insight-canon:canon.api.cppm:NgramId, ADR-16.D1

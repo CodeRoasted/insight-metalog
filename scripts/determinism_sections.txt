@@ -36,7 +36,7 @@
 # The ADR-31.D8 item-reservoir at its admit/evict boundary, at the Sift BATCH tuple (M=128).
 --reservoir-nearfull (ADR-31.D8 synthetic M=128)
 
-# The SECOND ADR-31.D8 arm, at the tuple the streaming surface SHIPS — salience-1/k128-m64-c0-e16,
+# The SECOND ADR-31.D8 arm, at the retention tuple the streaming surface SHIPS — k128-m64-c0-e16,
 # where the error-class reserve is live and the batch arm has no opinion. Without it the five-leg
 # proof never runs at the deployed configuration.
 --reservoir-streaming (ADR-31.D8 shipped streaming tuple k128-m64-c0-e16)

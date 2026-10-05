@@ -67,8 +67,7 @@ MetaLogEngine::MetaLogEngine() : MetaLogEngine(MetaLogConfig{}) {}
 MetaLogEngine::MetaLogEngine(MetaLogConfig config)
     : config_{std::move(config)}, hll_state_{std::make_unique<HllState>()}
 {
-    config_.ngram_size = std::max<std::size_t>(config_.ngram_size, 2);
-    config_.ngram_size = std::min<std::size_t>(config_.ngram_size, 3);
+    config_.ngram_size = effective_ngram_size(config_);
 }
 
 MetaLogEngine::~MetaLogEngine() = default;

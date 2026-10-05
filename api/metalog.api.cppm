@@ -1154,6 +1154,10 @@ struct MetaLogConfig
     // refs: F-SRC-insight-metalog:metalog.api.cppm:SpanEdgeBlock
     static constexpr std::size_t kDefaultSpanEdgesSize = kDefaultTopNgramsSize;
     static constexpr std::size_t kDefaultMaxSpanEdgeKeys = kDefaultMaxNgramKeys;
+    // invariant: the n-gram orders the engine implements; a requested order outside them is
+    // clamped by effective_ngram_size, the one place both the engine and the stamp read it.
+    static constexpr std::size_t kMinNgramSize = 2;
+    static constexpr std::size_t kMaxNgramSize = 3;
 
     // invariant: max entries kept in stats.top_k; the rest are summarised into tail_count and
     // tail_unique. 0 skips top_k emission and the document stays bounded.
@@ -1175,8 +1179,9 @@ struct MetaLogConfig
     // canonicalization_version and no wire version.
     std::size_t reservoir_error_reserve{0};
 
-    // invariant: the single n-gram order emitted in the behaviour block; 2 or 3.
-    std::size_t ngram_size{2};
+    // invariant: the REQUESTED n-gram order; the behaviour block carries
+    // effective_ngram_size(*this), and so does the retention_profile stamp's n axis.
+    std::size_t ngram_size{kMinNgramSize};
 
     // invariant: max entries kept in behavior.top_ngrams; 0 disables the behaviour block.
     std::size_t top_ngrams_size{kDefaultTopNgramsSize};
@@ -1291,6 +1296,16 @@ struct MetaLogConfig
 // refs: ADR-31.D8
 inline constexpr std::string_view kSalienceArithmeticGeneration{"salience-1"};
 
+// post: the n-gram order the engine applies for this configuration -- the request clamped to
+// [kMinNgramSize, kMaxNgramSize].
+// invariant: the engine and retention_profile_name both read the order HERE, so a stamp can never
+// name an order the behaviour block was not built at.
+[[nodiscard]] constexpr std::size_t effective_ngram_size(const MetaLogConfig& config) noexcept
+{
+    return std::clamp(config.ngram_size, MetaLogConfig::kMinNgramSize,
+                      MetaLogConfig::kMaxNgramSize);
+}
+
 // post: the retention_profile stamp DERIVED from the parameters, never a hand-written literal that
 // could drift from the retention the engine applied.
 // invariant: INJECTIVE -- each axis is a one-letter tag plus a non-empty decimal run, joined by a
@@ -1299,7 +1314,9 @@ inline constexpr std::string_view kSalienceArithmeticGeneration{"salience-1"};
 // the stamp alone, which is why it is a legible name and not a hash.
 // invariant: deterministic across toolchains -- integer std::to_chars only, no locale, no float, no
 // hashing.
-// refs: F-SRC-metalog-spec:SPEC.md
+// invariant: the n axis is the effective n-gram order, which fixes what a top_ngrams key DENOTES,
+// so two orders are refused by the comparability gate rather than diffed into total turnover.
+// refs: F-SRC-metalog-spec:SPEC.md, DN-56.D11
 [[nodiscard]] inline std::string retention_profile_name(const MetaLogConfig& config)
 {
     // invariant: any std::size_t in base 10, plus its one-character axis tag.
@@ -1321,6 +1338,8 @@ inline constexpr std::string_view kSalienceArithmeticGeneration{"salience-1"};
     append_axis('c', config.reservoir_per_kind_cap);
     name.push_back('-');
     append_axis('e', config.reservoir_error_reserve);
+    name.push_back('-');
+    append_axis('n', effective_ngram_size(config));
     return name;
 }
 
