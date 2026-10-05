@@ -1095,6 +1095,7 @@ The `pre:` now names that. `OPS-8.S7` steps 2 and 3 re-run after both edits.
 * **A gap in `heap_probe`'s own statement — for whoever next touches it.** The reader observed that
   the nothrow allocation forms are named nowhere, so the tree does not say whether they are counted.
   The old prose did not say either, so nothing was lost; the gap is pre-existing.
+  DISCHARGED 2026-10-05 — `heap_probe.cpp` now replaces all eight allocating and all twelve deallocating forms through one counted helper, so nothrow, array and aligned allocations are counted on every leg and the file says so. The old claim that arrays were counted held only where the default `operator new[]` forwards to `operator new`; under a sanitizer runtime it does not, and a runtime nothrow `new` freed by the replaced `delete` is an alloc-dealloc mismatch.
 
 **A trap this unit hit that `OPS-8` does not name.** Stripping a file-leading comment block leaves
 the blank line that followed it, so six of the eight files came out of the strip with a **leading
