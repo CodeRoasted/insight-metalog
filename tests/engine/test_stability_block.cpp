@@ -43,7 +43,9 @@ TEST_F(StabilityBlockTest, IdenticalDistributionsScoreNearOne)
     }
     auto d2{engine.close_window(t0_ + std::chrono::seconds(120))};
     ASSERT_TRUE(d2.stability.has_value());
-    EXPECT_EQ(d2.stability->previous_window_end_iso, d1.window.end_iso);
+    ASSERT_TRUE(d1.window.envelope.has_value());
+    EXPECT_EQ(d2.stability->previous_window_end_iso,
+              std::optional<std::string>{d1.window.envelope->bounds.end_iso});
     EXPECT_EQ(d2.stability->new_templates, 0U);
     EXPECT_EQ(d2.stability->vanished_templates, 0U);
     EXPECT_LT(d2.stability->js_divergence, 1e-6);

@@ -895,8 +895,9 @@ struct BehaviorBlock
 
 struct StabilityBlock
 {
-    // invariant: RFC 3339 UTC.
-    std::string previous_window_end_iso;
+    // invariant: RFC 3339 UTC; absent when the previous window carried no event time.
+    // refs: DN-137.O1
+    std::optional<std::string> previous_window_end_iso;
     // invariant: KL(current || previous).
     double kl_divergence{0.0};
     // invariant: symmetric Jensen-Shannon in [0, 1], log base 2.
@@ -907,24 +908,54 @@ struct StabilityBlock
     double stability_score{1.0};
 };
 
-struct WindowBlock
+// invariant: the earliest and latest event time of a window, RFC 3339 UTC — the bounds a document
+// reference carries.
+struct WindowBounds
 {
-    // invariant: RFC 3339 UTC.
     std::string start_iso;
     std::string end_iso;
+    [[nodiscard]] bool operator==(const WindowBounds&) const noexcept = default;
+};
+
+// invariant: a window's event-time envelope and its span; absent AS A WHOLE when no line in the
+// window carried an event time, because no placeholder instant may stand in for one.
+// refs: DN-137.O1
+struct WindowEnvelope
+{
+    WindowBounds bounds;
     std::uint64_t duration_seconds{0};
+    [[nodiscard]] bool operator==(const WindowEnvelope&) const noexcept = default;
+};
+
+struct WindowBlock
+{
+    std::optional<WindowEnvelope> envelope;
     std::uint64_t lines_observed{0};
+};
+
+// post: the envelope's bounds, or nullopt when the window carried no event time.
+[[nodiscard]] inline std::optional<WindowBounds> window_bounds_of(const WindowBlock& window)
+{
+    if (!window.envelope)
+        return std::nullopt;
+    return window.envelope->bounds;
+}
+
+// invariant: the earliest and latest event time among a window's lines, as instants.
+struct EventTimeEnvelope
+{
+    Timestamp start;
+    Timestamp end;
 };
 
 // invariant: overrides the REPORTED window bounds at close_window, decoupled from the open/close
 // machinery times.
-// invariant: a deterministic-batch caller supplies the input's parseable-timestamp envelope so the
-// window reflects event time; live callers omit it and the bounds are the open/close times.
-// refs: BIB:determinism_model
+// invariant: a deterministic-batch caller supplies its lines' event-time envelope, or none when no
+// line carried one; a live caller omits the override and the bounds are the open/close times.
+// refs: BIB:determinism_model, DN-137.O1
 struct ReportedWindowBounds
 {
-    Timestamp start;
-    Timestamp end;
+    std::optional<EventTimeEnvelope> envelope;
 };
 
 // invariant: this package's own version, stamped into producer.version. ONE spelling for the
@@ -1016,8 +1047,8 @@ struct ReDerivationCoordinate
 // refs: F-SRC-metalog-spec:SPEC.md
 struct ProvenanceEntry
 {
-    std::string window_start_iso;
-    std::string window_end_iso;
+    // invariant: the input's envelope bounds; absent when the input carried none.
+    std::optional<WindowBounds> window;
     SourceBlock source;
     std::uint64_t lines_observed{0};
     std::optional<std::string> document_id;
@@ -1409,8 +1440,8 @@ struct OrdinalHistogramDelta
 
 struct DocumentRef
 {
-    std::string window_start_iso;
-    std::string window_end_iso;
+    // invariant: the referenced document's envelope bounds; absent when it carried none.
+    std::optional<WindowBounds> window;
     std::optional<std::string> document_id;
 };
 

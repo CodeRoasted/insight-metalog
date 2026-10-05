@@ -27,11 +27,14 @@ namespace dto
         std::string implementation_uri;
     };
 
+    // invariant: start, end and duration_seconds are present together or omitted together, the
+    // latter when no line in the window carried an event time.
+    // refs: DN-137.O1
     struct Window
     {
-        std::string start;
-        std::string end;
-        std::uint64_t duration_seconds{0};
+        std::optional<std::string> start;
+        std::optional<std::string> end;
+        std::optional<std::uint64_t> duration_seconds;
         std::uint64_t lines_observed{0};
     };
 
@@ -355,7 +358,7 @@ namespace dto
 
     struct Stability
     {
-        std::string previous_window_end;
+        std::optional<std::string> previous_window_end;
         double kl_divergence{0.0};
         double js_divergence{0.0};
         std::uint64_t new_templates{0};
@@ -387,10 +390,11 @@ namespace dto
         std::optional<std::vector<Coordinate>> children;
     };
 
+    // invariant: both bounds or neither, the latter when the referenced document carried none.
     struct ProvenanceWindow
     {
-        std::string start;
-        std::string end;
+        std::optional<std::string> start;
+        std::optional<std::string> end;
     };
 
     struct Provenance
@@ -616,6 +620,13 @@ namespace
         if (!src.tags.empty())
             out.tags = src.tags;
         return out;
+    }
+
+    dto::ProvenanceWindow make_provenance_window(const std::optional<WindowBounds>& window)
+    {
+        if (!window)
+            return {};
+        return {.start = window->start_iso, .end = window->end_iso};
     }
 
     [[nodiscard]] bool source_is_empty(const SourceBlock& src) noexcept
@@ -923,7 +934,7 @@ namespace
         for (const auto& entry : provenance)
         {
             dto::Provenance row;
-            row.window = {.start = entry.window_start_iso, .end = entry.window_end_iso};
+            row.window = make_provenance_window(entry.window);
             if (!source_is_empty(entry.source))
                 row.source = make_source(entry.source);
             row.lines_observed = entry.lines_observed;
@@ -961,10 +972,13 @@ namespace
         out.producer = {.name = doc.producer.name,
                         .version = doc.producer.version,
                         .implementation_uri = doc.producer.implementation_uri};
-        out.window = {.start = doc.window.start_iso,
-                      .end = doc.window.end_iso,
-                      .duration_seconds = doc.window.duration_seconds,
-                      .lines_observed = doc.window.lines_observed};
+        out.window.lines_observed = doc.window.lines_observed;
+        if (doc.window.envelope)
+        {
+            out.window.start = doc.window.envelope->bounds.start_iso;
+            out.window.end = doc.window.envelope->bounds.end_iso;
+            out.window.duration_seconds = doc.window.envelope->duration_seconds;
+        }
         out.source = make_source(doc.source);
         // note: this producer emits the INLINE template mode, which the spec makes a producer MAY.
         out.stats = make_stats(doc.stats, registry);
@@ -1051,8 +1065,7 @@ namespace
 
     dto::DocRef make_doc_ref(const DocumentRef& ref)
     {
-        return {.window = {.start = ref.window_start_iso, .end = ref.window_end_iso},
-                .document_id = ref.document_id};
+        return {.window = make_provenance_window(ref.window), .document_id = ref.document_id};
     }
 
     dto::ReservoirDeltaEntry make_reservoir_delta_entry(const ReservoirDeltaEntry& entry)

@@ -424,23 +424,27 @@ TEST_P(GoldenVector, ComposedRecordObeysSection12Arithmetic)
 
     // invariant: the window bounds are fixed-width RFC 3339 UTC strings, so lexicographic order IS
     // chronological order -- a property of the emitted spelling, not of strings in general.
-    EXPECT_EQ(c.window.start_iso, std::min(a.window.start_iso, b.window.start_iso))
-        << "[" << corpus.name << "] SPEC 12.1: composed window.start " << c.window.start_iso
-        << " != min(" << a.window.start_iso << ", " << b.window.start_iso << ")";
-    EXPECT_EQ(c.window.end_iso, std::max(a.window.end_iso, b.window.end_iso))
-        << "[" << corpus.name << "] SPEC 12.1: composed window.end " << c.window.end_iso
-        << " != max(" << a.window.end_iso << ", " << b.window.end_iso << ")";
+    ASSERT_TRUE(a.window.envelope && b.window.envelope && c.window.envelope)
+        << "[" << corpus.name << "] a corpus window carried no event-time envelope";
+    const meta::WindowEnvelope& ae{*a.window.envelope};
+    const meta::WindowEnvelope& be{*b.window.envelope};
+    const meta::WindowEnvelope& ce{*c.window.envelope};
+    EXPECT_EQ(ce.bounds.start_iso, std::min(ae.bounds.start_iso, be.bounds.start_iso))
+        << "[" << corpus.name << "] SPEC 12.1: composed window.start " << ce.bounds.start_iso
+        << " != min(" << ae.bounds.start_iso << ", " << be.bounds.start_iso << ")";
+    EXPECT_EQ(ce.bounds.end_iso, std::max(ae.bounds.end_iso, be.bounds.end_iso))
+        << "[" << corpus.name << "] SPEC 12.1: composed window.end " << ce.bounds.end_iso
+        << " != max(" << ae.bounds.end_iso << ", " << be.bounds.end_iso << ")";
 
     // invariant: the composed duration is derived from the frozen window axis and NOT summed from
     // the inputs' own durations, which is the value the clause warns against summing.
     constexpr std::uint64_t kSpannedSeconds{
         static_cast<std::uint64_t>(cw::kWindowEndEpochSeconds - cw::kWindowStartEpochSeconds)};
-    EXPECT_EQ(c.window.duration_seconds, kSpannedSeconds)
-        << "[" << corpus.name << "] SPEC 12.1: composed duration_seconds "
-        << c.window.duration_seconds << " != the real-time span " << kSpannedSeconds
-        << "s; the inputs' own durations are " << a.window.duration_seconds << "s and "
-        << b.window.duration_seconds
-        << "s, and summing them (= " << (a.window.duration_seconds + b.window.duration_seconds)
+    EXPECT_EQ(ce.duration_seconds, kSpannedSeconds)
+        << "[" << corpus.name << "] SPEC 12.1: composed duration_seconds " << ce.duration_seconds
+        << " != the real-time span " << kSpannedSeconds << "s; the inputs' own durations are "
+        << ae.duration_seconds << "s and " << be.duration_seconds
+        << "s, and summing them (= " << (ae.duration_seconds + be.duration_seconds)
         << "s) is the mistake the clause names.";
 
     // invariant: composed stability MUST be omitted, and the current window carries one, so this is

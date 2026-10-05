@@ -20,8 +20,9 @@ namespace meta = insight::metalog;
 [[nodiscard]] meta::MetaLogDocument with_edges(std::vector<meta::SpanEdge> edges)
 {
     meta::MetaLogDocument doc;
-    doc.window.start_iso = "2026-01-01T00:00:00Z";
-    doc.window.end_iso = "2026-01-01T00:01:00Z";
+    doc.window.envelope = meta::WindowEnvelope{
+        .bounds = {.start_iso = "2026-01-01T00:00:00Z", .end_iso = "2026-01-01T00:01:00Z"},
+        .duration_seconds = 60};
     doc.span_edges = meta::SpanEdgeBlock{
         .edges = std::move(edges), .span_edges_size = meta::MetaLogConfig::kDefaultSpanEdgesSize};
     return doc;

@@ -3,8 +3,9 @@
 // 20-byte RFC 3339 UTC form (state 4), or one bound empty beside a stamped one (state 5).
 // invariant: a refusal is std::invalid_argument naming the side, the bound and the value, whatever
 // the other input holds and whichever argument position the refused input takes.
-// invariant: the two unstamped states stay open -- both unstamped composes to an empty envelope of
-// duration 0 (state 3), and one unstamped carries the other's envelope and duration (state 2).
+// invariant: the two unstamped states stay open -- both unstamped composes to no envelope (state
+// 3), and one unstamped carries the other's envelope and duration (state 2).
+// refs: DN-137.O1
 // invariant: each refusal arm is paired with a no-throw control, so a compose() that refuses
 // everything cannot pass this file, and one that refuses nothing cannot either.
 // note: a unit test -- compose() is pure over two documents; no RNG, no threads, no wall clock.
@@ -53,9 +54,9 @@ enum class Bound : std::uint8_t
                                           std::uint64_t duration_seconds)
 {
     MetaLogDocument doc;
-    doc.window.start_iso = std::string{start_iso};
-    doc.window.end_iso = std::string{end_iso};
-    doc.window.duration_seconds = duration_seconds;
+    doc.window.envelope = meta::WindowEnvelope{
+        .bounds = {.start_iso = std::string{start_iso}, .end_iso = std::string{end_iso}},
+        .duration_seconds = duration_seconds};
     return doc;
 }
 
@@ -66,7 +67,7 @@ enum class Bound : std::uint8_t
 
 [[nodiscard]] MetaLogDocument unstamped()
 {
-    return with_window("", "", 0);
+    return MetaLogDocument{};
 }
 
 // post: a stamped document whose `bound` is replaced by `value`, the other bound left stamped.
@@ -78,8 +79,11 @@ enum class Bound : std::uint8_t
 
 [[nodiscard]] std::string render_envelope(const MetaLogDocument& doc)
 {
-    return "[\"" + doc.window.start_iso + "\" .. \"" + doc.window.end_iso +
-           "\"] duration_seconds=" + std::to_string(doc.window.duration_seconds);
+    if (!doc.window.envelope)
+        return "[no envelope]";
+    return "[\"" + doc.window.envelope->bounds.start_iso + "\" .. \"" +
+           doc.window.envelope->bounds.end_iso +
+           "\"] duration_seconds=" + std::to_string(doc.window.envelope->duration_seconds);
 }
 
 // invariant: what one compose() call did -- the refusal's message, or the envelope it composed.
@@ -158,8 +162,8 @@ TEST(ComposeEnvelopeRefusal, AMalformedBoundIsRefusedNamingItsSideBoundAndValue)
 }
 
 // refs: DN-50.D13
-// invariant: state 5 -- one bound empty beside a stamped one, on either input and either bound, by
-// a stamped then an unstamped partner: eight refusals, never read as unstamped or zero-width.
+// invariant: state 5 -- an envelope with one bound empty, on either input and either bound, by a
+// stamped then an unstamped partner: eight refusals, never read as unstamped or zero-width.
 TEST(ComposeEnvelopeRefusal, AHalfStampedEnvelopeIsRefusedWhateverThePartnerHolds)
 {
     const std::array<std::pair<std::string_view, MetaLogDocument>, 2> partners{
@@ -182,15 +186,15 @@ TEST(ComposeEnvelopeRefusal, AHalfStampedEnvelopeIsRefusedWhateverThePartnerHold
 
 // refs: DN-50.D13
 // invariant: state 3 -- the control that keeps the refusal from swallowing the unstamped case: two
-// documents with no envelope compose without a throw, to no envelope and a duration of 0.
-TEST(ComposeEnvelopeRefusal, TwoUnstampedInputsComposeToAnEmptyEnvelopeWithoutAThrow)
+// documents with no envelope compose without a throw, to no envelope.
+TEST(ComposeEnvelopeRefusal, TwoUnstampedInputsComposeToNoEnvelopeWithoutAThrow)
 {
     const ComposeOutcome outcome{compose_outcome(unstamped(), unstamped())};
     ASSERT_FALSE(outcome.refusal.has_value())
         << "R-ENV2 control: two unstamped documents are state 3, not a refusal. Got: "
         << *outcome.refusal;
     EXPECT_EQ(outcome.composed, render_envelope(unstamped()))
-        << "R-ENV2 control: the composed envelope stays empty with duration 0.";
+        << "R-ENV2 control: the composed document carries no envelope.";
 }
 
 // refs: DN-50.D13

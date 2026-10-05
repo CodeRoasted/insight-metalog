@@ -247,9 +247,7 @@ TEST(ComposeAlgebraTest, IdentityPreservesTheDocumentIncludingItsDeclaredReservo
     const auto composed{meta::compose(doc_a, zero)};
 
     EXPECT_EQ(composed.metalog_version, doc_a.metalog_version);
-    EXPECT_EQ(composed.window.start_iso, doc_a.window.start_iso);
-    EXPECT_EQ(composed.window.end_iso, doc_a.window.end_iso);
-    EXPECT_EQ(composed.window.duration_seconds, doc_a.window.duration_seconds);
+    EXPECT_EQ(composed.window.envelope, doc_a.window.envelope);
     EXPECT_EQ(composed.window.lines_observed, doc_a.window.lines_observed);
     EXPECT_EQ(composed.source, doc_a.source);
     EXPECT_EQ(composed.canonicalization_version, doc_a.canonicalization_version);
@@ -319,9 +317,9 @@ namespace
                   std::initializer_list<ReservoirSeed> reservoir)
     {
         meta::MetaLogDocument doc;
-        doc.window.start_iso = start_iso;
-        doc.window.end_iso = end_iso;
-        doc.window.duration_seconds = 60;
+        doc.window.envelope = meta::WindowEnvelope{
+            .bounds = {.start_iso = std::string{start_iso}, .end_iso = std::string{end_iso}},
+            .duration_seconds = 60};
         doc.window.lines_observed = lines_observed;
         doc.canonicalization_version = "canon-compose-algebra";
         doc.retention_profile = "retention-compose-algebra";

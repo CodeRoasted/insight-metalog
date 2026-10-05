@@ -63,10 +63,19 @@ constexpr std::uint64_t kBetaPerShard{3};
            " span_windows=" + std::to_string(churn.span_windows) + ")";
 }
 
+// post: the document's envelope; a document without one throws, which the test reports as a
+// failure naming bad_optional_access.
+[[nodiscard]] const meta::WindowEnvelope& env(const MetaLogDocument& doc)
+{
+    return doc.window.envelope.value();
+}
+
 [[nodiscard]] std::string render_envelope(const MetaLogDocument& doc)
 {
-    return "[" + doc.window.start_iso + " .. " + doc.window.end_iso +
-           "] duration_seconds=" + std::to_string(doc.window.duration_seconds);
+    if (!doc.window.envelope)
+        return "[no envelope]";
+    return "[" + env(doc).bounds.start_iso + " .. " + env(doc).bounds.end_iso +
+           "] duration_seconds=" + std::to_string(env(doc).duration_seconds);
 }
 
 [[nodiscard]] std::string render_top_k(const MetaLogDocument& doc)
@@ -143,16 +152,16 @@ struct TemplatePair
 // DISTINCT starts and a SHARED end. Without this the arms below measure the disjoint case.
 void require_shard_geometry(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
 {
-    ASSERT_FALSE(lhs.window.start_iso.empty()) << render_envelope(lhs);
-    ASSERT_FALSE(rhs.window.start_iso.empty()) << render_envelope(rhs);
-    ASSERT_NE(lhs.window.start_iso, rhs.window.start_iso)
+    ASSERT_FALSE(env(lhs).bounds.start_iso.empty()) << render_envelope(lhs);
+    ASSERT_FALSE(env(rhs).bounds.start_iso.empty()) << render_envelope(rhs);
+    ASSERT_NE(env(lhs).bounds.start_iso, env(rhs).bounds.start_iso)
         << "each shard opens at its OWN first event, so the starts must differ or this fixture is "
            "not the shard fold. lhs="
         << render_envelope(lhs) << " rhs=" << render_envelope(rhs);
-    ASSERT_EQ(lhs.window.end_iso, rhs.window.end_iso)
+    ASSERT_EQ(env(lhs).bounds.end_iso, env(rhs).bounds.end_iso)
         << "every shard of one composed interval is closed at the SAME boundary. lhs="
         << render_envelope(lhs) << " rhs=" << render_envelope(rhs);
-    ASSERT_LT(rhs.window.start_iso, lhs.window.end_iso)
+    ASSERT_LT(env(rhs).bounds.start_iso, env(lhs).bounds.end_iso)
         << "the envelopes must OVERLAP -- disjointness is `earlier.end <= later.start`, and if it "
            "held here the temporal product would be the correct rule. lhs="
         << render_envelope(lhs) << " rhs=" << render_envelope(rhs);
@@ -238,8 +247,7 @@ TEST(ComposeShardFold, TheJoinOverANonDisjointPairIsSymmetric)
     EXPECT_EQ(*forward, *backward)
         << "compose() over a NON-disjoint pair must not read argument order. compose(a, b)="
         << render(*forward) << " compose(b, a)=" << render(*backward);
-    EXPECT_EQ(meta::compose(a, b).window.duration_seconds,
-              meta::compose(b, a).window.duration_seconds)
+    EXPECT_EQ(env(meta::compose(a, b)).duration_seconds, env(meta::compose(b, a)).duration_seconds)
         << "the merged envelope is symmetric, so its span is too. compose(a, b)="
         << render_envelope(meta::compose(a, b))
         << " compose(b, a)=" << render_envelope(meta::compose(b, a));
@@ -254,10 +262,10 @@ TEST(ComposeShardFold, ADisjointAdjacentPairStillTakesTheTemporalProduct)
     const MetaLogDocument first{shard_document(kT0, kT60, /*carries_beta=*/true)};
     const MetaLogDocument second{shard_document(kT60, kT120, /*carries_beta=*/false)};
 
-    ASSERT_LE(first.window.end_iso, second.window.start_iso)
+    ASSERT_LE(env(first).bounds.end_iso, env(second).bounds.start_iso)
         << "the control's envelopes must be DISJOINT, or it controls nothing. first="
         << render_envelope(first) << " second=" << render_envelope(second);
-    ASSERT_LT(first.window.start_iso, second.window.start_iso)
+    ASSERT_LT(env(first).bounds.start_iso, env(second).bounds.start_iso)
         << "and ordered. first=" << render_envelope(first) << " second=" << render_envelope(second);
     ASSERT_TRUE(meta::retention_is_exhaustive(second.stats)) << render_top_k(second);
 
@@ -275,7 +283,7 @@ TEST(ComposeShardFold, ADisjointAdjacentPairStillTakesTheTemporalProduct)
     EXPECT_EQ(beta_churn->first, PresenceSymbol::Present) << render(*beta_churn);
     EXPECT_EQ(beta_churn->last, PresenceSymbol::Absent)
         << "G-C2 control: the temporal product keeps its ORIENTATION. Got " << render(*beta_churn);
-    EXPECT_EQ(composed.window.duration_seconds, 120U)
+    EXPECT_EQ(env(composed).duration_seconds, 120U)
         << "G-C2 control: the merged envelope spans both windows end to end. "
         << render_envelope(composed);
 }
@@ -290,7 +298,7 @@ TEST(ComposeShardFold, TwoJoinedFleetWindowsComposeAsTwoBaseWindowsNotFour)
     const MetaLogDocument fleet_two{
         meta::compose(shard_document(kT60, kT120, false), shard_document(kT90, kT120, false))};
 
-    ASSERT_LE(fleet_one.window.end_iso, fleet_two.window.start_iso)
+    ASSERT_LE(env(fleet_one).bounds.end_iso, env(fleet_two).bounds.start_iso)
         << "the two fleet windows must be disjoint. one=" << render_envelope(fleet_one)
         << " two=" << render_envelope(fleet_two);
 
@@ -319,10 +327,10 @@ TEST(ComposeShardFold, IdenticalZeroWidthEnvelopesTakeTheJoinAndNotTheArgumentOr
     const MetaLogDocument a{shard_document(kT0, kT0, /*carries_beta=*/true)};
     const MetaLogDocument b{shard_document(kT0, kT0, /*carries_beta=*/false)};
 
-    ASSERT_EQ(a.window.start_iso, b.window.start_iso) << render_envelope(a);
-    ASSERT_EQ(a.window.start_iso, a.window.end_iso)
+    ASSERT_EQ(env(a).bounds.start_iso, env(b).bounds.start_iso) << render_envelope(a);
+    ASSERT_EQ(env(a).bounds.start_iso, env(a).bounds.end_iso)
         << "the corner under test is a ZERO-WIDTH envelope. " << render_envelope(a);
-    ASSERT_EQ(a.window.duration_seconds, 0U) << render_envelope(a);
+    ASSERT_EQ(env(a).duration_seconds, 0U) << render_envelope(a);
 
     const TemplatePair ids{templates_of(a)};
     const auto forward{churn_of(meta::compose(a, b), ids.beta)};
@@ -352,15 +360,15 @@ TEST(ComposeShardFold, TheComposedDurationIsTheMergedEnvelopeSpanOnTwoShards)
     const MetaLogDocument a{shard_document(kT0, kT60, /*carries_beta=*/true)};
     const MetaLogDocument b{shard_document(kT30, kT60, /*carries_beta=*/false)};
     ASSERT_NO_FATAL_FAILURE(require_shard_geometry(a, b));
-    ASSERT_EQ(a.window.duration_seconds, 60U) << render_envelope(a);
-    ASSERT_EQ(b.window.duration_seconds, 30U) << render_envelope(b);
+    ASSERT_EQ(env(a).duration_seconds, 60U) << render_envelope(a);
+    ASSERT_EQ(env(b).duration_seconds, 30U) << render_envelope(b);
 
     const MetaLogDocument composed{meta::compose(a, b)};
-    EXPECT_EQ(composed.window.start_iso, a.window.start_iso)
+    EXPECT_EQ(env(composed).bounds.start_iso, env(a).bounds.start_iso)
         << "the merged envelope opens at the earliest shard start. " << render_envelope(composed);
-    EXPECT_EQ(composed.window.end_iso, a.window.end_iso)
+    EXPECT_EQ(env(composed).bounds.end_iso, env(a).bounds.end_iso)
         << "and closes at the shared boundary. " << render_envelope(composed);
-    EXPECT_EQ(composed.window.duration_seconds, 60U)
+    EXPECT_EQ(env(composed).duration_seconds, 60U)
         << "G-C4: two shards observed ONE 60-second interval. Summing their spans (60 + 30) claims "
            "90 seconds of real time that did not elapse, and every rate a consumer forms as "
            "lines_observed / duration_seconds is wrong by that factor. "
@@ -375,14 +383,14 @@ TEST(ComposeShardFold, TheComposedDurationDoesNotGrowWithTheShardCount)
     const MetaLogDocument a{shard_document(kT0, kT60, /*carries_beta=*/true)};
     const MetaLogDocument b{shard_document(kT20, kT60, /*carries_beta=*/false)};
     const MetaLogDocument c{shard_document(kT40, kT60, /*carries_beta=*/false)};
-    ASSERT_EQ(a.window.duration_seconds, 60U) << render_envelope(a);
-    ASSERT_EQ(b.window.duration_seconds, 40U) << render_envelope(b);
-    ASSERT_EQ(c.window.duration_seconds, 20U) << render_envelope(c);
+    ASSERT_EQ(env(a).duration_seconds, 60U) << render_envelope(a);
+    ASSERT_EQ(env(b).duration_seconds, 40U) << render_envelope(b);
+    ASSERT_EQ(env(c).duration_seconds, 20U) << render_envelope(c);
 
     const MetaLogDocument composed{meta::compose(meta::compose(a, b), c)};
-    EXPECT_EQ(composed.window.start_iso, a.window.start_iso) << render_envelope(composed);
-    EXPECT_EQ(composed.window.end_iso, a.window.end_iso) << render_envelope(composed);
-    EXPECT_EQ(composed.window.duration_seconds, 60U)
+    EXPECT_EQ(env(composed).bounds.start_iso, env(a).bounds.start_iso) << render_envelope(composed);
+    EXPECT_EQ(env(composed).bounds.end_iso, env(a).bounds.end_iso) << render_envelope(composed);
+    EXPECT_EQ(env(composed).duration_seconds, 60U)
         << "G-C4: three shards observed the SAME 60-second interval. A pairwise sum reads 120 "
            "seconds here and would read more at four shards, so the hosted window-duration figure "
            "scales with a deployment parameter rather than with elapsed time. "

@@ -585,10 +585,8 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
         "semantic_identity", "diff");
 
     MetaLogDiff out;
-    out.previous.window_start_iso = previous.window.start_iso;
-    out.previous.window_end_iso = previous.window.end_iso;
-    out.current.window_start_iso = current.window.start_iso;
-    out.current.window_end_iso = current.window.end_iso;
+    out.previous.window = window_bounds_of(previous.window);
+    out.current.window = window_bounds_of(current.window);
 
     const auto prev_counts = counts_of(previous);
     const auto cur_counts = counts_of(current);

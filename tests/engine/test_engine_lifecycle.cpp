@@ -40,7 +40,8 @@ TEST(MetaLogEngineWindow, DurationAndLinesObserved)
         engine.ingest_event(make_event("x"));
     auto doc{engine.close_window(t1)};
     EXPECT_EQ(doc.window.lines_observed, 7U);
-    EXPECT_EQ(doc.window.duration_seconds, 300U);
+    ASSERT_TRUE(doc.window.envelope.has_value());
+    EXPECT_EQ(doc.window.envelope->duration_seconds, 300U);
 }
 
 TEST(MetaLogEngineWindow, StartAndEndISONotEmpty)
@@ -50,9 +51,10 @@ TEST(MetaLogEngineWindow, StartAndEndISONotEmpty)
     engine.open_window(t0);
     engine.ingest_event(make_event("x"));
     auto doc{engine.close_window(t0 + std::chrono::seconds(1))};
-    EXPECT_FALSE(doc.window.start_iso.empty());
-    EXPECT_FALSE(doc.window.end_iso.empty());
-    EXPECT_NE(doc.window.start_iso, doc.window.end_iso);
+    ASSERT_TRUE(doc.window.envelope.has_value());
+    EXPECT_FALSE(doc.window.envelope->bounds.start_iso.empty());
+    EXPECT_FALSE(doc.window.envelope->bounds.end_iso.empty());
+    EXPECT_NE(doc.window.envelope->bounds.start_iso, doc.window.envelope->bounds.end_iso);
 }
 
 TEST(MetaLogEngineLifecycle, IngestBeforeOpenWindowThrows)

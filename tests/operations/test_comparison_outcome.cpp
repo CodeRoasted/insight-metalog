@@ -32,10 +32,10 @@ using meta::ComparisonOutcome;
 [[nodiscard]] meta::MetaLogDiff bare_diff()
 {
     meta::MetaLogDiff diff;
-    diff.previous.window_start_iso = "2026-01-01T00:00:00Z";
-    diff.previous.window_end_iso = "2026-01-01T00:01:00Z";
-    diff.current.window_start_iso = "2026-01-01T00:01:00Z";
-    diff.current.window_end_iso = "2026-01-01T00:02:00Z";
+    diff.previous.window =
+        meta::WindowBounds{.start_iso = "2026-01-01T00:00:00Z", .end_iso = "2026-01-01T00:01:00Z"};
+    diff.current.window =
+        meta::WindowBounds{.start_iso = "2026-01-01T00:01:00Z", .end_iso = "2026-01-01T00:02:00Z"};
     return diff;
 }
 

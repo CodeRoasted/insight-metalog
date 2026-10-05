@@ -17,18 +17,10 @@ namespace
     // compose() checks that form with stamped_envelope() before either is called.
     [[nodiscard]] std::string_view iso_min(std::string_view lhs, std::string_view rhs)
     {
-        if (lhs.empty())
-            return rhs;
-        if (rhs.empty())
-            return lhs;
         return lhs < rhs ? lhs : rhs;
     }
     [[nodiscard]] std::string_view iso_max(std::string_view lhs, std::string_view rhs)
     {
-        if (lhs.empty())
-            return rhs;
-        if (rhs.empty())
-            return lhs;
         return lhs > rhs ? lhs : rhs;
     }
 
@@ -456,10 +448,10 @@ namespace
             prov.insert(prov.end(), rhs.provenance->begin(), rhs.provenance->end());
         if (prov.empty())
         {
-            prov.push_back({lhs.window.start_iso, lhs.window.end_iso, lhs.source,
-                            lhs.window.lines_observed, std::nullopt, lhs.coordinate});
-            prov.push_back({rhs.window.start_iso, rhs.window.end_iso, rhs.source,
-                            rhs.window.lines_observed, std::nullopt, rhs.coordinate});
+            prov.push_back({window_bounds_of(lhs.window), lhs.source, lhs.window.lines_observed,
+                            std::nullopt, lhs.coordinate});
+            prov.push_back({window_bounds_of(rhs.window), rhs.source, rhs.window.lines_observed,
+                            std::nullopt, rhs.coordinate});
         }
         return prov;
     }
@@ -574,16 +566,16 @@ namespace
         std::chrono::sys_seconds end;
     };
 
-    // post: nullopt for an UNSTAMPED envelope (both bounds empty), the two instants otherwise.
-    // post: throws std::invalid_argument on any other bound, an empty one beside a stamped one
-    // included, so iso_min/iso_max never order a width the 20-byte form does not have.
-    // refs: DN-50.D13
+    // post: nullopt for an UNSTAMPED window (no envelope), the two instants otherwise.
+    // post: throws std::invalid_argument on a bound that is not the 20-byte form, so iso_min and
+    // iso_max never order a width that form does not have.
+    // refs: DN-50.D13, DN-137.O1
     [[nodiscard]] std::optional<StampedEnvelope> stamped_envelope(const MetaLogDocument& doc,
                                                                   std::string_view side)
     {
-        const auto& window{doc.window};
-        if (window.start_iso.empty() && window.end_iso.empty())
+        if (!doc.window.envelope)
             return std::nullopt;
+        const WindowBounds& window{doc.window.envelope->bounds};
         const auto refuse{[side](std::string_view bound, const std::string& value)
                           {
                               return std::invalid_argument{
@@ -600,23 +592,29 @@ namespace
         return StampedEnvelope{.start = *start, .end = *end};
     }
 
-    // post: the merged envelope's span, end - start, on every pair of stamped envelopes; the
-    // stamped side's own duration when the other is unstamped; 0 when neither is stamped.
+    // post: the merged envelope — min start, max end, and their span — on every pair of stamped
+    // envelopes; the stamped side's own envelope when the other is unstamped; none when neither is.
     // note: an inverted merged span reads 0, the clamp stamp_envelope applies to one window.
-    // refs: DN-50.D13, F-SRC-insight-metalog:engine.cpp:stamp_envelope
-    [[nodiscard]] std::uint64_t composed_duration_seconds(
+    // refs: DN-50.D13, DN-137.O1, F-SRC-insight-metalog:engine.cpp:stamp_envelope
+    [[nodiscard]] std::optional<WindowEnvelope> composed_envelope(
         const MetaLogDocument& lhs, const std::optional<StampedEnvelope>& lhs_envelope,
         const MetaLogDocument& rhs, const std::optional<StampedEnvelope>& rhs_envelope)
     {
-        if (!lhs_envelope && !rhs_envelope)
-            return 0;
-        if (!lhs_envelope)
-            return rhs.window.duration_seconds;
-        if (!rhs_envelope)
-            return lhs.window.duration_seconds;
+        // invariant: stamped_envelope is engaged exactly when the window's envelope is, so the two
+        // tests per side agree and both are spelled for the optional-access check.
+        if (!lhs_envelope || !lhs.window.envelope)
+            return rhs.window.envelope;
+        if (!rhs_envelope || !rhs.window.envelope)
+            return lhs.window.envelope;
+        const WindowBounds& lhs_bounds{lhs.window.envelope->bounds};
+        const WindowBounds& rhs_bounds{rhs.window.envelope->bounds};
         const auto span{std::max(lhs_envelope->end, rhs_envelope->end) -
                         std::min(lhs_envelope->start, rhs_envelope->start)};
-        return span.count() < 0 ? 0 : static_cast<std::uint64_t>(span.count());
+        return WindowEnvelope{
+            .bounds = {.start_iso =
+                           std::string{iso_min(lhs_bounds.start_iso, rhs_bounds.start_iso)},
+                       .end_iso = std::string{iso_max(lhs_bounds.end_iso, rhs_bounds.end_iso)}},
+            .duration_seconds = span.count() < 0 ? 0 : static_cast<std::uint64_t>(span.count())};
     }
 
     // invariant: Unordered covers every pair with no derivable time order -- overlapping, nested,
@@ -752,12 +750,10 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
     out.transport = (lhs.transport && rhs.transport && *lhs.transport == *rhs.transport)
                         ? lhs.transport
                         : std::nullopt;
-    out.window.start_iso = iso_min(lhs.window.start_iso, rhs.window.start_iso);
-    out.window.end_iso = iso_max(lhs.window.end_iso, rhs.window.end_iso);
     out.window.lines_observed = lhs.window.lines_observed + rhs.window.lines_observed;
     // post: the merged envelope's real-time span in every geometry, never a sum of the inputs'.
     // refs: DN-50.D13
-    out.window.duration_seconds = composed_duration_seconds(lhs, lhs_envelope, rhs, rhs_envelope);
+    out.window.envelope = composed_envelope(lhs, lhs_envelope, rhs, rhs_envelope);
     out.source = common_source(lhs.source, rhs.source);
 
     ComposeState state;

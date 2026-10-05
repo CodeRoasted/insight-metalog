@@ -384,6 +384,8 @@ class MetaLogEngine
 
     // invariant: written at the end of each close_window and read at the start of the next.
     std::unordered_map<TemplateId, std::uint64_t> prev_freq_;
+    // invariant: a previous window exists iff prev_total_ > 0; its end is absent when it carried no
+    // event time.
     std::uint64_t prev_total_{0};
     std::optional<std::string> prev_window_end_iso_;
 

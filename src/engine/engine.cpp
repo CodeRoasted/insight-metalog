@@ -504,14 +504,24 @@ void MetaLogEngine::stamp_envelope(MetaLogDocument& doc, Timestamp start, Timest
     doc.source = source_;
 
     // note: duration tracks the reported span, not the open/close machinery times.
-    const Timestamp reported_start{reported_bounds ? reported_bounds->start : start};
-    const Timestamp reported_end{reported_bounds ? reported_bounds->end : end};
-    doc.window.start_iso = format_rfc3339_utc(reported_start);
-    doc.window.end_iso = format_rfc3339_utc(reported_end);
-
-    const auto delta{
-        std::chrono::duration_cast<std::chrono::seconds>(reported_end - reported_start).count()};
-    doc.window.duration_seconds = delta < 0 ? 0 : static_cast<std::uint64_t>(delta);
+    // refs: DN-137.O1
+    // invariant: a caller that reports NO event-time envelope gets a document with none — the
+    // machinery times are never substituted for an event time no line carried.
+    const std::optional<EventTimeEnvelope> reported{
+        reported_bounds
+            ? reported_bounds->envelope
+            : std::optional<EventTimeEnvelope>{EventTimeEnvelope{.start = start, .end = end}}};
+    doc.window.envelope.reset();
+    if (reported)
+    {
+        const auto delta{
+            std::chrono::duration_cast<std::chrono::seconds>(reported->end - reported->start)
+                .count()};
+        doc.window.envelope =
+            WindowEnvelope{.bounds = {.start_iso = format_rfc3339_utc(reported->start),
+                                      .end_iso = format_rfc3339_utc(reported->end)},
+                           .duration_seconds = delta < 0 ? 0 : static_cast<std::uint64_t>(delta)};
+    }
     doc.window.lines_observed = lines_observed_;
 
     // note: the comparability identifiers are opaque contract names stamped from config.
@@ -1124,7 +1134,7 @@ void MetaLogEngine::build_stability(MetaLogDocument& doc, const WindowAnalysis& 
     const auto& ordered = analysis.ordered;
     // post: emitted from the second window onwards; stability_score is 1 - js_divergence in [0, 1]
     // with log2 JS.
-    if (config_.emit_stability && prev_window_end_iso_ && prev_total_ > 0 && lines_observed_ > 0)
+    if (config_.emit_stability && prev_total_ > 0 && lines_observed_ > 0)
     {
         std::unordered_map<TemplateId, std::uint64_t> cur_freq;
         cur_freq.reserve(ordered.size());
@@ -1136,7 +1146,7 @@ void MetaLogEngine::build_stability(MetaLogDocument& doc, const WindowAnalysis& 
         const auto [added, gone]{new_and_vanished(cur_freq, prev_freq_)};
 
         StabilityBlock stability;
-        stability.previous_window_end_iso = *prev_window_end_iso_;
+        stability.previous_window_end_iso = prev_window_end_iso_;
         stability.kl_divergence = kl_value;
         stability.js_divergence = js_value;
         stability.new_templates = added;
@@ -1294,7 +1304,9 @@ void MetaLogEngine::stash_prev_window(const MetaLogDocument& doc)
         for (const auto& [content_id, bucket] : buckets_)
             prev_freq_.emplace(template_id_for(content_id), bucket.count);
         prev_total_ = lines_observed_;
-        prev_window_end_iso_ = doc.window.end_iso;
+        prev_window_end_iso_.reset();
+        if (doc.window.envelope)
+            prev_window_end_iso_ = doc.window.envelope->bounds.end_iso;
     }
 }
 

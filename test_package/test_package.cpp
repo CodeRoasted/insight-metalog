@@ -109,7 +109,9 @@ TEST(InsightMetaLogPackage, SecondWindowEmitsStability)
     auto d2{engine.close_window(t0 + std::chrono::seconds(120))};
 
     ASSERT_TRUE(d2.stability.has_value());
-    EXPECT_EQ(d2.stability->previous_window_end_iso, d1.window.end_iso);
+    ASSERT_TRUE(d1.window.envelope.has_value());
+    EXPECT_EQ(d2.stability->previous_window_end_iso,
+              std::optional<std::string>{d1.window.envelope->bounds.end_iso});
     EXPECT_LT(d2.stability->js_divergence, 1e-6);
     EXPECT_GT(d2.stability->stability_score, 0.999);
 
@@ -121,6 +123,7 @@ TEST(InsightMetaLogPackage, SecondWindowEmitsStability)
     ASSERT_TRUE(parsed.has_value()) << "serialised output did not parse: " << serialized;
     auto& json = *parsed;
     EXPECT_TRUE(json.contains("stability")) << serialized;
-    EXPECT_EQ(json["stability"]["previous_window_end"].get<std::string>(), d1.window.end_iso)
+    EXPECT_EQ(json["stability"]["previous_window_end"].get<std::string>(),
+              d1.window.envelope->bounds.end_iso)
         << serialized;
 }
