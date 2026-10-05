@@ -7,45 +7,158 @@ import insight.canon;
 export namespace insight::metalog
 {
 
+// invariant: ONE HyperLogLog at kPrecision, SPARSE (its non-zero registers) until a new index would
+// pass kSparseMaxEntries, then DENSE for life; both denote one register array, so one estimate.
+// invariant: sparse costs sizeof(HyperLogLog), past kInlineEntries plus one heap block of at most 8
+// bytes an entry; dense adds kNumRegisters: at most 64 bytes an observation at 24 bytes a block.
+// refs: DN-139.D1
 class HyperLogLog
 {
   public:
     static constexpr std::uint8_t kPrecision{14};
     static constexpr std::size_t kNumRegisters{1U << kPrecision};
+    // invariant: 4-byte entries, so the sparse store at this size is half the dense array.
+    static constexpr std::size_t kSparseMaxEntries{kNumRegisters / 8U};
+    // invariant: the entries a sketch holds without a heap block, in the header's spare bytes.
+    static constexpr std::size_t kInlineEntries{3};
 
-    HyperLogLog() noexcept
+    // invariant: the register a value selects and the rank it offers that register.
+    struct RegisterUpdate
     {
-        regs_.fill(0);
-    }
+        std::uint32_t index;
+        std::uint8_t rank;
+    };
 
-    void add(std::string_view value) noexcept
+    using Registers = std::array<std::uint8_t, kNumRegisters>;
+
+    [[nodiscard]] static RegisterUpdate register_update(std::string_view value) noexcept
     {
         const auto hash_val = hash64(value);
-        const auto idx = static_cast<std::size_t>(hash_val >> (64U - kPrecision));
         const auto hash_rem = hash_val << kPrecision;
-        const auto rho = static_cast<std::uint8_t>(
-            (hash_rem == 0U) ? (64U - kPrecision + 1U) : (std::countl_zero(hash_rem) + 1U));
-        // note: NOLINT: the conditional store is deliberate; std::max would store on every add.
-        // NOLINTNEXTLINE(readability-use-std-min-max)
-        if (rho > regs_[idx])
-            regs_[idx] = rho;
+        return RegisterUpdate{
+            .index = static_cast<std::uint32_t>(hash_val >> (64U - kPrecision)),
+            .rank = static_cast<std::uint8_t>(
+                (hash_rem == 0U) ? (64U - kPrecision + 1U) : (std::countl_zero(hash_rem) + 1U))};
     }
 
-    [[nodiscard]] std::uint64_t estimate() const noexcept
+    // post: the estimate of the sketch whose register array is `registers`.
+    [[nodiscard]] static std::uint64_t estimate_registers(const Registers& registers) noexcept
     {
-        // assert: every term 1 << (kHllFrac - reg) is exact -- reg <= 51 < kHllFrac -- so the sum
-        // carries no rounding and no order dependence.
-        constexpr int kHllFrac{52};
         insight::det::u128 sum_fixed{0};
-        int zeros{0};
-        for (auto reg : regs_)
+        std::uint64_t zeros{0};
+        for (const auto reg : registers)
         {
-            sum_fixed += insight::det::u128{1}
-                         << static_cast<unsigned>(kHllFrac - static_cast<int>(reg));
+            sum_fixed += insight::det::u128{1} << static_cast<unsigned>(kHllFrac - reg);
             if (reg == 0)
                 ++zeros;
         }
+        return estimate_from(sum_fixed, zeros);
+    }
 
+    // note: not noexcept -- the sparse store spills to the heap and promotion allocates.
+    void add(std::string_view value)
+    {
+        const RegisterUpdate update{register_update(value)};
+        if (dense_)
+        {
+            auto& reg{(*dense_)[update.index]};
+            // note: NOLINT: the conditional store is deliberate; std::max would store on every add.
+            // NOLINTNEXTLINE(readability-use-std-min-max)
+            if (update.rank > reg)
+                reg = update.rank;
+            return;
+        }
+        const std::uint32_t key{update.index << kRankBits};
+        std::uint32_t* const first{store()};
+        std::uint32_t* const last{first + size_};
+        std::uint32_t* const entry{std::lower_bound(first, last, key)};
+        if (entry != last && (*entry >> kRankBits) == update.index)
+        {
+            if (update.rank > (*entry & kRankMask))
+                *entry = key | update.rank;
+            return;
+        }
+        if (size_ == kSparseMaxEntries)
+        {
+            promote();
+            (*dense_)[update.index] = update.rank;
+            return;
+        }
+        if (size_ == capacity_)
+        {
+            // invariant: the capacity doubles from kInlineEntries and stops at kSparseMaxEntries,
+            // so it is never above twice the size nor above kSparseMaxEntries.
+            const std::size_t grown{std::min(2U * std::size_t{capacity_}, kSparseMaxEntries)};
+            // note: NOLINT: runtime-sized; a std::vector header overflows the 32-byte sketch.
+            // NOLINTNEXTLINE(modernize-avoid-c-arrays)
+            auto block{std::make_unique_for_overwrite<std::uint32_t[]>(grown)};
+            std::uint32_t* const placed{std::copy(first, entry, block.get())};
+            *placed = key | update.rank;
+            std::copy(entry, last, placed + 1);
+            spilled_ = std::move(block);
+            capacity_ = static_cast<std::uint16_t>(grown);
+        }
+        else
+        {
+            std::copy_backward(entry, last, last + 1);
+            *entry = key | update.rank;
+        }
+        ++size_;
+    }
+
+    // assert: a sparse sketch's absent registers are zeros, so its dyadic sum is its entries' terms
+    // plus one 2^kHllFrac per absent register -- the dense array's sum, term for term.
+    [[nodiscard]] std::uint64_t estimate() const noexcept
+    {
+        if (dense_)
+            return estimate_registers(*dense_);
+        const std::uint64_t zeros{kNumRegisters - size_};
+        insight::det::u128 sum_fixed{insight::det::u128{zeros} << static_cast<unsigned>(kHllFrac)};
+        for (const std::uint32_t entry : std::span{store(), size_})
+            sum_fixed += insight::det::u128{1}
+                         << static_cast<unsigned>(kHllFrac - static_cast<int>(entry & kRankMask));
+        return estimate_from(sum_fixed, zeros);
+    }
+
+    [[nodiscard]] bool dense() const noexcept
+    {
+        return dense_ != nullptr;
+    }
+
+  private:
+    // assert: every term 1 << (kHllFrac - reg) is exact -- reg <= 51 < kHllFrac -- so the sum
+    // carries no rounding and no order dependence.
+    static constexpr int kHllFrac{52};
+    // invariant: an entry is index << kRankBits | rank, so entries sort by index; a rank is <= 51.
+    static constexpr unsigned kRankBits{8U};
+    static constexpr std::uint32_t kRankMask{(1U << kRankBits) - 1U};
+
+    // post: the first of the size_ entries, sorted by index: the inline store until it spills.
+    [[nodiscard]] std::uint32_t* store() noexcept
+    {
+        return spilled_ ? spilled_.get() : inline_.data();
+    }
+    [[nodiscard]] const std::uint32_t* store() const noexcept
+    {
+        return spilled_ ? spilled_.get() : inline_.data();
+    }
+
+    // post: the dense array the entries denote replaces them, and the heap block is released.
+    void promote()
+    {
+        auto registers{std::make_unique<Registers>()};
+        for (const std::uint32_t entry : std::span{store(), size_})
+            (*registers)[entry >> kRankBits] = static_cast<std::uint8_t>(entry & kRankMask);
+        dense_ = std::move(registers);
+        spilled_.reset();
+        size_ = 0;
+    }
+
+    // pre: sum_fixed is the dyadic sum of 2^(kHllFrac - reg) over all kNumRegisters registers and
+    // zeros the count of zero registers.
+    [[nodiscard]] static std::uint64_t estimate_from(insight::det::u128 sum_fixed,
+                                                     std::uint64_t zeros) noexcept
+    {
         // note: the numerator reaches u128 by IEEE-754 bit extraction, never a float-to-int cast.
         // refs: BIB:determinism_model
         constexpr double kAlpha{0.7213 / (1.0 + (1.079 / static_cast<double>(kNumRegisters)))};
@@ -61,7 +174,7 @@ class HyperLogLog
                       "HLL numerator must be integer-valued (significand << k, k >= 0)");
         const insight::det::u128 raw_numerator{insight::det::u128{kSignificand}
                                                << static_cast<unsigned>(kNumExp)};
-        // assert: sum_fixed > 0 -- regs_ is a non-empty std::array and every term is at least 2.
+        // assert: sum_fixed > 0 -- there are kNumRegisters terms and every term is at least 2.
         const insight::det::u128 raw{raw_numerator / sum_fixed};
 
         // note: the small-range arm is HyperLogLog's linear-counting correction, m*ln(m/zeros).
@@ -70,9 +183,8 @@ class HyperLogLog
         {
             // assert: ln_diff >= 0 because kNumRegisters >= zeros, so the logical shift equals an
             // arithmetic one.
-            const std::int64_t ln_diff{
-                insight::det::det_ln_fixed(kNumRegisters) -
-                insight::det::det_ln_fixed(static_cast<std::uint64_t>(zeros))};
+            const std::int64_t ln_diff{insight::det::det_ln_fixed(kNumRegisters) -
+                                       insight::det::det_ln_fixed(zeros)};
             const insight::det::u128 linear{
                 insight::det::u128{kNumRegisters} *
                 insight::det::u128{static_cast<std::uint64_t>(ln_diff)}};
@@ -81,13 +193,14 @@ class HyperLogLog
         return static_cast<std::uint64_t>(raw);
     }
 
-    void reset() noexcept
-    {
-        regs_.fill(0);
-    }
-
-  private:
-    std::array<std::uint8_t, kNumRegisters> regs_{};
+    // note: NOLINT: runtime-sized; a std::vector header overflows the 32-byte sketch.
+    // NOLINTNEXTLINE(modernize-avoid-c-arrays)
+    std::unique_ptr<std::uint32_t[]> spilled_;
+    std::unique_ptr<Registers> dense_;
+    std::array<std::uint32_t, kInlineEntries> inline_{};
+    static_assert(kSparseMaxEntries <= std::numeric_limits<std::uint16_t>::max());
+    std::uint16_t size_{0};
+    std::uint16_t capacity_{kInlineEntries};
 
     [[nodiscard]] static std::uint64_t hash64(std::string_view str) noexcept
     {
@@ -110,6 +223,7 @@ class HyperLogLog
         return hash_acc;
     }
 };
+static_assert(sizeof(HyperLogLog) <= 32, "DN-139.D1's bound declares a 32-byte sketch header");
 
 // pre: `counts` may cover only part of the population; `total` is the full count.
 // post: Shannon entropy in bits, 0.0 when total is 0; unlisted mass contributes nothing, so a

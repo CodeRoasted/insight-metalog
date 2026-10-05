@@ -117,15 +117,22 @@ class MetaLogEngine
         // refs: F-SRC-insight-metalog:metalog.api.cppm:dominant_component, ADR-9.D2
         std::unordered_map<std::string, std::uint64_t, TransparentStringHash, std::equal_to<>>
             component_counts;
+        struct ParamSlot
+        {
+            // refs: ADR-9.D2
+            std::unordered_map<std::string, std::uint64_t, TransparentStringHash, std::equal_to<>>
+                value_counts;
+            // invariant: every observation of the slot, so it may exceed the sum of value_counts.
+            std::uint64_t total{0};
+            // invariant: the slot's cardinality sketch in hll_state_, created with the slot.
+            // refs: DN-139.D1
+            std::size_t sketch{0};
+        };
         // invariant: index i is CanonicalEvent::params[i]; populated only when
         // config_.max_param_histograms > 0.
-        // refs: ADR-9.D2
-        std::vector<
-            std::unordered_map<std::string, std::uint64_t, TransparentStringHash, std::equal_to<>>>
-            param_value_counts;
-        std::vector<std::uint64_t> param_totals;
+        std::vector<ParamSlot> param_slots;
         // invariant: keyed by canon field name, not by param position, so it never collides with
-        // param_value_counts -- a field is ordinal XOR categorical.
+        // param_slots -- a field is ordinal XOR categorical.
         // invariant: populated only when config_.max_param_histograms > 0.
         // refs: F-SRC-insight-metalog:metalog.api.cppm:OrdinalHistogram, ADR-9.D2
         struct OrdinalAccumulator
@@ -389,8 +396,8 @@ class MetaLogEngine
     std::uint64_t prev_total_{0};
     std::optional<std::string> prev_window_end_iso_;
 
-    // invariant: pimpl, so no HLL internal reaches this interface; reset at open_window and
-    // snapshotted at close_window.
+    // invariant: pimpl, so no HLL internal reaches this interface; a bucket's param slot locates
+    // its sketch by id, and the store resets with the buckets.
     struct HllState;
     std::unique_ptr<HllState> hll_state_;
 };

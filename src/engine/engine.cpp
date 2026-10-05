@@ -24,33 +24,41 @@ namespace
     }
 } // namespace
 
-// invariant: one sketch per (content_id, param_index); the per-content vector grows on demand.
+// invariant: one sketch per (template, param slot), addressed by the id its bucket's slot holds;
+// sketches sit in fixed chunks, so none ever moves and the store outgrows its use by one chunk.
+// refs: DN-139.D1
 struct MetaLogEngine::HllState
 {
-    using HLL = HyperLogLog;
+    static constexpr std::size_t kChunkSketches{64};
+    using Chunk = std::array<HyperLogLog, kChunkSketches>;
 
-    std::unordered_map<std::string, std::vector<HLL>> sketches;
+    std::vector<std::unique_ptr<Chunk>> chunks;
+    std::size_t created{0};
 
     void reset()
     {
-        sketches.clear();
+        chunks.clear();
+        created = 0;
     }
 
-    void add(const std::string& content_id, std::size_t param_index, std::string_view value)
+    // post: the id of a new empty sketch.
+    [[nodiscard]] std::size_t create()
     {
-        auto& slots = sketches[content_id];
-        if (slots.size() <= param_index)
-            slots.resize(param_index + 1);
-        slots[param_index].add(value);
+        if (created == chunks.size() * kChunkSketches)
+            chunks.push_back(std::make_unique<Chunk>());
+        return created++;
     }
 
-    [[nodiscard]] std::uint64_t estimate(const std::string& content_id,
-                                         std::size_t param_index) const noexcept
+    // pre: sketch is an id create() returned since the last reset().
+    void add(std::size_t sketch, std::string_view value)
     {
-        const auto found = sketches.find(content_id);
-        if (found == sketches.end() || param_index >= found->second.size())
-            return 0;
-        return found->second[param_index].estimate();
+        (*chunks[sketch / kChunkSketches])[sketch % kChunkSketches].add(value);
+    }
+
+    // pre: sketch is an id create() returned since the last reset().
+    [[nodiscard]] std::uint64_t estimate(std::size_t sketch) const noexcept
+    {
+        return (*chunks[sketch / kChunkSketches])[sketch % kChunkSketches].estimate();
     }
 };
 
@@ -386,25 +394,26 @@ void MetaLogEngine::ingest_looked_up_event(const tokenization::CanonicalEvent& e
     if (config_.max_param_histograms > 0 && !event.params.empty())
     {
         const std::size_t param_count{std::min(config_.max_param_histograms, event.params.size())};
-        if (bucket.param_value_counts.size() < param_count)
+        if (bucket.param_slots.size() < param_count)
         {
-            bucket.param_value_counts.resize(param_count);
-            bucket.param_totals.resize(param_count, 0);
+            bucket.param_slots.reserve(param_count);
+            while (bucket.param_slots.size() < param_count)
+                bucket.param_slots.push_back(Bucket::ParamSlot{.sketch = hll_state_->create()});
         }
         for (std::size_t pi{0}; pi < param_count; ++pi)
         {
-            ++bucket.param_totals[pi];
-            auto& vcounts{bucket.param_value_counts[pi]};
+            auto& slot{bucket.param_slots[pi]};
+            ++slot.total;
             const std::string_view val{event.params[pi]};
             // refs: ADR-9.D2
-            if (auto hit{vcounts.find(val)}; hit != vcounts.end())
+            if (auto hit{slot.value_counts.find(val)}; hit != slot.value_counts.end())
                 ++hit->second;
-            else if (vcounts.size() < config_.max_histogram_values)
-                // assert: param_totals rose already, so total may exceed the sum of value_counts.
-                ++vcounts[std::string{val}];
+            else if (slot.value_counts.size() < config_.max_histogram_values)
+                // assert: total rose already, so it may exceed the sum of value_counts.
+                ++slot.value_counts[std::string{val}];
 
             // note: the HLL sketch is fed regardless of the value-table cap.
-            hll_state_->add(*lookup.content_id, pi, val);
+            hll_state_->add(slot.sketch, val);
         }
     }
 
@@ -668,23 +677,22 @@ void MetaLogEngine::build_top_k(MetaLogDocument& doc, const WindowAnalysis& anal
         if (config_.max_param_histograms > 0)
         {
             const auto& bucket{*ordered[i].second};
-            const auto& content_id{ordered[i].first};
-            for (std::size_t pi{0}; pi < bucket.param_value_counts.size(); ++pi)
+            for (std::size_t pi{0}; pi < bucket.param_slots.size(); ++pi)
             {
+                const auto& slot{bucket.param_slots[pi]};
                 FieldHistogram hist;
                 hist.param_index = static_cast<std::uint32_t>(pi);
                 // assert: no consumer depends on this destination's iteration order.
-                const auto& tracked{bucket.param_value_counts[pi]};
-                hist.value_counts.reserve(tracked.size());
-                hist.value_counts.insert(tracked.begin(), tracked.end());
-                hist.total = bucket.param_totals[pi];
+                hist.value_counts.reserve(slot.value_counts.size());
+                hist.value_counts.insert(slot.value_counts.begin(), slot.value_counts.end());
+                hist.total = slot.total;
                 // note: a capped value table makes this entropy an under-estimate.
                 std::vector<std::uint64_t> vcounts;
                 vcounts.reserve(hist.value_counts.size());
                 for (const auto& [value, count] : hist.value_counts)
                     vcounts.push_back(count);
                 hist.entropy_bits = shannon_entropy_bits(vcounts, hist.total);
-                hist.approximate_cardinality = hll_state_->estimate(content_id, pi);
+                hist.approximate_cardinality = hll_state_->estimate(slot.sketch);
                 entry.field_histograms.push_back(std::move(hist));
             }
         }
@@ -1340,6 +1348,7 @@ void MetaLogEngine::reset_window_state()
     // refs: ADR-9.D3
     ngram_observations_dropped_ = 0;
     cube_base_.clear();
+    // invariant: the sketch store resets in the same call as buckets_, whose slots hold its ids.
     (*hll_state_).reset();
 }
 

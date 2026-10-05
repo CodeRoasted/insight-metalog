@@ -1268,8 +1268,10 @@ struct MetaLogConfig
 
     // invariant: max wildcard positions histogrammed per top_k entry; 0 disables and costs one
     // predicted-not-taken branch per ingest call.
-    // invariant: above 0 the first min(N, params.size()) wildcard positions are tracked per
-    // template bucket, and memory is bounded by top_k_size times N times max_histogram_values.
+    // invariant: above 0 the first min(N, params.size()) wildcard positions are tracked in EVERY
+    // template's bucket: at most N x max_histogram_values table entries a template.
+    // invariant: the cardinality sketches cost at most 64 bytes per parameter observation fed.
+    // refs: DN-139.D1
     std::size_t max_param_histograms{0};
 
     // invariant: max distinct values tracked per histogram slot per template; further distinct

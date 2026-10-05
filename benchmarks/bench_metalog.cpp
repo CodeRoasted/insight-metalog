@@ -170,6 +170,79 @@ void BM_MetaLogIngest_FieldHistograms(benchmark::State& state)
 }
 BENCHMARK(BM_MetaLogIngest_FieldHistograms)->Arg(0)->Arg(1)->Arg(3)->Unit(benchmark::kMicrosecond);
 
+// post: the cost of the per-(template, param slot) cardinality sketches at the shipped
+// max_param_histograms of 4, over one 100 000-event window; range(0) picks the arm.
+// invariant: arm 0 is template-POOR -- 8 templates whose every value is distinct, so each of the
+// 32 sketches promotes to dense early and the window is spent on the dense path.
+// invariant: arm 1 is template-RICH -- one template a line with four one-digit values, so 400 000
+// sketches each see one value, the W457 slots4 shape.
+// refs: DN-139.O1
+void BM_MetaLogIngest_ParamSketch(benchmark::State& state)
+{
+    const bool template_rich{state.range(0) == 1};
+
+    meta::MetaLogConfig config;
+    config.top_k_size = 64;
+    config.top_ngrams_size = 32;
+    config.max_param_histograms = 4;
+
+    constexpr std::size_t kEvents{100'000};
+    constexpr std::size_t kSlots{4};
+    constexpr std::size_t kPoorTemplates{8};
+    constexpr std::size_t kDigits{10};
+
+    // invariant: the strings, views and events are built before the loop, and `values` and `views`
+    // are reserved to their final size first, so every view and span stays valid while it runs.
+    std::vector<std::string> templates;
+    std::vector<std::string> values;
+    std::vector<std::string_view> views;
+    std::vector<tok::CanonicalEvent> events;
+    const std::size_t n_templates{template_rich ? kEvents : kPoorTemplates};
+    templates.reserve(n_templates);
+    for (std::size_t t{0}; t < n_templates; ++t)
+        templates.push_back("t" + std::to_string(t) + "x <*> <*> <*> <*>");
+    values.reserve(kEvents * kSlots);
+    views.reserve(kEvents * kSlots);
+    events.reserve(kEvents);
+    {
+        SplitMix64 rng{0x5E7C4};
+        for (std::size_t i{0}; i < kEvents; ++i)
+        {
+            for (std::size_t j{0}; j < kSlots; ++j)
+            {
+                values.push_back(template_rich ? std::to_string((i + j) % kDigits)
+                                               : std::to_string(rng.next()));
+                views.push_back(values.back());
+            }
+            tok::CanonicalEvent ev;
+            ev.template_str = templates[template_rich ? i : i % kPoorTemplates];
+            ev.level = insight::LogLevel::Info;
+            ev.params = std::span<const std::string_view>{views}.subspan(i * kSlots, kSlots);
+            events.push_back(ev);
+        }
+    }
+
+    const auto t0{kEpoch};
+    std::int64_t total_events{0};
+
+    for (auto _ : state)
+    {
+        meta::MetaLogEngine engine{config};
+        engine.open_window(t0);
+        for (const auto& ev : events)
+            engine.ingest_event(ev);
+        auto doc{engine.close_window(t0 + std::chrono::seconds(60))};
+        benchmark::DoNotOptimize(doc.stats.top_k.size());
+        total_events += static_cast<std::int64_t>(kEvents);
+    }
+
+    state.SetItemsProcessed(total_events);
+    state.counters["ns_per_event"] = benchmark::Counter(
+        static_cast<double>(total_events),
+        benchmark::Counter::kIsRate | benchmark::Counter::kInvert, benchmark::Counter::kIs1000);
+}
+BENCHMARK(BM_MetaLogIngest_ParamSketch)->Arg(0)->Arg(1)->Unit(benchmark::kMillisecond);
+
 // post: the always-on cost of the per-template component marginal, which every event pays.
 // note: read it against the field-histogram arm to size it beside an enum-keyed increment.
 void BM_MetaLogIngest_Where(benchmark::State& state)
