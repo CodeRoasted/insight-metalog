@@ -1377,6 +1377,14 @@ struct NGramDelta
     std::vector<NGramRateChange> rate_changed;
 };
 
+// invariant: the two behavior.ngram_size a diff could not compare, each in its document's role.
+// refs: DN-56.D12, F-SRC-metalog-spec:SPEC.md
+struct NGramOrderMismatch
+{
+    std::size_t previous_ngram_size{0};
+    std::size_t current_ngram_size{0};
+};
+
 // invariant: an edge present on BOTH sides whose observed weight moved.
 // refs: F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeDelta
 struct ServiceEdgeWeightChange
@@ -1649,6 +1657,10 @@ struct MetaLogDiff
     // refs: DN-126.D9, F-SRC-metalog-spec:SPEC.md
     std::vector<BranchingDelta> branching_delta;
     std::optional<NGramDelta> ngram_delta;
+    // invariant: engaged exactly when both documents carry behavior at different ngram_size, and
+    // then ngram_delta is disengaged: the comparison was not performed, and the wire says so.
+    // refs: DN-56.D12
+    std::optional<NGramOrderMismatch> ngram_order_mismatch;
     // invariant: present ONLY when both documents carried a service_edges block; absence reads
     // unknown.
     // invariant: serialised under the extensions container, which the witness derivation excludes

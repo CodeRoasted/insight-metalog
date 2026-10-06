@@ -1,14 +1,16 @@
-// refs: DN-56.D11, F-SRC-metalog-spec:SPEC.md
+// refs: DN-56.D11, DN-56.D12, F-SRC-metalog-spec:SPEC.md
 // invariant: an order-2 and an order-3 behavior block describe different populations, so compose()
 // and diff() never merge or difference them as one.
 // invariant: two STAMPED documents at different orders are refused by the retention_profile gate,
 // its n axis being the order.
 // invariant: two UNSTAMPED ones reach the operation, which omits the block (compose) or the
-// n-gram delta (diff) rather than fabricate one.
+// n-gram delta (diff) rather than fabricate one, and a diff states the delta it omitted.
 // note: one input stream at both orders, so any n-gram turnover across the pair is the order's.
 #include <gtest/gtest.h>
 
 import insight.metalog.test;
+
+#include "../written_or_fail.hpp"
 
 namespace
 {
@@ -49,6 +51,16 @@ enum class Stamp : std::uint8_t
 [[nodiscard]] std::string stamp_of(const meta::MetaLogDocument& doc)
 {
     return doc.retention_profile.value_or("<unset>");
+}
+
+// post: how many times `needle` occurs in `haystack`, overlaps excluded.
+[[nodiscard]] std::size_t occurrences(std::string_view haystack, std::string_view needle)
+{
+    std::size_t count{0};
+    for (std::size_t at{haystack.find(needle)}; at != std::string_view::npos;
+         at = haystack.find(needle, at + needle.size()))
+        ++count;
+    return count;
 }
 
 } // namespace
@@ -114,12 +126,60 @@ TEST(NgramOrderComparability, UnstampedDiffAcrossOrdersCarriesNoNgramDelta)
     ASSERT_FALSE(same_order.ngram_delta.has_value())
         << "one input at one order must diff to no n-gram delta, or this file's input moves";
 
-    for (const auto& [name, delta] :
-         {std::pair{"diff(order 2, order 3)", meta::diff(order2, order3)},
-          std::pair{"diff(order 3, order 2)", meta::diff(order3, order2)}})
+    ASSERT_FALSE(same_order.ngram_order_mismatch.has_value())
+        << "one input at one order reported an order mismatch "
+        << same_order.ngram_order_mismatch->previous_ngram_size << " vs "
+        << same_order.ngram_order_mismatch->current_ngram_size;
+
+    for (const auto& [name, delta, previous_order, current_order] :
+         {std::tuple{"diff(order 2, order 3)", meta::diff(order2, order3), 2U, 3U},
+          std::tuple{"diff(order 3, order 2)", meta::diff(order3, order2), 3U, 2U}})
+    {
         EXPECT_FALSE(delta.ngram_delta.has_value())
             << name << " reported an n-gram delta (new "
             << (delta.ngram_delta ? delta.ngram_delta->new_ngrams.size() : 0U) << ", vanished "
             << (delta.ngram_delta ? delta.ngram_delta->vanished_ngrams.size() : 0U)
             << ") over ONE input stream: the turnover is the order's, not the workload's";
+        ASSERT_TRUE(delta.ngram_order_mismatch.has_value())
+            << name << " omitted the n-gram delta without recording why";
+        EXPECT_EQ(delta.ngram_order_mismatch->previous_ngram_size, previous_order)
+            << name << ": the previous document's order";
+        EXPECT_EQ(delta.ngram_order_mismatch->current_ngram_size, current_order)
+            << name << ": the current document's order";
+    }
+}
+
+// invariant: a diff across two orders names ngram_delta in incomparable_signals, its reason and
+// both orders in their roles, and still asserts unchanged: the member is a descriptor.
+// refs: DN-56.D12
+TEST(NgramOrderComparability, UnstampedDiffAcrossOrdersStatesTheNgramDeltaIncomparable)
+{
+    const auto order2{close_at_order(2, Stamp::Absent)};
+    const auto order3{close_at_order(3, Stamp::Absent)};
+
+    for (const auto& [name, delta, previous_order, current_order] :
+         {std::tuple{"diff(order 2, order 3)", meta::diff(order2, order3), 2U, 3U},
+          std::tuple{"diff(order 3, order 2)", meta::diff(order3, order2), 3U, 2U}})
+    {
+        const std::string json{written_or_fail(meta::to_json(delta))};
+        const std::string stated{
+            std::format(R"("incomparable_signals":{{"ngram_delta":{{"reason":"ngram_size_differs",)"
+                        R"("previous_ngram_size":{},"current_ngram_size":{}}}}})",
+                        previous_order, current_order)};
+        EXPECT_NE(json.find(stated), std::string::npos)
+            << name << " does not state the n-gram delta incomparable; expected the member\n  "
+            << stated << "\nin\n  " << json;
+        EXPECT_EQ(occurrences(json, R"("ngram_delta")"), 1U)
+            << name << " names ngram_delta " << occurrences(json, R"("ngram_delta")")
+            << " time(s); only incomparable_signals may name it:\n  " << json;
+        EXPECT_NE(json.find(R"("comparison_outcome":"unchanged")"), std::string::npos)
+            << name << " asserts an outcome other than unchanged over ONE input stream:\n  "
+            << json;
+    }
+
+    const std::string same_order{
+        written_or_fail(meta::to_json(meta::diff(order3, close_at_order(3, Stamp::Absent))))};
+    EXPECT_EQ(same_order.find(R"("incomparable_signals")"), std::string::npos)
+        << "a same-order pair is comparable, yet it states something incomparable:\n  "
+        << same_order;
 }

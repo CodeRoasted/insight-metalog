@@ -128,14 +128,22 @@ namespace
     // post: new and vanished sequences plus the rate-changed common ones.
     // post: no delta when the two blocks sit at DIFFERENT ngram_size: no key could match across
     // orders, so every row would read as turnover -- a witness of change the workload never made.
+    // post: that omission is recorded as ngram_order_mismatch, both orders in their roles, so the
+    // document states the comparison it did not perform rather than read as one finding nothing.
     // invariant: reached only by unstamped pairs; the retention_profile gate refuses a stamped one.
-    // refs: DN-56.D11
+    // refs: DN-56.D11, DN-56.D12
     void diff_ngram_delta(MetaLogDiff& out, const MetaLogDocument& previous,
                           const MetaLogDocument& current)
     {
-        if (!previous.behavior || !current.behavior ||
-            previous.behavior->ngram_size != current.behavior->ngram_size)
+        if (!previous.behavior || !current.behavior)
             return;
+        if (previous.behavior->ngram_size != current.behavior->ngram_size)
+        {
+            out.ngram_order_mismatch =
+                NGramOrderMismatch{.previous_ngram_size = previous.behavior->ngram_size,
+                                   .current_ngram_size = current.behavior->ngram_size};
+            return;
+        }
         NGramDelta ngram_delta;
         ngram_delta.ngram_size = current.behavior->ngram_size;
         // note: new and vanished are sorted explicitly because they are iterated into the output.

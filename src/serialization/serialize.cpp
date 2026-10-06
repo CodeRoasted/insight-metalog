@@ -518,6 +518,21 @@ namespace dto
         std::optional<std::vector<NGramRateChange>> rate_changed;
     };
 
+    // invariant: the members' names and the reason token are the specification's, verbatim.
+    // refs: DN-56.D12, F-SRC-metalog-spec:metalog_diff.v0.schema.json
+    struct IncomparableNGramDelta
+    {
+        std::string reason;
+        std::size_t previous_ngram_size{0};
+        std::size_t current_ngram_size{0};
+    };
+
+    // invariant: keyed by the signal property the document omits; a descriptor, never a witness.
+    struct IncomparableSignals
+    {
+        std::optional<IncomparableNGramDelta> ngram_delta;
+    };
+
     // invariant: the whole block is present iff BOTH documents carried a service_edges block;
     // absence means unknown.
     // refs: F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeBlock
@@ -592,11 +607,14 @@ namespace dto
         std::optional<std::vector<BranchingDelta>> branching_delta;
         std::optional<NGramDelta> ngram_delta;
         std::optional<TailDelta> tail_delta;
-        // invariant: withheld_signals is omitted when empty rather than written as an empty array,
-        // so a document that withholds nothing stays byte-identical to its pre-0.10.0 self.
         std::optional<CubeDiff> cube_diff;
         std::optional<ReservoirDelta> reservoir_delta;
+        // invariant: withheld_signals is omitted when empty rather than written as an empty array,
+        // so a document that withholds nothing stays byte-identical to its pre-0.10.0 self.
         std::optional<std::vector<std::string>> withheld_signals;
+        // invariant: omitted unless a comparison was not performed, so a same-order diff keeps its
+        // bytes.
+        std::optional<IncomparableSignals> incomparable_signals;
         // note: the vendor container is declared last, the same discipline as the document.
         std::optional<DiffExtensions> extensions;
     };
@@ -1230,6 +1248,12 @@ namespace
         }
         if (diff.ngram_delta)
             out.ngram_delta = make_ngram_delta(*diff.ngram_delta);
+        if (diff.ngram_order_mismatch)
+            out.incomparable_signals = dto::IncomparableSignals{
+                .ngram_delta = dto::IncomparableNGramDelta{
+                    .reason = "ngram_size_differs",
+                    .previous_ngram_size = diff.ngram_order_mismatch->previous_ngram_size,
+                    .current_ngram_size = diff.ngram_order_mismatch->current_ngram_size}};
         if (diff.tail_delta)
         {
             const auto& tail = *diff.tail_delta;
