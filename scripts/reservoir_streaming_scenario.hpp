@@ -47,36 +47,37 @@ inline void emit_window(insight::metalog::MetaLogEngine& engine)
     const auto emit =
         [&engine](const std::string& tmpl, insight::LogLevel lvl = insight::LogLevel::Info)
     {
-        insight::tokenization::CanonicalEvent ev;
-        ev.template_str = tmpl;
-        ev.level = lvl;
-        engine.ingest_event(ev);
+        insight::tokenization::CanonicalEvent event;
+        event.template_str = tmpl;
+        event.level = lvl;
+        engine.ingest_event(event);
     };
 
     // invariant: each filler's only incoming edge is its predecessor at ratio 1, so its surprise is
     // 0 and none is a reservoir candidate.
     for (int rep = 0; rep < 6; ++rep)
-        for (int t = 0; t < kFillers; ++t)
-            emit("baseline service heartbeat region " + std::to_string(t));
+        for (int filler = 0; filler < kFillers; ++filler)
+            emit("baseline service heartbeat region " + std::to_string(filler));
 
     // invariant: the error templates rank BELOW the band that over-subscribes the general pool, so
     // only the reserve can retain them.
     // invariant: there are more error templates than reserve slots, so the reserve OVERFLOWS --
     // which is the half that proves it bounds rather than merely admits.
     for (int rep = 0; rep < 2; ++rep)
-        for (int e = 0; e < kErrorTemplates; ++e)
-            emit("batch record " + std::to_string(e) + " rejected by the downstream sink",
+        for (int error_template = 0; error_template < kErrorTemplates; ++error_template)
+            emit("batch record " + std::to_string(error_template) +
+                     " rejected by the downstream sink",
                  insight::LogLevel::Error);
 
     // invariant: the solid spokes are fewer than the free general slots, so they cannot fill the
     // pool alone and the ambiguous group decides the rest.
     for (int rep = 0; rep < 2; ++rep)
-        for (int s = 0; s < kSolidSpokes; ++s)
+        for (int spoke = 0; spoke < kSolidSpokes; ++spoke)
         {
             emit("dispatch loop alpha");
-            emit("dispatched task " + std::to_string(s));
+            emit("dispatched task " + std::to_string(spoke));
         }
-    for (int p = 0; p < kSolidSpokes; ++p)
+    for (int drain = 0; drain < kSolidSpokes; ++drain)
     {
         emit("dispatch loop alpha");
         emit("dispatch loop drain");
@@ -91,10 +92,10 @@ inline void emit_window(insight::metalog::MetaLogEngine& engine)
         emit("boundary hub x");
         emit("boundary sink x");
     }
-    for (int s = 0; s < kAmbiguousSpokes; ++s)
+    for (int spoke = 0; spoke < kAmbiguousSpokes; ++spoke)
     {
         emit("boundary hub x");
-        emit("ambiguous boundary spoke " + std::to_string(s));
+        emit("ambiguous boundary spoke " + std::to_string(spoke));
     }
     for (int rep = 0; rep < 72; ++rep)
     {
@@ -102,10 +103,10 @@ inline void emit_window(insight::metalog::MetaLogEngine& engine)
         emit("boundary sink y");
     }
     for (int rep = 0; rep < 2; ++rep)
-        for (int s = 0; s < kAmbiguousSpokes; ++s)
+        for (int spoke = 0; spoke < kAmbiguousSpokes; ++spoke)
         {
             emit("boundary hub y");
-            emit("ambiguous boundary spoke " + std::to_string(s));
+            emit("ambiguous boundary spoke " + std::to_string(spoke));
         }
 }
 

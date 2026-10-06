@@ -27,28 +27,28 @@ inline void emit_window(insight::metalog::MetaLogEngine& engine)
     const auto emit =
         [&engine](const std::string& tmpl, insight::LogLevel lvl = insight::LogLevel::Info)
     {
-        insight::tokenization::CanonicalEvent ev;
-        ev.template_str = tmpl;
-        ev.level = lvl;
-        engine.ingest_event(ev);
+        insight::tokenization::CanonicalEvent event;
+        event.template_str = tmpl;
+        event.level = lvl;
+        engine.ingest_event(event);
     };
 
     // invariant: frequent benign templates present from the window start, admitted to top-K by
     // count, so none is ever a reservoir candidate.
     constexpr int kTopKFillers{64};
     for (int rep = 0; rep < 6; ++rep)
-        for (int t = 0; t < kTopKFillers; ++t)
-            emit("baseline service heartbeat region " + std::to_string(t));
+        for (int filler = 0; filler < kTopKFillers; ++filler)
+            emit("baseline service heartbeat region " + std::to_string(filler));
 
     // invariant: a busy hub fans out to distinct rare spokes, each emitted twice so the
     // two-observation surprise floor is met; a small edge ratio gives a high surprise band.
     const auto hub_spokes = [&](const std::string& hub, int fanout, int spoke_base)
     {
         for (int rep = 0; rep < 2; ++rep)
-            for (int s = 0; s < fanout; ++s)
+            for (int spoke = 0; spoke < fanout; ++spoke)
             {
                 emit(hub);
-                emit("dispatched task " + std::to_string(spoke_base + s));
+                emit("dispatched task " + std::to_string(spoke_base + spoke));
             }
     };
     hub_spokes("dispatch loop alpha", 110, 0);
@@ -69,16 +69,16 @@ inline void emit_window(insight::metalog::MetaLogEngine& engine)
         emit("hub y");
         emit("sink y");
     }
-    for (int s = 0; s < kAmbiguous; ++s)
+    for (int spoke = 0; spoke < kAmbiguous; ++spoke)
     {
         emit("hub x");
-        emit("ambiguous boundary spoke " + std::to_string(s));
+        emit("ambiguous boundary spoke " + std::to_string(spoke));
     }
     for (int rep = 0; rep < 2; ++rep)
-        for (int s = 0; s < kAmbiguous; ++s)
+        for (int spoke = 0; spoke < kAmbiguous; ++spoke)
         {
             emit("hub y");
-            emit("ambiguous boundary spoke " + std::to_string(s));
+            emit("ambiguous boundary spoke " + std::to_string(spoke));
         }
 }
 

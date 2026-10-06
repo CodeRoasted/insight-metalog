@@ -28,25 +28,25 @@ inline void emit_window(insight::metalog::MetaLogEngine& engine)
     {
         const std::uint64_t parent{next_span_id++};
         {
-            insight::tokenization::CanonicalEvent ev;
-            ev.template_str = caller;
-            ev.component = caller;
-            ev.trace.present = true;
-            ev.trace.is_span = true;
-            ev.trace.span_id = insight::SpanId{parent};
-            engine.ingest_event(ev);
+            insight::tokenization::CanonicalEvent event;
+            event.template_str = caller;
+            event.component = caller;
+            event.trace.present = true;
+            event.trace.is_span = true;
+            event.trace.span_id = insight::SpanId{parent};
+            engine.ingest_event(event);
         }
         for (int i = 0; i < weight; ++i)
         {
-            insight::tokenization::CanonicalEvent ev;
-            ev.template_str = callee;
-            ev.component = callee;
-            ev.trace.present = true;
-            ev.trace.is_span = true;
-            ev.trace.span_id = insight::SpanId{next_span_id++};
-            ev.trace.has_parent = true;
-            ev.trace.parent_span_id = insight::SpanId{parent};
-            engine.ingest_event(ev);
+            insight::tokenization::CanonicalEvent event;
+            event.template_str = callee;
+            event.component = callee;
+            event.trace.present = true;
+            event.trace.is_span = true;
+            event.trace.span_id = insight::SpanId{next_span_id++};
+            event.trace.has_parent = true;
+            event.trace.parent_span_id = insight::SpanId{parent};
+            engine.ingest_event(event);
         }
     };
 
