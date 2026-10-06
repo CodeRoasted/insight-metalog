@@ -24,7 +24,8 @@ inline void configure(insight::metalog::MetaLogConfig& config)
     config.emit_stability = true;
 }
 
-// post: a trailing CR is dropped, so a CRLF checkout produces the same events as an LF one.
+// post: the file's lines framed on LF; each keeps its ending, which canon removes (DN-134.D13), so
+// a CRLF checkout produces the same events as an LF one.
 // post: std::nullopt means the file could not be opened; the caller decides what that costs.
 [[nodiscard]] inline std::optional<std::vector<std::string>> read_lines(const std::string& path)
 {
@@ -35,8 +36,6 @@ inline void configure(insight::metalog::MetaLogConfig& config)
     std::string line;
     while (std::getline(input, line))
     {
-        if (!line.empty() && line.back() == '\r')
-            line.pop_back();
         lines.push_back(std::move(line));
         line.clear();
     }
