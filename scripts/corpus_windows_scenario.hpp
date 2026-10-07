@@ -24,7 +24,7 @@ inline void configure(insight::metalog::MetaLogConfig& config)
     config.emit_stability = true;
 }
 
-// post: the file's lines framed on LF; each keeps its ending, which canon removes (DN-134.D13), so
+// post: the file's lines framed on LF; each keeps its ending, which canon removes (ADR-21.D6), so
 // a CRLF checkout produces the same events as an LF one.
 // post: std::nullopt means the file could not be opened; the caller decides what that costs.
 [[nodiscard]] inline std::optional<std::vector<std::string>> read_lines(const std::string& path)
