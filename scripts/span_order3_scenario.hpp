@@ -3,7 +3,7 @@
 // invariant: the declared edge set moves between the windows, so the diff carries a span-edge
 // delta with a new and a vanished edge.
 // invariant: ingested identically by the in-suite guard and the cross-compiler fixture.
-// refs: DN-126.D18, F-SRC-insight-metalog:engine.cpp:resolve_span_edges
+// refs: ADR-24.D7, F-SRC-insight-metalog:engine.cpp:resolve_span_edges
 #ifndef INSIGHT_METALOG_SPAN_ORDER3_SCENARIO_HPP
 #define INSIGHT_METALOG_SPAN_ORDER3_SCENARIO_HPP
 

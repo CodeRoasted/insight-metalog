@@ -273,7 +273,7 @@ void MetaLogEngine::resolve_span_edges()
         }
         // invariant: a declared span edge is accounted in its OWN bounded table and never enters
         // the log-order graph top_ngrams, branching, dominant_path and structural_surprise read.
-        // refs: DN-126.D18
+        // refs: ADR-24.D7
         account_span_edge(parent_it->second.template_id, edge.child_template);
 
         // note: an unknown endpoint and a self-edge are excluded -- neither is topology.

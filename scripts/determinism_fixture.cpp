@@ -195,7 +195,7 @@ int main(int argc, char** argv)
 
     // post: emits the order-3 span pair, its diff and its composition: declared edges in
     // fr.coderoast.span_edges, log trigrams alone in top_ngrams, and a span-edge delta.
-    // refs: DN-126.D18
+    // refs: ADR-24.D7
     if (std::string{argv[1]} == "--span-order3")
     {
         namespace ml = insight::metalog;

@@ -481,7 +481,7 @@ struct ServiceEdgeBlock
 // id, the child span's, and how many resolved links joined them this window.
 // invariant: a declared edge and a log-order adjacency are different facts, so a span edge rides
 // this vendor block and never a standard behavior member.
-// refs: DN-126.D18, ADR-24.D7
+// refs: ADR-24.D7
 struct SpanEdge
 {
     TemplateId parent;
@@ -498,7 +498,7 @@ struct SpanEdge
 // MetaLogConfig::max_span_edge_keys before being counted, on SPEC section 4's accounting principle.
 // invariant: it is engaged only when greater than zero, and omitted when nothing was refused.
 // invariant: compose() sets none, as it sets no acquisition and no service_edges.
-// refs: DN-126.D18, ADR-9.D3
+// refs: ADR-24.D7, ADR-9.D3
 struct SpanEdgeBlock
 {
     std::vector<SpanEdge> edges;
@@ -855,7 +855,7 @@ struct StatsBlock
 
 // invariant: sequence holds ngram_size content-derived template ids, consecutive records of one
 // observation stream in observed order; a declared span edge is never one.
-// refs: DN-126.D18, F-SRC-insight-metalog:metalog.api.cppm:SpanEdgeBlock
+// refs: ADR-24.D7, F-SRC-insight-metalog:metalog.api.cppm:SpanEdgeBlock
 struct NGramEntry
 {
     std::vector<TemplateId> sequence;
@@ -1416,7 +1416,7 @@ struct ServiceEdgeDelta
 // invariant: each carries its count on the side holding it; both lists sorted by (parent, child).
 // invariant: present ONLY when BOTH documents carried a span_edges block and an edge appeared or
 // vanished; absence reads unknown or no change, never that every edge appeared.
-// refs: DN-126.D18, F-SRC-insight-metalog:metalog.api.cppm:SpanEdgeBlock
+// refs: ADR-24.D7, F-SRC-insight-metalog:metalog.api.cppm:SpanEdgeBlock
 struct SpanEdgeDelta
 {
     std::vector<SpanEdge> new_edges;

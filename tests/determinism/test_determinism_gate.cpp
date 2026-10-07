@@ -636,7 +636,7 @@ TEST(MetaLogDocument, ADifferentialAxisOnlyEverPinsAnEmergingCellFromZero)
         << depth_cells;
 }
 
-// refs: DN-126.D18
+// refs: ADR-24.D7
 // invariant: both documents carry their declared edges in span_edges and log trigrams alone in
 // top_ngrams, or the digest's order-3 span section goes hollow.
 // invariant: the diff carries a span-edge delta and trigram rate moves, for the same reason.

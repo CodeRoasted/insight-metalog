@@ -148,7 +148,7 @@ class MetaLogEngine
 
     // invariant: the first config_.ngram_size ids are the sequence and the rest stay zero, so every
     // key of one engine has one length.
-    // refs: DN-126.D18
+    // refs: ADR-24.D7
     struct NGramKey
     {
         std::array<InternalTemplateID, kMaxTrackedNgramSize> ids{};
@@ -320,7 +320,7 @@ class MetaLogEngine
     // pending_span_edges_ the ingest order, so nothing rests on the map's own order.
     // invariant: a declared parent resolves into span_edge_counts_, never into the log-order
     // ngram_counts_ graph.
-    // refs: DN-126.D18
+    // refs: ADR-24.D7
     // note: component is owned; canon's string_view is arena-stable only in the record.
     // refs: F-SRC-insight-metalog:metalog.cppm:record_span
     // refs: F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeBlock, ADR-29.D2

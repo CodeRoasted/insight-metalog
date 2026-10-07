@@ -1,6 +1,6 @@
 // invariant: the span-edge delta is its own diff pass over the two span_edges blocks, keyed
 // (parent, child), present only when both sides carry the block and an edge appeared or vanished.
-// refs: DN-126.D18, F-SRC-insight-metalog:metalog.api.cppm:SpanEdgeDelta
+// refs: ADR-24.D7, F-SRC-insight-metalog:metalog.api.cppm:SpanEdgeDelta
 #include <gtest/gtest.h>
 
 import insight.metalog.test;

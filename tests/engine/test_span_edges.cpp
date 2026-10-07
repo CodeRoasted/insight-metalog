@@ -1,6 +1,6 @@
 // invariant: a declared span edge rides fr.coderoast.span_edges and never a standard behavior
 // member, which holds log-order adjacency alone.
-// refs: DN-126.D18, F-SRC-insight-metalog:metalog.cppm:record_span
+// refs: ADR-24.D7, F-SRC-insight-metalog:metalog.cppm:record_span
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -253,7 +253,7 @@ TEST(SpanEdges, ObservedEdgesReplayBitIdentically)
 
 // invariant: at order 3 declared edges sharing their ids with log trigrams stay out of top_ngrams,
 // whose every sequence is three ids conditioned on its first two.
-// refs: DN-126.D18, DN-126.D10
+// refs: ADR-24.D7, DN-126.D10
 TEST(SpanEdges, Order3TopNgramsHoldsLogTrigramsOnlyAndTheEdgesRideTheBlock)
 {
     meta::MetaLogEngine engine{
