@@ -269,7 +269,7 @@ BENCHMARK(BM_CubeDiffOf)->Unit(benchmark::kMicrosecond);
 // post: the role whose canon name is `text`, None for an unknown or absent one.
 // invariant: derived from canon's own `to_string` over every enumerator, so a role canon appends
 // is read here with no second table to keep in step.
-// refs: ADR-2.D7, DN-134.D9
+// refs: ADR-2.D7, ADR-17.D14
 [[nodiscard]] StructuralRole role_from_string_replica(std::string_view text) noexcept
 {
     constexpr auto kLastRole{static_cast<std::uint8_t>(StructuralRole::Progress)};
