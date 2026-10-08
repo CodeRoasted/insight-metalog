@@ -966,7 +966,7 @@ struct ReportedWindowBounds
 // the linked engine.
 // refs: OPS-1.S15
 // invariant: pin-coherence: mirrors insight_metalog -- the recipe version is the authority.
-inline constexpr std::string_view kProducerVersion{"1.10.6"};
+inline constexpr std::string_view kProducerVersion{"1.10.7"};
 
 // invariant: the specification edition this producer writes against, stamped into metalog_version.
 // ONE spelling, and a DIFFERENT axis from kProducerVersion.

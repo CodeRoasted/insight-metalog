@@ -38,8 +38,8 @@ jobs:
       # the row the gtest suite cannot resolve it. Keep both rows pinned together on a canon bump.
       deps: ${{ inputs.deps || 'build' }}
       vendor: |
-        insight_canon 1.10.6 CodeRoasted/insight-canon public
-        insight_semantic_github 1.10.6 CodeRoasted/insight-canon public
+        insight_canon 1.10.7 CodeRoasted/insight-canon public
+        insight_semantic_github 1.10.7 CodeRoasted/insight-canon public
       modules: '.'
       # PUBLIC repo: sift-mode: public renders the Sift comment fork-safe (read-only token); the
       # sift-post job below posts it.
