@@ -90,7 +90,7 @@ on:
 
 jobs:
   proof:
-    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-golden-proof.yml@0286321e46929467f836bbe6259e551155955ccc
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-golden-proof.yml@c6a2a8eaa8630a9604749ab9790278ecd38d1aa2
     with:
       linux-proof: scripts/determinism_bitidentity.sh
       msvc-proof: scripts/determinism_msvc.ps1
@@ -114,7 +114,7 @@ jobs:
 
   compare:
     needs: [proof]
-    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-golden-compare.yml@0286321e46929467f836bbe6259e551155955ccc
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-golden-compare.yml@c6a2a8eaa8630a9604749ab9790278ecd38d1aa2
     with:
       min-legs: '5'
       spec-ref: ${{ needs.proof.outputs.spec }}
