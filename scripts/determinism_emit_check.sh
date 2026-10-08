@@ -54,7 +54,7 @@ META="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 EMIT_LIB="$SCRIPT_DIR/determinism_emit.sh"
 DRIVER="$SCRIPT_DIR/determinism_bitidentity.sh"
-WORKFLOW="$META/.github/workflows/golden.yaml"
+WORKFLOW="$SCRIPT_DIR/determinism_msvc.ps1"
 
 die2() { echo "::error::$*" >&2; exit 2; }
 rc=0
@@ -187,7 +187,7 @@ grep -nE '"\$\{BIN\[[^]]*\]\}" .*>>' "$DRIVER" | grep -v det_emit &&
 # ── G7 — STRUCTURAL: the MSVC leg still refuses a non-zero exit, so the two legs keep agreeing about
 # what a failure is. Nothing else in the repo would notice this line being deleted.
 grep -qF 'if ($p.ExitCode -ne 0)' "$WORKFLOW" ||
-    fail "G7: golden.yaml's PowerShell emitter no longer refuses a non-zero det_fixture exit — the MSVC leg has stopped agreeing with the Linux leg about what counts as a failure, which is the asymmetry this pair of guards exists to hold closed"
+    fail "G7: determinism_msvc.ps1, the MSVC leg's PowerShell emitter, no longer refuses a non-zero det_fixture exit — the MSVC leg has stopped agreeing with the Linux leg about what counts as a failure, which is the asymmetry this pair of guards exists to hold closed"
 
 # ── G8 — the writer must stay a pure appender that is HANDED its header. Extracting it created one
 # new place a synthetic section name could be typed by hand, which is the 2026-08-24 defect
@@ -201,6 +201,6 @@ $(sed 's/^/    /' <<<"$hand")"
 if [ $rc -eq 0 ]; then
     echo "emit OK: the digest's byte shape is pinned (4 sections, order-sensitive), a fixture exiting"
     echo "  non-zero returns that status and stops the walk, its stderr is surfaced and never digested,"
-    echo "  and both emitters — the bash driver and golden.yaml's PowerShell — refuse a failing fixture."
+    echo "  and both emitters — the bash driver and determinism_msvc.ps1 — refuse a failing fixture."
 fi
 exit $rc

@@ -40,7 +40,7 @@ ROSTER="$META/scripts/determinism_sections.txt"
 FIXTURE="$META/scripts/determinism_fixture.cpp"
 EMITTERS=(
   "$META/scripts/determinism_bitidentity.sh"
-  "$META/.github/workflows/golden.yaml"
+  "$META/scripts/determinism_msvc.ps1"
 )
 
 die2() { echo "::error::$*" >&2; exit 2; }
