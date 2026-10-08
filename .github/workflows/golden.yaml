@@ -33,11 +33,19 @@ name: Determinism Golden Proof
 # bytes that no longer match the standard — and this is the only place both are asked of the exact
 # bytes the Release attaches. Logic: scripts/spec_conformance_gate.sh.
 #
+# THE LEGS ARE malf-toolchain's `coderoast-golden-proof.yml` (ROADMAP N357: one workflow source), and
+# so are the `subjects` resolution below and the two cheap guards in front of the legs. This file names
+# only what metalog proves: scripts/determinism_bitidentity.sh on Linux, scripts/determinism_msvc.ps1
+# on MSVC, the tower's editables, and the guards — scripts/determinism_sections_check.sh (the section
+# roster ≡ the fixture's dispatch) and scripts/determinism_emit_check.sh (the digest writer ≡ the
+# fixture's exit status). Both guards are committed scripts that need no toolchain, so a divergence
+# reds in seconds and buys no metered minute.
+#
 # Runs on every PR to main (full matrix — determinism caught in the PR) + the Release gate
 # (workflow_call) + a weekly drift catch + manual dispatch.
 #
-# WHICH insight-canon (and metalog-spec) THE TOWER READS — the `subjects` job resolves the source ref in this
-# order, and the order is the contract:
+# WHICH insight-canon (and metalog-spec) THE TOWER READS — the reusable workflow's `subjects` job resolves
+# the source ref in this order, and the order is the contract:
 #   0. `inputs.record-run` — THE PRE-TAG READING (ROADMAP N263): `gh workflow run golden.yaml --ref main
 #      -f record-run=<the step 0 run>`. Canon has no tag of this cut yet before Wave 1, so the tower is
 #      built from the commit step 0's record verified, which `DN-108.D7` makes the tag, and the compare
@@ -81,444 +89,32 @@ on:
     - cron: '0 6 * * 1'   # Mondays 06:00 UTC — drift catch
 
 jobs:
-  # THE CHEAP GATE IN FRONT OF THE EXPENSIVE ONE. Every leg emits the same two rosters — the corpus
-  # off disk and scripts/determinism_sections.txt — and the compare demands five byte-identical
-  # digests, so a roster that disagrees with the fixture's dispatch is a red the matrix can only
-  # deliver after four tower builds and a metered MSVC build. This job asks the same question in
-  # seconds, and the proof jobs `needs:` it, so a divergence never buys a Windows minute. It is a
-  # committed script rather than inline YAML for the reason the conformance gate is: a gate nobody
-  # can run at the desk is a gate nobody can prove reds. `bash scripts/determinism_sections_check.sh`
-  # is the same instrument here and there, and it needs no toolchain.
-  roster-guard:
-    name: "section roster ≡ fixture dispatch"
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 1
-          persist-credentials: false
-      - run: bash scripts/determinism_sections_check.sh
-
-  # THE SECOND CHEAP GATE, and it stands in a different seam. `roster-guard` asks whether the five
-  # legs replay the SAME list; this one asks whether they agree about what a FAILURE is. Until
-  # 2026-09-04 they did not: the Linux driver ran the fixture as `… >>out 2>/dev/null` with no `set
-  # -e` and no `$?`, so a fixture exiting 2 wrote an empty body under a correct header in all four
-  # -O/-ffp cells, `cmp` called the empty bodies identical and the leg emitted a truncated digest —
-  # while `Add-Section` below has always thrown on the same exit code. A separate job rather than a
-  # step in `roster-guard`, so neither check name moves: both are cheap, both `needs:`-gate the
-  # metered proofs, and a red here still costs zero Windows minutes.
-  emit-guard:
-    name: "digest writer ≡ fixture exit status"
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 1
-          persist-credentials: false
-      - run: bash scripts/determinism_emit_check.sh
-
-  subjects:
-    name: Resolve the insight-canon and metalog-spec this run reads
-    # Hosted, and nothing else runs in it: on the pre-tag reading it holds the record-read token.
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    outputs:
-      canon: ${{ steps.resolve.outputs.canon }}
-      spec: ${{ steps.resolve.outputs.spec }}
-    steps:
-      - name: Resolve (GATING — on the pre-tag reading an unread record refuses, never main)
-        id: resolve
-        env:
-          RECORD_RUN: ${{ inputs.record-run }}
-          NAMED_REF: ${{ inputs.canon_ref || (github.ref_type == 'tag' && github.ref_name) || 'main' }}
-          RECORD_TOKEN: ${{ secrets.BUILD_RECORD_READ_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [ -z "$RECORD_RUN" ]; then
-            # metalog-spec at `main`, never a tag: it is on a deliberately decoupled version line and
-            # never carries the uniform vX.Y.Z tag, so a tag ref would 404.
-            printf 'canon=%s\nspec=main\n' "$NAMED_REF" >> "$GITHUB_OUTPUT"
-            echo "insight-canon at $NAMED_REF, metalog-spec at main"
-            exit 0
-          fi
-          if [ -z "$RECORD_TOKEN" ]; then
-            echo "::error::BUILD_RECORD_READ_TOKEN is not set, so step 0's record cannot be read — and without it this reading would build commits nobody recorded"
-            exit 1
-          fi
-          record="$RUNNER_TEMP/pharos-build-record"
-          GH_TOKEN="$RECORD_TOKEN" gh run download "$RECORD_RUN" --repo CodeRoasted/coderoast \
-            --name pharos-build-record --dir "$record"
-          python3 - "$record/preflight.json" >> "$GITHUB_OUTPUT" <<'PY'
-          import json, os, re, sys
-          repos = json.load(open(sys.argv[1], encoding="utf-8")).get("repos", {})
-          commits = {name: repos.get(name) for name in ("insight-metalog", "insight-canon", "metalog-spec")}
-          for name, sha in commits.items():
-              if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
-                  sys.exit(f"step 0 run {os.environ['RECORD_RUN']}'s record names no commit for {name}")
-          if commits["insight-metalog"] != os.environ["GITHUB_SHA"]:
-              sys.exit(f"step 0 run {os.environ['RECORD_RUN']} recorded insight-metalog at {commits['insight-metalog']} and this run is at {os.environ['GITHUB_SHA']}: dispatch it while main is the recorded commit, or the reading judges a commit no tag will carry")
-          print(f"canon={commits['insight-canon']}")
-          print(f"spec={commits['metalog-spec']}")
-          print(f"the pre-tag reading of step 0 run {os.environ['RECORD_RUN']}: insight-canon {commits['insight-canon']}, metalog-spec {commits['metalog-spec']}", file=sys.stderr)
-          PY
-
-  proof-linux:
-    needs: [subjects, roster-guard, emit-guard]
-    name: ${{ matrix.label }}
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { leg: gcc,   arch: x86,   runner: ubuntu-latest,    label: "gcc-16 · libstdc++ · x86",   gcc_profile: linux-gcc16-release,       clang_profile: linux-clang21-libcxx-release }
-          - { leg: clang, arch: x86,   runner: ubuntu-latest,    label: "clang-21 · libc++ · x86",    gcc_profile: linux-gcc16-release,       clang_profile: linux-clang21-libcxx-release }
-          - { leg: gcc,   arch: arm64, runner: ubuntu-24.04-arm, label: "gcc-16 · libstdc++ · arm64", gcc_profile: linux-gcc16-arm64-release, clang_profile: linux-clang21-libcxx-arm64-release }
-          - { leg: clang, arch: arm64, runner: ubuntu-24.04-arm, label: "clang-21 · libc++ · arm64",  gcc_profile: linux-gcc16-arm64-release, clang_profile: linux-clang21-libcxx-arm64-release }
-    env:
-      # PER-LEG. `github.workspace` is one fixed path per repo, so on a PERSISTENT runner two legs of
-      # this matrix share a conan home and `actions/cache` extracts into whatever is already there —
-      # one leg's cache landing on another leg's leftovers. The cache KEY below is already per-leg;
-      # this makes the PATH agree with it. Every leg here is hosted today (fresh workspace each job),
-      # so the collision is latent rather than live — it is live in insight-eidos, whose x86 legs route
-      # to the self-hosted box and where it broke the v1.8.6 golden proof on a half-downloaded spdlog
-      # tarball. The three golden.yaml files are copies; fixing only the one that fired is how they rot.
-      CONAN_HOME: ${{ github.workspace }}/.conan2-${{ matrix.arch }}-${{ matrix.leg }}
-      # determinism_bitidentity.sh picks the profile matching DETERMINISM_LEG; x86↔arm64 differ only by arch.
-      DETERMINISM_GCC_PROFILE: ${{ matrix.gcc_profile }}
-      DETERMINISM_CLANG_PROFILE: ${{ matrix.clang_profile }}
-      # MALF_TOOLCHAIN_DIR is the generator's RESOLUTION MECHANISM, not a convenience
-      # (DN-17.D31/D32) — `insight-canon/semantic/github/CMakeLists.txt` owns the rule and the
-      # FATAL that enforces it; insight-eidos's golden.yaml carries the long-form argument for
-      # why a raw determinism leg declares it a second time instead of inheriting it.
-      #
-      # ABSENT FROM BOTH JOBS OF THIS FILE UNTIL THE `v1.10.1` TAG, and the two leg families hid
-      # it differently, which is why reading the file could not find it. `proof-linux` seeds the
-      # graph with `conan editable add _canon/semantic/github`, so the package builds IN its
-      # source tree and the one-candidate desk-layout fallback (`<pkg>/../../../malf`) happens to
-      # resolve — a green resting on the fallback, not on the mechanism. `proof-msvc` seeds with
-      # `conan export` instead (INV-13, deliberate), so it builds from sources exported into the
-      # conan cache, where — the CMakeLists comment says it in as many words — no relative path
-      # can reach the toolchain at all. Measured on `insight-metalog` run 33070065532:
-      # four Linux legs success, MSVC `dialect_package_codegen.py NOT FOUND`, `compare` skipped.
-      #
-      # TRUE BY CONSTRUCTION: this job checks malf-toolchain out at `path: malf`, which is
-      # `github.workspace`/malf by definition of actions/checkout.
-      MALF_TOOLCHAIN_DIR: ${{ github.workspace }}/malf
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Check out malf-toolchain into malf/ (conan profiles + global.conf; public, anonymous — stays forkable)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: CodeRoasted/malf-toolchain
-          ref: 830c46f71e22cd55154dc6c60d896cd56dd0bdd7
-          path: malf
-          fetch-depth: 1
-          persist-credentials: false
-
-      - name: Check out insight-canon SOURCE into _canon/ (the tower's from-source canon; public, anonymous)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: CodeRoasted/insight-canon
-          ref: ${{ needs.subjects.outputs.canon }}
-          path: _canon
-          fetch-depth: 1
-          persist-credentials: false
-
-      - name: Provision gcc-16.2 toolchain (OUR OWN published asset; arm64 auto-picked by uname -m)
-        if: matrix.leg == 'gcc'
-        uses: CodeRoasted/malf-toolchain/.github/actions/setup-gcc@830c46f71e22cd55154dc6c60d896cd56dd0bdd7
-
-      - name: Provision clang-21 + libc++-21
-        if: matrix.leg == 'clang'
-        uses: CodeRoasted/malf-toolchain/.github/actions/setup-clang21-libcxx@830c46f71e22cd55154dc6c60d896cd56dd0bdd7
-
-      - name: Base — ninja + CMake 4.3.x (+ gcc-16.2 /opt wiring on the gcc leg)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build python3 build-essential
-          # CMake 4.3.x workspace-wide: the import-std experimental gate UUID 451f2fe2 lives only there.
-          sudo python3 -m pip install --break-system-packages "cmake==4.3.1"
-          hash -r
-          case "$(cmake --version | head -1)" in *" 4.3."*) cmake --version ;; *) echo "::error::expected CMake 4.3.x (got: $(cmake --version | head -1))"; exit 1 ;; esac
-          if [ "${{ matrix.leg }}" = "gcc" ]; then
-            sudo update-alternatives --install /usr/bin/gcc gcc /opt/gcc-16.2/bin/gcc 1000
-            sudo update-alternatives --install /usr/bin/g++ g++ /opt/gcc-16.2/bin/g++ 1000
-            sudo update-alternatives --set gcc /opt/gcc-16.2/bin/gcc
-            sudo update-alternatives --set g++ /opt/gcc-16.2/bin/g++
-            # Verify by IDENTITY, not a version grep: bare g++ must BE the wired /opt binary.
-            # (First 16.2 run: the old ' 15\.' version-grep literal survived the migration sweep
-            # and failed the wired 16.2 compiler; and the g++-15 shim symlinks are dead — the
-            # determinism drivers take their compilers from the conan profile since 2026-08-16.)
-            test "$(readlink -f "$(command -v g++)")" = /opt/gcc-16.2/bin/g++ \
-              || { echo "ERROR: bare g++ is not /opt/gcc-16.2/bin/g++"; exit 1; }
-          fi
-
-      - name: Setup Conan
-        uses: conan-io/setup-conan@ed3942a6883243f4af84e13e49c972f9440fa1c2 # v1.4.0
-        with:
-          version: "2.28.1"
-          home: ${{ env.CONAN_HOME }}
-          cache_packages: false
-          profile_detect: false
-
-      - name: Cache conan dep binaries (keyed per arch/leg on the tower's dep set)
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.CONAN_HOME }}
-          key: conan-golden-${{ matrix.arch }}-${{ matrix.leg }}-${{ runner.os }}-${{ hashFiles('conanfile.py', '_canon/core/conanfile.py') }}
-          restore-keys: |
-            conan-golden-${{ matrix.arch }}-${{ matrix.leg }}-${{ runner.os }}-
-
-      - name: Seed the conan workspace (both leg profiles + global.conf + canon/metalog editables)
-        # Approach B: determinism_bitidentity.sh self-builds the canon+metalog MODULE-LIB TOWER from
-        # source per cell (add_subdirectory) and links the constant fixture — so the gate needs only the
-        # conan ENV, not a pre-build. The script's per-leg `conan install .` resolves canon as an EDITABLE
-        # (the harness guards find_package(insight_canon) with `if(NOT TARGET insight::canon)` → the
-        # in-tree _canon source is used; the editable only satisfies the conan graph + fetches third-party
-        # deps). global.conf carries cmakedeps:new (CMakeConfigDeps — module config discovery).
-        # `conan install .` resolves metalog's FULL graph, test_requires included — so every first-party
-        # dep must be satisfiable here. insight_semantic_github is test_required and, post-ADR-17, is a
-        # SEPARATE package inside the same canon source tree: checking out _canon/ is not enough, it needs
-        # its own `editable add` exactly like the core. Keep this list 1:1 with metalog's first-party deps.
-        run: |
-          mkdir -p "$CONAN_HOME/profiles"
-          cp "malf/profiles/${{ matrix.gcc_profile }}"   "$CONAN_HOME/profiles/${{ matrix.gcc_profile }}"
-          cp "malf/profiles/${{ matrix.clang_profile }}" "$CONAN_HOME/profiles/${{ matrix.clang_profile }}"
-          # settings_user.yml rides with the profiles: the gcc16 profile pins compiler.version=16.2,
-          # which conan 2.28.1's built-in settings.yml does not know — without this additive extension
-          # the profile fails validation on every fresh or cache-restored home (same single source
-          # malf and setup-build-env seed; first 16.2 tag run).
-          cp malf/settings_user.yml "$CONAN_HOME/settings_user.yml"
-          [ -f "$CONAN_HOME/global.conf" ] || cp malf/global.conf "$CONAN_HOME/global.conf"
-          conan editable add _canon/core
-          conan editable add _canon/semantic/github
-          conan editable add .
-
-      - name: Determinism proof — ${{ matrix.label }} (sweep-invariance + emit the leg's digest)
-        env:
-          DETERMINISM_LEG: ${{ matrix.leg }}
-          DETERMINISM_CANON_ROOT: ${{ github.workspace }}/_canon
-          DETERMINISM_OUT: ${{ github.workspace }}/digest-${{ matrix.arch }}-${{ matrix.leg }}.txt
-        run: bash scripts/determinism_bitidentity.sh
-
-      - name: Upload this leg's digest
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: golden-digest-${{ matrix.arch }}-${{ matrix.leg }}
-          path: digest-${{ matrix.arch }}-${{ matrix.leg }}.txt
-          if-no-files-found: error
-
-  proof-msvc:
-    needs: [subjects, roster-guard, emit-guard]
-    name: "msvc-14.52 · O2-fast"
-    runs-on: windows-2025
-    env:
-      CONAN_HOME: ${{ github.workspace }}/.conan2
-      # MALF_TOOLCHAIN_DIR is the generator's RESOLUTION MECHANISM, not a convenience
-      # (DN-17.D31/D32) — `insight-canon/semantic/github/CMakeLists.txt` owns the rule and the
-      # FATAL that enforces it; insight-eidos's golden.yaml carries the long-form argument for
-      # why a raw determinism leg declares it a second time instead of inheriting it.
-      #
-      # ABSENT FROM BOTH JOBS OF THIS FILE UNTIL THE `v1.10.1` TAG, and the two leg families hid
-      # it differently, which is why reading the file could not find it. `proof-linux` seeds the
-      # graph with `conan editable add _canon/semantic/github`, so the package builds IN its
-      # source tree and the one-candidate desk-layout fallback (`<pkg>/../../../malf`) happens to
-      # resolve — a green resting on the fallback, not on the mechanism. `proof-msvc` seeds with
-      # `conan export` instead (INV-13, deliberate), so it builds from sources exported into the
-      # conan cache, where — the CMakeLists comment says it in as many words — no relative path
-      # can reach the toolchain at all. Measured on `insight-metalog` run 33070065532:
-      # four Linux legs success, MSVC `dialect_package_codegen.py NOT FOUND`, `compare` skipped.
-      #
-      # TRUE BY CONSTRUCTION: this job checks malf-toolchain out at `path: malf`, which is
-      # `github.workspace`/malf by definition of actions/checkout.
-      MALF_TOOLCHAIN_DIR: ${{ github.workspace }}/malf
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Check out malf-toolchain into malf/ (conan profile; public, anonymous)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: CodeRoasted/malf-toolchain
-          ref: 830c46f71e22cd55154dc6c60d896cd56dd0bdd7
-          path: malf
-          fetch-depth: 1
-          persist-credentials: false
-
-      - name: Check out insight-canon SOURCE into _canon/ (the tower's from-source canon; public, anonymous)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: CodeRoasted/insight-canon
-          ref: ${{ needs.subjects.outputs.canon }}
-          path: _canon
-          persist-credentials: false
-
-      - name: Install + activate MSVC 14.52 (the C++23-modules fix floor; not pre-installed)
-        uses: CodeRoasted/malf-toolchain/.github/actions/setup-msvc1452@830c46f71e22cd55154dc6c60d896cd56dd0bdd7
-
-      - name: Verify the active toolset is MSVC 14.52, not a fallback
-        shell: pwsh
-        run: |
-          if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) { Write-Error "cl.exe not on PATH — MSVC env not activated"; exit 1 }
-          if (-not $env:VCToolsVersion) { Write-Error "VCToolsVersion not set — MSVC env not activated"; exit 1 }
-          if ([version]$env:VCToolsVersion -lt [version]'14.52') { Write-Error "active toolset $env:VCToolsVersion < 14.52 (the fix floor)"; exit 1 }
-          Write-Host "active VCToolsVersion: $env:VCToolsVersion"
-
-      - name: Setup CMake 4.3.x (import-std experimental gate UUID 451f2fe2 lives only in 4.3.x)
-        shell: pwsh
-        run: |
-          python -m pip install "cmake==4.3.1"
-          $v = (cmake --version | Select-Object -First 1)
-          if ($v -notmatch ' 4\.3\.') { Write-Error "expected CMake 4.3.x (got: $v)"; exit 1 }
-          cmake --version
-
-      - name: Setup Conan
-        uses: conan-io/setup-conan@ed3942a6883243f4af84e13e49c972f9440fa1c2 # v1.4.0
-        with:
-          version: "2.29.0"
-          home: ${{ env.CONAN_HOME }}
-          cache_packages: false
-          profile_detect: false
-
-      - name: Cache conan dep binaries
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.CONAN_HOME }}
-          key: conan-golden-msvc1452-${{ runner.os }}-${{ hashFiles('**/conanfile.py', '_canon/core/conanfile.py', 'malf/profiles/windows-msvc-release') }}
-          restore-keys: |
-            conan-golden-msvc1452-${{ runner.os }}-
-
-      - name: Setup Conan profile + global.conf (windows-msvc-release, from malf-toolchain)
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path "$env:CONAN_HOME/profiles" | Out-Null
-          Copy-Item malf/profiles/windows-msvc-release "$env:CONAN_HOME/profiles/windows-msvc-release"
-          if (-not (Test-Path "$env:CONAN_HOME/global.conf")) { Copy-Item malf/global.conf "$env:CONAN_HOME/global.conf" }
-
-      - name: Export insight_canon (recipe + sources) into the local cache
-        # `conan export` registers canon's recipe+exports_sources WITHOUT building; the install below
-        # resolves the graph (canon + glaze/picosha2/simdjson/…) for os=Windows. The harness rebuilds
-        # canon from source under the cell flags (add_subdirectory), the export only satisfies the graph.
-        # insight_semantic_github is test_required by metalog and, post-ADR-17, is a SEPARATE package
-        # inside the same _canon/ tree — `conan install .` below resolves the FULL graph, test_requires
-        # included, so it needs its own export. This job seeds via `export` where the Linux legs use
-        # `editable add`: the mechanism differs, the completeness requirement does not (INV-13).
-        shell: pwsh
-        run: |
-          conan export _canon/core
-          conan export _canon/semantic/github
-          conan list "insight_canon/*#*"
-          conan list "insight_semantic_github/*#*"
-
-      - name: Build the det_harness @ O2-fast (canon+metalog tower FROM SOURCE)
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $PSNativeCommandUseErrorActionPreference = $true
-          $prof = "$env:CONAN_HOME/profiles/windows-msvc-release"
-          $work = "$env:RUNNER_TEMP/det-measure"
-          New-Item -ItemType Directory -Force -Path $work | Out-Null
-          # Resolve metalog's deps (+ canon from the export) + a conan toolchain for the standalone harness.
-          conan install . --profile:host="$prof" --profile:build="$prof" --build=missing -of "$work/conan"
-          $toolchain = (Get-ChildItem -Recurse "$work/conan" -Filter conan_toolchain.cmake | Select-Object -First 1).FullName
-          if (-not $toolchain) { Write-Error "no conan_toolchain.cmake from conan install"; exit 1 }
-          # CELL_FLAGS = SPDLOG off (digest is the fixture's stdout) + /O2 /fp:fast (ship optimization +
-          # contraction ON — the dominating corner; matching the other legs proves contraction-invariance).
-          cmake -S scripts/det_harness -B "$work/build" -G Ninja `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_TOOLCHAIN_FILE="$toolchain" `
-            -DCANON_ROOT="$env:GITHUB_WORKSPACE/_canon" `
-            -DMETA_ROOT="$env:GITHUB_WORKSPACE" `
-            -DCELL_FLAGS="-DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_OFF /O2 /fp:fast"
-          cmake --build "$work/build" --target det_fixture --parallel 2
-          $fixture = (Get-ChildItem -Recurse "$work/build" -Filter det_fixture.exe | Select-Object -First 1).FullName
-          if (-not $fixture) { Write-Error "det_fixture.exe not produced — the MSVC det harness build failed"; exit 1 }
-          "$fixture" | Out-File -FilePath "$env:GITHUB_WORKSPACE/det_fixture_path.txt" -Encoding ascii -NoNewline
-
-      # WHY this leg emits in PowerShell and not by calling the Linux legs' driver: the obvious
-      # de-duplication — run scripts/determinism_bitidentity.sh's emit loop here under `shell: bash` —
-      # is a trap on a Windows leg. `bash` on a Windows runner is Git Bash only by accident of PATH:
-      # insight-eidos' own MSVC leg documents its self-hosted Windows host resolving `bash` to WSL
-      # (and Git's `link` shadowing MSVC's link.exe), and these three golden.yaml files are copies of
-      # each other, so a bash step written here lands there next. The list is what was duplicated and
-      # the list is what got shared; the loop stays native to each side.
-      - name: Emit the MSVC digest (corpus off disk + every determinism_sections.txt row — the EXACT bytes the Linux legs emit)
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $fixture = (Get-Content "$env:GITHUB_WORKSPACE/det_fixture_path.txt").Trim()
-          $work = "$env:RUNNER_TEMP/det-emit"
-          New-Item -ItemType Directory -Force -Path $work | Out-Null
-          $outPath = "$work/msvc.out"
-
-          # THE SYNTHETIC SECTION ROSTER, READ — never enumerated here. Until 2026-08-24 this step
-          # carried its own copy of the list, and when --latency-shift and --collapse-depths landed
-          # in the fixture and the bash driver (1b4f7b4) the copy was not touched: this leg emitted
-          # 6 section kinds against the Linux legs' 8, under a compare that demands five
-          # byte-identical digests. Same parse as the driver: strip trailing space, drop `#` and
-          # blanks, keep file order — the row IS the header text and its first field IS the flag.
-          $rows = @(Get-Content "$env:GITHUB_WORKSPACE/scripts/determinism_sections.txt" |
-                    ForEach-Object { $_.TrimEnd() } |
-                    Where-Object { $_ -ne '' -and -not $_.StartsWith('#') })
-          if ($rows.Count -eq 0) { throw "scripts/determinism_sections.txt lists no section — this digest would carry the corpus only, and the compare would call that agreement" }
-
-          # Corpus order IS digest order, so it must be BYTE order. `Sort-Object Name` collates
-          # culture-aware, where punctuation is ignorable at the primary level: measured on pwsh
-          # 7.4.6, `service.log` / `service_a.log` / `service-b.log` come back in a different order
-          # than `LC_ALL=C sort` gives — a five-leg divergence with no code change behind it, waiting
-          # for the first corpus filename that mixes `_`/`.`/`-` or case. The Linux driver pins
-          # LC_ALL=C; this pins the ordinal comparer, which is the same order.
-          # -Path wildcard, never -Filter: `-Filter` goes to FindFirstFile, which matches a file's
-          # 8.3 SHORT name too, so `*.log` there also takes `<name>.logfile`. The Linux driver globs
-          # `*.log`. Two legs enumerating different file sets is the same failure as two legs
-          # enumerating different sections, one directory over.
-          $corpus = @{}
-          Get-ChildItem -Path "$env:GITHUB_WORKSPACE/scripts/determinism_corpus/*.log" -File |
-            ForEach-Object { $corpus[$_.Name] = $_.FullName }
-          $names = [string[]]$corpus.Keys
-          [Array]::Sort($names, [StringComparer]::Ordinal)
-          if ($names.Count -eq 0) { throw "no *.log under scripts/determinism_corpus" }
-
-          # One section = ASCII "### <name> ###`n" (LF, matching bash `echo`) + the fixture's RAW
-          # stdout (binary — the fixture _setmode's stdout, so the bytes are exactly what the engine
-          # wrote). Both loops below are the same emitter over the two sources the Linux driver uses.
-          function Add-Section {
-            param([System.IO.Stream] $Stream, [string] $Header, [string] $Fixture,
-                  [string] $ArgumentLine, [string] $TempOut)
-            $hdr = [System.Text.Encoding]::ASCII.GetBytes("### $Header ###`n")
-            $Stream.Write($hdr, 0, $hdr.Length)
-            $p = Start-Process -FilePath $Fixture -ArgumentList $ArgumentLine -NoNewWindow -Wait -PassThru -RedirectStandardOutput $TempOut
-            if ($p.ExitCode -ne 0) { throw "det_fixture failed (exit $($p.ExitCode)) on section '$Header'" }
-            $b = [System.IO.File]::ReadAllBytes($TempOut)
-            $Stream.Write($b, 0, $b.Length)
-          }
-
-          $fs = [System.IO.File]::Create($outPath)
-          try {
-            foreach ($name in $names) {
-              Add-Section -Stream $fs -Header $name -Fixture $fixture `
-                          -ArgumentLine "`"$($corpus[$name])`"" -TempOut "$work/corpus.out"
-            }
-            foreach ($row in $rows) {
-              Add-Section -Stream $fs -Header $row -Fixture $fixture `
-                          -ArgumentLine (($row -split '\s+')[0]) -TempOut "$work/section.out"
-            }
-          } finally { $fs.Close() }
-          Write-Host "MSVC digest: $($names.Count) corpus section(s) + $($rows.Count) synthetic — $(($rows | ForEach-Object { ($_ -split '\s+')[0] }) -join ' ')"
-          Copy-Item $outPath "$env:GITHUB_WORKSPACE/digest-msvc.txt"
-          Write-Host "MSVC digest sha256: $((Get-FileHash -Algorithm SHA256 -Path digest-msvc.txt).Hash.ToLower())"
-
-      - name: Upload the MSVC digest
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: golden-digest-msvc
-          path: digest-msvc.txt
-          if-no-files-found: error
+  proof:
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-golden-proof.yml@0286321e46929467f836bbe6259e551155955ccc
+    with:
+      linux-proof: scripts/determinism_bitidentity.sh
+      msvc-proof: scripts/determinism_msvc.ps1
+      guards: |
+        bash scripts/determinism_sections_check.sh
+        bash scripts/determinism_emit_check.sh
+      tower: true
+      global-conf: true
+      # `conan install .` resolves metalog's FULL graph, test_requires included, so every first-party
+      # dep must be satisfiable: canon core and insight_semantic_github (a SEPARATE package inside the
+      # same canon tree since ADR-17) as editables, 1:1 with metalog's first-party deps.
+      linux-seed: |
+        conan editable add _canon/core
+        conan editable add _canon/semantic/github
+        conan editable add .
+      canon-ref: ${{ inputs.canon_ref }}
+      record-run: ${{ inputs.record-run }}
+      record-self: insight-metalog
+    secrets:
+      BUILD_RECORD_READ_TOKEN: ${{ secrets.BUILD_RECORD_READ_TOKEN }}
 
   compare:
-    needs: [subjects, proof-linux, proof-msvc]
-    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-golden-compare.yml@830c46f71e22cd55154dc6c60d896cd56dd0bdd7
+    needs: [proof]
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-golden-compare.yml@0286321e46929467f836bbe6259e551155955ccc
     with:
       min-legs: '5'
-      spec-ref: ${{ needs.subjects.outputs.spec }}
+      spec-ref: ${{ needs.proof.outputs.spec }}
