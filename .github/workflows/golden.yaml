@@ -212,7 +212,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: CodeRoasted/malf-toolchain
-          ref: 6d64666cbf45d76c8329d586922458d5019bb6ff
+          ref: 830c46f71e22cd55154dc6c60d896cd56dd0bdd7
           path: malf
           fetch-depth: 1
           persist-credentials: false
@@ -228,11 +228,11 @@ jobs:
 
       - name: Provision gcc-16.2 toolchain (OUR OWN published asset; arm64 auto-picked by uname -m)
         if: matrix.leg == 'gcc'
-        uses: CodeRoasted/malf-toolchain/.github/actions/setup-gcc@6d64666cbf45d76c8329d586922458d5019bb6ff
+        uses: CodeRoasted/malf-toolchain/.github/actions/setup-gcc@830c46f71e22cd55154dc6c60d896cd56dd0bdd7
 
       - name: Provision clang-21 + libc++-21
         if: matrix.leg == 'clang'
-        uses: CodeRoasted/malf-toolchain/.github/actions/setup-clang21-libcxx@6d64666cbf45d76c8329d586922458d5019bb6ff
+        uses: CodeRoasted/malf-toolchain/.github/actions/setup-clang21-libcxx@830c46f71e22cd55154dc6c60d896cd56dd0bdd7
 
       - name: Base — ninja + CMake 4.3.x (+ gcc-16.2 /opt wiring on the gcc leg)
         run: |
@@ -341,7 +341,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: CodeRoasted/malf-toolchain
-          ref: 6d64666cbf45d76c8329d586922458d5019bb6ff
+          ref: 830c46f71e22cd55154dc6c60d896cd56dd0bdd7
           path: malf
           fetch-depth: 1
           persist-credentials: false
@@ -355,7 +355,7 @@ jobs:
           persist-credentials: false
 
       - name: Install + activate MSVC 14.52 (the C++23-modules fix floor; not pre-installed)
-        uses: CodeRoasted/malf-toolchain/.github/actions/setup-msvc1452@6d64666cbf45d76c8329d586922458d5019bb6ff
+        uses: CodeRoasted/malf-toolchain/.github/actions/setup-msvc1452@830c46f71e22cd55154dc6c60d896cd56dd0bdd7
 
       - name: Verify the active toolset is MSVC 14.52, not a fallback
         shell: pwsh
@@ -518,86 +518,7 @@ jobs:
 
   compare:
     needs: [subjects, proof-linux, proof-msvc]
-    # PUBLIC repo: pinned to hosted — a self-hosted runner reachable from a fork PR is an RCE. Never vars.CI_RUNS_ON here.
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      # Checked out FIRST: this action cleans its destination, and `digests/` lands here below.
-      # The checkout is what lets the conformance gate rebuild the section roster from the corpus
-      # files on disk instead of carrying a hand-kept list of them.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 1
-          persist-credentials: false
-
-      # The STANDARD this producer declares it writes against, plus the validator SPEC §8 clause 1
-      # calls "the test" — which since v0.9.0 also decides clause 4. PUBLIC + anonymous, exactly like the malf-toolchain and insight-canon
-      # checkouts above — the workflow stays forkable. `main` (the `subjects` job's answer off the
-      # pre-tag reading), never a tag: metalog-spec is on a deliberately decoupled version line and
-      # never carries the uniform vX.Y.Z tag, so a tag ref would 404. That does mean the oracle can
-      # move under a fixed producer; see the gate's header. The pre-tag reading takes the commit
-      # step 0 recorded instead, the standard the rest of that step 0 judged against.
-      - name: Check out metalog-spec into _spec/ (the schema + its validator; PUBLIC, anonymous)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: CodeRoasted/metalog-spec
-          path: _spec
-          ref: ${{ needs.subjects.outputs.spec }}
-          fetch-depth: 1
-          persist-credentials: false
-
-      - name: Download every leg's digest
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          path: digests
-          pattern: golden-digest-*
-
-      - name: Compare + validate the golden (all 5 legs must be byte-identical)
-        uses: CodeRoasted/malf-toolchain/.github/actions/coderoast-golden-compare@6d64666cbf45d76c8329d586922458d5019bb6ff
-        with:
-          digests-dir: digests
-          min-legs: '5'
-          out: ${{ github.workspace }}/determinism-golden.txt
-
-      - name: Set up Python for the validator
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.12'
-
-      - name: Install the validator's oracle (the pinned requirements, never a hand-picked subset)
-        run: |
-          set -euo pipefail
-          python -m pip install --disable-pip-version-check -r _spec/conformance/requirements.txt
-
-      # THE PRODUCER-SIDE CONFORMANCE GATE, and it sits HERE — between the compare and the upload —
-      # on purpose. `attach-golden` publishes the `determinism-golden` artifact to the Release, and
-      # the hub evidence pipeline republishes it from there; judging the agreed digest before it is
-      # ever uploaded means a nonconformant golden does not become an artifact at all, so there is
-      # no path (not even "download it from the failed run") by which those bytes reach a reader.
-      #
-      # Until this existed, conformance was checked in exactly ONE place: the superproject's
-      # `metalog-conformance` job of step 0, over the coderoast-hub bytes step 0 recorded — i.e. the
-      # evidence already published by earlier releases. That job answers "does the standing evidence
-      # conform" and it stays; this one answers "does what we are about to publish still match the
-      # standard", which is a question no gate was asking.
-      #
-      # The logic is a committed script rather than inline YAML because a gate nobody can run at the
-      # desk is a gate nobody can prove reds. It carries its own arming step (the validator's
-      # self-test, which prints its own fixture count rather than having one quoted here to go
-      # stale — it said 13 for as long as the corpus held 27), so the desk run and this run are
-      # the same instrument with no second
-      # copy to drift. Its exit codes are the validator's, unmerged: 1 = the producer's documents are
-      # schema-invalid, 2 = the gate could not run honestly. Never let a future edit collapse them.
-      - name: SPEC §8 clauses 1 and 4 over the agreed golden (GATING — before the upload)
-        run: bash scripts/spec_conformance_gate.sh
-        env:
-          GOLDEN: ${{ github.workspace }}/determinism-golden.txt
-          SPEC_ROOT: ${{ github.workspace }}/_spec
-
-      - name: Upload the validated golden (the Release attaches it)
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: determinism-golden
-          path: determinism-golden.txt
-          if-no-files-found: error
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-golden-compare.yml@830c46f71e22cd55154dc6c60d896cd56dd0bdd7
+    with:
+      min-legs: '5'
+      spec-ref: ${{ needs.subjects.outputs.spec }}
