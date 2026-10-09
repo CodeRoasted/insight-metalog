@@ -113,7 +113,11 @@ jobs:
       BUILD_RECORD_READ_TOKEN: ${{ secrets.BUILD_RECORD_READ_TOKEN }}
 
   compare:
+    # A failed or skipped leg never SKIPS the verdict (ROADMAP N370): the compare runs on every
+    # run not cancelled, and its min-legs check names the missing digests. `pharos cut` refuses a
+    # green run of this workflow whose compare job is absent or not green.
     needs: [proof]
+    if: ${{ !cancelled() }}
     uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-golden-compare.yml@3924e57362e8f40c91fe90bb63a4943de59babd7
     with:
       min-legs: '5'
