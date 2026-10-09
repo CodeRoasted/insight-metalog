@@ -66,6 +66,7 @@ run-name: >-
 
 permissions:
   contents: read
+  actions: read   # malf's conan cache restore reads each leg's runner group (actions-cache-allowed.sh)
 
 on:
   workflow_call:
@@ -90,7 +91,7 @@ on:
 
 jobs:
   proof:
-    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-golden-proof.yml@3924e57362e8f40c91fe90bb63a4943de59babd7
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-golden-proof.yml@7b8d8d32ee224b3f09d116872c331c2adc087253
     with:
       linux-proof: scripts/determinism_bitidentity.sh
       msvc-proof: scripts/determinism_msvc.ps1
@@ -118,7 +119,7 @@ jobs:
     # green run of this workflow whose compare job is absent or not green.
     needs: [proof]
     if: ${{ !cancelled() }}
-    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-golden-compare.yml@3924e57362e8f40c91fe90bb63a4943de59babd7
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-golden-compare.yml@7b8d8d32ee224b3f09d116872c331c2adc087253
     with:
       min-legs: '5'
       spec-ref: ${{ needs.proof.outputs.spec }}
