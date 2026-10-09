@@ -1,5 +1,6 @@
+import runpy
+
 from conan import ConanFile
-from conan.tools.build import can_run
 from conan.tools.cmake import CMake, CMakeDeps, CMakeToolchain, cmake_layout
 
 
@@ -55,6 +56,7 @@ class InsightMetalogTestPackageConan(ConanFile):
         cmake.build()
 
     def test(self):
-        if can_run(self):
-            cmake = CMake(self)
-            cmake.ctest(cli_args=["--output-on-failure"])
+        # malf's helper runs the package's one test selection here, in the writer's create, writes
+        # the step's second result file and fails the create on any red (DN-142.D13 (2)); under
+        # tools.build:skip_test it runs nothing.
+        runpy.run_path(self.conf.get("user.malf:recipe_tests"))["run_test_package"](self)
