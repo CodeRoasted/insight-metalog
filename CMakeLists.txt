@@ -22,8 +22,15 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-option(INSIGHT_METALOG_BUILD_TESTS "Build metalog unit tests" ${PROJECT_IS_TOP_LEVEL})
-option(INSIGHT_METALOG_BUILD_BENCHMARKS "Build metalog micro-benchmarks" ${PROJECT_IS_TOP_LEVEL})
+# The test and bench switches default OFF when BUILD_TESTING is defined false, which conan does under
+# tools.build:skip_test: then no test or bench target is configured and no test requirement is looked
+# up (DN-142.D5). Otherwise they follow PROJECT_IS_TOP_LEVEL, as on the desk.
+set(INSIGHT_METALOG_TEST_DEFAULT ${PROJECT_IS_TOP_LEVEL})
+if(DEFINED BUILD_TESTING AND NOT BUILD_TESTING)
+    set(INSIGHT_METALOG_TEST_DEFAULT OFF)
+endif()
+option(INSIGHT_METALOG_BUILD_TESTS "Build metalog unit tests" ${INSIGHT_METALOG_TEST_DEFAULT})
+option(INSIGHT_METALOG_BUILD_BENCHMARKS "Build metalog micro-benchmarks" ${INSIGHT_METALOG_TEST_DEFAULT})
 
 # Guard: when metalog is add_subdirectory()'d alongside an in-tree canon (e.g. the
 # determinism proof harness builds the canon+metalog module tower from source per cell),

@@ -25,7 +25,9 @@ class InsightMetalogConan(ConanFile):
         "fPIC": True,
     }
 
-    exports_sources = "CMakeLists.txt", "src/*", "api/*"
+    # The one build compiles and runs the tests (DN-142.D5), so everything they read rides in the
+    # export: the scripts/ scenario headers they include and the determinism corpus they replay.
+    exports_sources = "CMakeLists.txt", "src/*", "api/*", "tests/*", "benchmarks/*", "scripts/*.hpp", "scripts/determinism_corpus/*"
 
     def export_sources(self):
         # The export is the TRACKED files under exports_sources, never the disk's (DN-142.D4 (b)):
@@ -89,6 +91,7 @@ class InsightMetalogConan(ConanFile):
         cmake = CMake(self)
         cmake.configure()
         cmake.build()
+        runpy.run_path(self.conf.get("user.malf:recipe_tests"))["run_tests"](self)
 
     def package(self):
         cmake = CMake(self)
