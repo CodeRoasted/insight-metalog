@@ -34,7 +34,8 @@ $prof = "$env:CONAN_HOME/profiles/windows-msvc-release"
 $work = "$env:RUNNER_TEMP/det-measure"
 New-Item -ItemType Directory -Force -Path $work | Out-Null
 # Resolve metalog's deps (+ canon from the export) + a conan toolchain for the standalone harness.
-conan install . --profile:host="$prof" --profile:build="$prof" --build=missing -of "$work/conan"
+if (-not $env:MALF_TOOLCHAIN_DIR) { Write-Error "MALF_TOOLCHAIN_DIR is unset: the install resolves only against <malf-toolchain>/conan.lock"; exit 1 }
+conan install . --profile:host="$prof" --profile:build="$prof" --build=missing --lockfile="$env:MALF_TOOLCHAIN_DIR/conan.lock" -of "$work/conan"
 $toolchain = (Get-ChildItem -Recurse "$work/conan" -Filter conan_toolchain.cmake | Select-Object -First 1).FullName
 if (-not $toolchain) { Write-Error "no conan_toolchain.cmake from conan install"; exit 1 }
 # CELL_FLAGS = SPDLOG off (digest is the fixture's stdout) + /O2 /fp:fast (ship optimization +

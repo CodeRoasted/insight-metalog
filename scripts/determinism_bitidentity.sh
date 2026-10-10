@@ -259,9 +259,10 @@ for legkey in "${LINUX_LEGS[@]}"; do
   echo "leg $tag: CXX=$cxx_abs ($("$cxx_abs" --version 2>/dev/null | head -1))"
 
   # conan install once per leg (the deps are -O-independent); each cell re-cmakes the tower.
+  [ -f "${MALF_TOOLCHAIN_DIR:-}/conan.lock" ] || { echo "no conan.lock under MALF_TOOLCHAIN_DIR='${MALF_TOOLCHAIN_DIR:-}': the install resolves only against <malf-toolchain>/conan.lock" >&2; exit 1; }
   legdir="$WORK/conan-$tag"
   if ! conan install "$META" --profile:host="$profile" --profile:build="$profile" \
-        --build=missing -of "$legdir" >"$legdir.install.log" 2>&1; then
+        --build=missing --lockfile="$MALF_TOOLCHAIN_DIR/conan.lock" -of "$legdir" >"$legdir.install.log" 2>&1; then
     # Print a generous tail: a dep's cmake.configure error (e.g. fmt) sits well above conan's final
     # ConanException summary — `tail -4` hid the real cause on the gcc-15.3 CI-drift.
     echo "CONAN INSTALL FAIL: $tag"; tail -50 "$legdir.install.log" | sed 's/^/   /'; continue
