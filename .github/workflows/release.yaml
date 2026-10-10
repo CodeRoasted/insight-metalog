@@ -31,7 +31,7 @@ jobs:
   # release path takes no self-hosted runner it does not need. `BUILD_RECORD_READ_TOKEN` is a
   # fine-grained PAT whose only grant is `Actions: Read-only` on CodeRoasted/coderoast.
   attest:
-    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-attest.yml@78df2432b7021c3af8851848f59f43532deddb9a
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-attest.yml@a9caf9fd6e9af77be9ffc75d6e7c42d46639c2c7
     secrets:
       BUILD_RECORD_READ_TOKEN: ${{ secrets.BUILD_RECORD_READ_TOKEN }}
 
@@ -49,7 +49,7 @@ jobs:
 
   release:
     needs: [attest, golden]
-    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-release.yml@78df2432b7021c3af8851848f59f43532deddb9a
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-release.yml@a9caf9fd6e9af77be9ffc75d6e7c42d46639c2c7
     with:
       tag: ${{ github.event.inputs.tag || github.ref_name }}
       packages: 'insight_metalog:.'
@@ -67,6 +67,6 @@ jobs:
   # / publish_hub_evidence.py) keeps finding it.
   attach-golden:
     needs: [attest, release, golden]
-    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-attach-golden.yml@78df2432b7021c3af8851848f59f43532deddb9a
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-attach-golden.yml@a9caf9fd6e9af77be9ffc75d6e7c42d46639c2c7
     with:
       asset: metalog.determinism_golden.txt
