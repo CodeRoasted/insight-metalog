@@ -261,7 +261,11 @@ for legkey in "${LINUX_LEGS[@]}"; do
   # conan install once per leg (the deps are -O-independent); each cell re-cmakes the tower.
   [ -f "${MALF_TOOLCHAIN_DIR:-}/conan.lock" ] || { echo "no conan.lock under MALF_TOOLCHAIN_DIR='${MALF_TOOLCHAIN_DIR:-}': the install resolves only against <malf-toolchain>/conan.lock" >&2; exit 1; }
   legdir="$WORK/conan-$tag"
+  # The install builds insight_canon and insight_semantic_github from their exports, and their
+  # builds run their tests, so the profile they are judged at is named (DN-142.D23): without it
+  # malf's test helper refuses the run (measured 2026-10-12).
   if ! conan install "$META" --profile:host="$profile" --profile:build="$profile" \
+        -c "user.malf:profile=$profile" \
         --build=missing --lockfile="$MALF_TOOLCHAIN_DIR/conan.lock" -of "$legdir" >"$legdir.install.log" 2>&1; then
     # Print a generous tail: a dep's cmake.configure error (e.g. fmt) sits well above conan's final
     # ConanException summary — `tail -4` hid the real cause on the gcc-15.3 CI-drift.
