@@ -88,6 +88,34 @@ TEST(OrdinalKeyAllocation, TheProbeCountsAnAllocationItCanSee)
                               "probe is not armed in this binary, so a zero below proves nothing";
 }
 
+constexpr std::size_t kOverAlignment{64};
+static_assert(kOverAlignment > alignof(std::max_align_t));
+
+struct alignas(kOverAlignment) OverAligned
+{
+    std::array<std::byte, kOverAlignment> payload{};
+};
+
+// invariant: the probe's over-aligned form hands back an aligned block, counted once, and its
+// aligned delete frees the malloc the block was carved from (a wrong pointer is an ASan red).
+// assert: the block ESCAPES into a static, because an allocation nothing observes may be elided.
+TEST(OrdinalKeyAllocation, OverAlignedAllocationIsAlignedCountedAndReleased)
+{
+    static std::unique_ptr<OverAligned> escaped;
+    std::uint64_t counted{0};
+    std::uintptr_t address{0};
+    {
+        const AllocCountScope counting;
+        escaped = std::make_unique<OverAligned>();
+        address = std::bit_cast<std::uintptr_t>(escaped.get());
+        counted = AllocCountScope::count();
+    }
+    escaped.reset();
+    EXPECT_EQ(address % kOverAlignment, 0U)
+        << "address " << address << " is not aligned to " << kOverAlignment;
+    EXPECT_EQ(counted, 1U) << "allocations counted: " << counted << ", expected exactly 1";
+}
+
 TEST(OrdinalKeyAllocation, SteadyStateIngestAllocatesNothingPerEvent)
 {
     const std::array<Arm, 5> arms{{{.name = "no ordinals", .keys = {}},
