@@ -1,0 +1,14 @@
+[
+  {
+    "test": "MetalogJsonEgressWalk.TheUnwalkedWriterSpellsANonFiniteNumberNull",
+    "outcome": "skipped",
+    "profiles": [
+      "windows-msvc-release"
+    ],
+    "condition": "compiled with MSVC /fp:fast (_M_FP_FAST), as the eidos golden MSVC leg compiles every from-source build",
+    "why": "`/fp:fast` lets MSVC fold glaze's non-finite check; the walk's own bit-level guard is tested on every leg",
+    "refs": [
+      "DN-142.D23"
+    ]
+  }
+]

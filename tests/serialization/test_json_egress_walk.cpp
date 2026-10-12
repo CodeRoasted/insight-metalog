@@ -125,8 +125,40 @@ TEST(MetalogJsonEgressWalk, AnEmptyOptionalIsNotRefusedAndAFiniteDocumentIsTheUn
     EXPECT_EQ(*written, unwalked);
 }
 
+// invariant: a non-finite value the optimiser cannot see, built from bits read through a volatile,
+// is refused too, so the walk's guard holds under every float mode, /fp:fast included.
+TEST(MetalogJsonEgressWalk, ANonFiniteBuiltAtRunTimeFromItsBitsIsRefused)
+{
+    struct Pattern
+    {
+        std::string_view label;
+        std::uint64_t bits;
+    };
+    constexpr std::array kPatterns{
+        Pattern{.label = "quiet NaN", .bits = 0x7FF8'0000'0000'0000},
+        Pattern{.label = "negative NaN with a payload", .bits = 0xFFF0'0000'0000'0001},
+        Pattern{.label = "+inf", .bits = 0x7FF0'0000'0000'0000},
+        Pattern{.label = "-inf", .bits = 0xFFF0'0000'0000'0000},
+    };
+    for (const auto& pattern : kPatterns)
+    {
+        const volatile std::uint64_t opaque{pattern.bits};
+        Document document{finite_document()};
+        document.rows[0].plain = std::bit_cast<double>(static_cast<std::uint64_t>(opaque));
+        const auto written{egress::to_string<kWriteOpts>(document)};
+        ASSERT_FALSE(written.has_value())
+            << pattern.label << " was written as '" << written.value_or("") << "'";
+        EXPECT_EQ(written.error(), "rows[0].plain") << pattern.label;
+    }
+}
+
+// note: its MSVC /fp:fast skip is declared for windows-msvc-release (DN-142.D23).
 TEST(MetalogJsonEgressWalk, TheUnwalkedWriterSpellsANonFiniteNumberNull)
 {
+#if defined(_M_FP_FAST)
+    GTEST_SKIP() << "/fp:fast lets MSVC fold glaze's non-finite check; the walk's own bit-level "
+                    "guard is tested on every leg";
+#endif
     Document document{finite_document()};
     document.rows[0].plain = std::numeric_limits<double>::quiet_NaN();
     std::string unwalked;

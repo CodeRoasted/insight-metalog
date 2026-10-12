@@ -69,7 +69,9 @@ std::optional<std::chrono::sys_seconds> parse_rfc3339_utc(std::string_view text)
     if (!date.ok() || hours >= std::chrono::days{1} || minutes >= std::chrono::hours{1} ||
         seconds >= std::chrono::minutes{1})
         return std::nullopt;
-    return std::chrono::sys_days{date} + hours + minutes + seconds;
+    // invariant: the sum accumulates in 64-bit seconds: MSVC's std::chrono::minutes is 32-bit, and
+    // `sys_days + hours + minutes` wrapped by 2^32 minutes past about year 6053.
+    return std::chrono::sys_seconds{std::chrono::sys_days{date}} + hours + minutes + seconds;
 }
 
 std::string format_rfc3339_utc(Timestamp timestamp)

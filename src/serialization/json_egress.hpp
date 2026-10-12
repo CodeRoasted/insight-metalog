@@ -1,9 +1,11 @@
 #pragma once
 
-#include <cmath>
+#include <bit>
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <expected>
+#include <limits>
 #include <optional>
 #include <string>
 #include <type_traits>
@@ -24,6 +26,25 @@ inline constexpr auto conformant = glz::opt_true<Opts, glz::escape_control_chara
 
 namespace detail
 {
+    // invariant: finiteness is read from the bits (an all-ones exponent is NaN or an infinity),
+    // never std::isfinite, which a fast-math mode (/fp:fast) may fold to true.
+    template <std::floating_point Float>
+    [[nodiscard]] constexpr bool finite_by_bits(Float value) noexcept
+    {
+        static_assert(std::numeric_limits<Float>::is_iec559 &&
+                          (sizeof(Float) == 4 || sizeof(Float) == 8),
+                      "the bit-level test reads an IEEE 754 binary32 or binary64");
+        if constexpr (sizeof(Float) == 8)
+        {
+            constexpr std::uint64_t kBinary64Exponent{0x7FF0'0000'0000'0000};
+            return (std::bit_cast<std::uint64_t>(value) & kBinary64Exponent) != kBinary64Exponent;
+        }
+        else
+        {
+            constexpr std::uint32_t kBinary32Exponent{0x7F80'0000};
+            return (std::bit_cast<std::uint32_t>(value) & kBinary32Exponent) != kBinary32Exponent;
+        }
+    }
 
     // post: `inner` prefixed by one path segment: a dot joins a member to a member and nothing
     // joins one to an element, so the root is empty and a path reads `top_k[3].frequency`.
@@ -115,7 +136,7 @@ namespace detail
         using T = std::remove_cvref_t<Value>;
         if constexpr (std::floating_point<T>)
         {
-            if (std::isfinite(value))
+            if (finite_by_bits(value))
                 return std::nullopt;
             return std::string{};
         }
