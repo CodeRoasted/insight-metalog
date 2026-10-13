@@ -26,3 +26,12 @@ inventory:
     defines:
       CANON_ROOT: ${workspace}/insight-canon
       META_ROOT: ${repo}
+
+# DN-142.D25 (3): the hosted output step 0 dispatches and ingests (its stage B5): the determinism
+# golden, whose arm64 and MSVC legs run on hosted runners. The run title is the workflow's `name:`.
+# Its reading is a verdict B5 owes; with no `published` site the row publishes nothing.
+ingest:
+  golden.yaml:
+    artifact: determinism-golden
+    member: determinism-golden.txt
+    commits: [insight-canon, insight-metalog, metalog-spec]
