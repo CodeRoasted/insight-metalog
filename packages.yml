@@ -33,5 +33,5 @@ inventory:
 ingest:
   golden.yaml:
     artifact: determinism-golden
-    member: determinism-golden.txt
+    object: determinism-golden.txt
     commits: [insight-canon, insight-metalog, metalog-spec]
