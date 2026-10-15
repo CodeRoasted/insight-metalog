@@ -519,7 +519,7 @@ namespace dto
     };
 
     // invariant: the members' names and the reason token are the specification's, verbatim.
-    // refs: DN-56.D12, F-SRC-metalog-spec:metalog_diff.v0.schema.json
+    // refs: ADR-25.D5, F-SRC-metalog-spec:metalog_diff.v0.schema.json
     struct IncomparableNGramDelta
     {
         std::string reason;

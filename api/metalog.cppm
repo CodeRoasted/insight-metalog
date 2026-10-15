@@ -435,7 +435,7 @@ class MetaLogEngine
 // invariant: the vacuity declarations assert exact equality, so the scalar tests are exact float
 // compares by contract.
 // note: a schema signal property gains a clause here in the same pass, save a descriptor.
-// refs: DN-56.D12, F-SRC-insight-metalog:spec_conformance_gate.sh
+// refs: ADR-25.D5, F-SRC-insight-metalog:spec_conformance_gate.sh
 [[nodiscard]] ComparisonOutcome comparison_outcome_of(const MetaLogDiff& diff) noexcept;
 
 // post: the signal properties in which this comparison found a change the serialized document does

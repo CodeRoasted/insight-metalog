@@ -1,4 +1,4 @@
-// refs: DN-56.D11, DN-56.D12, F-SRC-metalog-spec:SPEC.md
+// refs: ADR-20.D17, ADR-25.D5, F-SRC-metalog-spec:SPEC.md
 // invariant: an order-2 and an order-3 behavior block describe different populations, so compose()
 // and diff() never merge or difference them as one.
 // invariant: two STAMPED documents at different orders are refused by the retention_profile gate,
@@ -151,7 +151,7 @@ TEST(NgramOrderComparability, UnstampedDiffAcrossOrdersCarriesNoNgramDelta)
 
 // invariant: a diff across two orders names ngram_delta in incomparable_signals, its reason and
 // both orders in their roles, and still asserts unchanged: the member is a descriptor.
-// refs: DN-56.D12
+// refs: ADR-25.D5
 TEST(NgramOrderComparability, UnstampedDiffAcrossOrdersStatesTheNgramDeltaIncomparable)
 {
     const auto order2{close_at_order(2, Stamp::Absent)};

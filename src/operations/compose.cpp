@@ -498,7 +498,7 @@ namespace
     // denote different objects, so it is omitted, never a min and never one side's block (§12.1).
     // invariant: reached only by unstamped pairs; the retention_profile gate refuses a stamped one.
     // note: structural signals are diffed at raw scales; salient structure rides the reservoir.
-    // refs: DN-56.D11
+    // refs: ADR-20.D17
     std::optional<BehaviorBlock> merge_behavior(const MetaLogDocument& lhs,
                                                 const MetaLogDocument& rhs)
     {

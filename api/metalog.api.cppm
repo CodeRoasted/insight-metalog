@@ -1316,7 +1316,7 @@ inline constexpr std::string_view kSalienceArithmeticGeneration{"salience-1"};
 // hashing.
 // invariant: the n axis is the effective n-gram order, which fixes what a top_ngrams key DENOTES,
 // so two orders are refused by the comparability gate rather than diffed into total turnover.
-// refs: F-SRC-metalog-spec:SPEC.md, DN-56.D11
+// refs: F-SRC-metalog-spec:SPEC.md, ADR-20.D17
 [[nodiscard]] inline std::string retention_profile_name(const MetaLogConfig& config)
 {
     // invariant: any std::size_t in base 10, plus its one-character axis tag.
@@ -1378,7 +1378,7 @@ struct NGramDelta
 };
 
 // invariant: the two behavior.ngram_size a diff could not compare, each in its document's role.
-// refs: DN-56.D12, F-SRC-metalog-spec:SPEC.md
+// refs: ADR-25.D5, F-SRC-metalog-spec:SPEC.md
 struct NGramOrderMismatch
 {
     std::size_t previous_ngram_size{0};
@@ -1659,7 +1659,7 @@ struct MetaLogDiff
     std::optional<NGramDelta> ngram_delta;
     // invariant: engaged exactly when both documents carry behavior at different ngram_size, and
     // then ngram_delta is disengaged: the comparison was not performed, and the wire says so.
-    // refs: DN-56.D12
+    // refs: ADR-25.D5
     std::optional<NGramOrderMismatch> ngram_order_mismatch;
     // invariant: present ONLY when both documents carried a service_edges block; absence reads
     // unknown.

@@ -131,7 +131,7 @@ namespace
     // post: that omission is recorded as ngram_order_mismatch, both orders in their roles, so the
     // document states the comparison it did not perform rather than read as one finding nothing.
     // invariant: reached only by unstamped pairs; the retention_profile gate refuses a stamped one.
-    // refs: DN-56.D11, DN-56.D12
+    // refs: ADR-20.D17, ADR-25.D5
     void diff_ngram_delta(MetaLogDiff& out, const MetaLogDocument& previous,
                           const MetaLogDocument& current)
     {

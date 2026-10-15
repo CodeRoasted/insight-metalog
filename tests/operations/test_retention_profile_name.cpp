@@ -59,7 +59,7 @@ TEST(RetentionProfileName, TheSameTupleAlwaysDerivesTheSameName)
 // invariant: injectivity is what the comparability gate rests on: two different retention tuples
 // must never collide onto one name, or the gate certifies a comparability that does not hold.
 // note: each axis moves on its own, so a forgotten member is named by its own arm.
-// invariant: the ngram_size arm is DN-56.D11's: an order-2 and an order-3 document under one name
+// invariant: the ngram_size arm is ADR-20.D17's: an order-2 and an order-3 document under one name
 // pass the gate and diff into total n-gram turnover.
 TEST(RetentionProfileName, EveryAxisIsPartOfTheName)
 {
