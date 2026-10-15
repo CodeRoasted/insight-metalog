@@ -11,7 +11,7 @@ export namespace insight::metalog
 // pass kSparseMaxEntries, then DENSE for life; both denote one register array, so one estimate.
 // invariant: sparse costs sizeof(HyperLogLog), past kInlineEntries plus one heap block of at most 8
 // bytes an entry; dense adds kNumRegisters: at most 64 bytes an observation at 24 bytes a block.
-// refs: DN-139.D1
+// refs: ADR-31.D5
 class HyperLogLog
 {
   public:
@@ -223,7 +223,7 @@ class HyperLogLog
         return hash_acc;
     }
 };
-static_assert(sizeof(HyperLogLog) <= 32, "DN-139.D1's bound declares a 32-byte sketch header");
+static_assert(sizeof(HyperLogLog) <= 32, "ADR-31.D5's bound declares a 32-byte sketch header");
 
 // pre: `counts` may cover only part of the population; `total` is the full count.
 // post: Shannon entropy in bits, 0.0 when total is 0; unlisted mass contributes nothing, so a

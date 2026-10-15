@@ -125,7 +125,7 @@ class MetaLogEngine
             // invariant: every observation of the slot, so it may exceed the sum of value_counts.
             std::uint64_t total{0};
             // invariant: the slot's cardinality sketch in hll_state_, created with the slot.
-            // refs: DN-139.D1
+            // refs: ADR-31.D5
             std::size_t sketch{0};
         };
         // invariant: index i is CanonicalEvent::params[i]; populated only when

@@ -1276,7 +1276,7 @@ struct MetaLogConfig
     // invariant: above 0 the first min(N, params.size()) wildcard positions are tracked in EVERY
     // template's bucket: at most N x max_histogram_values table entries a template.
     // invariant: the cardinality sketches cost at most 64 bytes per parameter observation fed.
-    // refs: DN-139.D1
+    // refs: ADR-31.D5
     std::size_t max_param_histograms{0};
 
     // invariant: max distinct values tracked per histogram slot per template; further distinct

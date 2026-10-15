@@ -1,4 +1,4 @@
-// refs: DN-139.D2
+// refs: ADR-31.D5
 // invariant: the sparse-until-dense sketch and a dense register array fed the same adds give the
 // same estimate at EVERY prefix, on both sides of the promotion point and over the full array.
 // invariant: determinism -- every stream is a fixed enumeration of keys, and both sides are

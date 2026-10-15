@@ -26,7 +26,7 @@ namespace
 
 // invariant: one sketch per (template, param slot), addressed by the id its bucket's slot holds;
 // sketches sit in fixed chunks, so none ever moves and the store outgrows its use by one chunk.
-// refs: DN-139.D1
+// refs: ADR-31.D5
 struct MetaLogEngine::HllState
 {
     static constexpr std::size_t kChunkSketches{64};
