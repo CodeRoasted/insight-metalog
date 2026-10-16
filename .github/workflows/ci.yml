@@ -1,17 +1,11 @@
 name: CI
 
 on:
-  # `deps` declares how the upstream first-party packages reach the cache. The release workflow
-  # passes `vendor` (the tarballs of the waves cut before it), so a caller must say it; a dispatch
-  # defaults to `build` (each upstream created from its repository's main), because between two
-  # cuts the open version has no release to download. A pull_request run carries no inputs and
-  # takes the same `build`.
-  workflow_call:
-    inputs:
-      deps:
-        description: 'vendor (release tarballs) | build (upstreams from their main)'
-        type: string
-        required: true
+  # `deps` declares how the upstream first-party packages reach the cache: a dispatch defaults to
+  # `build` (each upstream created from its repository's main), because between two cuts the open
+  # version has no release to download, and may ask for `vendor` (the last cut's release tarballs).
+  # A pull_request run carries no inputs and takes the same `build`. No tag and no workflow runs this
+  # one: a release publishes what step 0 built and tested, by digest (DN-142.D9).
   workflow_dispatch:
     inputs:
       deps:
