@@ -1,10 +1,16 @@
 name: Release
 
-# On a vX.Y.Z tag (or manual re-run): attest -> CI -> Determinism Golden Proof (gate) -> Release ->
-# attach the golden. The golden gate runs the 5-leg cross-toolchain/ISA/OS matrix (canon+metalog tower
-# from source) and only proceeds if every leg's digest is byte-identical; the agreed digest (the
-# validated golden) is then attached to the Release as a per-release artifact (never committed). CI is
-# the single tag entry point. The lint is step 0's (ADR-2.D3): this tag re-runs none of it.
+# On a vX.Y.Z tag (or a manual re-run): attest -> publish. A RELEASE IS A PUBLICATION (DN-142.D9,
+# ROADMAP N360): insight_metalog was built, tested and judged once, at step 0, against the canon and
+# semantic packages of the same record (no vendored public release), and stored by the writer; its
+# benchmark ran inside its create as a verdict of its own (DN-142.D25 (5), call D), and the
+# determinism golden is the agreed digest of the five legs step 0 ingested from this repository's
+# `golden.yaml` (DN-142.D25 (3)). `publish` (malf's coderoast-publish.yml) attaches this
+# repository's writer-signed slice of the attested step-0 record — the package transport, the
+# benchmark JSON, `metalog.determinism_golden.txt` and the slice — and reads the Release back equal
+# to it, both ways. Nothing here builds, tests, measures or packs. This repository is PUBLIC, so
+# both jobs run on GitHub-hosted machines, and `publish` reads the private `store-insight-metalog`
+# package through this repository's Read grant on it.
 
 on:
   push:
@@ -16,57 +22,26 @@ on:
         required: true
 
 permissions:
-  contents: write        # release + attach-golden create/upload the Release
-  # Sift needed permissions (PR + actions write)
-  pull-requests: write
-  actions: write
+  contents: write   # create the Release at the existing tag and upload its assets
+  packages: read    # `publish` reads this repository's own store package
+  actions: read     # `attest` reads the superproject's step-0 runs (malf coderoast-attest.yml asks it)
 
 jobs:
   # ── The tag's ONE gate: the tagged tree is the tree step 0 judged ─────────────────────────────
   # malf-toolchain's `coderoast-attest.yml` proves that the commit this tag points at is the commit
   # step 0's build record (`pharos-build.yml` in the private superproject) verified for this
-  # repository, and refuses the tag otherwise (DN-108.D7). Every other job in this file `needs:
-  # attest`, so a refusal lands before anything builds or publishes; `pin_coherence` INV-22 holds
-  # that shape in every releasing repository. Hosted (no `runs-on`): it compiles nothing, and a
-  # release path takes no self-hosted runner it does not need. `BUILD_RECORD_READ_TOKEN` is a
-  # fine-grained PAT whose only grant is `Actions: Read-only` on CodeRoasted/coderoast.
+  # repository, and that a store writer sealed that record, and refuses the tag otherwise
+  # (DN-108.D7). Every other job in this file `needs: attest`, so a refusal lands before anything
+  # publishes; `pin_coherence` INV-22 holds that shape in every releasing repository. Hosted (no
+  # `runs-on`). `BUILD_RECORD_READ_TOKEN` is a fine-grained PAT whose only grant is
+  # `Actions: Read-only` on CodeRoasted/coderoast.
   attest:
-    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-attest.yml@d9827c46a6cfbccd10d7ff5ffa4d66c377a35bfc
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-attest.yml@11b01ac01c85b6a7719d3daec68b07dd7e6c77fa
     secrets:
       BUILD_RECORD_READ_TOKEN: ${{ secrets.BUILD_RECORD_READ_TOKEN }}
 
-  ci:
+  publish:
     needs: attest
-    uses: ./.github/workflows/ci.yml
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-publish.yml@11b01ac01c85b6a7719d3daec68b07dd7e6c77fa
     with:
-      deps: vendor
-    secrets: inherit
-
-  # The 5-leg determinism gate — blocks the release unless every leg's digest agrees.
-  golden:
-    needs: [attest, ci]
-    uses: ./.github/workflows/golden.yaml
-
-  release:
-    needs: [attest, golden]
-    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-release.yml@d9827c46a6cfbccd10d7ff5ffa4d66c377a35bfc
-    with:
-      tag: ${{ github.event.inputs.tag || github.ref_name }}
-      packages: 'insight_metalog:.'
-      # metalog vendors insight_canon from its PUBLIC release for the conan create. insight_semantic_github
-      # is a separate package from the SAME canon release (ADR-17.D8) and needs its own row — the conan
-      # create builds test_package, which reaches metalog's test_requires. Keep in sync with ci.yml.
-      vendor: |
-        insight_canon 1.10.7 CodeRoasted/insight-canon public
-        insight_semantic_github 1.10.7 CodeRoasted/insight-canon public
-      benchmark: 'insight_metalog_bench=insight-metalog'
-    secrets: inherit
-
-  # Attach the validated golden (produced by the golden gate) to the Release — per-release, not committed.
-  # Asset name is kept as metalog.determinism_golden.txt so the Hub evidence pipeline (publish-to-hub.yml
-  # / publish_hub_evidence.py) keeps finding it.
-  attach-golden:
-    needs: [attest, release, golden]
-    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-attach-golden.yml@d9827c46a6cfbccd10d7ff5ffa4d66c377a35bfc
-    with:
-      asset: metalog.determinism_golden.txt
+      record-sha256: ${{ needs.attest.outputs.record-sha256 }}
