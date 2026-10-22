@@ -24,7 +24,7 @@ jobs:
     permissions:
       contents: read
       actions: read
-    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-ci.yml@8368339886f18faaf2e1afa2a5f9bbbdbd60f487
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-ci.yml@cd05d48f4107d4b0e286e4c5de183e83c8b9d7da
     with:
       # metalog takes insight_canon from the PUBLIC canon repository (its release under `deps: vendor`,
       # its main under `deps: build`), then builds the single root package
@@ -53,7 +53,7 @@ jobs:
     permissions:
       pull-requests: write
       actions: read
-    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-sift-post.yml@8368339886f18faaf2e1afa2a5f9bbbdbd60f487
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-sift-post.yml@cd05d48f4107d4b0e286e4c5de183e83c8b9d7da
     with:
       run-id: ${{ github.run_id }}
     secrets: inherit
