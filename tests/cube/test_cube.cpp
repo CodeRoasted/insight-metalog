@@ -560,6 +560,8 @@ TEST(CubeCompose, OmittedWhenOneSideHasNoCube)
     EXPECT_FALSE(meta::compose(with, without).has_cube)
         << "when either input omits a cube, the composed document must omit its cube too — "
            "composing a present cube with an absent one would under-count silently";
+    EXPECT_FALSE(meta::compose(without, with).has_cube)
+        << "the omission holds on either operand side: an absent LEFT cube omits it too";
 }
 
 TEST(CubeReservoirCross, SalientEntryCarriesLocation)

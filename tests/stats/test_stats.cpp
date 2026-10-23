@@ -21,6 +21,12 @@ counts(std::initializer_list<std::pair<std::string_view, std::uint64_t>> items)
     return out;
 }
 
+// note: 40 fractional bits put the fixed-point error near 1e-12, so 1e-9 still reds any real drift.
+constexpr double kFixedPointTolerance{1e-9};
+// note: one key on each side, 100 counts each, add-one smoothed over the 2-key union.
+constexpr double kDisjointJs{0.920509557616066};
+constexpr double kDisjointKl{6.527658316423328};
+
 TEST(ShannonEntropy, ZeroTotalReturnsZero)
 {
     EXPECT_EQ(meta::shannon_entropy_bits({}, 0), 0.0);
@@ -73,23 +79,24 @@ TEST(Divergences, IdenticalDistributionsHaveLowDivergence)
     EXPECT_NEAR(result.js, 0.0, 1e-6);
 }
 
-TEST(Divergences, CompletelyDifferentKeysHasHighJs)
+TEST(Divergences, CompletelyDifferentKeysMatchHandDerivedJsAndKl)
 {
+    // note: expected values are the add-one smoothed log2 KL and JS evaluated in double by hand.
     const auto cur{counts({{"a", 100}})};
     const auto prev{counts({{"b", 100}})};
     const auto result = meta::divergences(cur, 100, prev, 100);
-    EXPECT_GT(result.js, 0.5);
-    EXPECT_LE(result.js, 1.0);
+    EXPECT_NEAR(result.js, kDisjointJs, kFixedPointTolerance);
+    EXPECT_NEAR(result.kl, kDisjointKl, kFixedPointTolerance);
 }
 
-TEST(Divergences, JsIsInUnitInterval)
+TEST(Divergences, PartialOverlapMatchesHandDerivedJsAndKl)
 {
+    // note: expected values are the add-one smoothed log2 KL and JS evaluated in double by hand.
     const auto cur{counts({{"a", 90}, {"b", 10}})};
     const auto prev{counts({{"b", 80}, {"c", 20}})};
     const auto result = meta::divergences(cur, 100, prev, 100);
-    EXPECT_GE(result.js, 0.0);
-    EXPECT_LE(result.js, 1.0);
-    EXPECT_GE(result.kl, 0.0);
+    EXPECT_NEAR(result.js, 0.6970227216048024, kFixedPointTolerance);
+    EXPECT_NEAR(result.kl, 5.399343617559049, kFixedPointTolerance);
 }
 
 TEST(NewAndVanished, IdenticalSetsHaveZeroCounts)
@@ -139,22 +146,21 @@ TEST(HistogramJs, IdenticalIsNearZero)
     EXPECT_NEAR(meta::histogram_js(m, 100, m, 100), 0.0, 1e-6);
 }
 
-TEST(HistogramJs, DisjointKeysIsHigh)
+TEST(HistogramJs, DisjointKeysMatchHandDerivedValue)
 {
     std::unordered_map<std::string, std::uint64_t> prev{{"a", 100}};
     std::unordered_map<std::string, std::uint64_t> curr{{"b", 100}};
     const double val = meta::histogram_js(prev, 100, curr, 100);
-    EXPECT_GT(val, 0.5);
-    EXPECT_LE(val, 1.0);
+    EXPECT_NEAR(val, kDisjointJs, kFixedPointTolerance);
 }
 
-TEST(HistogramJs, ResultIsInUnitInterval)
+TEST(HistogramJs, PartialOverlapMatchesHandDerivedValue)
 {
+    // note: the expected value is the add-one smoothed log2 JS evaluated in double by hand.
     std::unordered_map<std::string, std::uint64_t> prev{{"a", 70}, {"b", 30}};
     std::unordered_map<std::string, std::uint64_t> curr{{"b", 60}, {"c", 40}};
     const double val = meta::histogram_js(prev, 100, curr, 100);
-    EXPECT_GE(val, 0.0);
-    EXPECT_LE(val, 1.0);
+    EXPECT_NEAR(val, 0.51828693723157, kFixedPointTolerance);
 }
 
 TEST(DominantLevel, EmptyReturnsNullopt)
