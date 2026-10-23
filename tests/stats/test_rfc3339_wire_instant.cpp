@@ -3,8 +3,8 @@
 // formatter's 20-byte `YYYY-MM-DDTHH:MM:SSZ` grammar and refuses every other spelling.
 // invariant: the oracle for every instant is a LITERAL epoch-seconds count computed outside this
 // codebase (calendar.timegm), never a second call into <chrono> or into the function under test.
-// invariant: the domain upper bound is the formatter's own: Timestamp is nanoseconds in an int64,
-// so its last whole second is 2262-04-11T23:47:16Z and a later instant cannot reach the formatter.
+// invariant: the domain bounds are the formatter's own: Timestamp is nanoseconds in an int64, so
+// its first and last whole seconds are 1677-09-21T00:12:44Z and 2262-04-11T23:47:16Z.
 // invariant: the parse's RANGE is wider by design (years to 9999 in sys_seconds), so
 // 9999-12-31T23:59:59Z is asserted through the parse alone -- a declared boundary, not a defect.
 // note: a unit test of two pure functions; no RNG, no threads, no wall clock.
@@ -23,8 +23,11 @@ struct WireInstant
     std::int64_t epoch_seconds;
 };
 
-// invariant: the instants the ruling names, plus the formatter's last representable second.
-constexpr std::array<WireInstant, 6> kRoundTripInstants{{
+// invariant: the instants the ruling names, the formatter's first and last representable seconds,
+// and the second before the epoch, where a truncating formatter names the second after.
+constexpr std::array<WireInstant, 8> kRoundTripInstants{{
+    {.text = "1677-09-21T00:12:44Z", .epoch_seconds = -9223372036},
+    {.text = "1969-12-31T23:59:59Z", .epoch_seconds = -1},
     {.text = "1970-01-01T00:00:00Z", .epoch_seconds = 0},
     {.text = "2000-02-29T12:00:00Z", .epoch_seconds = 951825600},
     {.text = "2024-02-29T23:59:59Z", .epoch_seconds = 1709251199},

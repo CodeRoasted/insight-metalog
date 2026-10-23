@@ -301,7 +301,8 @@ struct SalienceVerdict
                                              std::uint32_t structural_surprise,
                                              std::uint32_t novelty) noexcept;
 
-// post: RFC 3339 UTC with fixed field widths and a trailing 'Z'.
+// post: RFC 3339 UTC with fixed field widths and a trailing 'Z', naming the second that CONTAINS
+// the instant -- floored, so a pre-1970 fraction names the earlier second.
 [[nodiscard]] std::string format_rfc3339_utc(Timestamp timestamp);
 
 // post: the mirror of format_rfc3339_utc -- the instant the 20-byte `YYYY-MM-DDTHH:MM:SSZ` form

@@ -1,8 +1,3 @@
-module;
-// note: gmtime_r is POSIX and absent from import std, so the header stays textual in the GMF.
-// refs: ADR-3.D4
-#include <ctime>
-
 module insight.metalog.detail.stats;
 import insight.metalog.internal;
 import insight.metalog.api;
@@ -76,17 +71,10 @@ std::optional<std::chrono::sys_seconds> parse_rfc3339_utc(std::string_view text)
 
 std::string format_rfc3339_utc(Timestamp timestamp)
 {
-    const auto secs{std::chrono::time_point_cast<std::chrono::seconds>(timestamp)};
-    const std::time_t epoch_time{std::chrono::system_clock::to_time_t(secs)};
-    std::tm utc_tm{};
-#ifdef _WIN32
-    gmtime_s(&utc_tm, &epoch_time);
-#else
-    gmtime_r(&epoch_time, &utc_tm);
-#endif
-    std::ostringstream oss;
-    oss << std::put_time(&utc_tm, "%Y-%m-%dT%H:%M:%SZ");
-    return oss.str();
+    // invariant: floor, never time_point_cast -- a cast truncates toward zero, so a pre-1970
+    // instant with a fraction would name the second AFTER the one containing it.
+    return std::format("{:%Y-%m-%dT%H:%M:%SZ}",
+                       std::chrono::floor<std::chrono::seconds>(timestamp));
 }
 
 std::string level_to_spec_string(LogLevel level)
