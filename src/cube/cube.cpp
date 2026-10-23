@@ -107,7 +107,8 @@ namespace
         return coord;
     }
 
-    // pre: `labels` is the shared dictionary, so two cubes' cells compare on one Where id space.
+    // pre: `labels` is the sorted dictionary of the coord's own block, so the Where id indexes it;
+    // a cross-cube id space exists only after merge_dicts and remap_base.
     [[nodiscard]] Cell cell_of(const CubeCoord& coord, std::span<const std::string> labels) noexcept
     {
         Cell cell;

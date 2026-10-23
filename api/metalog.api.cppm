@@ -775,8 +775,8 @@ struct ReservoirEntry
     // candidate only under a positive salience score, which is when the verdict is engaged.
     // refs: ADR-25.D8
     std::optional<RetentionAxis> retention_axis;
-    // invariant: the reconciled first-seen ordinal of this template within the window, bounded by
-    // the reservoir size; populated only when a re-derivation coordinate is configured.
+    // invariant: the 0-based ordinal, among the window's observed lines, of this template's first
+    // line, so it is below window.lines_observed; populated only when a source_ref is configured.
     // invariant: never a per-line coordinate.
     std::optional<std::uint64_t> within_window_ordinal;
     // invariant: the LOCATION cross into the cube -- level plus WHERE path only, read-only and
@@ -1167,8 +1167,8 @@ struct MetaLogConfig
     // leaves pure frequency retention.
     std::size_t reservoir_size{0};
 
-    // invariant: max exemplars admitted per kind (structural_role by dominant_level), so the
-    // reservoir optimises coverage of distinct salient kinds over depth; 0 means no cap.
+    // invariant: max exemplars the general pool admits per kind (structural_role by
+    // dominant_level); the error-class reserve is exempt, so a kind may exceed it; 0 means no cap.
     std::size_t reservoir_per_kind_cap{0};
 
     // invariant: a bounded floor of the reservoir slots held exclusively for error-class templates,
@@ -1449,8 +1449,8 @@ struct FieldHistogramDelta
 
 // invariant: carries BOTH sides' raw counts, totals and schedule ids; the eidos diff gates on the
 // schedule ids matching, then computes the distance and the shift bucket.
-// invariant: metalog carries the counts and eidos owns the distance, which is ladder-agnostic at
-// w=1.
+// invariant: metalog carries the counts and owns the distance, `ordinal_w1`, which the eidos
+// diff calls; the distance is ladder-agnostic at w=1.
 // invariant: populated only when the same (template_id, field_name) appears in BOTH documents'
 // ordinal_histograms.
 // refs: F-SRC-insight-metalog:metalog.api.cppm:ordinal_w1
