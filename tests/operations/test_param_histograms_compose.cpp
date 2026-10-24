@@ -3,7 +3,7 @@
 // distribution shift stays visible in a diff against a composed baseline.
 // invariant: for a slot present in BOTH inputs the composer unions value_counts, sums the counts,
 // truncates to the producer's cap by count, sums the totals and recomputes entropy over the merge.
-// note: a slot present in only ONE input may be carried unchanged.
+// note: a slot present in only ONE input is carried unchanged while within the value cap.
 #include <gtest/gtest.h>
 
 import insight.metalog.test;

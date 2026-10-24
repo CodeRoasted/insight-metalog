@@ -839,6 +839,20 @@ struct StatsBlock
     // omits it only when both inputs declared none.
     // refs: ADR-25.D5
     std::optional<std::size_t> reservoir_size;
+    // invariant: the slot cap P every top_k entry's field histograms were admitted under; ABSENT
+    // is a declared posture, set by a producer only when it builds histograms at all.
+    // invariant: compose() sets it to the minimum over the declared caps and drops every slot at
+    // or above it, absent only when neither input declared one.
+    // note: carried in memory only until the specification admits the member.
+    // refs: DN-148.D5, ADR-25.D5
+    std::optional<std::size_t> param_histograms_size;
+    // invariant: the value cap V every field histogram slot was admitted under, engaged with
+    // param_histograms_size; compose() re-admits EVERY slot, a one-sided one included, under it.
+    // invariant: compose() sets it to the minimum over the declared caps, or to
+    // MetaLogConfig::kDefaultMaxHistogramValues when neither input declared one.
+    // note: carried in memory only, so a document read off the wire composes under the default.
+    // refs: DN-148.D3, DN-148.D5, ADR-25.D5
+    std::optional<std::size_t> value_counts_size;
 };
 
 // post: whether absence from this document's retained set means absence from every window it covers
@@ -1316,6 +1330,9 @@ inline constexpr std::string_view kSalienceArithmeticGeneration{"salience-1"};
 // hashing.
 // invariant: the n axis is the effective n-gram order, which fixes what a top_ngrams key DENOTES,
 // so two orders are refused by the comparability gate rather than diffed into total turnover.
+// invariant: the p and v axes are the histogram slot and value caps, which fix which slots and
+// values a top_k entry retains.
+// refs: DN-148.D5
 // refs: F-SRC-metalog-spec:SPEC.md, ADR-20.D17
 [[nodiscard]] inline std::string retention_profile_name(const MetaLogConfig& config)
 {
@@ -1340,6 +1357,10 @@ inline constexpr std::string_view kSalienceArithmeticGeneration{"salience-1"};
     append_axis('e', config.reservoir_error_reserve);
     name.push_back('-');
     append_axis('n', effective_ngram_size(config));
+    name.push_back('-');
+    append_axis('p', config.max_param_histograms);
+    name.push_back('-');
+    append_axis('v', config.max_histogram_values);
     return name;
 }
 

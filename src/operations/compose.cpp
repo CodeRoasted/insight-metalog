@@ -179,13 +179,47 @@ namespace
         return out;
     }
 
-    // post: value_counts union with sums on matching keys, truncated to the cap by count with a key
-    // tie-break; total is the sum and entropy is recomputed over the merged counts.
-    // note: cardinality takes the max (no registers on the wire); a one-sided slot is carried.
+    // post: the slot holds at most `cap` values, the highest counts kept with a key tie-break, and
+    // its entropy is recomputed over what it keeps; total and cardinality are untouched.
+    // note: a slot already within the cap is left as it is, entropy included.
+    // refs: DN-148.D3
+    void readmit_slot(FieldHistogram& slot, std::size_t cap)
+    {
+        if (slot.value_counts.size() <= cap)
+            return;
+        std::vector<std::pair<std::string, std::uint64_t>> sorted(slot.value_counts.begin(),
+                                                                  slot.value_counts.end());
+        std::ranges::partial_sort(sorted, sorted.begin() + static_cast<std::ptrdiff_t>(cap),
+                                  [](const auto& lhs, const auto& rhs)
+                                  {
+                                      if (lhs.second != rhs.second)
+                                          return lhs.second > rhs.second;
+                                      return lhs.first < rhs.first;
+                                  });
+        slot.value_counts.clear();
+        slot.value_counts.reserve(cap);
+        std::vector<std::uint64_t> counts;
+        counts.reserve(cap);
+        for (std::size_t i{0}; i < cap; ++i)
+        {
+            counts.push_back(sorted[i].second);
+            slot.value_counts.emplace(std::move(sorted[i].first), sorted[i].second);
+        }
+        slot.entropy_bits = shannon_entropy_bits(counts, slot.total);
+    }
+
+    // post: value_counts union with sums on matching keys, total the sum and entropy recomputed
+    // over the merge; every slot, a one-sided one included, re-admitted under `value_cap`.
+    // post: a slot whose param_index is at or above an engaged `slot_cap` is dropped from both.
+    // note: cardinality takes the max (no registers on the wire).
+    // refs: DN-148.D5
     [[nodiscard]] std::vector<FieldHistogram>
     merge_field_histograms(const std::vector<FieldHistogram>& lhs,
-                           const std::vector<FieldHistogram>& rhs, std::size_t cap)
+                           const std::vector<FieldHistogram>& rhs,
+                           std::optional<std::size_t> slot_cap, std::size_t value_cap)
     {
+        const auto admitted{[slot_cap](const FieldHistogram& hist)
+                            { return !slot_cap || hist.param_index < *slot_cap; }};
         std::unordered_map<std::uint32_t, const FieldHistogram*> lhs_index;
         lhs_index.reserve(lhs.size());
         for (const auto& hist : lhs)
@@ -198,52 +232,42 @@ namespace
 
         for (const auto& rhs_hist : rhs)
         {
+            if (!admitted(rhs_hist))
+                continue;
             seen.insert(rhs_hist.param_index);
             const auto found{lhs_index.find(rhs_hist.param_index)};
             if (found == lhs_index.end())
             {
                 out.push_back(rhs_hist);
+                readmit_slot(out.back(), value_cap);
                 continue;
             }
             const FieldHistogram& lhs_hist{*found->second};
             FieldHistogram merged;
             merged.param_index = rhs_hist.param_index;
             merged.total = lhs_hist.total + rhs_hist.total;
-            std::unordered_map<std::string, std::uint64_t> values;
-            values.reserve(lhs_hist.value_counts.size() + rhs_hist.value_counts.size());
+            merged.value_counts.reserve(lhs_hist.value_counts.size() +
+                                        rhs_hist.value_counts.size());
             for (const auto& [value, count] : lhs_hist.value_counts)
-                values[value] += count;
+                merged.value_counts[value] += count;
             for (const auto& [value, count] : rhs_hist.value_counts)
-                values[value] += count;
-            if (cap > 0 && values.size() > cap)
-            {
-                std::vector<std::pair<std::string, std::uint64_t>> sorted(values.begin(),
-                                                                          values.end());
-                std::ranges::partial_sort(sorted, sorted.begin() + static_cast<std::ptrdiff_t>(cap),
-                                          [](const auto& lhs, const auto& rhs)
-                                          {
-                                              if (lhs.second != rhs.second)
-                                                  return lhs.second > rhs.second;
-                                              return lhs.first < rhs.first;
-                                          });
-                values.clear();
-                values.reserve(cap);
-                for (std::size_t i{0}; i < cap; ++i)
-                    values.emplace(std::move(sorted[i].first), sorted[i].second);
-            }
+                merged.value_counts[value] += count;
             std::vector<std::uint64_t> counts;
-            counts.reserve(values.size());
-            for (const auto& [value, count] : values)
+            counts.reserve(merged.value_counts.size());
+            for (const auto& [value, count] : merged.value_counts)
                 counts.push_back(count);
-            merged.value_counts = std::move(values);
             merged.entropy_bits = shannon_entropy_bits(counts, merged.total);
             merged.approximate_cardinality =
                 std::max(lhs_hist.approximate_cardinality, rhs_hist.approximate_cardinality);
+            readmit_slot(merged, value_cap);
             out.push_back(std::move(merged));
         }
         for (const auto& lhs_hist : lhs)
-            if (!seen.contains(lhs_hist.param_index))
+            if (admitted(lhs_hist) && !seen.contains(lhs_hist.param_index))
+            {
                 out.push_back(lhs_hist);
+                readmit_slot(out.back(), value_cap);
+            }
         std::ranges::sort(out, [](const auto& lhs, const auto& rhs)
                           { return lhs.param_index < rhs.param_index; });
         return out;
@@ -308,8 +332,8 @@ namespace
                                     }};
         const auto lhs_topk{build_topk_index(lhs)};
         const auto rhs_topk{build_topk_index(rhs)};
-        static constexpr std::size_t kComposeHistogramCap{
-            MetaLogConfig::kDefaultMaxHistogramValues};
+        const std::size_t value_cap{
+            out.stats.value_counts_size.value_or(MetaLogConfig::kDefaultMaxHistogramValues)};
 
         const auto top_k_cut{std::min(out.stats.top_k_size, ordered.size())};
         out.stats.top_k.reserve(top_k_cut);
@@ -336,8 +360,8 @@ namespace
             const auto& rhs_hists{
                 rhs_entry_it != rhs_topk.end() ? rhs_entry_it->second->field_histograms : empty};
             if (!lhs_hists.empty() || !rhs_hists.empty())
-                entry.field_histograms =
-                    merge_field_histograms(lhs_hists, rhs_hists, kComposeHistogramCap);
+                entry.field_histograms = merge_field_histograms(
+                    lhs_hists, rhs_hists, out.stats.param_histograms_size, value_cap);
             out.stats.top_k.push_back(std::move(entry));
         }
     }
@@ -1221,6 +1245,14 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs,
     // invariant: the top_k cap is declared here because both composed builders cut at it.
     // refs: ADR-25.D5
     out.stats.top_k_size = std::min(lhs.stats.top_k_size, rhs.stats.top_k_size);
+    // invariant: each histogram cap is the minimum over the declared caps; the value cap falls
+    // back to the composer's own default, declared, when neither input declared one.
+    // refs: DN-148.D5, ADR-25.D5
+    out.stats.param_histograms_size =
+        min_declared_cap(lhs.stats.param_histograms_size, rhs.stats.param_histograms_size);
+    out.stats.value_counts_size =
+        min_declared_cap(lhs.stats.value_counts_size, rhs.stats.value_counts_size)
+            .value_or(MetaLogConfig::kDefaultMaxHistogramValues);
     out.stats.unique_templates = state.ordered.size();
 
     build_composed_top_k(out, state, lhs, rhs);

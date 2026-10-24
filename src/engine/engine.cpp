@@ -657,6 +657,14 @@ void MetaLogEngine::build_top_k(MetaLogDocument& doc, const WindowAnalysis& anal
     StatsBlock& stats = doc.stats;
     stats.unique_templates = ordered.size();
     stats.top_k_size = config_.top_k_size;
+    // invariant: both histogram caps are declared where they are in force, and only when the
+    // producer builds histograms, so compose reads the caps the slots were admitted under.
+    // refs: DN-148.D5
+    if (config_.max_param_histograms > 0)
+    {
+        stats.param_histograms_size = config_.max_param_histograms;
+        stats.value_counts_size = config_.max_histogram_values;
+    }
     stats.top_k.reserve(top_k_cut);
 
     for (std::size_t i = 0; i < top_k_cut; ++i)
