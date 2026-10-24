@@ -543,8 +543,9 @@ void MetaLogEngine::stamp_envelope(MetaLogDocument& doc, Timestamp start, Timest
     // refs: ADR-23.D1
     doc.transport = config_.transport;
 
-    // assert: the bounds are integer ticks from the deterministic event timestamps, so they are
-    // bit-identical across replays.
+    // refs: DN-137.O1
+    // invariant: the bounds are the window's event-time membership interval [open, close) that
+    // metalog-spec §15 requires, in integer ticks, and never the reported envelope stamped above.
     // note: the coordinate is descriptive metadata; no compute below reads it.
     if (config_.source_ref)
     {
