@@ -229,7 +229,7 @@ TEST(SpanEdges, ObservedDagHasNoInterleaveNoiseThatInferredDoes)
                                  << dump_top_ngrams(inferred_doc);
 }
 
-TEST(SpanEdges, ObservedEdgesReplayBitIdentically)
+TEST(SpanEdges, ObservedEdgesAreInProcessStable)
 {
     const auto run = []
     {
