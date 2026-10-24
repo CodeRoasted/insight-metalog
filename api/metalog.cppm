@@ -424,8 +424,13 @@ class MetaLogEngine
 // none being skipped rather than read as zero.
 // invariant: stability is dropped and the result is id-only, so the display string resolves by id
 // from the engine registry.
+// post: compose(lhs, rhs) and compose(rhs, lhs) are the same document: every member the inputs
+// disagree on resolves by a rule over the values, never by operand position (SPEC 12.2).
+// post: producer is `composer` and metalog_version this build's edition -- the composer produced
+// the document, so neither is copied from an input.
 // refs: ADR-25.D5, F-SRC-insight-metalog:metalog.api.cppm:TemplateRegistry
-[[nodiscard]] MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs);
+[[nodiscard]] MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs,
+                                      const ProducerBlock& composer = ProducerBlock{});
 
 // post: delta is current minus previous, with `previous` the earlier document.
 [[nodiscard]] MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current);

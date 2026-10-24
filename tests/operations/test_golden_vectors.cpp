@@ -63,6 +63,13 @@ namespace cw = insight::metalog::corpus_windows;
 // vector line can never be read as evidence about a shipped version.
 constexpr std::string_view kVectorProducerVersion{"0.0.0-vector"};
 
+// invariant: compose() stamps the COMPOSER's block (SPEC 12.1), so the vectors hand it the same
+// frozen version the engine stamps on the two input windows.
+[[nodiscard]] meta::ProducerBlock vector_composer()
+{
+    return meta::ProducerBlock{.version = std::string{kVectorProducerVersion}};
+}
+
 // invariant: three of the seven committed corpora, chosen for the SHAPE of the diff they produce
 // rather than for size.
 // note: the other four differ in input FORMAT, which the determinism and schema gates cover.
@@ -183,7 +190,7 @@ void collect_templates(const meta::MetaLogDocument& doc, const meta::TemplateReg
     produced.previous = std::move(pair.previous);
     produced.current = std::move(pair.current);
     produced.diffed = meta::diff(produced.previous, produced.current);
-    produced.composed = meta::compose(produced.previous, produced.current);
+    produced.composed = meta::compose(produced.previous, produced.current, vector_composer());
 
     produced.records.resize(kRecordCount);
     produced.records[kPreviousDocument] =
@@ -631,12 +638,39 @@ TEST_P(GoldenVector, SelfComposeDoesNotReproduceTheVector)
     config.producer_version = std::string{kVectorProducerVersion};
     meta::MetaLogEngine engine{config};
     const auto pair{cw::build(engine, *lines)};
-    const auto self_composed{written_or_fail(
-        meta::to_json(meta::compose(pair.previous, pair.previous), engine.registry()))};
+    const auto self_composed{written_or_fail(meta::to_json(
+        meta::compose(pair.previous, pair.previous, vector_composer()), engine.registry()))};
     EXPECT_NE((*golden)[kComposed], self_composed)
         << "[" << corpus.name
         << "] compose(previous, previous) serialises to the SAME bytes as the golden "
            "compose(previous, current). The vector does not pin which documents were merged.";
+}
+
+// invariant: SPEC 12.2 (0.10.0) -- compose(current, previous) is the SAME document as the committed
+// compose(previous, current) record, byte for byte, over real corpus windows.
+TEST_P(GoldenVector, OperandSwappedComposeReproducesTheVector)
+{
+    const auto& corpus{GetParam()};
+    const auto lines{cw::read_lines(corpus_path(corpus.name).string())};
+    ASSERT_TRUE(lines.has_value())
+        << "corpus file is missing: " << corpus_path(corpus.name).string();
+    const auto golden{read_vector_file(corpus.name)};
+    ASSERT_TRUE(golden.has_value());
+    ASSERT_EQ(golden->size(), static_cast<std::size_t>(kRecordCount));
+
+    meta::MetaLogConfig config;
+    cw::configure(config);
+    config.producer_version = std::string{kVectorProducerVersion};
+    meta::MetaLogEngine engine{config};
+    const auto pair{cw::build(engine, *lines)};
+    const auto swapped{written_or_fail(meta::to_json(
+        meta::compose(pair.current, pair.previous, vector_composer()), engine.registry()))};
+    EXPECT_EQ((*golden)[kComposed], swapped)
+        << "[" << corpus.name
+        << "] compose(current, previous) does not serialise to the golden compose(previous, "
+           "current): SPEC 12.2 makes the two operand orders the same document."
+        << "\n  golden  " << (*golden)[kComposed].size() << " byte(s)"
+        << "\n  swapped " << swapped.size() << " byte(s)";
 }
 
 // invariant: the licence for the failure reporter: prettify is a purely textual reformat, so the

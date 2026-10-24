@@ -60,31 +60,123 @@ namespace
         return out;
     }
 
-    void aggregate_top_k(std::unordered_map<TemplateId, std::uint64_t>& counts,
-                         std::unordered_map<TemplateId, std::optional<EventLevel>>& levels,
-                         const MetaLogDocument& doc)
+    // invariant: one input's own view of one template -- the count it contributed and the labels it
+    // carried; top_k and reservoir are disjoint within a document, so one entry feeds each view.
+    struct InputTemplate
     {
-        // refs: F-SRC-insight-metalog:metalog.api.cppm:TemplateRegistry
+        std::uint64_t count{0};
+        std::optional<EventLevel> level;
+        std::optional<std::string> component;
+        StructuralRole role{StructuralRole::None};
+        std::optional<std::vector<std::string>> where;
+    };
+
+    using InputTemplateIndex = std::unordered_map<TemplateId, InputTemplate>;
+
+    // refs: F-SRC-insight-metalog:metalog.api.cppm:TemplateRegistry
+    [[nodiscard]] InputTemplateIndex index_input_templates(const MetaLogDocument& doc)
+    {
+        InputTemplateIndex index;
+        index.reserve(doc.stats.top_k.size() + doc.stats.reservoir.size());
         for (const auto& entry : doc.stats.top_k)
         {
-            counts[entry.template_id] += entry.count;
-            if (entry.dominant_level && !levels.contains(entry.template_id))
-                levels.emplace(entry.template_id, entry.dominant_level);
+            InputTemplate& view{index[entry.template_id]};
+            view.count += entry.count;
+            view.level = entry.dominant_level;
+            view.component = entry.dominant_component;
         }
-    }
-
-    // invariant: top_k and reservoir are disjoint within one document, so folding both never
-    // double-counts an input; across inputs a template gets its full merged count.
-    void aggregate_reservoir(std::unordered_map<TemplateId, std::uint64_t>& counts,
-                             std::unordered_map<TemplateId, std::optional<EventLevel>>& levels,
-                             const MetaLogDocument& doc)
-    {
         for (const auto& entry : doc.stats.reservoir)
         {
-            counts[entry.template_id] += entry.count;
-            if (entry.dominant_level && !levels.contains(entry.template_id))
-                levels.emplace(entry.template_id, entry.dominant_level);
+            InputTemplate& view{index[entry.template_id]};
+            view.count += entry.count;
+            view.level = entry.dominant_level;
+            view.component = entry.dominant_component;
+            view.role = entry.structural_role;
+            if (entry.cube_coord && entry.cube_coord->where && !entry.cube_coord->where->empty())
+                view.where = entry.cube_coord->where;
         }
+        return index;
+    }
+
+    // post: the label of the input that contributed the higher count, the smaller under `less` at
+    // equal counts, the present one when only one input carries it, nullptr when neither does.
+    // invariant: no branch reads which operand a label came from, so compose(A, B) and
+    // compose(B, A) resolve every label alike (SPEC 12.1, 12.2).
+    template <class Label, class Less>
+    [[nodiscard]] const Label* resolve_label(const Label* lhs, std::uint64_t lhs_count,
+                                             const Label* rhs, std::uint64_t rhs_count, Less less)
+    {
+        if (lhs == nullptr)
+            return rhs;
+        if (rhs == nullptr)
+            return lhs;
+        if (lhs_count != rhs_count)
+            return lhs_count > rhs_count ? lhs : rhs;
+        return less(*rhs, *lhs) ? rhs : lhs;
+    }
+
+    // invariant: the per-template labels of the composed document, each resolved by SPEC 12.1's
+    // count-then-lexicographic rule over the two inputs' values.
+    struct ResolvedLabels
+    {
+        std::optional<EventLevel> level;
+        std::optional<std::string> component;
+        StructuralRole role{StructuralRole::None};
+        std::optional<std::vector<std::string>> where;
+    };
+
+    // post: a level the wire carries is ordered by its spelling, and at an equal spelling a
+    // declared level precedes an inferred one, so the domain-only provenance half is symmetric too.
+    [[nodiscard]] bool level_less(const EventLevel& lhs, const EventLevel& rhs)
+    {
+        const std::string lhs_text{level_to_spec_string(lhs.value())};
+        const std::string rhs_text{level_to_spec_string(rhs.value())};
+        if (lhs_text != rhs_text)
+            return lhs_text < rhs_text;
+        return lhs.is_declared() && !rhs.is_declared();
+    }
+
+    // post: the composed level -- a level the wire carries wins over one it omits (Unknown), and an
+    // engaged Unknown survives only when neither input carries a wire level.
+    // refs: ADR-20.D19
+    [[nodiscard]] std::optional<EventLevel> resolve_level(const InputTemplate& lhs,
+                                                          const InputTemplate& rhs)
+    {
+        const auto carried{[](const InputTemplate& view) -> const EventLevel*
+                           {
+                               return view.level && view.level->value() != LogLevel::Unknown
+                                          ? &*view.level
+                                          : nullptr;
+                           }};
+        if (const EventLevel* chosen{
+                resolve_label(carried(lhs), lhs.count, carried(rhs), rhs.count, level_less)})
+            return *chosen;
+        if (lhs.level || rhs.level)
+            return EventLevel::inferred(LogLevel::Unknown);
+        return std::nullopt;
+    }
+
+    [[nodiscard]] ResolvedLabels resolve_labels(const InputTemplate& lhs, const InputTemplate& rhs)
+    {
+        ResolvedLabels out;
+        out.level = resolve_level(lhs, rhs);
+        if (const std::string* component{
+                resolve_label(lhs.component ? &*lhs.component : nullptr, lhs.count,
+                              rhs.component ? &*rhs.component : nullptr, rhs.count, std::less<>{})})
+            out.component = *component;
+        const auto role_of{[](const InputTemplate& view) -> const StructuralRole*
+                           { return view.role != StructuralRole::None ? &view.role : nullptr; }};
+        if (const StructuralRole *role{
+                resolve_label(role_of(lhs), lhs.count, role_of(rhs), rhs.count,
+                              [](StructuralRole left, StructuralRole right)
+                              { return insight::to_string(left) < insight::to_string(right); })})
+            out.role = *role;
+        // note: std::vector's operator< is the element-by-element order, a prefix first.
+        if (const std::vector<std::string>* where{
+                resolve_label(lhs.where ? &*lhs.where : nullptr, lhs.count,
+                              rhs.where ? &*rhs.where : nullptr, rhs.count, std::less<>{})})
+            out.where = *where;
+        return out;
     }
 
     // post: value_counts union with sums on matching keys, truncated to the cap by count with a key
@@ -160,19 +252,36 @@ namespace
     struct ComposeState
     {
         std::unordered_map<TemplateId, std::uint64_t> counts;
-        std::unordered_map<TemplateId, std::optional<EventLevel>> levels;
+        std::unordered_map<TemplateId, ResolvedLabels> labels;
         std::vector<std::pair<TemplateId, std::uint64_t>> ordered;
         std::unordered_set<TemplateId> reserved;
     };
 
-    // post: both inputs' top_k and reservoir folded in, ordered count desc then id asc.
+    // post: every template of either input with its merged count and resolved labels, ordered
+    // count desc then id asc -- the order that also decides the last top_k slot.
     void aggregate_and_order(ComposeState& state, const MetaLogDocument& lhs,
                              const MetaLogDocument& rhs)
     {
-        aggregate_top_k(state.counts, state.levels, lhs);
-        aggregate_top_k(state.counts, state.levels, rhs);
-        aggregate_reservoir(state.counts, state.levels, lhs);
-        aggregate_reservoir(state.counts, state.levels, rhs);
+        const InputTemplateIndex lhs_index{index_input_templates(lhs)};
+        const InputTemplateIndex rhs_index{index_input_templates(rhs)};
+        const InputTemplate not_carried{};
+        const auto fold{[&](const TemplateId& template_id)
+                        {
+                            if (state.counts.contains(template_id))
+                                return;
+                            const auto lhs_it{lhs_index.find(template_id)};
+                            const auto rhs_it{rhs_index.find(template_id)};
+                            const InputTemplate& lhs_view{lhs_it != lhs_index.end() ? lhs_it->second
+                                                                                    : not_carried};
+                            const InputTemplate& rhs_view{rhs_it != rhs_index.end() ? rhs_it->second
+                                                                                    : not_carried};
+                            state.counts.emplace(template_id, lhs_view.count + rhs_view.count);
+                            state.labels.emplace(template_id, resolve_labels(lhs_view, rhs_view));
+                        }};
+        for (const auto& [template_id, view] : lhs_index)
+            fold(template_id);
+        for (const auto& [template_id, view] : rhs_index)
+            fold(template_id);
 
         state.ordered.assign(state.counts.begin(), state.counts.end());
         std::ranges::sort(state.ordered,
@@ -188,7 +297,6 @@ namespace
     void build_composed_top_k(MetaLogDocument& out, const ComposeState& state,
                               const MetaLogDocument& lhs, const MetaLogDocument& rhs)
     {
-        const auto& levels = state.levels;
         const auto& ordered = state.ordered;
         const auto build_topk_index{[](const MetaLogDocument& doc)
                                     {
@@ -213,8 +321,12 @@ namespace
             entry.count = ordered[i].second;
             entry.frequency =
                 total_lines > 0.0 ? static_cast<double>(entry.count) / total_lines : 0.0;
-            if (auto level_it{levels.find(entry.template_id)}; level_it != levels.end())
-                entry.dominant_level = level_it->second;
+            if (const auto labels_it{state.labels.find(entry.template_id)};
+                labels_it != state.labels.end())
+            {
+                entry.dominant_level = labels_it->second.level;
+                entry.dominant_component = labels_it->second.component;
+            }
             // note: histograms absent on both sides yield none, matching a cap that was a no-op.
             const auto lhs_entry_it{lhs_topk.find(entry.template_id)};
             const auto rhs_entry_it{rhs_topk.find(entry.template_id)};
@@ -235,8 +347,6 @@ namespace
     {
         std::uint32_t structural_surprise{0};
         std::uint32_t novelty{0};
-        StructuralRole role{StructuralRole::None};
-        std::string where_leaf;
     };
 
     struct ComposeReservoirCandidate
@@ -245,10 +355,8 @@ namespace
         std::uint32_t salience;
         std::uint32_t structural_surprise;
         std::uint32_t novelty;
-        StructuralRole role;
         // note: the axis is the composed document's own verdict, since rarity is scale-relative.
         std::optional<RetentionAxis> retention_axis;
-        std::string where_leaf;
     };
 
     // post: the templates salient in either input's reservoir that did not rise into the composed
@@ -258,26 +366,19 @@ namespace
                                          const MetaLogDocument& lhs, const MetaLogDocument& rhs)
     {
         const auto& counts = state.counts;
-        const auto& levels = state.levels;
 
         std::unordered_map<TemplateId, ComposeSalienceInfo> sal_info;
-        const auto absorb_reservoir{
-            [&](const MetaLogDocument& doc)
-            {
-                for (const auto& entry : doc.stats.reservoir)
-                {
-                    auto& info{sal_info[entry.template_id]};
-                    info.structural_surprise =
-                        std::max(info.structural_surprise, entry.structural_surprise);
-                    info.novelty = std::max(info.novelty, entry.novelty);
-                    if (info.role == StructuralRole::None)
-                        info.role = entry.structural_role;
-                    // note: the WHERE leaf comes from the first input entry with a cube coord.
-                    if (info.where_leaf.empty() && entry.cube_coord && entry.cube_coord->where &&
-                        !entry.cube_coord->where->empty())
-                        info.where_leaf = entry.cube_coord->where->back();
-                }
-            }};
+        const auto absorb_reservoir{[&](const MetaLogDocument& doc)
+                                    {
+                                        for (const auto& entry : doc.stats.reservoir)
+                                        {
+                                            auto& info{sal_info[entry.template_id]};
+                                            info.structural_surprise =
+                                                std::max(info.structural_surprise,
+                                                         entry.structural_surprise);
+                                            info.novelty = std::max(info.novelty, entry.novelty);
+                                        }
+                                    }};
         absorb_reservoir(lhs);
         absorb_reservoir(rhs);
 
@@ -293,15 +394,15 @@ namespace
                 continue;
             const auto cit{counts.find(tid)};
             const std::uint64_t cnt{cit != counts.end() ? cit->second : 0};
-            const auto lit{levels.find(tid)};
-            const std::optional<EventLevel> lvl{lit != levels.end() ? lit->second : std::nullopt};
+            const ResolvedLabels& labels{state.labels.at(tid)};
+            const std::optional<EventLevel>& lvl{labels.level};
             // assert: the cue tier is moot on an empty template, so the echoed gate is a no-op and
             // a composed input carries no per-line provenance anyway.
             // note: salience reads severity, not evidence quality, so provenance is not an input.
             // refs: F-SRC-insight-metalog:metalog.api.cppm:TemplateRegistry, ADR-20.D5
             const auto sal{
                 salience_score(lvl ? std::optional<LogLevel>{lvl->value()} : std::nullopt,
-                               info.role, std::string_view{},
+                               labels.role, std::string_view{},
                                /*echoed_source=*/false, cnt, out.window.lines_observed,
                                info.structural_surprise, info.novelty)};
             if (sal.score > 0U)
@@ -310,9 +411,7 @@ namespace
                                               .salience = sal.score,
                                               .structural_surprise = info.structural_surprise,
                                               .novelty = info.novelty,
-                                              .role = info.role,
-                                              .retention_axis = sal.axis,
-                                              .where_leaf = info.where_leaf});
+                                              .retention_axis = sal.axis});
         }
         return res_cands;
     }
@@ -325,7 +424,6 @@ namespace
                             const MetaLogDocument& rhs)
     {
         const auto& counts = state.counts;
-        const auto& levels = state.levels;
         auto& reserved = state.reserved;
         const auto total_lines = static_cast<double>(out.window.lines_observed);
 
@@ -355,9 +453,10 @@ namespace
             entry.count = cit != counts.end() ? cit->second : 0;
             entry.frequency =
                 total_lines > 0.0 ? static_cast<double>(entry.count) / total_lines : 0.0;
-            if (auto level_it{levels.find(cand.template_id)}; level_it != levels.end())
-                entry.dominant_level = level_it->second;
-            entry.structural_role = cand.role;
+            const ResolvedLabels& labels{state.labels.at(cand.template_id)};
+            entry.dominant_level = labels.level;
+            entry.dominant_component = labels.component;
+            entry.structural_role = labels.role;
             entry.structural_surprise = cand.structural_surprise;
             entry.novelty = cand.novelty;
             entry.salience = cand.salience;
@@ -366,7 +465,7 @@ namespace
                 entry.cube_coord = cube::cube_location(
                     entry.dominant_level ? std::optional<LogLevel>{entry.dominant_level->value()}
                                          : std::nullopt,
-                    cand.where_leaf);
+                    labels.where ? std::string_view{labels.where->back()} : std::string_view{});
             out.stats.reservoir.push_back(std::move(entry));
             reserved.insert(cand.template_id);
         }
@@ -437,51 +536,400 @@ namespace
         out.stats.entropy_bits = shannon_entropy_bits(counts, out.window.lines_observed);
     }
 
-    // post: a composed document always carries provenance; the inputs' own entries extend it.
+    // post: `text` as an RFC 8785 string: quote and backslash escaped, a control byte as its short
+    // escape or as \u00xx in lower-case hex, every other byte verbatim.
+    void append_jcs_string(std::string& out, std::string_view text)
+    {
+        static constexpr std::string_view kHexDigits{"0123456789abcdef"};
+        static constexpr unsigned kFirstPrintable{0x20};
+        static constexpr unsigned kNibbleBits{4};
+        static constexpr unsigned kNibbleMask{0x0F};
+        out.push_back('"');
+        for (const char glyph : text)
+        {
+            const auto byte{static_cast<unsigned char>(glyph)};
+            switch (glyph)
+            {
+            case '"':
+                out += "\\\"";
+                break;
+            case '\\':
+                out += "\\\\";
+                break;
+            case '\b':
+                out += "\\b";
+                break;
+            case '\f':
+                out += "\\f";
+                break;
+            case '\n':
+                out += "\\n";
+                break;
+            case '\r':
+                out += "\\r";
+                break;
+            case '\t':
+                out += "\\t";
+                break;
+            default:
+                if (byte < kFirstPrintable)
+                {
+                    out += "\\u00";
+                    out.push_back(kHexDigits[(byte >> kNibbleBits) & kNibbleMask]);
+                    out.push_back(kHexDigits[byte & kNibbleMask]);
+                }
+                else
+                    out.push_back(glyph);
+            }
+        }
+        out.push_back('"');
+    }
+
+    // invariant: Ecma is RFC 8785's own number form; Exact writes every integer's exact decimal,
+    // the refinement that orders two values Ecma rounds to one double.
+    enum class NumberForm : std::uint8_t
+    {
+        Ecma,
+        Exact,
+    };
+
+    // post: `value` as RFC 8785 writes a number -- the ECMAScript form of the IEEE 754 double it
+    // maps to: the exact decimal up to 2^53, the shortest round-trip digits zero-padded above it.
+    // note: every uint64 lies below 1e21, where that form never switches to an exponent.
+    // assert: the int-to-double rounding and to_chars' shortest form are both exactly specified,
+    // so the digits are the same on every leg; nothing here feeds a count back.
+    void append_jcs_number(std::string& out, std::uint64_t value, NumberForm form)
+    {
+        static constexpr std::uint64_t kExactDoubleLimit{std::uint64_t{1}
+                                                         << std::numeric_limits<double>::digits};
+        static constexpr std::string_view kPositiveExponent{"e+"};
+        static constexpr std::size_t kScientificWidth{32};
+        if (form == NumberForm::Exact || value <= kExactDoubleLimit)
+        {
+            out += std::to_string(value);
+            return;
+        }
+        std::array<char, kScientificWidth> buffer{};
+        const auto written{std::to_chars(buffer.data(), buffer.data() + buffer.size(),
+                                         static_cast<double>(value),
+                                         std::chars_format::scientific)};
+        const std::string_view scientific{buffer.data(), written.ptr};
+        const std::size_t exponent_at{scientific.find(kPositiveExponent)};
+        std::string digits;
+        for (const char glyph : scientific.substr(0, exponent_at))
+            if (glyph != '.')
+                digits.push_back(glyph);
+        std::size_t exponent{0};
+        const std::string_view exponent_text{
+            scientific.substr(exponent_at + kPositiveExponent.size())};
+        std::from_chars(exponent_text.data(), exponent_text.data() + exponent_text.size(),
+                        exponent);
+        digits.resize(exponent + 1, '0');
+        out += digits;
+    }
+
+    // post: a UTF-8 byte remapped so that byte order equals RFC 8785's UTF-16 code-unit order: a
+    // four-byte lead (a surrogate pair) sorts after U+D7FF's lead and before U+E000's.
+    // note: a continuation byte never moves, so two strings part at aligned positions.
+    [[nodiscard]] constexpr unsigned utf16_order_of(unsigned char byte) noexcept
+    {
+        static constexpr unsigned kLeadAfterSurrogates{0xEE};
+        static constexpr unsigned kFirstFourByteLead{0xF0};
+        static constexpr unsigned kLastFourByteLead{0xF4};
+        static constexpr unsigned kFourByteLeads{kLastFourByteLead - kFirstFourByteLead + 1};
+        if (byte >= kFirstFourByteLead && byte <= kLastFourByteLead)
+            return byte - kFirstFourByteLead + kLeadAfterSurrogates;
+        if (byte >= kLeadAfterSurrogates && byte < kFirstFourByteLead)
+            return byte + kFourByteLeads;
+        return byte;
+    }
+
+    [[nodiscard]] bool jcs_key_less(std::string_view lhs, std::string_view rhs)
+    {
+        const auto order{[](char glyph)
+                         { return utf16_order_of(static_cast<unsigned char>(glyph)); }};
+        return std::ranges::lexicographical_compare(lhs, rhs, std::less<>{}, order, order);
+    }
+
+    // invariant: an RFC 8785 object under construction; the caller names members in the
+    // canonical key order, which for this producer's fixed ASCII member names is byte order.
+    class JcsObject
+    {
+      public:
+        // pre: `out` outlives this object.
+        explicit JcsObject(std::string& out) : out_{&out}
+        {
+            out_->push_back('{');
+        }
+        void key(std::string_view name)
+        {
+            if (!first_)
+                out_->push_back(',');
+            first_ = false;
+            append_jcs_string(*out_, name);
+            out_->push_back(':');
+        }
+        void close()
+        {
+            out_->push_back('}');
+        }
+
+      private:
+        std::string* out_;
+        bool first_{true};
+    };
+
+    // post: the source block exactly as the serializer writes it, members in canonical order.
+    // refs: F-SRC-insight-metalog:serialize.cpp:make_source
+    void append_jcs_source(std::string& out, const SourceBlock& source, NumberForm form)
+    {
+        JcsObject object{out};
+        if (source.fleet)
+        {
+            object.key("fleet");
+            append_jcs_string(out, *source.fleet);
+        }
+        if (source.host)
+        {
+            object.key("host");
+            append_jcs_string(out, *source.host);
+        }
+        if (source.host_count)
+        {
+            object.key("host_count");
+            append_jcs_number(out, *source.host_count, form);
+        }
+        if (source.service)
+        {
+            object.key("service");
+            append_jcs_string(out, *source.service);
+        }
+        if (!source.tags.empty())
+        {
+            object.key("tags");
+            std::vector<const std::pair<const std::string, std::string>*> tags;
+            tags.reserve(source.tags.size());
+            for (const auto& tag : source.tags)
+                tags.push_back(&tag);
+            std::ranges::sort(tags, [](const auto* lhs, const auto* rhs)
+                              { return jcs_key_less(lhs->first, rhs->first); });
+            JcsObject tag_object{out};
+            for (const auto* tag : tags)
+            {
+                tag_object.key(tag->first);
+                append_jcs_string(out, tag->second);
+            }
+            tag_object.close();
+        }
+        object.close();
+    }
+
+    // post: the coordinate exactly as the serializer writes it, recursing into children.
+    // refs: F-SRC-insight-metalog:serialize.cpp:make_coordinate
+    void append_jcs_coordinate(std::string& out, const ReDerivationCoordinate& coord,
+                               NumberForm form)
+    {
+        JcsObject object{out};
+        if (coord.bounds)
+        {
+            object.key("bounds");
+            JcsObject bounds{out};
+            bounds.key("end_tick");
+            append_jcs_number(out, coord.bounds->end_tick, form);
+            bounds.key("start_tick");
+            append_jcs_number(out, coord.bounds->start_tick, form);
+            bounds.close();
+        }
+        if (coord.canonicalization_version)
+        {
+            object.key("canonicalization_version");
+            append_jcs_string(out, *coord.canonicalization_version);
+        }
+        if (coord.children)
+        {
+            object.key("children");
+            out.push_back('[');
+            for (std::size_t index{0}; index < coord.children->size(); ++index)
+            {
+                if (index > 0)
+                    out.push_back(',');
+                append_jcs_coordinate(out, (*coord.children)[index], form);
+            }
+            out.push_back(']');
+        }
+        if (coord.config_hash)
+        {
+            object.key("config_hash");
+            append_jcs_string(out, *coord.config_hash);
+        }
+        if (coord.source_ref)
+        {
+            object.key("source_ref");
+            JcsObject source_ref{out};
+            source_ref.key("handle");
+            append_jcs_string(out, coord.source_ref->handle);
+            source_ref.key("resolver_kind");
+            append_jcs_string(out, coord.source_ref->resolver_kind);
+            source_ref.close();
+        }
+        object.close();
+    }
+
+    [[nodiscard]] std::string jcs_bytes_of(const ReDerivationCoordinate& coord, NumberForm form)
+    {
+        std::string out;
+        append_jcs_coordinate(out, coord, form);
+        return out;
+    }
+
+    // post: the provenance entry exactly as the serializer writes it -- an empty source omitted,
+    // the window always present and empty when the input carried no bounds.
+    // refs: F-SRC-insight-metalog:serialize.cpp:make_provenance
+    [[nodiscard]] std::string jcs_bytes_of(const ProvenanceEntry& entry, NumberForm form)
+    {
+        std::string out;
+        JcsObject object{out};
+        if (entry.coordinate)
+        {
+            object.key("coordinate");
+            append_jcs_coordinate(out, *entry.coordinate, form);
+        }
+        if (entry.document_id)
+        {
+            object.key("document_id");
+            append_jcs_string(out, *entry.document_id);
+        }
+        object.key("lines_observed");
+        append_jcs_number(out, entry.lines_observed, form);
+        const SourceBlock& source{entry.source};
+        if (source.service || source.fleet || source.host_count || source.host ||
+            !source.tags.empty())
+        {
+            object.key("source");
+            append_jcs_source(out, source, form);
+        }
+        object.key("window");
+        JcsObject window{out};
+        if (entry.window)
+        {
+            window.key("end");
+            append_jcs_string(out, entry.window->end_iso);
+            window.key("start");
+            append_jcs_string(out, entry.window->start_iso);
+        }
+        window.close();
+        object.close();
+        return out;
+    }
+
+    // post: the RFC 8785 bytes, then the exact-decimal bytes that order two values RFC 8785's
+    // double rounding ties (integers above 2^53), so two keys tie only on equal values.
+    using CanonicalKey = std::pair<std::string, std::string>;
+
+    template <class Value> [[nodiscard]] CanonicalKey canonical_key_of(const Value& value)
+    {
+        return {jcs_bytes_of(value, NumberForm::Ecma), jcs_bytes_of(value, NumberForm::Exact)};
+    }
+
+    // post: SPEC 12.1's provenance: both inputs' own entries plus one entry per input, whether or
+    // not an input already carried provenance.
+    // post: sorted by window.start (no bounds first), then window.end, then the canonical key.
+    // note: two entries equal under that order serialise identically, so their order is moot.
     std::vector<ProvenanceEntry> merge_provenance(const MetaLogDocument& lhs,
                                                   const MetaLogDocument& rhs)
     {
-        std::vector<ProvenanceEntry> prov;
-        if (lhs.provenance)
-            prov = *lhs.provenance;
-        if (rhs.provenance)
-            prov.insert(prov.end(), rhs.provenance->begin(), rhs.provenance->end());
-        if (prov.empty())
+        std::vector<std::pair<CanonicalKey, ProvenanceEntry>> keyed;
+        keyed.reserve((lhs.provenance ? lhs.provenance->size() : 0) +
+                      (rhs.provenance ? rhs.provenance->size() : 0) + 2);
+        const auto add{[&keyed](ProvenanceEntry entry)
+                       {
+                           CanonicalKey key{canonical_key_of(entry)};
+                           keyed.emplace_back(std::move(key), std::move(entry));
+                       }};
+        for (const MetaLogDocument* doc : {&lhs, &rhs})
         {
-            prov.push_back({window_bounds_of(lhs.window), lhs.source, lhs.window.lines_observed,
-                            std::nullopt, lhs.coordinate});
-            prov.push_back({window_bounds_of(rhs.window), rhs.source, rhs.window.lines_observed,
-                            std::nullopt, rhs.coordinate});
+            if (doc->provenance)
+                for (const ProvenanceEntry& entry : *doc->provenance)
+                    add(entry);
+            add({.window = window_bounds_of(doc->window),
+                 .source = doc->source,
+                 .lines_observed = doc->window.lines_observed,
+                 .document_id = std::nullopt,
+                 .coordinate = doc->coordinate});
         }
+        std::ranges::sort(keyed,
+                          [](const auto& lhs_keyed, const auto& rhs_keyed)
+                          {
+                              const auto& lhs_window{lhs_keyed.second.window};
+                              const auto& rhs_window{rhs_keyed.second.window};
+                              if (lhs_window.has_value() != rhs_window.has_value())
+                                  return !lhs_window.has_value();
+                              if (lhs_window && rhs_window)
+                              {
+                                  if (lhs_window->start_iso != rhs_window->start_iso)
+                                      return lhs_window->start_iso < rhs_window->start_iso;
+                                  if (lhs_window->end_iso != rhs_window->end_iso)
+                                      return lhs_window->end_iso < rhs_window->end_iso;
+                              }
+                              return lhs_keyed.first < rhs_keyed.first;
+                          });
+        std::vector<ProvenanceEntry> prov;
+        prov.reserve(keyed.size());
+        for (auto& [key, entry] : keyed)
+            prov.push_back(std::move(entry));
         return prov;
     }
 
-    // post: the SET of the inputs' raw-leaf coordinates, never a coarse single bound; nullopt when
-    // neither input carried one.
+    // post: the SET of the inputs' raw-leaf coordinates, never a coarse single bound, in the
+    // canonical-key order of each child; nullopt when neither input carried one.
+    // note: SPEC 15.5 names a set and no order, and 12.2 requires one independent of the operands.
     std::optional<ReDerivationCoordinate> merge_coordinate(const MetaLogDocument& lhs,
                                                            const MetaLogDocument& rhs)
     {
-        std::vector<ReDerivationCoordinate> child_coords;
-        const auto collect_leaves{[&child_coords](const MetaLogDocument& doc)
+        std::vector<std::pair<CanonicalKey, ReDerivationCoordinate>> keyed;
+        const auto add{[&keyed](const ReDerivationCoordinate& child)
+                       { keyed.emplace_back(canonical_key_of(child), child); }};
+        const auto collect_leaves{[&add](const MetaLogDocument& doc)
                                   {
                                       if (!doc.coordinate)
                                           return;
                                       if (doc.coordinate->children)
-                                          child_coords.insert(child_coords.end(),
-                                                              doc.coordinate->children->begin(),
-                                                              doc.coordinate->children->end());
+                                          for (const auto& child : *doc.coordinate->children)
+                                              add(child);
                                       else
-                                          child_coords.push_back(*doc.coordinate);
+                                          add(*doc.coordinate);
                                   }};
         collect_leaves(lhs);
         collect_leaves(rhs);
-        if (child_coords.empty())
+        if (keyed.empty())
             return std::nullopt;
+        std::ranges::sort(keyed, [](const auto& lhs_keyed, const auto& rhs_keyed)
+                          { return lhs_keyed.first < rhs_keyed.first; });
+        std::vector<ReDerivationCoordinate> child_coords;
+        child_coords.reserve(keyed.size());
+        for (auto& [key, child] : keyed)
+            child_coords.push_back(std::move(child));
         // invariant: a COMPOSED coordinate has children and no source_ref or bounds, and consumers
         // discriminate on the presence of children.
         ReDerivationCoordinate composed;
         composed.children = std::move(child_coords);
         return composed;
+    }
+
+    // post: carried only when both inputs supplied one; the gate already made their
+    // semantic_identity equal.
+    // post: two package lists under that one key resolve to the smaller list, never to an operand.
+    // refs: ADR-17.D3
+    [[nodiscard]] std::optional<RulesetIdentity> merge_ruleset(const MetaLogDocument& lhs,
+                                                               const MetaLogDocument& rhs)
+    {
+        if (!lhs.ruleset || !rhs.ruleset)
+            return std::nullopt;
+        const auto package_key{[](const RulesetPackageRef& ref)
+                               { return std::tie(ref.name, ref.version); }};
+        const bool rhs_smaller{std::ranges::lexicographical_compare(
+            rhs.ruleset->packages, lhs.ruleset->packages, std::less<>{}, package_key, package_key)};
+        return rhs_smaller ? rhs.ruleset : lhs.ruleset;
     }
 
     // post: both inputs' dropped_ngram_observations summed, an absent block or count adding zero.
@@ -727,7 +1175,8 @@ namespace
 
 } // namespace
 
-MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
+MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs,
+                        const ProducerBlock& composer)
 {
     // assert: the comparability gate fires BEFORE any merging, so an incompatible pair fails loudly
     // rather than producing a hybrid document.
@@ -745,15 +1194,15 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs)
     const auto rhs_envelope{stamped_envelope(rhs, "rhs")};
 
     MetaLogDocument out;
-    out.metalog_version = lhs.metalog_version;
-    out.producer = lhs.producer;
+    // post: the composer produced C, so C carries its block and the edition it writes, never an
+    // input's (SPEC 12.1).
+    out.metalog_version = std::string{kMetaLogSpecVersion};
+    out.producer = composer;
     out.canonicalization_version =
         carry_processing_identifier(lhs.canonicalization_version, rhs.canonicalization_version);
     out.retention_profile =
         carry_processing_identifier(lhs.retention_profile, rhs.retention_profile);
-    // note: carried only when both inputs supplied it; omitting is the honest output.
-    // refs: ADR-17.D3
-    out.ruleset = (lhs.ruleset && rhs.ruleset) ? lhs.ruleset : std::nullopt;
+    out.ruleset = merge_ruleset(lhs, rhs);
     // invariant: the transport declaration is carried only when both inputs declared the SAME
     // stack, and it is NOT a compose gate and must not become one.
     // note: an empty names[] here would claim the merged runs declared NOTHING -- a wrong claim.

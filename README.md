@@ -1,6 +1,6 @@
 # insight-metalog
 
-**insight-metalog** — MetaLog v0.9.0 producer.
+**insight-metalog** — MetaLog v0.10.0 producer.
 
 `insight_metalog` consumes an event sequence from `insight_canon` and produces a **bounded statistical fingerprint** of a window of log behaviour: composition, session framing, HLL-backed field-cardinality estimation, transition-stability ratios, and diff-encoded deltas between windows.
 

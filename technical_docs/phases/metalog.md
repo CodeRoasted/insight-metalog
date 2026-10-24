@@ -2,7 +2,7 @@
 
 Status: shipped. Package: insight-metalog (single-package repo). The public API is the `insight.metalog` named module (`api/metalog.cppm` — `MetaLogEngine`, `compose()`, `diff()`) over the `insight.metalog.api` contract layer; the envelope internals are sealed, build-only detail shards, one per `src/` domain. Tests mirror the same concerns, one directory per concern under `tests/`, and every test TU imports the `insight.metalog.test` aggregate. **Neither set is enumerated here, deliberately.** The shards are listed once, where they are enforced — `METALOG_DETAIL_MODULE_UNITS` in `CMakeLists.txt`, re-exported for a reader by that test aggregate. The test directories are listed nowhere at all: `CMakeLists.txt` globs `tests/*.cpp` recursively, so the tree IS the list. A copy here could only rot, and the copy that stood here had — three of its six test-directory names were wrong and two further directories went unnamed.
 
-insight-metalog is the compression layer. It turns one bounded window of canonical events into a deterministic MetaLog v0.9.0 document, plus spec-level `compose()` and `diff()` helpers used by detection.
+insight-metalog is the compression layer. It turns one bounded window of canonical events into a deterministic MetaLog v0.10.0 document, plus spec-level `compose()` and `diff()` helpers used by detection.
 
 ## Input
 
@@ -40,7 +40,7 @@ The package also exports:
 |---|---|
 | `to_json(MetaLogDocument)` | Serialize a document to the MetaLog envelope. |
 | `to_json(MetaLogDiff)` | Serialize a diff document. |
-| `compose(lhs, rhs)` | Merge two documents into one coarser baseline. |
+| `compose(lhs, rhs, composer)` | Merge two documents into one coarser baseline, stamped with the composer's `producer` block (default: this package's own). |
 | `diff(previous, current)` | Compute structured change between two documents. |
 
 ## What It Does
@@ -80,6 +80,7 @@ It intentionally does not decide whether a window is anomalous. Cross-window bas
 - `compose()` drops fields that cannot be represented exactly after aggregation, such as some raw branching/histogram detail.
 - `close_window(end, reported)`: a live caller omits `reported` and the envelope is the open/close times; a deterministic-batch caller passes its lines' event-time envelope, or `ReportedWindowBounds{}` when no line carried one, and the document then has NO envelope — never the epoch or the machinery times in its place. The next window's `stability.previous_window_end` is then absent too (SPEC §5).
 - `compose()`'s `window` is the MERGED envelope — earliest start, latest end — and `duration_seconds` is that envelope's real-time span, `end − start` (SPEC §2.2, §12.1), in every geometry: adjacent, gapped, overlapping, nested, identical. It is never a sum of the inputs' durations: N shard documents of ONE interval compose to that interval's span, not N times it. A document with no envelope at all contributes nothing to it, and two compose to none; a bound that is not the 20-byte `YYYY-MM-DDTHH:MM:SSZ` form, an empty one included, is refused with `std::invalid_argument` rather than ordered wrongly.
+- `compose()` is commutative in BYTES (SPEC §12.2, 0.10.0): `compose(A, B)` and `compose(B, A)` serialise identically, because no member is taken from an input by its operand position. A per-template label — `level`, `component`, `structural_role`, a reservoir entry's `cube_coord` where-path — takes the value of the input that contributed the higher count of that template, the lexicographically smaller value at equal counts, and a label only one input carries is carried; a level the wire omits (`UNKNOWN`) never outranks one it writes. `top_k` and the reservoir order ties by `template_id`, `top_ngrams` by key sequence. `provenance` is both inputs' own entries plus one entry per input — also when an input is itself composed — sorted by `window.start` (no bounds first), then `window.end`, then the RFC 8785 canonical bytes of the entry; the composed coordinate's `children` are a set (§15.5) emitted in RFC 8785 byte order. `producer` is the composer's own block and `metalog_version` the edition this build writes. Two inputs under one ruleset `semantic_identity` but different package lists carry the lexicographically smaller list.
 - The presence-churn extension composes by geometry, read off the two envelopes and never off argument order. Two DISJOINT envelopes (`earlier.end ≤ later.start` and `earlier.start < later.start`) take the time-ordered monoid product: spans add and the boundary between them can count a transition. Every other pair — overlapping, nested, identical, equal-start, or unstamped — is one interval seen from two sources and takes the symmetric spatial join (`join_presence_churn`): the span is the larger one, no boundary term, and presence is `Present` if either side saw the template. So the hosted shard fold yields one base window per interval, and a template seen by one shard only is not churn.
 - `diff(previous, current)` treats `current - previous` as the polarity for counts, rates, and structural deltas.
 
