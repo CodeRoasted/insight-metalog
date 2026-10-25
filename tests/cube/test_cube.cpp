@@ -1,8 +1,10 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <set>
 #include <string>
 #include <string_view>
+#include <vector>
 
 import insight.metalog.test;
 
@@ -888,4 +890,135 @@ TEST(CubeDiffLatencyShift, ThinSampleProjectsShiftAxisToStar)
     EXPECT_EQ(find_shift_cell(diff.cube_diff, "payments"), nullptr)
         << "no shift cell may be manufactured from a below-floor sample\n"
         << shift_dump(diff.cube_diff);
+}
+
+namespace
+{
+
+// post: the where axis' floor_depth, the full depth 1 when the axis carries none.
+[[nodiscard]] std::uint32_t where_depth_of(const meta::CubeBlock& block)
+{
+    for (const auto& axis : block.axes)
+        if (axis.name == "where")
+            return axis.floor_depth.value_or(1U);
+    return 1U;
+}
+
+// post: the base rows' distinct component ids that are not the aggregated-WHERE sentinel.
+[[nodiscard]] std::set<std::uint32_t> referenced_component_ids(const meta::CubeBlock& block)
+{
+    std::set<std::uint32_t> ids;
+    for (const auto& row : block.base)
+        if (row.component_id != meta::kStarComponent)
+            ids.insert(row.component_id);
+    return ids;
+}
+
+// post: one window of `count` distinct components named `prefix` + index, one Info event each.
+[[nodiscard]] meta::MetaLogDocument one_event_per_component(std::string_view prefix,
+                                                            std::size_t count)
+{
+    auto cfg{cube_cfg()};
+    cfg.canonicalization_version = "c";
+    cfg.retention_profile = "r";
+    std::vector<std::string> comps;
+    comps.reserve(count);
+    for (std::size_t index{0}; index < count; ++index)
+        comps.push_back(std::string{prefix} + std::to_string(index));
+    meta::MetaLogEngine engine{cfg};
+    engine.open_window(std::chrono::system_clock::time_point{});
+    for (const auto& comp : comps)
+        engine.ingest_event(ev("t", LogLevel::Info, comp));
+    return engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{1});
+}
+
+// post: one window of 2000 components at all six levels, whose collapse drops WHERE.
+[[nodiscard]] meta::MetaLogDocument where_dropping_window()
+{
+    auto cfg{cube_cfg()};
+    cfg.canonicalization_version = "c";
+    cfg.retention_profile = "r";
+    std::vector<std::string> comps;
+    for (int index{0}; index < 2000; ++index)
+        comps.push_back("svc_" + std::to_string(index));
+    meta::MetaLogEngine engine{cfg};
+    engine.open_window(std::chrono::system_clock::time_point{});
+    for (const auto& comp : comps)
+        for (const LogLevel level : {LogLevel::Trace, LogLevel::Debug, LogLevel::Info,
+                                     LogLevel::Warn, LogLevel::Error, LogLevel::Fatal})
+            engine.ingest_event(ev("t", level, comp));
+    return engine.close_window(std::chrono::system_clock::time_point{} + std::chrono::seconds{60});
+}
+
+} // namespace
+
+// refs: DN-148.D6
+// invariant: the retained dictionary holds exactly the labels the retained base references.
+// note: red before the fix: WHERE dropped, every row kStar, and all 2000 labels retained.
+TEST(CubeRetainedBase, AWindowWhoseCollapseDropsWhereRetainsNoComponentLabel)
+{
+    const auto doc{where_dropping_window()};
+    ASSERT_TRUE(doc.has_cube);
+    ASSERT_EQ(where_depth_of(doc.cube), 0U) << "the fixture must drop WHERE";
+    ASSERT_FALSE(doc.cube.base.empty()) << "the window retains its base";
+    EXPECT_TRUE(referenced_component_ids(doc.cube).empty())
+        << "with WHERE dropped no base row may point at a component";
+    EXPECT_TRUE(doc.cube.base_component_dict.empty())
+        << "WHERE is dropped, so no label is referenced, yet the dictionary retains "
+        << doc.cube.base_component_dict.size() << " labels";
+}
+
+// refs: DN-148.D6
+// note: red before the fix: the composed block retains both children's dictionaries.
+TEST(CubeRetainedBase, ComposingTwoWhereDroppedBlocksRetainsNoComponentLabel)
+{
+    const auto lhs{where_dropping_window()};
+    const auto rhs{where_dropping_window()};
+    const auto composed{meta::compose(lhs, rhs)};
+    ASSERT_TRUE(composed.has_cube);
+    ASSERT_EQ(where_depth_of(composed.cube), 0U);
+    EXPECT_TRUE(composed.cube.base_component_dict.empty())
+        << "a composed block of two WHERE-dropped blocks retains "
+        << composed.cube.base_component_dict.size() << " labels";
+}
+
+// refs: DN-148.D6
+// invariant: each child keeps WHERE under budget, and their 6000 disjoint components push the
+// composed cube past it, so compose itself drops WHERE.
+// note: red before the fix: the composed block retains the 6000-label union of its children.
+TEST(CubeRetainedBase, ACompositionThatDropsWhereRetainsNoChildLabel)
+{
+    constexpr std::size_t kPerChild{3000};
+    const auto lhs{one_event_per_component("lhs_", kPerChild)};
+    const auto rhs{one_event_per_component("rhs_", kPerChild)};
+    ASSERT_TRUE(lhs.has_cube && rhs.has_cube);
+    ASSERT_EQ(where_depth_of(lhs.cube), 1U) << "each child must keep WHERE";
+    ASSERT_EQ(lhs.cube.base_component_dict.size(), kPerChild)
+        << "a child with WHERE references every one of its components";
+
+    const auto composed{meta::compose(lhs, rhs)};
+    ASSERT_TRUE(composed.has_cube);
+    ASSERT_EQ(where_depth_of(composed.cube), 0U) << "the composition must drop WHERE";
+    EXPECT_TRUE(composed.cube.base_component_dict.empty())
+        << "the composed block retains " << composed.cube.base_component_dict.size()
+        << " labels no base row references";
+}
+
+// refs: DN-148.D6
+// invariant: under budget every label is referenced, and every referenced id indexes the
+// dictionary.
+TEST(CubeRetainedBase, AWindowKeepingWhereRetainsExactlyItsReferencedLabels)
+{
+    constexpr std::size_t kComponents{10};
+    const auto doc{one_event_per_component("svc_", kComponents)};
+    ASSERT_TRUE(doc.has_cube);
+    ASSERT_EQ(where_depth_of(doc.cube), 1U);
+    const auto ids{referenced_component_ids(doc.cube)};
+    EXPECT_EQ(ids.size(), doc.cube.base_component_dict.size())
+        << "referenced ids " << ids.size() << ", retained labels "
+        << doc.cube.base_component_dict.size();
+    ASSERT_FALSE(ids.empty());
+    EXPECT_LT(*ids.rbegin(), doc.cube.base_component_dict.size())
+        << "a referenced id past the dictionary";
+    EXPECT_EQ(doc.cube.base_component_dict.size(), kComponents);
 }

@@ -7,6 +7,7 @@
 #include <array>
 #include <initializer_list>
 #include <string>
+#include <vector>
 
 import insight.metalog.test;
 
@@ -369,6 +370,37 @@ TEST(SpanEdges, TheBlockIsCutToItsDeclaredSizeAndCountsRefusedObservations)
     ASSERT_TRUE(refused.span_edges->dropped_span_edge_observations.has_value());
     EXPECT_EQ(*refused.span_edges->dropped_span_edge_observations, 3U)
         << "the edges to c (1) and d (2) arrived after the two keys were taken: 3 observations";
+}
+
+// refs: DN-148.D6
+// invariant: the cut block retains capacity for span_edges_size entries, never for every distinct
+// key the window ranked.
+// note: red before the fix: a resize keeps the 40-entry capacity behind the 4 kept edges.
+TEST(SpanEdges, TheCutBlockRetainsCapacityForItsDeclaredSizeOnly)
+{
+    constexpr std::size_t kKept{4};
+    constexpr std::size_t kDistinctChildren{40};
+    meta::MetaLogConfig config{.top_k_size = 64};
+    config.span_edges_size = kKept;
+    meta::MetaLogEngine engine{config};
+    engine.open_window(kT0);
+    std::vector<std::string> children;
+    children.reserve(kDistinctChildren);
+    for (std::size_t index{0}; index < kDistinctChildren; ++index)
+        children.push_back("child_" + std::to_string(index));
+    std::uint64_t next{1};
+    for (const auto& child : children)
+    {
+        const std::uint64_t parent{next++};
+        engine.ingest_event(make_span("root", parent, 0));
+        engine.ingest_event(make_span(child, next++, parent));
+    }
+    const auto doc{engine.close_window(kT1)};
+    ASSERT_TRUE(doc.span_edges.has_value());
+    ASSERT_EQ(doc.span_edges->edges.size(), kKept) << dump_span_edges(doc);
+    EXPECT_EQ(doc.span_edges->edges.capacity(), kKept)
+        << "the block keeps " << kKept << " edges and retains capacity for "
+        << doc.span_edges->edges.capacity() << " of the " << kDistinctChildren << " ranked";
 }
 
 TEST(SpanEdges, TheBlockSerializesUnderItsVendorKey)

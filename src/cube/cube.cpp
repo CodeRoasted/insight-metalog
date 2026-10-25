@@ -333,12 +333,32 @@ namespace
         return rows;
     }
 
-    // post: the interned base and dictionary land on the block with the closed cells.
+    // post: the base lands on the block with a dictionary of exactly the labels it references, so
+    // a base whose WHERE is dropped retains none.
+    // invariant: the id remap is monotone and kStar stays kStar, so the rows keep their order.
+    // refs: DN-148.D6
     void retain_base(CubeBlock& block, std::span<const std::pair<Cell, std::uint64_t>> base,
                      std::span<const std::string> labels)
     {
+        std::vector<bool> referenced(labels.size(), false);
+        for (const auto& [cell, count] : base)
+            if (const std::uint32_t where{cell.value[static_cast<std::size_t>(Dim::Where)]};
+                where != kStar)
+                referenced[where] = true;
+        std::vector<std::uint32_t> retained_id(labels.size(), kStar);
+        block.base_component_dict.clear();
+        block.base_component_dict.reserve(
+            static_cast<std::size_t>(std::ranges::count(referenced, true)));
+        for (std::size_t index{0}; index < labels.size(); ++index)
+            if (referenced[index])
+            {
+                retained_id[index] = static_cast<std::uint32_t>(block.base_component_dict.size());
+                block.base_component_dict.push_back(labels[index]);
+            }
         block.base = to_base_rows(base);
-        block.base_component_dict.assign(labels.begin(), labels.end());
+        for (CubeBaseRow& row : block.base)
+            if (row.component_id != kStar)
+                row.component_id = retained_id[row.component_id];
     }
 
     // post: the retained base when the block has one, else the lossless recovery from its closed
@@ -387,7 +407,6 @@ namespace
         if (!where_chain_is_tree(paths))
             throw std::logic_error{
                 "metalog::cube: WHERE chain is not a single-parent tree (SPEC §16.5 MUST-1)"};
-        retain_base(block, base, labels);
         return block;
     }
 
@@ -559,7 +578,8 @@ namespace
                                                CollapseState initial = {})
     {
         CollapseState state{initial};
-        CubeBlock cube{close_and_emit(collapsed_base(base, state), labels)};
+        BaseMultiset collapsed{collapsed_base(base, state)};
+        CubeBlock cube{close_and_emit(collapsed, labels)};
         while (cube.cell_count > kCubeCellBudget)
         {
             const std::optional<CollapseState> next{
@@ -567,8 +587,11 @@ namespace
             if (!next)
                 break;
             state = *next;
-            cube = close_and_emit(collapsed_base(base, state), labels);
+            collapsed = collapsed_base(base, state);
+            cube = close_and_emit(collapsed, labels);
         }
+        // note: retained on the kept closure only, never on a trial the step search discards.
+        retain_base(cube, collapsed, labels);
         stamp_collapse(cube.axes, state);
         // assert: this is the only caller that runs the trigger, so the budget is declared here and
         // not in close_and_emit, whose trial closures are costed and discarded.

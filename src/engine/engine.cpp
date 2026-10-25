@@ -1292,21 +1292,27 @@ void MetaLogEngine::build_span_edges(MetaLogDocument& doc) const
     // refs: ADR-9.D3
     if (span_edge_observations_dropped_ > 0)
         block.dropped_span_edge_observations = span_edge_observations_dropped_;
-    block.edges.reserve(span_edge_counts_.size());
+    std::vector<SpanEdge> ranked;
+    ranked.reserve(span_edge_counts_.size());
     for (const auto& [pair, count] : span_edge_counts_)
-        block.edges.push_back(SpanEdge{.parent = content_templates_by_internal_id_[pair.first],
-                                       .child = content_templates_by_internal_id_[pair.second],
-                                       .count = count});
+        ranked.push_back(SpanEdge{.parent = content_templates_by_internal_id_[pair.first],
+                                  .child = content_templates_by_internal_id_[pair.second],
+                                  .count = count});
+    const auto kept{static_cast<std::ptrdiff_t>(std::min(ranked.size(), config_.span_edges_size))};
     // invariant: a total order over the block's contents, so no map order reaches the wire.
-    std::ranges::sort(block.edges,
-                      [](const SpanEdge& lhs, const SpanEdge& rhs)
-                      {
-                          if (lhs.count != rhs.count)
-                              return lhs.count > rhs.count;
-                          return std::tie(lhs.parent, lhs.child) < std::tie(rhs.parent, rhs.child);
-                      });
-    if (block.edges.size() > config_.span_edges_size)
-        block.edges.resize(config_.span_edges_size);
+    std::ranges::partial_sort(ranked, ranked.begin() + kept,
+                              [](const SpanEdge& lhs, const SpanEdge& rhs)
+                              {
+                                  if (lhs.count != rhs.count)
+                                      return lhs.count > rhs.count;
+                                  return std::tie(lhs.parent, lhs.child) <
+                                         std::tie(rhs.parent, rhs.child);
+                              });
+    // invariant: the block owns capacity for its kept edges only; the ranking buffer dies here.
+    // refs: DN-148.D6
+    block.edges.reserve(static_cast<std::size_t>(kept));
+    block.edges.assign(std::make_move_iterator(ranked.begin()),
+                       std::make_move_iterator(ranked.begin() + kept));
     doc.span_edges = std::move(block);
 }
 
