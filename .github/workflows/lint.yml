@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   lint:
-    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-lint.yml@980d8a156ab530aa8bf1d487d9c7ec380353d85a
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-lint.yml@5a4c5ef31a0250878f7fc88ef175f30cb0368b3a
     # PUBLIC repo: no runs-on passthrough and no checkout token — a fork PR runs this job.
     with:
       # clang-tidy runs (the default), over a clang-21 source build of this repo's whole first-party
