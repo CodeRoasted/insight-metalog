@@ -97,7 +97,7 @@ on:
 
 jobs:
   proof:
-    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-golden-proof.yml@7caf5e6175e90666068fb153d037b8de50cdcdf7
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-golden-proof.yml@a5d7691d5454a4d5e9a361aa21afd1932ddf498c
     with:
       linux-proof: scripts/determinism_bitidentity.sh
       msvc-proof: scripts/determinism_msvc.ps1
@@ -124,7 +124,7 @@ jobs:
     # green run of this workflow whose compare job is absent or not green.
     needs: [proof]
     if: ${{ !cancelled() }}
-    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-golden-compare.yml@7caf5e6175e90666068fb153d037b8de50cdcdf7
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-golden-compare.yml@a5d7691d5454a4d5e9a361aa21afd1932ddf498c
     with:
       min-legs: '5'
       spec-ref: ${{ needs.proof.outputs.spec }}
