@@ -43,7 +43,7 @@ jobs:
     uses: ./.github/workflows/preflight.yml
 
   build:
-    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-build.yml@ba34822604ed50667b31ce1255fe6bbb198549e8
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-build.yml@8f1de34c42b0741c3851117965712d920432c9e3
     with:
       postflight: ${{ inputs.postflight }}
       upstream: ${{ format('{{"{0}/insight-canon":"{1}"}}', github.repository_owner, inputs.insight-canon) }}
