@@ -70,6 +70,11 @@ permissions:
 
 on:
   workflow_call:
+    inputs:
+      canon_ref:
+        description: 'The insight-canon commit the tower builds: the candidate passes the one its upstream canon candidate records.'
+        type: string
+        required: true
   workflow_dispatch:
     inputs:
       canon_ref:
@@ -90,8 +95,6 @@ on:
         type: string
         default: ''
         required: false
-  pull_request:
-    branches: [main]
   schedule:
     - cron: '0 6 * * 1'   # Mondays 06:00 UTC — drift catch
 

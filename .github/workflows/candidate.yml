@@ -1,0 +1,79 @@
+name: Candidate
+
+# This repository's candidate (DN-142.D31, the Founder's per-repository CI), over ONE argument: the
+# insight-canon candidate it builds on (the Founder, 2026-10-28; its key, which a canon Candidate run prints).
+# `present` refuses unless that canon candidate is stored and verified in canon's own store, and is the
+# no-op when this repository's store already holds this candidate (its key names canon's, so the same commit
+# over another canon is another candidate); else its CI with the postflight (`ci`: canon's sources at the
+# commit its candidate records, metalog tested on clang in the image, clang-tidy over it), the determinism
+# golden over the canon + metalog tower at those two commits (`golden`), and then the store job (`store`:
+# canon's gcc packages restored from canon's store, never built, metalog's ship form bound to its clang
+# verdict by equal inputs, pushed to ghcr.io/<owner>/store-insight-metalog and attested, the index last).
+# PUBLIC repository: every job runs on GitHub-hosted machines, and every identity is derived from the run,
+# so a fork runs the same candidate over its own stores (P7).
+#
+# THIS FILE'S PRESENCE IS WHAT MAKES THE REPOSITORY OWN ITS STORE (store_transport.py `owns-store`): the
+# store package's visibility rule reads "public and linked to insight-metalog" from the commit that adds it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      insight-canon:
+        description: 'The insight-canon candidate key this candidate builds on (64 hex).'
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+  packages: write
+  id-token: write
+  attestations: write
+
+jobs:
+  present:
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-candidate-present.yml@ba34822604ed50667b31ce1255fe6bbb198549e8
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+      attestations: read
+    with:
+      upstream: ${{ format('{{"{0}/insight-canon":"{1}"}}', github.repository_owner, inputs.insight-canon) }}
+
+  ci:
+    needs: present
+    if: ${{ needs.present.outputs.present != 'true' }}
+    uses: ./.github/workflows/ci.yml
+    with:
+      insight-canon: ${{ inputs.insight-canon }}
+      postflight: true
+    permissions:
+      contents: read
+      actions: read
+      attestations: read
+
+  # The determinism golden (the Founder, 2026-10-28): the canon + metalog tower at canon's candidate commit and
+  # this one; the store job waits on it, so a candidate index exists only for a commit whose golden held.
+  golden:
+    needs: present
+    if: ${{ needs.present.outputs.present != 'true' }}
+    uses: ./.github/workflows/golden.yaml
+    with:
+      canon_ref: ${{ fromJSON(needs.present.outputs.upstream-commits)['insight-canon'] }}
+    permissions:
+      contents: read
+      actions: read
+
+  store:
+    needs: [present, ci, golden]
+    if: ${{ needs.present.outputs.present != 'true' }}
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-candidate.yml@ba34822604ed50667b31ce1255fe6bbb198549e8
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+      id-token: write
+      attestations: write
+    with:
+      upstream: ${{ format('{{"{0}/insight-canon":"{1}"}}', github.repository_owner, inputs.insight-canon) }}

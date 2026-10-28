@@ -1,0 +1,16 @@
+name: Preflight
+
+# The cheap checks of this repository, nothing built: actionlint, C++23 module conformance, clang-format
+# conformance and the dead-symbol-in-comment gate (malf-toolchain's coderoast-preflight.yml, every leg
+# armed). Dispatched alone, or called by CI.
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-preflight.yml@ba34822604ed50667b31ce1255fe6bbb198549e8

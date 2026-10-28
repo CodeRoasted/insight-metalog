@@ -1,59 +1,66 @@
 name: CI
 
+# This repository's CI: the preflight (cheap checks) and the build (malf-toolchain's coderoast-build.yml:
+# the clang-21 dev build of insight_metalog with every test; test on clang, ship gcc). With postflight,
+# clang-tidy runs over that same build in the build job, because only that job holds it. The two jobs do
+# not wait for each other, so a red preflight never hides the build's or the lint's verdict. PUBLIC
+# repository: every job runs on GitHub-hosted machines.
+#
+# insight-metalog's packages require insight-canon's, so CI takes ONE input, the insight-canon candidate
+# it builds over (DN-142.D31 (2)): canon's sources at the commit that candidate records, verified in canon's
+# own store. The owner is the run's, so a fork's CI reads its own canon's store.
+
 on:
-  # `deps` declares how the upstream first-party packages reach the cache: a dispatch defaults to
-  # `build` (each upstream created from its repository's main), because between two cuts the open
-  # version has no release to download, and may ask for `vendor` (the last cut's release tarballs).
-  # A pull_request run carries no inputs and takes the same `build`. No tag and no workflow runs this
-  # one: a release publishes what step 0 built and tested, by digest (DN-142.D9).
   workflow_dispatch:
     inputs:
-      deps:
-        description: 'vendor (release tarballs) | build (upstreams from their main)'
-        type: choice
-        options: [build, vendor]
-        default: build
-  pull_request:
-    branches: [ main ]
+      insight-canon:
+        description: 'The insight-canon candidate key this build reads (64 hex; a canon Candidate run prints it).'
+        type: string
+        required: true
+      postflight:
+        description: 'Run clang-tidy over the dev build (the postflight), in the build job.'
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      insight-canon:
+        description: 'The insight-canon candidate key this build reads.'
+        type: string
+        required: true
+      postflight:
+        description: 'Run clang-tidy over the dev build (the postflight), in the build job.'
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
+  actions: read        # malf's conan cache restore reads this job's runner group (actions-cache-allowed.sh)
+  attestations: read   # the upstream candidate is read through its attestation
 
 jobs:
-  ci:
+  preflight:
+    uses: ./.github/workflows/preflight.yml
+
+  build:
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-build.yml@ba34822604ed50667b31ce1255fe6bbb198549e8
+    with:
+      postflight: ${{ inputs.postflight }}
+      upstream: ${{ format('{{"{0}/insight-canon":"{1}"}}', github.repository_owner, inputs.insight-canon) }}
+
+  # Sift, integrated the way any user integrates it (the Founder, 2026-10-27): the published Action
+  # from the marketplace, in a job of its own that diffs the build job's log (`target-job`) against
+  # the last green run of this workflow. Advisory: `fail-on` stays `none`, and `always()` diffs a red
+  # build too, which is when the diff matters.
+  sift:
+    needs: build
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
-      actions: read
-    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-ci.yml@ba34822604ed50667b31ce1255fe6bbb198549e8
-    with:
-      # metalog takes insight_canon from the PUBLIC canon repository (its release under `deps: vendor`,
-      # its main under `deps: build`), then builds the single root package
-      # (test=true runs the full gtest suite; create=true verifies packaging + test_package).
-      # insight_semantic_github is a SEPARATE package (ADR-17.D8 — canon is multi-package) from the
-      # SAME canon repository; the vendor loop handles one package per row, so it needs its own row
-      # even though it comes from the same repo+tag. metalog test_requires it (conanfile.py) — without
-      # the row the gtest suite cannot resolve it. Keep both rows pinned together on a canon bump.
-      deps: ${{ inputs.deps || 'build' }}
-      vendor: |
-        insight_canon 1.10.9 CodeRoasted/insight-canon public
-        insight_semantic_github 1.10.9 CodeRoasted/insight-canon public
-      modules: '.'
-      # PUBLIC repo: sift-mode: public renders the Sift comment fork-safe (read-only token); the
-      # sift-post job below posts it.
-      sift-mode: public
-    secrets: inherit
-
-  # Post the comment the `ci` build rendered to the sift-comment artifact. Separate job so `ci` (which
-  # runs PR code) stays read-only; only THIS job holds pull-requests: write, and it runs no PR code —
-  # it just posts the pre-rendered artifact of this same run. Same-repo PRs only: a fork PR's
-  # pull_request run is read-only, so posting is capped anyway (external forks get no comment).
-  sift-post:
-    needs: ci
-    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true }}
-    permissions:
-      pull-requests: write
-      actions: read
-    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-sift-post.yml@ba34822604ed50667b31ce1255fe6bbb198549e8
-    with:
-      run-id: ${{ github.run_id }}
-    secrets: inherit
+      actions: read   # the build job's log and the baseline artifact
+    steps:
+      - name: Sift — the build log against the last green run
+        uses: CodeRoasted/sift-action@02066069ff16d9b8ce2487b19a3686a3acdf24d7 # v2.0.0
+        with:
+          target-job: build
