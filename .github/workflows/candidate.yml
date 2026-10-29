@@ -52,6 +52,7 @@ jobs:
       contents: read
       actions: read
       attestations: read
+      packages: read
 
   # The determinism golden (the Founder, 2026-10-28): the canon + metalog tower at canon's candidate commit and
   # this one; the store job waits on it, so a candidate index exists only for a commit whose golden held.
