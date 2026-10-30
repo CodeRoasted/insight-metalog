@@ -8,8 +8,9 @@ packages:
     # the released_packages DFS builds it BEFORE insight_metalog at the cut. ADR-17.D8 split it out of
     # insight_canon and this entry was never resynced.
     depends: [insight_canon, insight_semantic_github]
-    # DN-142.D25 (5) call D: the verdict `insight_metalog/bench`, run inside this package's create under step 0's
-    # `user.malf:bench`; each JSON is published under the name the hub collects.
+    # DN-142.D25 (5) call D: the verdict `insight_metalog/bench`, measured by the cut's bench job on the release seat
+    # (`pharos candidates bench`, DN-142.D33 slice (a)) under `user.malf:bench`; each JSON is published under
+    # the name the hub collects.
     objects:
       bench/insight_metalog_bench.json: {published: {assets: [{name: insight-metalog-benchmark.json}]}}
 
@@ -31,9 +32,10 @@ inventory:
       CANON_ROOT: ${workspace}/insight-canon
       META_ROOT: ${repo}
 
-# DN-142.D25 (3): the hosted output step 0 dispatches and ingests (its stage B5): the determinism
-# golden, whose arm64 and MSVC legs run on hosted runners. The run title is the workflow's `name:`.
-# Its reading is a verdict B5 owes, published under the name the hub collects.
+# DN-142.D25 (3), DN-142.D33: the hosted output this repository's candidate produces in a job of its own run —
+# the determinism golden, whose arm64 and MSVC legs run on hosted runners — and its store job ingests from that
+# run as the record `<repository>/ingest.<workflow stem>` (malf artefact_store.py `candidate-ingest`). The
+# Release publishes it from the candidate, under the name the hub collects.
 ingest:
   golden.yaml:
     artifact: determinism-golden

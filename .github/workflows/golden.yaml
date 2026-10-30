@@ -23,7 +23,7 @@ name: Determinism Golden Proof
 #
 # PUBLIC + anonymous: anyone can fork metalog + canon and reproduce it. arm64 + msvc run on HOSTED runners
 # only (a self-hosted runner on a public repo = fork-PR RCE); hosted minutes are free. No secret is read:
-# the pre-tag reading is handed step 0's recorded commits as an input.
+# the candidate hands the canon commit as an input.
 #
 # The `compare` job carries a SECOND, independent gate over the same artifact: the agreed digest is
 # validated against the PUBLISHED MetaLog schema (metalog-spec SPEC §8 clauses 1 and 4) before it is
@@ -39,30 +39,20 @@ name: Determinism Golden Proof
 # fixture's exit status). Both guards are committed scripts that need no toolchain, so a divergence
 # reds in seconds and buys no metered minute.
 #
-# Runs on every PR to main (full matrix — determinism caught in the PR) + the Release gate
-# (workflow_call) + a weekly drift catch + manual dispatch.
+# Runs on every PR to main (full matrix — determinism caught in the PR) + the candidate's gate
+# (workflow_call; its store job ingests the agreed digest, which the Release publishes from the candidate,
+# DN-142.D33) + a weekly drift catch + manual dispatch.
 #
 # WHICH insight-canon (and metalog-spec) THE TOWER READS — the reusable workflow's `subjects` job resolves
 # the source ref in this order, and the order is the contract:
-#   0. `inputs.record-run` — THE PRE-TAG READING (ROADMAP N263), which step 0 dispatches itself after its
-#      A1 stage recorded the commits (the Founder, 2026-10-13, the N360 plan's ruling R-12 (a)), with
-#      `record-commits` (`<repo>=<40-hex>` words). Canon has no tag of this cut yet before Wave 1, so the
-#      tower is built from the commit step 0 recorded, which `DN-108.D7` makes the tag, and the compare
-#      validates against the metalog-spec commit it recorded; this commit must be the one named for
-#      insight-metalog, and the run's title names the step 0 run and the commits, which is how
-#      `pharos cut` counts it and how step 0 reads back what it handed. A missing commit refuses; it
-#      never falls back to `main`;
-#   1. `inputs.canon_ref` — a manual dispatch of THIS workflow (an epic branch for a cross-repo cascade);
+#   1. `inputs.canon_ref` — the candidate's call (the commit its upstream canon candidate records), or a
+#      manual dispatch of THIS workflow (an epic branch for a cross-repo cascade);
 #   2. `github.ref_name` when `github.ref_type == 'tag'` — release.yaml fired by a tag push (under
 #      `workflow_call` the `github` context is the CALLER's, so this is the package tag itself);
 #   3. `main` — the schedule and pull_request (whose ref_name is `N/merge`, never a sibling ref).
 # 2 pins insight-canon to the SAME tag as this repo's: the cut tags in lockstep (canon in Wave 1, metalog in
 # Wave 2, eidos in Wave 3), so the sibling tag exists before this gate runs, and a tag-time gate never
 # reads a moving `main`. A missing sibling tag is a checkout RED, never a fallback.
-
-run-name: >-
-  ${{ inputs.record-run && format('Determinism Golden Proof — step 0 run {0} — {1}', inputs.record-run, inputs.record-commits)
-  || 'Determinism Golden Proof' }}
 
 permissions:
   contents: read
@@ -80,20 +70,6 @@ on:
       canon_ref:
         description: 'Ref to build the insight-canon SOURCE dep at — main (default) or an epic branch when validating a cross-repo cascade (the tower is mid-flight on that branch).'
         default: 'main'
-        required: false
-      record-run:
-        description: >-
-          THE PRE-TAG READING: the pharos-build run id of this cut's step 0 in CodeRoasted/coderoast,
-          which dispatches this run itself; the run's title names it for `pharos cut`.
-        type: string
-        default: ''
-        required: false
-      record-commits:
-        description: >-
-          The commits step 0 recorded, as `<repository>=<40-hex>` words: canon and metalog-spec
-          are read at theirs, and this run refuses unless insight-metalog's is the commit it runs at.
-        type: string
-        default: ''
         required: false
   schedule:
     - cron: '0 6 * * 1'   # Mondays 06:00 UTC — drift catch
@@ -117,14 +93,10 @@ jobs:
         conan editable add _canon/semantic/github
         conan editable add .
       canon-ref: ${{ inputs.canon_ref }}
-      record-run: ${{ inputs.record-run }}
-      record-commits: ${{ inputs.record-commits }}
-      record-self: insight-metalog
 
   compare:
     # A failed or skipped leg never SKIPS the verdict (ROADMAP N370): the compare runs on every
-    # run not cancelled, and its min-legs check names the missing digests. `pharos cut` refuses a
-    # green run of this workflow whose compare job is absent or not green.
+    # run not cancelled, and its min-legs check names the missing digests.
     needs: [proof]
     if: ${{ !cancelled() }}
     uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-golden-compare.yml@cd9c2a0b980e656d297e528f0c0e6142dbcc0fcc
