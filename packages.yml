@@ -40,3 +40,16 @@ ingest:
     object: determinism-golden.txt
     commits: [insight-canon, insight-metalog, metalog-spec]
     published: {assets: [{name: metalog.determinism_golden.txt}]}
+
+# ── The deterministic-content core the determinism gates judge (malf determinism_lint.py) ────────
+# Both gates — the clock (the determinism bible §7) and std <random> (§5 M7/M9) — judge every C/C++
+# unit under `roots:`, one subject and one root list; every build target above that no root reaches
+# is named under `out_of_scope:` with its reason. malf's coderoast-preflight.yml runs them over this
+# repository; the superproject sums the `opt_outs:` budgets across repositories (DN-142.D33).
+determinism:
+  # scripts/det_harness is COVERED, never excluded: metalog_det_harness is a determinism-proof harness
+  # (it holds no C++ today, so covering it costs nothing and reads the first unit it ever grows).
+  roots:
+    - src
+    - api
+    - scripts/det_harness
