@@ -144,7 +144,7 @@ the invariant is scoped to `api/` and `src/`, which is what it says.
 deleted header claimed *"metalog source uses unqualified `uint64_t`/`int64_t`/`size_t` etc."*. A
 PCRE sweep for those spellings **not** preceded by `std::` returns **zero files** over
 `insight-metalog/{api,src,tests,benchmarks,scripts}`. The sweep was verified against a positive
-control before the zero was believed (`CLAUDE.md` § Searching the workspace): the identical pattern
+control before the zero was believed (`MEM:workspace-search`): the identical pattern
 over `logcraft/core/src` returns hits in five files on the first page. So the sentence was false at
 the moment it was deleted, and the re-export block it justified is dormant plumbing. **Removing the
 block is a code change and is therefore a finding, not this lane's edit.**

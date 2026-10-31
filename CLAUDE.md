@@ -22,3 +22,7 @@ window — the document, `compose()`, and `diff()`. A single Conan package,
 - A MetaLog document is a deterministic function of its window; byte-identity
   is gate-enforced. Treat any byte drift as a determinism bug first, never as
   noise.
+
+## The C++ doctrine
+
+@../malf/doctrine.md
