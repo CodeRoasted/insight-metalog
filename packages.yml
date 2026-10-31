@@ -40,7 +40,6 @@ ingest:
   golden.yaml:
     artifact: determinism-golden
     object: determinism-golden.txt
-    commits: [insight-canon, insight-metalog, metalog-spec]
     published: {assets: [{name: metalog.determinism_golden.txt}]}
 
 # ── The deterministic-content core the determinism gates judge (malf determinism_lint.py) ────────
