@@ -149,38 +149,6 @@ TEST(TextCapDoor, AnIllFormedValueIsReplacedBeforeCapping)
         << bytes_of(meta::cap_text(short_ill_formed, 32));
 }
 
-// invariant: compose's exactness rests on it: re-capping a form from 2L or more equals capping
-// the original value at L directly.
-TEST(TextCapDoor, RecappingFromALargerCapEqualsDirectCapping)
-{
-    const std::array<std::string_view, 5> fragments{"a", "\xC3\xA9", "\xE2\x82\xAC",
-                                                    "\xF0\x9D\x84\x9E", "~"};
-    std::uint64_t state{0x9E3779B97F4A7C15ULL};
-    const auto next{[&state]
-                    {
-                        state ^= state << 13U;
-                        state ^= state >> 7U;
-                        state ^= state << 17U;
-                        return state;
-                    }};
-    for (int sample{0}; sample < 2000; ++sample)
-    {
-        std::string value;
-        const std::size_t pieces{next() % 300U};
-        for (std::size_t piece{0}; piece < pieces; ++piece)
-            value.append(fragments[next() % fragments.size()]);
-        for (std::size_t from{meta::kMinTextBytes * 2}; from <= 256; from *= 2)
-        {
-            const std::string at_from{meta::cap_text(value, from)};
-            for (std::size_t to{meta::kMinTextBytes}; to < from; to *= 2)
-                EXPECT_EQ(meta::recap_text(at_from, from, to), meta::cap_text(value, to))
-                    << "re-capping \"" << bytes_of(at_from) << "\" from L = " << from
-                    << " to L = " << to << " differs from capping \"" << bytes_of(value)
-                    << "\" directly";
-        }
-    }
-}
-
 TEST(TextCapDoor, ADigestFormDisplaysAsItsPrefixAndAnExplicitMarker)
 {
     const std::string form{meta::cap_text(std::string(80, 'w'), 64)};

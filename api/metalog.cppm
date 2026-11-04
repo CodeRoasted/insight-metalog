@@ -451,15 +451,16 @@ class MetaLogEngine
 // disagree on resolves by a rule over the values, never by operand position (SPEC 12.2).
 // post: producer is `composer` and metalog_version this build's edition -- the composer produced
 // the document, so neither is copied from an input.
-// post: max_text_bytes is the minimum over the declared text caps, and an input declaring another
-// (larger, or none) is re-capped to it before any merge (DN-148.D5).
-// refs: ADR-25.D5, F-SRC-insight-metalog:metalog.api.cppm:TemplateRegistry
+// post: throws std::invalid_argument naming max_text_bytes when the inputs declare different text
+// caps, an absent declaration being a value of its own; else max_text_bytes is their common cap.
+// refs: ADR-25.D5, DN-148.D8, F-SRC-insight-metalog:metalog.api.cppm:TemplateRegistry
 [[nodiscard]] MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs,
                                       const ProducerBlock& composer = ProducerBlock{});
 
 // post: delta is current minus previous, with `previous` the earlier document.
-// post: two documents declaring different text caps are compared after the larger is re-capped
-// to the smaller (DN-148.D5).
+// post: throws std::invalid_argument naming max_text_bytes when the inputs declare different text
+// caps, an absent declaration being a value of its own; else the diff declares their common cap.
+// refs: DN-148.D8
 [[nodiscard]] MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current);
 
 // post: derived from the diff's own findings rather than stored, one clause per optional signal

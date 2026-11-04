@@ -793,31 +793,4 @@ CubeBlock compose_cubes(const CubeBlock& lhs, const CubeBlock& rhs)
     return build_bounded_cube(sort_reduce_base(std::move(events)), labels, common);
 }
 
-CubeBlock recap_cube(const CubeBlock& block, std::optional<std::size_t> declared,
-                     std::size_t target)
-{
-    const auto [base, labels]{interned_base_of(block)};
-    std::vector<std::string> mapped;
-    mapped.reserve(labels.size());
-    for (const std::string& label : labels)
-        mapped.push_back(recap_text(label, declared, target));
-    std::vector<std::string> dict{mapped};
-    std::ranges::sort(dict);
-    const auto [first, last]{std::ranges::unique(dict)};
-    dict.erase(first, last);
-    std::vector<std::pair<Cell, std::uint64_t>> events;
-    events.reserve(base.size());
-    for (const auto& [cell, count] : base)
-    {
-        Cell remapped{cell};
-        if (const std::uint32_t where{cell.value[static_cast<std::size_t>(Dim::Where)]};
-            where != kStar)
-            remapped.value[static_cast<std::size_t>(Dim::Where)] = static_cast<std::uint32_t>(
-                std::ranges::lower_bound(dict, mapped[where]) - dict.begin());
-        events.emplace_back(remapped, count);
-    }
-    return build_bounded_cube(sort_reduce_base(std::move(events)), dict,
-                              collapse_state_of(block.axes));
-}
-
 } // namespace insight::metalog::cube

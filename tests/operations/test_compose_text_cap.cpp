@@ -1,6 +1,6 @@
-// invariant: compose() and diff() over documents declaring different text caps read them at the
-// smaller cap, re-capped exactly, so a long value never reads as two values.
-// refs: DN-148.D5
+// invariant: compose() and diff() refuse two documents declaring different text caps, an absent
+// declaration being a value of its own, because no member of a document is ever capped again.
+// refs: DN-148.D8
 #include <gtest/gtest.h>
 
 import insight.metalog.test;
@@ -49,60 +49,83 @@ using insight::metalog::test::ParamEvent;
     return doc;
 }
 
+// post: one failure naming `call` unless `operation` throws std::invalid_argument naming
+// max_text_bytes.
+template <typename Operation>
+void expect_text_cap_refusal(Operation operation, std::string_view call)
+{
+    try
+    {
+        static_cast<void>(operation());
+        ADD_FAILURE() << call << " accepted two documents declaring different max_text_bytes";
+    }
+    catch (const std::invalid_argument& error)
+    {
+        EXPECT_NE(std::string_view{error.what()}.find("max_text_bytes"), std::string_view::npos)
+            << call << " refused, but its message does not name max_text_bytes: " << error.what();
+    }
+}
+
 } // namespace
 
-TEST(ComposeTextCap, ComposeAtTwoCapsIsComposeAtTheSmallerInEitherOrder)
+TEST(ComposeTextCap, ComposeRefusesTwoDeclaredCapsInEitherOrder)
 {
     meta::TemplateRegistry registry;
     const auto wide{produce_window(64, 0, "a", registry)};
     const auto narrow{produce_window(32, 1, "b", registry)};
-    const auto wide_at_narrow{produce_window(32, 0, "a", registry)};
-
-    const meta::MetaLogDocument mixed_ab{meta::compose(wide, narrow)};
-    const meta::MetaLogDocument mixed_ba{meta::compose(narrow, wide)};
-    const meta::MetaLogDocument direct{meta::compose(wide_at_narrow, narrow)};
-    EXPECT_EQ(mixed_ab.max_text_bytes, std::optional<std::size_t>{32U})
-        << "L_C is the minimum over the declared caps";
-    const std::string ab{written_or_fail(meta::to_json(mixed_ab, registry))};
-    const std::string ba{written_or_fail(meta::to_json(mixed_ba, registry))};
-    const std::string expected{written_or_fail(meta::to_json(direct, registry))};
-    EXPECT_EQ(ab, ba) << "compose at two caps must be byte-commutative";
-    EXPECT_EQ(ab, expected)
-        << "compose of an L = 64 and an L = 32 document must equal compose of the two documents "
-           "produced at L = 32: the re-cap is exact.\n  mixed:  "
-        << ab << "\n  direct: " << expected;
+    expect_text_cap_refusal([&] { return meta::compose(wide, narrow); }, "compose(64, 32)");
+    expect_text_cap_refusal([&] { return meta::compose(narrow, wide); }, "compose(32, 64)");
 }
 
-TEST(ComposeTextCap, AnInputDeclaringNoCapIsCappedAtTheOthers)
+TEST(ComposeTextCap, ComposeRefusesADeclaredCapAgainstAnUndeclaredDocumentInEitherOrder)
 {
     meta::TemplateRegistry registry;
-    meta::MetaLogDocument undeclared{produce_window(4096, 0, "a", registry)};
+    const auto wide{produce_window(64, 0, "a", registry)};
+    meta::MetaLogDocument undeclared{produce_window(64, 1, "b", registry)};
     undeclared.max_text_bytes.reset();
-    const auto narrow{produce_window(32, 1, "b", registry)};
-    const auto direct{meta::compose(produce_window(32, 0, "a", registry), narrow)};
-    const meta::MetaLogDocument mixed{meta::compose(undeclared, narrow)};
-    EXPECT_EQ(written_or_fail(meta::to_json(mixed, registry)),
-              written_or_fail(meta::to_json(direct, registry)))
-        << "an input declaring no cap holds its values whole, so compose caps each at L_C";
-    for (const meta::TopKEntry& entry : mixed.stats.top_k)
-        for (const meta::FieldHistogram& slot : entry.field_histograms)
-            for (const auto& [value, count] : slot.value_counts)
-                EXPECT_LE(value.size(), 32U) << "a composed value past L_C: " << value;
+    expect_text_cap_refusal([&] { return meta::compose(wide, undeclared); },
+                            "compose(64, undeclared)");
+    expect_text_cap_refusal([&] { return meta::compose(undeclared, wide); },
+                            "compose(undeclared, 64)");
 }
 
-TEST(ComposeTextCap, DiffAtTwoCapsReadsTheLargerAtTheSmaller)
+TEST(ComposeTextCap, DiffRefusesTwoDeclaredCapsInEitherOrder)
 {
     meta::TemplateRegistry registry;
-    const auto previous_wide{produce_window(64, 0, "a", registry)};
-    const auto previous_narrow{produce_window(32, 0, "a", registry)};
-    const auto current{produce_window(32, 1, "a", registry)};
-    const meta::MetaLogDiff mixed_diff{meta::diff(previous_wide, current)};
-    EXPECT_EQ(mixed_diff.max_text_bytes, std::optional<std::size_t>{32U})
-        << "the diff declares the cap its members were read at, the smaller";
-    const std::string mixed{written_or_fail(meta::to_json(mixed_diff))};
-    const std::string direct{written_or_fail(meta::to_json(meta::diff(previous_narrow, current)))};
-    EXPECT_EQ(mixed, direct)
-        << "a diff across caps must read the larger document at the smaller cap, or every long "
-           "value reads as turnover.\n  mixed:  "
-        << mixed << "\n  direct: " << direct;
+    const auto wide{produce_window(64, 0, "a", registry)};
+    const auto narrow{produce_window(32, 1, "a", registry)};
+    expect_text_cap_refusal([&] { return meta::diff(wide, narrow); }, "diff(64, 32)");
+    expect_text_cap_refusal([&] { return meta::diff(narrow, wide); }, "diff(32, 64)");
+}
+
+TEST(ComposeTextCap, DiffRefusesADeclaredCapAgainstAnUndeclaredDocumentInEitherOrder)
+{
+    meta::TemplateRegistry registry;
+    const auto wide{produce_window(64, 0, "a", registry)};
+    meta::MetaLogDocument undeclared{produce_window(64, 1, "a", registry)};
+    undeclared.max_text_bytes.reset();
+    expect_text_cap_refusal([&] { return meta::diff(wide, undeclared); }, "diff(64, undeclared)");
+    expect_text_cap_refusal([&] { return meta::diff(undeclared, wide); }, "diff(undeclared, 64)");
+}
+
+// assert: the control: two documents at one cap, or two declaring none, go ahead, and the result
+// declares the cap both inputs declare.
+TEST(ComposeTextCap, EqualDeclarationsComposeAndDiffDeclaringTheirCommonCap)
+{
+    meta::TemplateRegistry registry;
+    const auto earlier{produce_window(32, 0, "a", registry)};
+    const auto later{produce_window(32, 1, "a", registry)};
+    EXPECT_EQ(meta::compose(earlier, later).max_text_bytes, std::optional<std::size_t>{32U})
+        << "compose of two L = 32 documents must declare 32";
+    EXPECT_EQ(meta::diff(earlier, later).max_text_bytes, std::optional<std::size_t>{32U})
+        << "diff of two L = 32 documents must declare 32";
+
+    meta::MetaLogDocument earlier_undeclared{earlier};
+    meta::MetaLogDocument later_undeclared{later};
+    earlier_undeclared.max_text_bytes.reset();
+    later_undeclared.max_text_bytes.reset();
+    EXPECT_EQ(meta::compose(earlier_undeclared, later_undeclared).max_text_bytes, std::nullopt)
+        << "compose of two undeclared documents must declare none";
+    EXPECT_EQ(meta::diff(earlier_undeclared, later_undeclared).max_text_bytes, std::nullopt)
+        << "diff of two undeclared documents must declare none";
 }

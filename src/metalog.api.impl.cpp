@@ -63,27 +63,6 @@ std::string cap_text(std::string_view value, std::size_t max_text_bytes)
     return out;
 }
 
-std::string recap_text(std::string_view member, std::optional<std::size_t> declared,
-                       std::size_t target)
-{
-    refuse_invalid_text_cap(target, "recap_text");
-    if (declared.has_value() && target >= *declared)
-        throw std::invalid_argument{"recap_text: target " + std::to_string(target) +
-                                    " is not below the declared max_text_bytes " +
-                                    std::to_string(*declared)};
-    if (member.size() < target)
-        return std::string{member};
-    if (!is_text_digest_form(member, declared))
-        return cap_text(member, target);
-    // assert: target <= declared / 2, so the cut reads only bytes inside the prefix the digest form
-    // kept (target - 17 < declared - 20), and the digest is the whole value's.
-    std::string out;
-    out.reserve(target);
-    append_capped_prefix(out, member, target);
-    out.append(member.substr(member.size() - kTextDigestHexChars));
-    return out;
-}
-
 std::string text_display_form(std::string_view member, std::optional<std::size_t> declared)
 {
     if (!is_text_digest_form(member, declared))

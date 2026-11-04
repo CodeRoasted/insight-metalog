@@ -88,12 +88,12 @@ std::string_view MetaLogEngine::well_formed_text(std::string_view text, std::str
 
 namespace
 {
-    // post: every key of `map` that `needs_cap` selects re-keyed by `recap`, a key landing on an
+    // post: every key of `map` that `needs_cap` selects re-keyed by `cap`, a key landing on an
     // existing one merged into it by `merge`.
     // invariant: the selected nodes are extracted before any is re-inserted, because a capped key
     // is exactly L bytes and would be selected again.
-    template <typename Map, typename NeedsCap, typename Recap>
-    void recap_keys(Map& map, NeedsCap needs_cap, Recap recap)
+    template <typename Map, typename NeedsCap, typename Cap>
+    void cap_keys(Map& map, NeedsCap needs_cap, Cap cap)
     {
         std::vector<typename Map::node_type> selected;
         for (auto iterator{map.begin()}; iterator != map.end();)
@@ -105,7 +105,7 @@ namespace
         }
         for (auto& node : selected)
         {
-            recap(node.key());
+            cap(node.key());
             if (auto existing{map.find(node.key())}; existing != map.end())
                 existing->second += node.mapped();
             else
@@ -121,14 +121,14 @@ void MetaLogEngine::cap_window_text()
     const auto capped{[cap](std::string& text) { text = cap_text(text, cap); }};
     for (auto& [content_id, bucket] : buckets_)
     {
-        recap_keys(bucket.component_counts, is_long, capped);
+        cap_keys(bucket.component_counts, is_long, capped);
         for (auto& slot : bucket.param_slots)
-            recap_keys(slot.value_counts, is_long, capped);
+            cap_keys(slot.value_counts, is_long, capped);
     }
-    recap_keys(
+    cap_keys(
         cube_base_, [&is_long](const auto& key) { return is_long(std::get<1>(key)); },
         [&capped](auto& key) { capped(std::get<1>(key)); });
-    recap_keys(
+    cap_keys(
         service_edges_,
         [&is_long](const auto& key) { return is_long(key.first) || is_long(key.second); },
         [&capped, &is_long](auto& key)

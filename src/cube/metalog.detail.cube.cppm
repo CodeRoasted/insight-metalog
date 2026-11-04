@@ -160,12 +160,4 @@ cube_diff_of(const CubeBlock& previous, const CubeBlock& current,
 // refs: ADR-24.D7
 [[nodiscard]] CubeBlock compose_cubes(const CubeBlock& lhs, const CubeBlock& rhs);
 
-// post: the cube a producer declaring the text cap `target` would hold for `block`, a cube of a
-// document declaring `declared`, re-closed at its own collapse from the re-capped base.
-// invariant: every label is re-capped by recap_text; labels that coincide after it, only on a
-// digest collision, are one label with their counts summed.
-// refs: DN-148.D5
-[[nodiscard]] CubeBlock recap_cube(const CubeBlock& block, std::optional<std::size_t> declared,
-                                   std::size_t target);
-
 } // namespace insight::metalog::cube

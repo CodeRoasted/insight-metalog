@@ -1111,16 +1111,6 @@ inline constexpr std::size_t kTextDigestHexChars{16};
     return declared.has_value() && member.size() == *declared;
 }
 
-// post: the member a producer declaring `target` retains for the value `member` stands for in a
-// document declaring `declared`: below target unchanged, else capped as cap_text caps a value.
-// invariant: a digest form is re-cut keeping its digest, equal to cap_text of the original value
-// because target is at most half of declared.
-// post: throws std::invalid_argument when target is not a valid text cap, or when it is not below
-// an engaged declaration, the one direction a re-cap can go.
-// refs: DN-148.D5
-[[nodiscard]] std::string recap_text(std::string_view member, std::optional<std::size_t> declared,
-                                     std::size_t target);
-
 // post: what a consumer shows for `member` of a document declaring `declared`: a digest form as
 // its prefix without the tildes and U+2026, never as an observed value; any other member verbatim.
 // invariant: display only; every machine-read output keeps the whole member as the identity.
