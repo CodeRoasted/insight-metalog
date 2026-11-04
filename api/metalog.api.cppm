@@ -843,15 +843,15 @@ struct StatsBlock
     // is a declared posture, set by a producer only when it builds histograms at all.
     // invariant: compose() sets it to the minimum over the declared caps and drops every slot at
     // or above it, absent only when neither input declared one.
-    // note: carried in memory only until the specification admits the member.
-    // refs: DN-148.D5, ADR-25.D5
+    // invariant: written on the wire as stats.param_histograms_size exactly when engaged.
+    // refs: DN-148.D5, DN-148.D8, ADR-25.D5
     std::optional<std::size_t> param_histograms_size;
     // invariant: the value cap V every field histogram slot was admitted under, engaged with
     // param_histograms_size; compose() re-admits EVERY slot, a one-sided one included, under it.
     // invariant: compose() sets it to the minimum over the declared caps, or to
     // MetaLogConfig::kDefaultMaxHistogramValues when neither input declared one.
-    // note: carried in memory only, so a document read off the wire composes under the default.
-    // refs: DN-148.D3, DN-148.D5, ADR-25.D5
+    // invariant: written on the wire as stats.value_counts_size exactly when engaged.
+    // refs: DN-148.D3, DN-148.D5, DN-148.D8, ADR-25.D5
     std::optional<std::size_t> value_counts_size;
 };
 
@@ -1122,10 +1122,11 @@ struct MetaLogDocument
 {
     // invariant: the text cap L every observed-text member (a value, a component and each copy of
     // one) was admitted under: at most L bytes, and exactly L only as a digest form.
-    // invariant: set by close_window() on every raw document; compose() sets the minimum over the
-    // declared caps, absent only when neither input declared one.
-    // note: carried in memory only until the specification admits the member.
-    // refs: DN-148.D5
+    // invariant: set by close_window() on every raw document; compose() refuses two inputs that
+    // declare different caps and carries the common one, absent only when neither declared one.
+    // invariant: written on the wire as the root max_text_bytes exactly when engaged; absent means
+    // uncapped.
+    // refs: DN-148.D5, DN-148.D8
     std::optional<std::size_t> max_text_bytes;
     // invariant: the specification edition the bytes were written against; only its MAJOR is
     // normatively coupled, and the producer's own version is a separate axis.
@@ -1725,10 +1726,11 @@ struct MetaLogDiff
     // invariant: no schema keyword can catch that, so the rule binds the producer and is held here.
     // refs: F-SRC-metalog-spec:SPEC.md
     std::string diff_version{kMetaLogSpecVersion};
-    // invariant: the text cap every observed-text member of this diff was read at: the smaller of
-    // the two declared caps, either one when only one declares, absent when neither does.
-    // note: carried in memory only, so a consumer can show a digest form as one (DN-148.D5 (e)).
-    // refs: DN-148.D5
+    // invariant: the text cap every observed-text member of this diff was read at: the cap both
+    // inputs declare, diff() having refused two different ones, absent when neither does.
+    // invariant: written on the wire as the root max_text_bytes, a descriptor and never a witness,
+    // so a consumer can show a digest form as one (DN-148.D5 (e)).
+    // refs: DN-148.D5, DN-148.D8
     std::optional<std::size_t> max_text_bytes;
     DocumentRef previous{};
     DocumentRef current{};

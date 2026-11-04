@@ -318,6 +318,11 @@ namespace dto
         // invariant: the reservoir cap is declared only on a document that CARRIES a reservoir -- a
         // cap beside an absent array prices a term the document does not have.
         std::optional<std::size_t> reservoir_size;
+        // invariant: each histogram cap is written exactly when the domain declares it, so a
+        // composer reading the wire re-admits the slots under the caps they were admitted under.
+        // refs: DN-148.D8
+        std::optional<std::size_t> param_histograms_size;
+        std::optional<std::size_t> value_counts_size;
         std::uint64_t tail_count{0};
         std::uint64_t tail_unique{0};
         std::vector<TopKEntry> top_k;
@@ -418,6 +423,9 @@ namespace dto
         std::optional<std::vector<Provenance>> provenance;
         std::optional<std::string> canonicalization_version;
         std::optional<std::string> retention_profile;
+        // invariant: the text cap is DECLARED beside the opaque stamp; absent means uncapped.
+        // refs: DN-148.D8
+        std::optional<std::size_t> max_text_bytes;
         std::optional<Coordinate> coordinate;
         std::optional<CubeBlock> cube;
         // note: the run verdict is the standard's own LOWER-CASE minted vocabulary.
@@ -598,6 +606,10 @@ namespace dto
         // invariant: comparison_outcome is declared with the required members and before every
         // optional signal, because it is the assertion the witness rule judges them against.
         std::string comparison_outcome;
+        // invariant: a descriptor, never a witness: the cap both inputs declare, so a consumer of
+        // the diff tells a digest form from an observed value.
+        // refs: DN-148.D8
+        std::optional<std::size_t> max_text_bytes;
         std::optional<double> kl_divergence;
         std::optional<double> js_divergence;
         std::optional<double> stability_score;
@@ -913,6 +925,8 @@ namespace
             out.reservoir = std::move(rows);
             out.reservoir_size = stats.reservoir_size;
         }
+        out.param_histograms_size = stats.param_histograms_size;
+        out.value_counts_size = stats.value_counts_size;
         return out;
     }
 
@@ -1016,6 +1030,7 @@ namespace
             out.provenance = make_provenance(*doc.provenance);
         out.canonicalization_version = doc.canonicalization_version;
         out.retention_profile = doc.retention_profile;
+        out.max_text_bytes = doc.max_text_bytes;
         if (doc.coordinate)
             out.coordinate = make_coordinate(*doc.coordinate);
         if (doc.has_cube)
@@ -1210,6 +1225,7 @@ namespace
         // invariant: the outcome is derived from the diff's FINDINGS by the one predicate that
         // mirrors the schema's vacuity declarations, never from which members happen to fill.
         out.comparison_outcome = to_string(comparison_outcome_of(diff));
+        out.max_text_bytes = diff.max_text_bytes;
         // assert: written from the same predicate that decided the outcome, so a document asserting
         // changed on a withheld finding always carries the name that witnesses it.
         if (std::vector<std::string> withheld{withheld_signals_of(diff)}; !withheld.empty())
