@@ -580,8 +580,25 @@ namespace
 
 } // namespace
 
-MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current)
+MetaLogDiff diff(const MetaLogDocument& previous_given, const MetaLogDocument& current_given)
 {
+    // invariant: two documents declaring different text caps are compared after the larger is
+    // re-capped to the smaller, or every long value would read as turnover.
+    // invariant: a document declaring none is compared as it stands.
+    // refs: DN-148.D5
+    const auto recapped{[](const MetaLogDocument& doc,
+                           const MetaLogDocument& other) -> std::optional<MetaLogDocument>
+                        {
+                            if (!doc.max_text_bytes || !other.max_text_bytes ||
+                                *doc.max_text_bytes <= *other.max_text_bytes)
+                                return std::nullopt;
+                            return recapped_document(doc, *other.max_text_bytes);
+                        }};
+    const std::optional<MetaLogDocument> previous_recapped{recapped(previous_given, current_given)};
+    const std::optional<MetaLogDocument> current_recapped{recapped(current_given, previous_given)};
+    const MetaLogDocument& previous{previous_recapped ? *previous_recapped : previous_given};
+    const MetaLogDocument& current{current_recapped ? *current_recapped : current_given};
+
     // assert: a diff across mismatched processing contracts is not meaningful and MUST fail.
     check_processing_identifier_gate(previous.canonicalization_version,
                                      current.canonicalization_version, "canonicalization_version",
@@ -598,6 +615,7 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
         "semantic_identity", "diff");
 
     MetaLogDiff out;
+    out.max_text_bytes = common_text_cap(previous.max_text_bytes, current.max_text_bytes);
     out.previous.window = window_bounds_of(previous.window);
     out.current.window = window_bounds_of(current.window);
 

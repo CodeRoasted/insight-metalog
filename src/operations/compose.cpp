@@ -1199,9 +1199,25 @@ namespace
 
 } // namespace
 
-MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs,
+MetaLogDocument compose(const MetaLogDocument& lhs_given, const MetaLogDocument& rhs_given,
                         const ProducerBlock& composer)
 {
+    // invariant: L_C is the minimum over the declared text caps; an input declaring another, or
+    // none, is re-capped to L_C before anything merges, as a producer at L_C would have emitted.
+    // refs: DN-148.D5
+    const std::optional<std::size_t> text_cap{
+        common_text_cap(lhs_given.max_text_bytes, rhs_given.max_text_bytes)};
+    const auto recapped{[&text_cap](const MetaLogDocument& doc) -> std::optional<MetaLogDocument>
+                        {
+                            if (!text_cap || doc.max_text_bytes == text_cap)
+                                return std::nullopt;
+                            return recapped_document(doc, *text_cap);
+                        }};
+    const std::optional<MetaLogDocument> lhs_recapped{recapped(lhs_given)};
+    const std::optional<MetaLogDocument> rhs_recapped{recapped(rhs_given)};
+    const MetaLogDocument& lhs{lhs_recapped ? *lhs_recapped : lhs_given};
+    const MetaLogDocument& rhs{rhs_recapped ? *rhs_recapped : rhs_given};
+
     // assert: the comparability gate fires BEFORE any merging, so an incompatible pair fails loudly
     // rather than producing a hybrid document.
     check_processing_identifier_gate(lhs.canonicalization_version, rhs.canonicalization_version,
@@ -1226,6 +1242,7 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs,
         carry_processing_identifier(lhs.canonicalization_version, rhs.canonicalization_version);
     out.retention_profile =
         carry_processing_identifier(lhs.retention_profile, rhs.retention_profile);
+    out.max_text_bytes = text_cap;
     out.ruleset = merge_ruleset(lhs, rhs);
     // invariant: the transport declaration is carried only when both inputs declared the SAME
     // stack, and it is NOT a compose gate and must not become one.

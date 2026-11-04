@@ -25,7 +25,9 @@ constexpr std::chrono::system_clock::time_point kEpoch{std::chrono::seconds{1'70
 
 // invariant: a CHARACTERIZATION pin, measured by this arm and never guessed; a move is a change to
 // the producer's bytes, re-measured and never refitted.
-constexpr std::size_t kStatsOnlyBytes{6'121};
+constexpr std::size_t kStatsOnlyBytes{6'129};
+// invariant: a frozen stand-in for producer.version, so the cut's version bump never moves the pin.
+constexpr std::string_view kFrozenProducerVersion{"0.0.0-envelope"};
 constexpr std::string_view kInlineTemplateKey{"\"template\":\"Synthetic template #"};
 
 struct Measured
@@ -53,12 +55,14 @@ struct Measured
 
 [[nodiscard]] Measured measure()
 {
-    meta::MetaLogEngine engine{meta::MetaLogConfig{.top_k_size = kTopK,
-                                                   .reservoir_size = 0,
-                                                   .top_ngrams_size = 0,
-                                                   .emit_stability = false,
-                                                   .top_branching_size = 0,
-                                                   .dominant_path_max_steps = 0}};
+    meta::MetaLogConfig config{.top_k_size = kTopK,
+                               .reservoir_size = 0,
+                               .top_ngrams_size = 0,
+                               .emit_stability = false,
+                               .top_branching_size = 0,
+                               .dominant_path_max_steps = 0};
+    config.producer_version = std::string{kFrozenProducerVersion};
+    meta::MetaLogEngine engine{config};
     std::vector<std::string> templates;
     templates.reserve(kTemplates);
     for (std::size_t i{0}; i < kTemplates; ++i)

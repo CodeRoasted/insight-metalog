@@ -200,7 +200,25 @@ class MetaLogEngine
     // declared parent edge is queued for close-time resolution.
     // invariant: a span never enters an adjacency ring -- its causality is declared.
     // refs: ADR-29.D2
-    void record_span(const tokenization::CanonicalEvent& event, InternalTemplateID internal_id);
+    // pre: `component` is the event's component after the text door.
+    void record_span(const tokenization::CanonicalEvent& event, std::string_view component,
+                     InternalTemplateID internal_id);
+    // post: `text` itself when it is well-formed, the common path, which allocates nothing; else
+    // its well-formed replacement (each maximal ill-formed subpart one U+FFFD) held in `scratch`.
+    // invariant: the ingest half of the text door: every parameter value and component passes it
+    // before any key is looked up; T_L, the digest half, runs in cap_window_text at close.
+    // refs: DN-148.D5
+    [[nodiscard]] static std::string_view well_formed_text(std::string_view text,
+                                                           std::string& scratch);
+    // post: every working-set key holding a value or component of config_.max_text_bytes bytes or
+    // more is replaced by cap_text's form, keys that coincide after it one key with summed counts.
+    // invariant: runs first in close_window, before every ordering made at close (the component
+    // tie-break, the cube dictionary sort, the service-edge sort).
+    // invariant: so the document is the one a door mapping at ingest emits: T_L is injective on
+    // well-formed text, and the first-V admission at ingest saw the same distinct values.
+    // note: at close because gate G5 measured the ingest SHA-256 at +500 %, past DN-148.D5's 25 %.
+    // refs: DN-148.D5
+    void cap_window_text();
     // post: each queued parent edge resolves into span_edge_counts_ as template -> template; an
     // unresolved parent increments orphan_parent_edges_.
     // invariant: counts are commutative and integer-only with no wall-clock read, so the resolution
@@ -400,6 +418,11 @@ class MetaLogEngine
     // its sketch by id, and the store resets with the buckets.
     struct HllState;
     std::unique_ptr<HllState> hll_state_;
+
+    // invariant: well_formed_text's buffers for the component and the parameter in flight; a view
+    // into either lives only until the next event, and every retained copy is a std::string.
+    std::string component_scratch_;
+    std::string param_scratch_;
 };
 
 // post: the returned bytes are legal RFC 8259 JSON for every input, a control byte in a value being
@@ -428,11 +451,15 @@ class MetaLogEngine
 // disagree on resolves by a rule over the values, never by operand position (SPEC 12.2).
 // post: producer is `composer` and metalog_version this build's edition -- the composer produced
 // the document, so neither is copied from an input.
+// post: max_text_bytes is the minimum over the declared text caps, and an input declaring another
+// (larger, or none) is re-capped to it before any merge (DN-148.D5).
 // refs: ADR-25.D5, F-SRC-insight-metalog:metalog.api.cppm:TemplateRegistry
 [[nodiscard]] MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs,
                                       const ProducerBlock& composer = ProducerBlock{});
 
 // post: delta is current minus previous, with `previous` the earlier document.
+// post: two documents declaring different text caps are compared after the larger is re-capped
+// to the smaller (DN-148.D5).
 [[nodiscard]] MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current);
 
 // post: derived from the diff's own findings rather than stored, one clause per optional signal

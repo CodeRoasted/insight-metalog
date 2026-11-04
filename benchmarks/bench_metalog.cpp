@@ -295,4 +295,70 @@ void BM_MetaLogIngest_Where(benchmark::State& state)
 }
 BENCHMARK(BM_MetaLogIngest_Where)->Unit(benchmark::kMicrosecond);
 
+// post: the text door's cost on a long-text workload, every parameter 256 bytes, with range(0)
+// the declared text cap: at 64 each value is mapped to its digest form, at 4096 kept verbatim.
+// invariant: 1 000 events a window over 64 distinct values a slot, three slots, so the door's
+// SHA-256 runs on every parameter at L = 64 and on none at L = 4096.
+// refs: DN-148.D5
+void BM_MetaLogIngest_LongText(benchmark::State& state)
+{
+    constexpr std::size_t kEvents{1'000};
+    constexpr std::size_t kSlots{3};
+    constexpr std::size_t kValueBytes{256};
+    constexpr std::uint64_t kDistinct{64};
+
+    meta::MetaLogConfig config;
+    config.top_k_size = 64;
+    config.top_ngrams_size = 32;
+    config.max_param_histograms = kSlots;
+    config.max_text_bytes = static_cast<std::size_t>(state.range(0));
+
+    struct Fixture
+    {
+        std::vector<std::string> owned;
+        std::vector<std::string_view> views;
+        tok::CanonicalEvent event;
+    };
+    std::vector<Fixture> fixtures;
+    fixtures.reserve(kEvents);
+    {
+        SplitMix64 rng{0x10E67E47};
+        for (std::size_t i{0}; i < kEvents; ++i)
+        {
+            Fixture fixture;
+            for (std::size_t slot{0}; slot < kSlots; ++slot)
+            {
+                std::string value{std::format("slot{}-value{}-", slot, rng.below(kDistinct))};
+                value.resize(kValueBytes, 'x');
+                fixture.owned.push_back(std::move(value));
+            }
+            for (const auto& owned : fixture.owned)
+                fixture.views.push_back(owned);
+            fixture.event.template_str = "call <*> with <*> from <*>";
+            fixture.event.level = insight::LogLevel::Info;
+            fixture.event.params = fixture.views;
+            fixtures.push_back(std::move(fixture));
+        }
+    }
+
+    const auto t0{kEpoch};
+    std::int64_t total_events{0};
+    for (auto _ : state)
+    {
+        meta::MetaLogEngine engine{config};
+        engine.open_window(t0);
+        for (const auto& fixture : fixtures)
+            engine.ingest_event(fixture.event);
+        auto doc{engine.close_window(t0 + std::chrono::seconds(60))};
+        benchmark::DoNotOptimize(doc.stats.top_k.size());
+        total_events += static_cast<std::int64_t>(kEvents);
+    }
+
+    state.SetItemsProcessed(total_events);
+    state.counters["ns_per_event"] = benchmark::Counter(
+        static_cast<double>(total_events),
+        benchmark::Counter::kIsRate | benchmark::Counter::kInvert, benchmark::Counter::kIs1000);
+}
+BENCHMARK(BM_MetaLogIngest_LongText)->Arg(64)->Arg(4096)->Unit(benchmark::kMicrosecond);
+
 } // namespace

@@ -1,4 +1,5 @@
 module;
+#include <utf8/well_formed.hpp>
 
 module insight.metalog;
 import insight.metalog.internal;
@@ -67,7 +68,76 @@ MetaLogEngine::MetaLogEngine() : MetaLogEngine(MetaLogConfig{}) {}
 MetaLogEngine::MetaLogEngine(MetaLogConfig config)
     : config_{std::move(config)}, hll_state_{std::make_unique<HllState>()}
 {
+    // invariant: refused here, naming the key, so no window is ever capped at an undeclarable L.
+    // refs: DN-148.D5
+    if (!valid_max_text_bytes(config_.max_text_bytes))
+        throw std::invalid_argument{"MetaLogConfig::max_text_bytes " +
+                                    std::to_string(config_.max_text_bytes) +
+                                    " is not a power of two in [" + std::to_string(kMinTextBytes) +
+                                    ", " + std::to_string(kMaxTextBytes) + "]"};
     config_.ngram_size = effective_ngram_size(config_);
+}
+
+std::string_view MetaLogEngine::well_formed_text(std::string_view text, std::string& scratch)
+{
+    if (insight::utf8::well_formed_prefix(text) == text.size())
+        return text;
+    scratch = insight::utf8::replace_ill_formed(std::string{text});
+    return scratch;
+}
+
+namespace
+{
+    // post: every key of `map` that `needs_cap` selects re-keyed by `recap`, a key landing on an
+    // existing one merged into it by `merge`.
+    // invariant: the selected nodes are extracted before any is re-inserted, because a capped key
+    // is exactly L bytes and would be selected again.
+    template <typename Map, typename NeedsCap, typename Recap>
+    void recap_keys(Map& map, NeedsCap needs_cap, Recap recap)
+    {
+        std::vector<typename Map::node_type> selected;
+        for (auto iterator{map.begin()}; iterator != map.end();)
+        {
+            if (needs_cap(iterator->first))
+                selected.push_back(map.extract(iterator++));
+            else
+                ++iterator;
+        }
+        for (auto& node : selected)
+        {
+            recap(node.key());
+            if (auto existing{map.find(node.key())}; existing != map.end())
+                existing->second += node.mapped();
+            else
+                map.insert(std::move(node));
+        }
+    }
+} // namespace
+
+void MetaLogEngine::cap_window_text()
+{
+    const std::size_t cap{config_.max_text_bytes};
+    const auto is_long{[cap](std::string_view text) { return text.size() >= cap; }};
+    const auto capped{[cap](std::string& text) { text = cap_text(text, cap); }};
+    for (auto& [content_id, bucket] : buckets_)
+    {
+        recap_keys(bucket.component_counts, is_long, capped);
+        for (auto& slot : bucket.param_slots)
+            recap_keys(slot.value_counts, is_long, capped);
+    }
+    recap_keys(
+        cube_base_, [&is_long](const auto& key) { return is_long(std::get<1>(key)); },
+        [&capped](auto& key) { capped(std::get<1>(key)); });
+    recap_keys(
+        service_edges_,
+        [&is_long](const auto& key) { return is_long(key.first) || is_long(key.second); },
+        [&capped, &is_long](auto& key)
+        {
+            if (is_long(key.first))
+                capped(key.first);
+            if (is_long(key.second))
+                capped(key.second);
+        });
 }
 
 MetaLogEngine::~MetaLogEngine() = default;
@@ -227,7 +297,7 @@ MetaLogEngine::NgramRing& MetaLogEngine::trace_ring_for(TraceId trace_id)
 }
 
 void MetaLogEngine::record_span(const tokenization::CanonicalEvent& event,
-                                InternalTemplateID internal_id)
+                                std::string_view component, InternalTemplateID internal_id)
 {
     // note: the span vocabulary is spoken iff span_records_ > 0.
     // refs: F-SRC-insight-metalog:metalog.api.cppm:span_records
@@ -244,20 +314,20 @@ void MetaLogEngine::record_span(const tokenization::CanonicalEvent& event,
             span_fifo_.pop_front();
         }
         // refs: F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeBlock
-        span_templates_.emplace(span_id, SpanNode{.template_id = internal_id,
-                                                  .component = std::string{event.component}});
+        span_templates_.emplace(
+            span_id, SpanNode{.template_id = internal_id, .component = std::string{component}});
         span_fifo_.push_back(span_id);
     }
     // note: the parent resolves at close, since a child routinely serializes before it.
     if (event.trace.has_parent)
         pending_span_edges_.push_back({.child_template = internal_id,
                                        .parent_span_id = event.trace.parent_span_id,
-                                       .child_component = std::string{event.component}});
+                                       .child_component = std::string{component}});
 
     // refs: ADR-29.D2
     for (const SpanId linked : event.linked_span_ids)
         pending_link_edges_.push_back(
-            {.source_component = std::string{event.component}, .linked_span_id = linked});
+            {.source_component = std::string{component}, .linked_span_id = linked});
 }
 
 void MetaLogEngine::resolve_span_edges()
@@ -345,6 +415,9 @@ bool MetaLogEngine::ingest_event(const tokenization::CanonicalEvent& event,
 void MetaLogEngine::ingest_looked_up_event(const tokenization::CanonicalEvent& event,
                                            const TemplateLookup& lookup)
 {
+    // invariant: the component is well-formed once, before any key is looked up; T_L at close.
+    // refs: DN-148.D5
+    const std::string_view component{well_formed_text(event.component, component_scratch_)};
     auto [bucket_it, inserted]{buckets_.try_emplace(*lookup.content_id)};
     auto& bucket{bucket_it->second};
     if (inserted)
@@ -369,24 +442,21 @@ void MetaLogEngine::ingest_looked_up_event(const tokenization::CanonicalEvent& e
     // cardinality.
     // assert: the key copies on FIRST SIGHT only; a steady-state hit looks up by view.
     // refs: ADR-9.D2
-    if (auto hit{
-            cube_base_.find(std::make_tuple(event.level, event.component, event.structural_role))};
+    if (auto hit{cube_base_.find(std::make_tuple(event.level, component, event.structural_role))};
         hit != cube_base_.end())
         ++hit->second;
     else
-        ++cube_base_[std::make_tuple(event.level, std::string{event.component},
-                                     event.structural_role)];
+        ++cube_base_[std::make_tuple(event.level, std::string{component}, event.structural_role)];
 
     // note: an empty component is not counted, so records_with_component counts located rows.
     // refs: F-SRC-insight-metalog:metalog.api.cppm:dominant_component
-    if (!event.component.empty())
+    if (!component.empty())
     {
         // refs: ADR-9.D2
-        if (auto hit{bucket.component_counts.find(event.component)};
-            hit != bucket.component_counts.end())
+        if (auto hit{bucket.component_counts.find(component)}; hit != bucket.component_counts.end())
             ++hit->second;
         else
-            ++bucket.component_counts[std::string{event.component}];
+            ++bucket.component_counts[std::string{component}];
     }
 
     // note: the ingest pipeline ships this enabled, so the key handling below is hot-path.
@@ -403,7 +473,11 @@ void MetaLogEngine::ingest_looked_up_event(const tokenization::CanonicalEvent& e
         {
             auto& slot{bucket.param_slots[pi]};
             ++slot.total;
-            const std::string_view val{event.params[pi]};
+            // invariant: the value is well-formed before its key is looked up; the sketch
+            // hashes the original value.
+            // refs: DN-148.D5
+            const std::string_view original{event.params[pi]};
+            const std::string_view val{well_formed_text(original, param_scratch_)};
             // refs: ADR-9.D2
             if (auto hit{slot.value_counts.find(val)}; hit != slot.value_counts.end())
                 ++hit->second;
@@ -412,7 +486,7 @@ void MetaLogEngine::ingest_looked_up_event(const tokenization::CanonicalEvent& e
                 ++slot.value_counts[std::string{val}];
 
             // note: the HLL sketch is fed regardless of the value-table cap.
-            hll_state_->add(slot.sketch, val);
+            hll_state_->add(slot.sketch, original);
         }
     }
 
@@ -449,7 +523,7 @@ void MetaLogEngine::ingest_looked_up_event(const tokenization::CanonicalEvent& e
     // refs: ADR-29.D1, F-SRC-insight-metalog:metalog.cppm:record_span
     if (event.trace.is_span)
     {
-        record_span(event, lookup.internal_id);
+        record_span(event, component, lookup.internal_id);
         return;
     }
     NgramRing& ring{(config_.trace_scoping_enabled && event.trace.present)
@@ -471,6 +545,9 @@ MetaLogDocument MetaLogEngine::close_window(Timestamp end,
     // built.
     // refs: F-SRC-insight-metalog:metalog.cppm:record_span
     resolve_span_edges();
+    // assert: T_L maps the working set before analyze_window, the first ordering made at close.
+    // refs: DN-148.D5
+    cap_window_text();
 
     const WindowAnalysis analysis{analyze_window()};
     build_top_k(doc, analysis);
@@ -535,6 +612,8 @@ void MetaLogEngine::stamp_envelope(MetaLogDocument& doc, Timestamp start, Timest
     // note: the comparability identifiers are opaque contract names stamped from config.
     doc.canonicalization_version = config_.canonicalization_version;
     doc.retention_profile = config_.retention_profile;
+    // refs: DN-148.D5
+    doc.max_text_bytes = config_.max_text_bytes;
     // note: absent for a producer whose config carries no ruleset, so the block is omitted.
     // refs: ADR-17.D3
     doc.ruleset = config_.ruleset;

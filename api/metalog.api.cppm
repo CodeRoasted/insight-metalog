@@ -1074,8 +1074,69 @@ struct ProvenanceEntry
 // invariant: this producer emits the specification's INLINE template-string mode only -- the dedup
 // and id-only arms were never wired.
 // refs: F-SRC-insight-metalog:metalog.api.cppm:TemplateRegistry, ADR-9.D2
+// invariant: the bounds of a declared text cap L, which is also a power of two.
+// refs: DN-148.D5
+inline constexpr std::size_t kMinTextBytes{32};
+inline constexpr std::size_t kMaxTextBytes{4096};
+// invariant: a digest form's tail: the first 8 bytes of SHA-256 of the whole value, as 16
+// lowercase hex digits in byte order, so it reads the same on every platform.
+// refs: DN-148.D5
+inline constexpr std::size_t kTextDigestHexChars{16};
+
+// post: whether `max_text_bytes` is a text cap a document may declare: a power of two in
+// [kMinTextBytes, kMaxTextBytes].
+// refs: DN-148.D5
+[[nodiscard]] constexpr bool valid_max_text_bytes(std::size_t max_text_bytes) noexcept
+{
+    return max_text_bytes >= kMinTextBytes && max_text_bytes <= kMaxTextBytes &&
+           std::has_single_bit(max_text_bytes);
+}
+
+// post: T_L of `value` made well-formed (each maximal ill-formed subpart one U+FFFD): the value
+// itself below L bytes, else exactly L bytes of prefix, tilde run and digest.
+// invariant: the prefix is the longest of at most L - 17 bytes ending on a code point boundary,
+// so the tilde run is 1 to 4 bytes.
+// post: throws std::invalid_argument naming max_text_bytes when valid_max_text_bytes refuses it.
+// invariant: injective up to a 64-bit digest collision, so two values sharing their first L - 17
+// bytes stay two members.
+// refs: DN-148.D5
+[[nodiscard]] std::string cap_text(std::string_view value, std::size_t max_text_bytes);
+
+// post: whether `member` of a document declaring `declared` is a digest form: recognised by its
+// length alone, exactly L bytes, so no genuine value is ever misread as one.
+// refs: DN-148.D5
+[[nodiscard]] constexpr bool is_text_digest_form(std::string_view member,
+                                                 std::optional<std::size_t> declared) noexcept
+{
+    return declared.has_value() && member.size() == *declared;
+}
+
+// post: the member a producer declaring `target` retains for the value `member` stands for in a
+// document declaring `declared`: below target unchanged, else capped as cap_text caps a value.
+// invariant: a digest form is re-cut keeping its digest, equal to cap_text of the original value
+// because target is at most half of declared.
+// post: throws std::invalid_argument when target is not a valid text cap, or when it is not below
+// an engaged declaration, the one direction a re-cap can go.
+// refs: DN-148.D5
+[[nodiscard]] std::string recap_text(std::string_view member, std::optional<std::size_t> declared,
+                                     std::size_t target);
+
+// post: what a consumer shows for `member` of a document declaring `declared`: a digest form as
+// its prefix without the tildes and U+2026, never as an observed value; any other member verbatim.
+// invariant: display only; every machine-read output keeps the whole member as the identity.
+// refs: DN-148.D5
+[[nodiscard]] std::string text_display_form(std::string_view member,
+                                            std::optional<std::size_t> declared);
+
 struct MetaLogDocument
 {
+    // invariant: the text cap L every observed-text member (a value, a component and each copy of
+    // one) was admitted under: at most L bytes, and exactly L only as a digest form.
+    // invariant: set by close_window() on every raw document; compose() sets the minimum over the
+    // declared caps, absent only when neither input declared one.
+    // note: carried in memory only until the specification admits the member.
+    // refs: DN-148.D5
+    std::optional<std::size_t> max_text_bytes;
     // invariant: the specification edition the bytes were written against; only its MAJOR is
     // normatively coupled, and the producer's own version is a separate axis.
     std::string metalog_version{kMetaLogSpecVersion};
@@ -1298,6 +1359,12 @@ struct MetaLogConfig
     static constexpr std::size_t kDefaultMaxHistogramValues{64};
     std::size_t max_histogram_values{kDefaultMaxHistogramValues};
 
+    // invariant: L, the text cap the ingest door maps every parameter value and component to;
+    // MetaLogEngine refuses at construction a value valid_max_text_bytes refuses.
+    // refs: DN-148.D5
+    static constexpr std::size_t kDefaultMaxTextBytes{64};
+    std::size_t max_text_bytes{kDefaultMaxTextBytes};
+
     [[nodiscard]] bool operator==(const MetaLogConfig&) const noexcept = default;
 };
 
@@ -1332,6 +1399,7 @@ inline constexpr std::string_view kSalienceArithmeticGeneration{"salience-1"};
 // so two orders are refused by the comparability gate rather than diffed into total turnover.
 // invariant: the p and v axes are the histogram slot and value caps, which fix which slots and
 // values a top_k entry retains.
+// invariant: the l axis is the text cap, which fixes what a long observed-text member denotes.
 // refs: DN-148.D5
 // refs: F-SRC-metalog-spec:SPEC.md, ADR-20.D17
 [[nodiscard]] inline std::string retention_profile_name(const MetaLogConfig& config)
@@ -1361,6 +1429,8 @@ inline constexpr std::string_view kSalienceArithmeticGeneration{"salience-1"};
     append_axis('p', config.max_param_histograms);
     name.push_back('-');
     append_axis('v', config.max_histogram_values);
+    name.push_back('-');
+    append_axis('l', config.max_text_bytes);
     return name;
 }
 
@@ -1665,6 +1735,11 @@ struct MetaLogDiff
     // invariant: no schema keyword can catch that, so the rule binds the producer and is held here.
     // refs: F-SRC-metalog-spec:SPEC.md
     std::string diff_version{kMetaLogSpecVersion};
+    // invariant: the text cap every observed-text member of this diff was read at: the smaller of
+    // the two declared caps, either one when only one declares, absent when neither does.
+    // note: carried in memory only, so a consumer can show a digest form as one (DN-148.D5 (e)).
+    // refs: DN-148.D5
+    std::optional<std::size_t> max_text_bytes;
     DocumentRef previous{};
     DocumentRef current{};
     std::optional<double> kl_divergence;

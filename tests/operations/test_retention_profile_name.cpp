@@ -17,7 +17,8 @@ namespace meta = insight::metalog;
 [[nodiscard]] meta::MetaLogConfig
 tuple_of(std::size_t top_k, std::size_t reservoir, std::size_t per_kind_cap,
          std::size_t error_reserve, std::size_t ngram_size = 2, std::size_t param_histograms = 0,
-         std::size_t histogram_values = meta::MetaLogConfig::kDefaultMaxHistogramValues)
+         std::size_t histogram_values = meta::MetaLogConfig::kDefaultMaxHistogramValues,
+         std::size_t text_bytes = meta::MetaLogConfig::kDefaultMaxTextBytes)
 {
     meta::MetaLogConfig cfg;
     cfg.top_k_size = top_k;
@@ -27,6 +28,7 @@ tuple_of(std::size_t top_k, std::size_t reservoir, std::size_t per_kind_cap,
     cfg.ngram_size = ngram_size;
     cfg.max_param_histograms = param_histograms;
     cfg.max_histogram_values = histogram_values;
+    cfg.max_text_bytes = text_bytes;
     return cfg;
 }
 
@@ -34,12 +36,12 @@ tuple_of(std::size_t top_k, std::size_t reservoir, std::size_t per_kind_cap,
 
 // invariant: the spelling is pinned as ONE literal, so the shape is reviewable and an accidental
 // reformat reds rather than silently re-minting every profile name in the fleet.
-TEST(RetentionProfileName, SpellsTheGenerationThenTheSevenAxes)
+TEST(RetentionProfileName, SpellsTheGenerationThenTheEightAxes)
 {
     EXPECT_EQ(meta::retention_profile_name(tuple_of(128, 64, 0, 16, 3, 4, 8)),
-              "salience-1/k128-m64-c0-e16-n3-p4-v8");
+              "salience-1/k128-m64-c0-e16-n3-p4-v8-l64");
     EXPECT_EQ(meta::retention_profile_name(tuple_of(0, 0, 0, 0)),
-              "salience-1/k0-m0-c0-e0-n2-p0-v64");
+              "salience-1/k0-m0-c0-e0-n2-p0-v64-l64");
 }
 
 // invariant: determinism is not a tautology about a pure function -- the derivation could have
@@ -66,7 +68,7 @@ TEST(RetentionProfileName, TheSameTupleAlwaysDerivesTheSameName)
 // invariant: the ngram_size arm is ADR-20.D17's: an order-2 and an order-3 document under one name
 // pass the gate and diff into total n-gram turnover.
 // invariant: the two histogram arms are DN-148.D5's: P and V fix which slots and values a top_k
-// entry retains, so two caps under one name diff a cut as a field shift.
+// entry retains, so two caps under one name diff a cut as a field shift; so does the text cap.
 TEST(RetentionProfileName, EveryAxisIsPartOfTheName)
 {
     const auto base{tuple_of(128, 64, 4, 16)};
@@ -77,7 +79,7 @@ TEST(RetentionProfileName, EveryAxisIsPartOfTheName)
         std::string_view name;
         meta::MetaLogConfig moved;
     };
-    const std::array<Axis, 7> axes{{
+    const std::array<Axis, 8> axes{{
         {"top_k_size", tuple_of(64, 64, 4, 16)},
         {"reservoir_size", tuple_of(128, 32, 4, 16)},
         {"reservoir_per_kind_cap", tuple_of(128, 64, 8, 16)},
@@ -85,6 +87,8 @@ TEST(RetentionProfileName, EveryAxisIsPartOfTheName)
         {"ngram_size", tuple_of(128, 64, 4, 16, 3)},
         {"max_param_histograms", tuple_of(128, 64, 4, 16, 2, 4)},
         {"max_histogram_values", tuple_of(128, 64, 4, 16, 2, 0, 8)},
+        {"max_text_bytes",
+         tuple_of(128, 64, 4, 16, 2, 0, meta::MetaLogConfig::kDefaultMaxHistogramValues, 32)},
     }};
     for (const auto& axis : axes)
         EXPECT_NE(meta::retention_profile_name(axis.moved), base_name)
