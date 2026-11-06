@@ -9,7 +9,7 @@ packages:
     # insight_canon and this entry was never resynced.
     depends: [insight_canon, insight_semantic_github]
     # DN-142.D25 (5) call D: the verdict `insight_metalog/bench`, measured by the cut's bench job on the release seat
-    # (`pharos candidates bench`, DN-142.D33 slice (a)) under `user.malf:bench`; each JSON is published under
+    # (`pharos candidates bench`, DN-142.D33) under `user.malf:bench`; each JSON is published under
     # the name the hub collects.
     objects:
       bench/insight_metalog_bench.json: {published: {assets: [{name: insight-metalog-benchmark.json}]}}
