@@ -41,7 +41,7 @@ name: Determinism Golden Proof
 #
 # Runs on every PR to main (full matrix — determinism caught in the PR) + the candidate's gate
 # (workflow_call; its store job ingests the agreed digest, which the Release publishes from the candidate,
-# DN-142.D33) + a weekly drift catch + manual dispatch.
+# ADR-2.D14) + a weekly drift catch + manual dispatch.
 #
 # WHICH insight-canon (and metalog-spec) THE TOWER READS — the reusable workflow's `subjects` job resolves
 # the source ref in this order, and the order is the contract:
