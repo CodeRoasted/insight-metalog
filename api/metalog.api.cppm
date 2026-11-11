@@ -1186,7 +1186,7 @@ struct MetaLogDocument
     // whose inputs declared different stacks makes no single declaration.
     // refs: ADR-23.D4
     std::optional<TransportDeclaration> transport;
-    // invariant: one four-class scalar per run, stamped by the producing orchestration on a
+    // invariant: one verdict-class scalar per run, stamped by the producing orchestration on a
     // WHOLE-RUN document; Unknown is both the default and the wire absence.
     // invariant: not a cube dimension -- the outcome labels the whole run, and a per-quantum slice
     // document correctly keeps Unknown.

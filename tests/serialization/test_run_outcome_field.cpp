@@ -40,11 +40,15 @@ TEST(RunOutcomeField, UnknownEmitsNoKey)
 
 TEST(RunOutcomeField, StampedVerdictSerialises)
 {
-    const std::array<std::pair<insight::RunOutcome, std::string_view>, 4> cases{{
+    // invariant: Cancelled rides as `aborted`, SPEC §2.5's own definition of that value ("the run
+    // did not complete: cancelled, timed out, or killed"); the spec does not move.
+    // refs: DN-146.D8
+    const std::array<std::pair<insight::RunOutcome, std::string_view>, 5> cases{{
         {insight::RunOutcome::Success, "success"},
         {insight::RunOutcome::Failure, "failure"},
         {insight::RunOutcome::Unstable, "unstable"},
         {insight::RunOutcome::Aborted, "aborted"},
+        {insight::RunOutcome::Cancelled, "aborted"},
     }};
     for (const auto& [outcome, expected] : cases)
     {

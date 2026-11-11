@@ -108,8 +108,8 @@ std::optional<std::string> spec_level_of(const std::optional<EventLevel>& level)
 
 /***************************************************************************************************
 D-LSRC-8 — the two wire spellings of RunOutcome are not interchangeable
-The same four `insight::RunOutcome` classes reach two wires under two different spellings, and a
-consumer takes its spelling from the boundary it actually reads — never from `RunOutcome`, which
+The five `insight::RunOutcome` verdict classes reach two wires under two different spellings, and
+a consumer takes its spelling from the boundary it actually reads — never from `RunOutcome`, which
 has no wire spelling of its own.
 
   * HERE, the MetaLog document (SPEC §2.5): `success` / `failure` / `unstable` / `aborted`. A
@@ -117,9 +117,13 @@ has no wire spelling of its own.
     `schema/metalog.v0.schema.json` pins it as a CLOSED enum. An upper-case token here is not a
     cosmetic difference: it is a §8 clause-1 schema violation, and `metalog-spec/GOVERNANCE.md` §3
     decides which side moves — the spec wins and the reference implementation is the bug.
+    This wire spells TWO classes `aborted`: Aborted and Cancelled. §2.5 defines `aborted` as "the
+    run did not complete: cancelled, timed out, or killed", which is the incomplete predicate word
+    for word, and what tells the two apart (who stopped the run) is read only at JOB grain, never
+    on a run label (DN-146.D8).
   * THERE, the Sift change report (`insight-eidos/sift/src/report/change_report_serialize.cpp`):
-    `SUCCESS` / `FAILURE` / `UNSTABLE` / `ABORTED`, rendered by `insight::to_string`, and
-    `sift-action/src/types.ts` matches those four literals exactly. That is OUR product format.
+    `SUCCESS` / `FAILURE` / `UNSTABLE` / `ABORTED` / `CANCELLED`, rendered by `insight::to_string`,
+    and `sift-action/src/types.ts` matches those five literals exactly. That is OUR product format.
 
 REJECTED: align the two by moving Sift onto the spec's spelling. It breaks a published,
 customer-facing format to buy a symmetry no consumer asked for. Two namespaces, one internal type,
@@ -127,7 +131,9 @@ two serializations — and what the choice costs is paid right here: neither sid
 other's renderer.
 
 `insight::to_string` also renders `Unknown` as a token and this wire has none, so the mapping is
-partial by construction and `nullopt` means the member is omitted (§2.5).
+partial by construction and `nullopt` means the member is omitted (§2.5). The switch names every
+enumerator and carries no `default:`, so a new class is a compile error here, never a silent
+omission.
 ***************************************************************************************************/
 std::optional<std::string> spec_run_outcome_of(RunOutcome outcome)
 {
@@ -140,11 +146,12 @@ std::optional<std::string> spec_run_outcome_of(RunOutcome outcome)
     case RunOutcome::Unstable:
         return "unstable";
     case RunOutcome::Aborted:
+    case RunOutcome::Cancelled:
         return "aborted";
     case RunOutcome::Unknown:
-    default:
         return std::nullopt;
     }
+    std::unreachable();
 }
 
 } // namespace insight::metalog
