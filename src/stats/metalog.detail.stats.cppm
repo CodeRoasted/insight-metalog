@@ -322,7 +322,7 @@ struct SalienceVerdict
 [[nodiscard]] std::optional<std::string> spec_level_of(const std::optional<EventLevel>& level);
 
 // post: the spec's lower-case token, and nullopt for Unknown, which the wire spells by omission.
-// note: deliberately not insight::to_string(RunOutcome) -- Sift's report wire is upper-case.
+// note: deliberately not insight::to_string(RunOutcome) -- Tamys's report wire is upper-case.
 [[nodiscard]] std::optional<std::string> spec_run_outcome_of(RunOutcome outcome);
 
 } // namespace insight::metalog

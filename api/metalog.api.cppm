@@ -387,7 +387,7 @@ struct TopKEntry
     // invariant: the template's dominant canon component -- the per-template WHERE label, populated
     // independently of the cube.
     // invariant: disengaged when the format carried no component, never an empty string.
-    // refs: F-SRC-insight-eidos:sift.api-change.cppm:Where
+    // refs: F-SRC-insight-eidos:tamys.api-change.cppm:Where
     std::optional<std::string> dominant_component;
     // invariant: empty unless MetaLogConfig::max_param_histograms > 0.
     std::vector<FieldHistogram> field_histograms;

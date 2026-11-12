@@ -754,7 +754,7 @@ TEST(EgressEncodingConformance, MetaLogDiffEmitsConformantJsonForEveryC0Byte)
     EXPECT_TRUE(failures.empty())
         << "metalog::to_json(MetaLogDiff) emitted non-conformant JSON for " << failures.size()
         << " of 64 rows (32 C0 bytes x 2 placements) driven into a `where` coordinate — these are "
-           "the bytes Sift embeds "
+           "the bytes Tamys embeds "
            "verbatim as glz::raw_json and the Action feeds to JSON.parse:\n"
         << report;
 }

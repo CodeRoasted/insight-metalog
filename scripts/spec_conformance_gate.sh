@@ -332,7 +332,7 @@ echo "  totals: $docs document(s) — $windows single-window + $composed compose
 # quietest of the three: a composed document is schema-identical to a single-window one, so
 # its absence changes no count this gate had before DN-82.D4.
 [ "$windows" -gt 0 ] || die2 "the digest carries ZERO single-window documents — a verdict over an empty species is green for the one reason that matters: it never looked"
-[ "$diffs" -gt 0 ] || die2 "the digest carries ZERO diffs — this producer serializes MetaLogDiffs (to_json(const MetaLogDiff&), republished verbatim as \`raw[].diff\` in every Sift change report), so a digest without one puts half the format back outside this gate. Restore the diff emission in determinism_bitidentity.sh; do NOT relax this floor."
+[ "$diffs" -gt 0 ] || die2 "the digest carries ZERO diffs — this producer serializes MetaLogDiffs (to_json(const MetaLogDiff&), republished verbatim as \`raw[].diff\` in every Tamys change report), so a digest without one puts half the format back outside this gate. Restore the diff emission in determinism_bitidentity.sh; do NOT relax this floor."
 [ "$composed" -gt 0 ] || die2 "the digest carries ZERO composed documents — this producer publishes compose() as well as diff() (SPEC §12; the composed record is identified by its \`provenance\` array, §12.4), so a digest without one puts a published operation back outside this gate. Restore the compose() record in determinism_fixture.cpp's pair sections; do NOT relax this floor."
 
 # The diff roster: the SAME derived-from-disk loop, now over the diff partition. Without it,

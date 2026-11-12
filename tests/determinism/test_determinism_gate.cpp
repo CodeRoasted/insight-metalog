@@ -238,7 +238,7 @@ TEST(MetaLogDocument, NgramCapBindsSoTheDigestCarriesTheDroppedObservationCount)
               meta::ngram_cap::expected_dropped_observations(cfg))
         << "derived: " << meta::ngram_cap::kDistinctTemplates << " - 1 - " << cfg.max_ngram_keys;
     EXPECT_EQ(*doc.behavior->dropped_ngram_observations, std::uint64_t{1903})
-        << "the SHIPPED number, at the cut sift embeds (ngram 2 / max_ngram_keys 4096). If this "
+        << "the SHIPPED number, at the cut tamys embeds (ngram 2 / max_ngram_keys 4096). If this "
            "reds while the derived assertion above stays green, a producer default moved and the "
            "scenario is no longer anchored on the configuration that ships.";
 

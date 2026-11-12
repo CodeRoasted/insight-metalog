@@ -33,7 +33,7 @@
 # (DN-82.D2) carries floating point of its own — entropy bits over merged counts, and count/total
 # frequency division on the re-admitted blocks — so those cells are load-bearing there too.
 
-# The ADR-31.D8 item-reservoir at its admit/evict boundary, at the Sift BATCH tuple (M=128).
+# The ADR-31.D8 item-reservoir at its admit/evict boundary, at the Tamys BATCH tuple (M=128).
 --reservoir-nearfull (ADR-31.D8 synthetic M=128)
 
 # The SECOND ADR-31.D8 arm, at the retention tuple the streaming surface SHIPS — k128-m64-c0-e16,
@@ -59,7 +59,7 @@
 # document `compose()` merges them into. The §13.6 differential axis is EMERGENT-AT-DIFF — it has no
 # stored-cube domain, so no single-window section can produce one — and a MetaLogDiff is the SECOND
 # artifact species this producer serializes, the one insight-eidos republishes verbatim as
-# `raw[].diff` in every Sift change report. The fourth record is the SECOND published OPERATION
+# `raw[].diff` in every Tamys change report. The fourth record is the SECOND published OPERATION
 # (DN-82.D2), which is what puts a §12 result under the public schema at all. A single-window
 # section composes with nothing, which is why only the PAIR rows below carry a fourth record
 # and the five single rows above do not.
