@@ -120,7 +120,7 @@ has no wire spelling of its own.
     This wire spells TWO classes `aborted`: Aborted and Cancelled. §2.5 defines `aborted` as "the
     run did not complete: cancelled, timed out, or killed", which is the incomplete predicate word
     for word, and what tells the two apart (who stopped the run) is read only at JOB grain, never
-    on a run label (DN-146.D8).
+    on a run label (ADR-17.D5).
   * THERE, the Sift change report (`insight-eidos/sift/src/report/change_report_serialize.cpp`):
     `SUCCESS` / `FAILURE` / `UNSTABLE` / `ABORTED` / `CANCELLED`, rendered by `insight::to_string`,
     and `sift-action/src/types.ts` matches those five literals exactly. That is OUR product format.
