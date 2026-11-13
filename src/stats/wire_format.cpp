@@ -123,7 +123,7 @@ has no wire spelling of its own.
     on a run label (ADR-17.D5).
   * THERE, the Tamys change report (`insight-eidos/tamys/src/report/change_report_serialize.cpp`):
     `SUCCESS` / `FAILURE` / `UNSTABLE` / `ABORTED` / `CANCELLED`, rendered by `insight::to_string`,
-    and `sift-action/src/types.ts` matches those five literals exactly. That is OUR product format.
+    and `tamys-action/src/types.ts` matches those five literals exactly. That is OUR product format.
 
 REJECTED: align the two by moving Tamys onto the spec's spelling. It breaks a published,
 customer-facing format to buy a symmetry no consumer asked for. Two namespaces, one internal type,
