@@ -213,8 +213,12 @@ TEST(ComposeAlgebraTest, IdentityPreservesTheDocumentIncludingItsDeclaredReservo
     engine_a.ingest_event(make_event("connection refused to db", insight::LogLevel::Error));
     const auto doc_a{engine_a.close_window(kT1)};
 
-    // note: ZERO -- same producer, same contract identifiers, same reported window, and no events.
-    meta::MetaLogEngine engine_z{cfg};
+    // note: ZERO -- a producer keeping no reservoir, every other parameter A's, and no events.
+    // invariant: a reservoir-keeping producer declares its cap on every document (DN-56.D16), so
+    // the undeclared-cap ZERO comes from a producer that keeps none.
+    meta::MetaLogConfig zero_cfg{cfg};
+    zero_cfg.reservoir_size = 0;
+    meta::MetaLogEngine engine_z{zero_cfg};
     engine_z.open_window(kT0);
     const auto zero{engine_z.close_window(kT1)};
 
@@ -1005,16 +1009,14 @@ TEST(ComposeAlgebraTest, TopKTruncationBreaksAssociativityOfARetainedEntrysOwnCo
         << "right bracketing must account for every line:\n    " << render_top_k(a_bc);
 }
 
-// refs: ADR-25.D5
-// invariant: the stamp does NOT make the two caps equal in the normal case (ADR-25.D5's absent-cap
-// branch): build_reservoir returns early when every template fit in top-K, declaring no cap.
-// invariant: a stamp gates VALUES and never PRESENCE, so an ordinary run mixes declared-cap and
-// absent-cap documents constantly and that pair is the ordinary path, not an edge.
+// refs: ADR-25.D5, DN-56.D16
+// invariant: a reservoir-keeping producer declares its cap on every window, a quiet one whose
+// templates all fit in top-K included, so the absent-cap input is a producer keeping none.
 // invariant: a min folding absence in as zero would make the composed cap zero and silently drop
 // every salient template of a busy window on contact with a quiet neighbour.
-// pre: both inputs come from one real engine at one config, because a hand-built document could
-// assert the min but not the premise, and the premise is the finding.
-TEST(ComposeAlgebraTest, MinOverDeclaredCapsSurvivesASameProducerAbsentCapPair)
+// pre: both inputs come from real engines, because a hand-built document could assert the min but
+// not the premise, and the premise is the finding.
+TEST(ComposeAlgebraTest, MinOverDeclaredCapsSurvivesAnAbsentCapPair)
 {
     constexpr std::size_t kTopK{4};
     constexpr std::size_t kCap{8};
@@ -1026,16 +1028,24 @@ TEST(ComposeAlgebraTest, MinOverDeclaredCapsSurvivesASameProducerAbsentCapPair)
         .max_param_histograms = 0,
     };
 
-    // note: the QUIET window: all three templates fit in top-K, so build_reservoir returns early.
-    meta::MetaLogEngine quiet_engine{cfg};
-    quiet_engine.open_window(kT0);
-    for (int rep = 0; rep < 20; ++rep)
-    {
-        quiet_engine.ingest_event(make_event("quiet alpha steady"));
-        quiet_engine.ingest_event(make_event("quiet beta steady"));
-        quiet_engine.ingest_event(make_event("quiet gamma steady"));
-    }
-    const auto quiet{quiet_engine.close_window(kT1)};
+    // invariant: the QUIET window -- all three templates fit in top-K -- closed by a producer
+    // keeping a reservoir and by one keeping none.
+    const auto close_quiet{[](const meta::MetaLogConfig& config)
+                           {
+                               meta::MetaLogEngine quiet_engine{config};
+                               quiet_engine.open_window(kT0);
+                               for (int rep = 0; rep < 20; ++rep)
+                               {
+                                   quiet_engine.ingest_event(make_event("quiet alpha steady"));
+                                   quiet_engine.ingest_event(make_event("quiet beta steady"));
+                                   quiet_engine.ingest_event(make_event("quiet gamma steady"));
+                               }
+                               return quiet_engine.close_window(kT1);
+                           }};
+    meta::MetaLogConfig keeping_none{cfg};
+    keeping_none.reservoir_size = 0;
+    const auto quiet{close_quiet(keeping_none)};
+    const auto quiet_keeping{close_quiet(cfg)};
 
     // note: the BUSY window: two rare errors fall below top-K, so the cap IS declared.
     meta::MetaLogEngine busy_engine{cfg};
@@ -1054,13 +1064,16 @@ TEST(ComposeAlgebraTest, MinOverDeclaredCapsSurvivesASameProducerAbsentCapPair)
 
     // pre: the premise, asserted at the producer: if either of these moves the finding has changed.
     ASSERT_FALSE(quiet.stats.reservoir_size.has_value())
-        << "a window whose templates ALL fit in top-K must declare no reservoir cap — that early "
-           "return is what makes the absent branch ordinary rather than exotic:\n    "
+        << "a producer keeping no reservoir must declare no reservoir cap:\n    "
         << render_reservoir(quiet);
     ASSERT_TRUE(quiet.stats.reservoir.empty()) << render_reservoir(quiet);
+    ASSERT_EQ(quiet_keeping.stats.reservoir_size, kCap)
+        << "a producer keeping a reservoir declares its cap on a window whose templates ALL fit in "
+           "top-K, so the wire tells kept-and-empty from never kept (DN-56.D16):\n    "
+        << render_reservoir(quiet_keeping);
+    ASSERT_TRUE(quiet_keeping.stats.reservoir.empty()) << render_reservoir(quiet_keeping);
     ASSERT_EQ(busy.stats.reservoir_size, kCap)
-        << "the SAME producer at the SAME config declares its cap on a window that overflows "
-           "top-K — a stamp gates values, never presence:\n    "
+        << "the reservoir-keeping producer declares its cap on a window that overflows top-K:\n    "
         << render_reservoir(busy);
     ASSERT_EQ(busy.stats.reservoir.size(), 2U)
         << "both rare errors must be admitted, or the fold below has nothing to lose:\n    "

@@ -816,7 +816,13 @@ void MetaLogEngine::build_reservoir(MetaLogDocument& doc, const WindowAnalysis& 
 {
     // invariant: the reservoir is disjoint from top_k by construction and its admits are excluded
     // from the tail residual, so nothing is double-counted.
-    if (config_.reservoir_size == 0 || analysis.ordered.size() <= analysis.top_k_cut)
+    if (config_.reservoir_size == 0)
+        return;
+    // invariant: a kept reservoir declares its cap in every document, an empty one included, so the
+    // wire tells a reservoir kept and empty from one never kept; admission stops at the same value.
+    // refs: DN-56.D16
+    doc.stats.reservoir_size = config_.reservoir_size;
+    if (analysis.ordered.size() <= analysis.top_k_cut)
         return;
     auto candidates = collect_reservoir_candidates(analysis);
     admit_reservoir(doc.stats, analysis, candidates, reserved);
@@ -914,9 +920,8 @@ void MetaLogEngine::admit_reservoir(StatsBlock& stats, const WindowAnalysis& ana
             reserved.insert(ordered[candidate.index].first);
         }};
 
-    // invariant: the cap is declared at the site that enforces it -- both phases stop at
-    // config_.reservoir_size, so declaration and bound cannot drift apart.
-    stats.reservoir_size = config_.reservoir_size;
+    // invariant: both phases stop at config_.reservoir_size, the value build_reservoir declared, so
+    // declaration and bound cannot drift apart.
     stats.reservoir.reserve(std::min(config_.reservoir_size, candidates.size()));
 
     // invariant: the error-class reserve is exempt from the per-kind cap and runs before the

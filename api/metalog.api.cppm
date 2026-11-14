@@ -835,9 +835,11 @@ struct StatsBlock
     // invariant: the cap this document's reservoir was admitted under; ABSENT is a declared
     // posture, because the specification reads an omitted cap as no claim rather than a bound.
     // invariant: a declaring producer owes the clause -- the array MUST be bounded by the value.
+    // invariant: engaged on every document of a reservoir-keeping producer, an empty reservoir
+    // included, and written on the wire exactly when engaged: diff() reads it as "kept".
     // invariant: compose() sets it to the minimum over the caps its inputs actually declared, and
     // omits it only when both inputs declared none.
-    // refs: ADR-25.D5
+    // refs: ADR-25.D5, DN-56.D16
     std::optional<std::size_t> reservoir_size;
     // invariant: the slot cap P every top_k entry's field histograms were admitted under; ABSENT
     // is a declared posture, set by a producer only when it builds histograms at all.
@@ -1459,14 +1461,6 @@ struct NGramDelta
     std::vector<NGramRateChange> rate_changed;
 };
 
-// invariant: the two behavior.ngram_size a diff could not compare, each in its document's role.
-// refs: ADR-25.D5, F-SRC-metalog-spec:SPEC.md
-struct NGramOrderMismatch
-{
-    std::size_t previous_ngram_size{0};
-    std::size_t current_ngram_size{0};
-};
-
 // invariant: an edge present on BOTH sides whose observed weight moved.
 // refs: F-SRC-insight-metalog:metalog.api.cppm:ServiceEdgeDelta
 struct ServiceEdgeWeightChange
@@ -1694,6 +1688,113 @@ struct ReservoirDelta
     [[nodiscard]] bool operator==(const ReservoirDelta&) const noexcept = default;
 };
 
+// invariant: the role an input plays in a diff, written on the wire as previous or current.
+enum class DiffSide : std::uint8_t
+{
+    Previous,
+    Current
+};
+
+[[nodiscard]] inline std::string_view to_string(DiffSide side) noexcept
+{
+    return side == DiffSide::Previous ? "previous" : "current";
+}
+
+// invariant: the closed set of blocks an absent_in_one_input statement names, each written as the
+// block's path in the document.
+// refs: F-SRC-metalog-spec:SPEC.md
+enum class SignalBlock : std::uint8_t
+{
+    Behavior,
+    BehaviorBranching,
+    Cube,
+    StatsReservoir,
+    ParamHistograms
+};
+
+[[nodiscard]] inline std::string_view to_string(SignalBlock block) noexcept
+{
+    switch (block)
+    {
+    case SignalBlock::Behavior:
+        return "behavior";
+    case SignalBlock::BehaviorBranching:
+        return "behavior.branching";
+    case SignalBlock::Cube:
+        return "cube";
+    case SignalBlock::StatsReservoir:
+        return "stats.reservoir";
+    case SignalBlock::ParamHistograms:
+        return "stats.top_k[].param_histograms";
+    }
+    std::unreachable();
+}
+
+// invariant: reason ngram_size_differs -- the two behavior.ngram_size, each in its document's role,
+// and they differ.
+// refs: ADR-25.D5, DN-56.D15
+struct NGramSizeDiffers
+{
+    std::size_t previous_ngram_size{0};
+    std::size_t current_ngram_size{0};
+    [[nodiscard]] bool operator==(const NGramSizeDiffers&) const noexcept = default;
+};
+
+// invariant: reason absent_in_one_input -- exactly one input carries the block the property reads;
+// absent_in names the input that lacks it.
+// refs: DN-56.D13
+struct AbsentInOneInput
+{
+    DiffSide absent_in{DiffSide::Previous};
+    SignalBlock block{SignalBlock::Behavior};
+    [[nodiscard]] bool operator==(const AbsentInOneInput&) const noexcept = default;
+};
+
+// invariant: reason cube_axes_differ -- both inputs' axis descriptors with their collapse stamps
+// stripped, the evidence being the schema that differed.
+// refs: DN-56.D14
+struct CubeAxesDiffer
+{
+    std::vector<CubeAxis> previous_axes;
+    std::vector<CubeAxis> current_axes;
+    [[nodiscard]] bool operator==(const CubeAxesDiffer&) const noexcept = default;
+};
+
+// invariant: reason histogram_caps_differ -- the four declared histogram caps, at least one pair
+// unequal.
+// refs: DN-56.D17
+struct HistogramCapsDiffer
+{
+    std::size_t previous_param_histograms_size{0};
+    std::size_t current_param_histograms_size{0};
+    std::size_t previous_value_counts_size{0};
+    std::size_t current_value_counts_size{0};
+    [[nodiscard]] bool operator==(const HistogramCapsDiffer&) const noexcept = default;
+};
+
+// invariant: one of the four closed reasons a comparison was not made.
+using IncomparableReason =
+    std::variant<NGramSizeDiffers, AbsentInOneInput, CubeAxesDiffer, HistogramCapsDiffer>;
+
+// invariant: one record per signal property a pair can make incomparable, each engaged only when
+// the property is absent from the diff; written on the wire only when some record is engaged.
+// invariant: a descriptor and never a witness -- comparison_outcome_of reads none of it.
+// refs: F-SRC-metalog-spec:SPEC.md
+struct IncomparableSignals
+{
+    std::optional<IncomparableReason> ngram_delta;
+    std::optional<IncomparableReason> branching_delta;
+    std::optional<IncomparableReason> cube_diff;
+    std::optional<IncomparableReason> reservoir_delta;
+    std::optional<IncomparableReason> field_histogram_deltas;
+    [[nodiscard]] bool empty() const noexcept
+    {
+        return !ngram_delta && !branching_delta && !cube_diff && !reservoir_delta &&
+               !field_histogram_deltas;
+    }
+    [[nodiscard]] bool operator==(const IncomparableSignals&) const noexcept = default;
+};
+
 // invariant: the producer's ASSERTION about the comparison it performed, never a summary of which
 // fields it chose to serialise.
 // invariant: Changed obliges the document to carry a WITNESS -- one signal property that is
@@ -1745,10 +1846,10 @@ struct MetaLogDiff
     // refs: DN-126.D9, F-SRC-metalog-spec:SPEC.md
     std::vector<BranchingDelta> branching_delta;
     std::optional<NGramDelta> ngram_delta;
-    // invariant: engaged exactly when both documents carry behavior at different ngram_size, and
-    // then ngram_delta is disengaged: the comparison was not performed, and the wire says so.
-    // refs: ADR-25.D5
-    std::optional<NGramOrderMismatch> ngram_order_mismatch;
+    // invariant: the comparisons the PAIR made impossible, one record per signal property; an
+    // engaged record implies that property is absent from this diff.
+    // refs: ADR-25.D5, DN-56.D13, DN-56.D14, DN-56.D15, DN-56.D16, DN-56.D17
+    IncomparableSignals incomparable_signals{};
     // invariant: present ONLY when both documents carried a service_edges block; absence reads
     // unknown.
     // invariant: serialised under the extensions container, which the witness derivation excludes
@@ -1759,8 +1860,9 @@ struct MetaLogDiff
     // extensions container.
     // refs: F-SRC-insight-metalog:metalog.api.cppm:SpanEdgeDelta
     std::optional<SpanEdgeDelta> span_edge_delta;
-    // invariant: empty unless both documents tracked histograms and share a template; sorted by
-    // js_divergence descending.
+    // invariant: empty unless both documents tracked histograms at equal declared caps, or neither
+    // declared, and share a template; sorted by js_divergence descending.
+    // refs: DN-56.D17
     std::vector<FieldHistogramDelta> field_histogram_deltas;
     // invariant: empty unless both documents tracked histograms and share a (template_id,
     // declared-ordinal field); sorted by (template_id, field_name).
@@ -1768,7 +1870,9 @@ struct MetaLogDiff
     std::vector<OrdinalHistogramDelta> ordinal_histogram_deltas;
     // invariant: present only when both documents carried a tail_summary.
     std::optional<TailDelta> tail_delta;
-    // invariant: present whenever both documents carried a cube -- there is no axes-equality gate.
+    // invariant: present whenever both documents carried a cube of one axis SCHEMA -- the collapse
+    // stamps may differ, and the pair is then read at its minimal common collapse.
+    // refs: DN-56.D14
     // invariant: structured evidence -- the upper border is the deterministic headline, and it is
     // not an alert on its own.
     // invariant: a presence bool plus an inline value for MetaLogDocument::cube's reason, and

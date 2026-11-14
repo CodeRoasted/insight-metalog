@@ -526,19 +526,32 @@ namespace dto
         std::optional<std::vector<NGramRateChange>> rate_changed;
     };
 
-    // invariant: the members' names and the reason token are the specification's, verbatim.
-    // refs: ADR-25.D5, F-SRC-metalog-spec:metalog_diff.v0.schema.json
-    struct IncomparableNGramDelta
+    // invariant: one statement of why a comparison was not made: the reason token, then exactly the
+    // evidence members that reason carries; every name is the specification's, verbatim.
+    // refs: ADR-25.D5, DN-56.D13, F-SRC-metalog-spec:metalog_diff.v0.schema.json
+    struct IncomparableReason
     {
         std::string reason;
-        std::size_t previous_ngram_size{0};
-        std::size_t current_ngram_size{0};
+        std::optional<std::string> absent_in;
+        std::optional<std::string> block;
+        std::optional<std::size_t> previous_ngram_size;
+        std::optional<std::size_t> current_ngram_size;
+        std::optional<std::vector<CubeAxis>> previous_axes;
+        std::optional<std::vector<CubeAxis>> current_axes;
+        std::optional<std::size_t> previous_param_histograms_size;
+        std::optional<std::size_t> current_param_histograms_size;
+        std::optional<std::size_t> previous_value_counts_size;
+        std::optional<std::size_t> current_value_counts_size;
     };
 
     // invariant: keyed by the signal property the document omits; a descriptor, never a witness.
     struct IncomparableSignals
     {
-        std::optional<IncomparableNGramDelta> ngram_delta;
+        std::optional<IncomparableReason> ngram_delta;
+        std::optional<IncomparableReason> branching_delta;
+        std::optional<IncomparableReason> cube_diff;
+        std::optional<IncomparableReason> reservoir_delta;
+        std::optional<IncomparableReason> field_histogram_deltas;
     };
 
     // invariant: the whole block is present iff BOTH documents carried a service_edges block;
@@ -923,8 +936,11 @@ namespace
             for (const auto& entry : stats.reservoir)
                 rows.push_back(make_reservoir_entry(entry, registry));
             out.reservoir = std::move(rows);
-            out.reservoir_size = stats.reservoir_size;
         }
+        // invariant: the cap is written whenever declared, beside an empty reservoir too: absent
+        // reservoir beside a declared cap reads "kept and empty".
+        // refs: DN-56.D16
+        out.reservoir_size = stats.reservoir_size;
         out.param_histograms_size = stats.param_histograms_size;
         out.value_counts_size = stats.value_counts_size;
         return out;
@@ -1216,6 +1232,57 @@ namespace
         return delta;
     }
 
+    // post: the wire statement of one reason, the token and its evidence; the cube schemas carry no
+    // collapse stamp because the domain record already stripped them.
+    [[nodiscard]] dto::IncomparableReason make_incomparable_reason(const IncomparableReason& reason)
+    {
+        return std::visit(
+            [](const auto& held) -> dto::IncomparableReason
+            {
+                using Held = std::remove_cvref_t<decltype(held)>;
+                if constexpr (std::is_same_v<Held, NGramSizeDiffers>)
+                    return {.reason = "ngram_size_differs",
+                            .previous_ngram_size = held.previous_ngram_size,
+                            .current_ngram_size = held.current_ngram_size};
+                else if constexpr (std::is_same_v<Held, AbsentInOneInput>)
+                    return {.reason = "absent_in_one_input",
+                            .absent_in = std::string{to_string(held.absent_in)},
+                            .block = std::string{to_string(held.block)}};
+                else if constexpr (std::is_same_v<Held, CubeAxesDiffer>)
+                    return {.reason = "cube_axes_differ",
+                            .previous_axes = make_cube_axes(held.previous_axes),
+                            .current_axes = make_cube_axes(held.current_axes)};
+                else
+                {
+                    static_assert(std::is_same_v<Held, HistogramCapsDiffer>,
+                                  "every reason of the closed vocabulary has a wire statement");
+                    return {.reason = "histogram_caps_differ",
+                            .previous_param_histograms_size = held.previous_param_histograms_size,
+                            .current_param_histograms_size = held.current_param_histograms_size,
+                            .previous_value_counts_size = held.previous_value_counts_size,
+                            .current_value_counts_size = held.current_value_counts_size};
+                }
+            },
+            reason);
+    }
+
+    [[nodiscard]] dto::IncomparableSignals
+    make_incomparable_signals(const IncomparableSignals& signals)
+    {
+        const auto stated{[](const std::optional<IncomparableReason>& reason)
+                              -> std::optional<dto::IncomparableReason>
+                          {
+                              if (!reason)
+                                  return std::nullopt;
+                              return make_incomparable_reason(*reason);
+                          }};
+        return {.ngram_delta = stated(signals.ngram_delta),
+                .branching_delta = stated(signals.branching_delta),
+                .cube_diff = stated(signals.cube_diff),
+                .reservoir_delta = stated(signals.reservoir_delta),
+                .field_histogram_deltas = stated(signals.field_histogram_deltas)};
+    }
+
     dto::Diff make_diff(const MetaLogDiff& diff)
     {
         dto::Diff out;
@@ -1264,12 +1331,8 @@ namespace
         }
         if (diff.ngram_delta)
             out.ngram_delta = make_ngram_delta(*diff.ngram_delta);
-        if (diff.ngram_order_mismatch)
-            out.incomparable_signals = dto::IncomparableSignals{
-                .ngram_delta = dto::IncomparableNGramDelta{
-                    .reason = "ngram_size_differs",
-                    .previous_ngram_size = diff.ngram_order_mismatch->previous_ngram_size,
-                    .current_ngram_size = diff.ngram_order_mismatch->current_ngram_size}};
+        if (!diff.incomparable_signals.empty())
+            out.incomparable_signals = make_incomparable_signals(diff.incomparable_signals);
         if (diff.tail_delta)
         {
             const auto& tail = *diff.tail_delta;

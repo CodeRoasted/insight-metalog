@@ -13,6 +13,80 @@ namespace insight::metalog
 
 namespace
 {
+    // post: the statement for a block exactly one input carries, or nothing when both or neither
+    // carry it -- a pair holding no operand made no comparison impossible.
+    // refs: DN-56.D13
+    [[nodiscard]] std::optional<IncomparableReason> one_sided(bool previous_has, bool current_has,
+                                                              SignalBlock block)
+    {
+        if (previous_has == current_has)
+            return std::nullopt;
+        return AbsentInOneInput{.absent_in = previous_has ? DiffSide::Current : DiffSide::Previous,
+                                .block = block};
+    }
+
+    // post: the document's branching entries, or nullptr when it carries none (no behavior, no
+    // branching, or an empty array).
+    [[nodiscard]] const std::vector<BranchingEntry>*
+    branching_rows_of(const MetaLogDocument& doc) noexcept
+    {
+        if (!doc.behavior || !doc.behavior->branching || doc.behavior->branching->empty())
+            return nullptr;
+        return &*doc.behavior->branching;
+    }
+
+    [[nodiscard]] bool carries_branching(const MetaLogDocument& doc) noexcept
+    {
+        return branching_rows_of(doc) != nullptr;
+    }
+
+    // post: whether the document keeps a reservoir -- it carries the block or declares its cap.
+    // refs: DN-56.D16
+    [[nodiscard]] bool keeps_reservoir(const MetaLogDocument& doc) noexcept
+    {
+        return !doc.stats.reservoir.empty() || doc.stats.reservoir_size.has_value();
+    }
+
+    // post: whether the document tracks field histograms -- it declares param_histograms_size.
+    // pre: a tracking document declares value_counts_size beside it, or diff() refuses it.
+    // refs: DN-56.D17
+    [[nodiscard]] bool tracks_histograms(const MetaLogDocument& doc) noexcept
+    {
+        return doc.stats.param_histograms_size.has_value();
+    }
+
+    // post: the statement that two histogram-tracking inputs run at different caps, or nothing when
+    // either tracks none or both caps match.
+    // pre: a tracking document declares value_counts_size beside it, or diff() refuses it.
+    // refs: DN-56.D17
+    [[nodiscard]] std::optional<HistogramCapsDiffer>
+    histogram_caps_differ(const MetaLogDocument& previous, const MetaLogDocument& current)
+    {
+        const auto& prev{previous.stats};
+        const auto& cur{current.stats};
+        if (!prev.param_histograms_size || !cur.param_histograms_size || !prev.value_counts_size ||
+            !cur.value_counts_size)
+            return std::nullopt;
+        if (prev.param_histograms_size == cur.param_histograms_size &&
+            prev.value_counts_size == cur.value_counts_size)
+            return std::nullopt;
+        return HistogramCapsDiffer{.previous_param_histograms_size = *prev.param_histograms_size,
+                                   .current_param_histograms_size = *cur.param_histograms_size,
+                                   .previous_value_counts_size = *prev.value_counts_size,
+                                   .current_value_counts_size = *cur.value_counts_size};
+    }
+
+    // post: the axis descriptors with their collapse stamps stripped -- the cube's axis SCHEMA.
+    // refs: DN-56.D14
+    [[nodiscard]] std::vector<CubeAxis> axis_schema_of(const CubeBlock& cube)
+    {
+        std::vector<CubeAxis> schema;
+        schema.reserve(cube.axes.size());
+        for (const CubeAxis& axis : cube.axes)
+            schema.push_back(CubeAxis{.name = axis.name, .kind = axis.kind, .chain = axis.chain});
+        return schema;
+    }
+
     [[nodiscard]] std::unordered_map<TemplateId, std::uint64_t>
     counts_of(const MetaLogDocument& doc)
     {
@@ -82,66 +156,95 @@ namespace
 
     // post: a row per template with a branching entry in BOTH documents, by |delta| desc, id asc;
     // a template absent from one side's branching has no row, whatever the reason.
+    // post: no row when the PAIR makes the block incomparable, stated instead -- absence first
+    // (behavior, then behavior.branching), then the order, since an absent operand has no order.
     // note: a missing branching entry means not comparable, never zero entropy.
-    // refs: DN-126.D9
+    // refs: DN-126.D9, DN-56.D13, DN-56.D15
     void diff_branching_delta(MetaLogDiff& out, const MetaLogDocument& previous,
                               const MetaLogDocument& current)
     {
-        if (previous.behavior && current.behavior && previous.behavior->branching &&
-            !previous.behavior->branching->empty() && current.behavior->branching &&
-            !current.behavior->branching->empty())
+        if (auto absent{one_sided(previous.behavior.has_value(), current.behavior.has_value(),
+                                  SignalBlock::Behavior)})
         {
-            std::unordered_map<TemplateId, double> prev_h;
-            for (const auto& branch : *previous.behavior->branching)
-                prev_h[branch.template_id] = branch.entropy_bits;
-            out.branching_delta.reserve(
-                std::min(prev_h.size(), current.behavior->branching->size()));
-            for (const auto& branch : *current.behavior->branching)
-            {
-                const auto prev_it{prev_h.find(branch.template_id)};
-                if (prev_it == prev_h.end())
-                    continue;
-                BranchingDelta branch_delta;
-                branch_delta.template_id = branch.template_id;
-                branch_delta.previous_entropy_bits = prev_it->second;
-                branch_delta.current_entropy_bits = branch.entropy_bits;
-                branch_delta.delta_bits =
-                    branch_delta.current_entropy_bits - branch_delta.previous_entropy_bits;
-                out.branching_delta.push_back(branch_delta);
-            }
-            std::ranges::sort(out.branching_delta,
-                              [](const BranchingDelta& lhs, const BranchingDelta& rhs)
-                              {
-                                  if (std::abs(lhs.delta_bits) != std::abs(rhs.delta_bits))
-                                      return std::abs(lhs.delta_bits) > std::abs(rhs.delta_bits);
-                                  return lhs.template_id < rhs.template_id;
-                              });
-            // invariant: emitted only when some entropy moved -- the declared vacuity is the EMPTY
-            // array, so emitting an unmoved array would publish a false witness.
-            // note: rows that did not move survive beside those that did; the array is the finding.
-            if (std::ranges::none_of(out.branching_delta, [](const BranchingDelta& row)
-                                     { return row.delta_bits != 0.0; }))
-                out.branching_delta.clear();
+            out.incomparable_signals.branching_delta = std::move(absent);
+            return;
         }
+        if (auto absent{one_sided(carries_branching(previous), carries_branching(current),
+                                  SignalBlock::BehaviorBranching)})
+        {
+            out.incomparable_signals.branching_delta = std::move(absent);
+            return;
+        }
+        if (!previous.behavior || !current.behavior || !carries_branching(previous))
+            return;
+        // invariant: the transition graph is the order-n table's projection, so two orders build
+        // two different graphs and no row compares one quantity.
+        if (previous.behavior->ngram_size != current.behavior->ngram_size)
+        {
+            out.incomparable_signals.branching_delta =
+                NGramSizeDiffers{.previous_ngram_size = previous.behavior->ngram_size,
+                                 .current_ngram_size = current.behavior->ngram_size};
+            return;
+        }
+        std::unordered_map<TemplateId, double> prev_h;
+        const auto& prev_rows{*branching_rows_of(previous)};
+        const auto& cur_rows{*branching_rows_of(current)};
+        for (const auto& branch : prev_rows)
+            prev_h[branch.template_id] = branch.entropy_bits;
+        out.branching_delta.reserve(std::min(prev_h.size(), cur_rows.size()));
+        for (const auto& branch : cur_rows)
+        {
+            const auto prev_it{prev_h.find(branch.template_id)};
+            if (prev_it == prev_h.end())
+                continue;
+            BranchingDelta branch_delta;
+            branch_delta.template_id = branch.template_id;
+            branch_delta.previous_entropy_bits = prev_it->second;
+            branch_delta.current_entropy_bits = branch.entropy_bits;
+            branch_delta.delta_bits =
+                branch_delta.current_entropy_bits - branch_delta.previous_entropy_bits;
+            out.branching_delta.push_back(branch_delta);
+        }
+        std::ranges::sort(out.branching_delta,
+                          [](const BranchingDelta& lhs, const BranchingDelta& rhs)
+                          {
+                              if (std::abs(lhs.delta_bits) != std::abs(rhs.delta_bits))
+                                  return std::abs(lhs.delta_bits) > std::abs(rhs.delta_bits);
+                              return lhs.template_id < rhs.template_id;
+                          });
+        // invariant: emitted only when some entropy moved -- the declared vacuity is the EMPTY
+        // array, so emitting an unmoved array would publish a false witness.
+        // note: rows that did not move survive beside those that did; the array is the finding.
+        if (std::ranges::none_of(out.branching_delta,
+                                 [](const BranchingDelta& row) { return row.delta_bits != 0.0; }))
+            out.branching_delta.clear();
     }
 
     // post: new and vanished sequences plus the rate-changed common ones.
     // post: no delta when the two blocks sit at DIFFERENT ngram_size: no key could match across
     // orders, so every row would read as turnover -- a witness of change the workload never made.
-    // post: that omission is recorded as ngram_order_mismatch, both orders in their roles, so the
-    // document states the comparison it did not perform rather than read as one finding nothing.
+    // post: no delta when exactly one input carries behavior: the absent side's sequences are
+    // unknown, never empty.
+    // post: each omission is stated in incomparable_signals, so the document says which comparison
+    // it did not perform rather than read as one finding nothing.
     // invariant: reached only by unstamped pairs; the retention_profile gate refuses a stamped one.
-    // refs: ADR-20.D17, ADR-25.D5
+    // refs: ADR-20.D17, ADR-25.D5, DN-56.D13
     void diff_ngram_delta(MetaLogDiff& out, const MetaLogDocument& previous,
                           const MetaLogDocument& current)
     {
+        if (auto absent{one_sided(previous.behavior.has_value(), current.behavior.has_value(),
+                                  SignalBlock::Behavior)})
+        {
+            out.incomparable_signals.ngram_delta = std::move(absent);
+            return;
+        }
         if (!previous.behavior || !current.behavior)
             return;
         if (previous.behavior->ngram_size != current.behavior->ngram_size)
         {
-            out.ngram_order_mismatch =
-                NGramOrderMismatch{.previous_ngram_size = previous.behavior->ngram_size,
-                                   .current_ngram_size = current.behavior->ngram_size};
+            out.incomparable_signals.ngram_delta =
+                NGramSizeDiffers{.previous_ngram_size = previous.behavior->ngram_size,
+                                 .current_ngram_size = current.behavior->ngram_size};
             return;
         }
         NGramDelta ngram_delta;
@@ -590,6 +693,14 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
                                      "diff");
     check_processing_identifier_gate(previous.retention_profile, current.retention_profile,
                                      "retention_profile", "diff");
+    // assert: a document tracking histograms declares both caps, so a caps-differ statement never
+    // carries a value no input declared; a declared value cap alone is the composer's posture.
+    // refs: DN-56.D17, DN-148.D5
+    for (const MetaLogDocument* doc : {&previous, &current})
+        if (doc->stats.param_histograms_size && !doc->stats.value_counts_size)
+            throw std::invalid_argument{
+                "diff: a document declares param_histograms_size without value_counts_size "
+                "(SPEC 3.5)"};
     // note: one side absent is a legacy producer and proceeds; both stamped and different refuses.
     // refs: ADR-17.D3, ADR-17.D8
     check_processing_identifier_gate(
@@ -622,22 +733,49 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
     diff_template_deltas(out, prev_counts, cur_counts, prev_freqs, cur_freqs);
     diff_branching_delta(out, previous, current);
     diff_ngram_delta(out, previous, current);
-    diff_field_histogram_deltas(out, previous, current);
+    // assert: absence before the caps -- an input that tracks nothing has no cap to compare -- and
+    // an incomparable block computes no row, so withheld_signals can never name it.
+    // refs: DN-56.D17
+    if (auto absent{one_sided(tracks_histograms(previous), tracks_histograms(current),
+                              SignalBlock::ParamHistograms)})
+        out.incomparable_signals.field_histogram_deltas = std::move(absent);
+    else if (auto caps_differ{histogram_caps_differ(previous, current)})
+        out.incomparable_signals.field_histogram_deltas = *caps_differ;
+    else
+        diff_field_histogram_deltas(out, previous, current);
     diff_ordinal_histogram_deltas(out, previous, current);
     diff_tail_delta(out, previous, current);
-    diff_reservoir_delta(out, previous, current);
+    // assert: membership read against a side that keeps no reservoir reports configuration as
+    // births and deaths, so a one-sided pair is stated and never differenced.
+    // refs: DN-56.D16
+    if (auto absent{one_sided(keeps_reservoir(previous), keeps_reservoir(current),
+                              SignalBlock::StatsReservoir)})
+        out.incomparable_signals.reservoir_delta = std::move(absent);
+    else
+        diff_reservoir_delta(out, previous, current);
     diff_service_edge_delta(out, previous, current);
     diff_span_edge_delta(out, previous, current);
-    // assert: the ONE gate is that both carried a cube; there is no axes-equality gate, since the
-    // contract freezes the axis SET, not the collapse stamps.
-    // refs: ADR-24.D7
-    if (previous.has_cube && current.has_cube)
+    // assert: the gate is both cubes at one axis SCHEMA; the collapse stamps may differ, and the
+    // pair is then read at its minimal common collapse, which loses granularity and no count.
+    // refs: ADR-24.D7, DN-56.D14
+    if (auto absent{one_sided(previous.has_cube, current.has_cube, SignalBlock::Cube)})
+        out.incomparable_signals.cube_diff = std::move(absent);
+    else if (previous.has_cube)
     {
-        // note: the shift map is empty when neither document carries comparable duration data.
-        const std::unordered_map<std::string, OrdinalDrift> latency_shifts{
-            component_latency_shifts(previous, current)};
-        out.cube_diff = cube::cube_diff_of(previous.cube, current.cube, latency_shifts);
-        out.has_cube_diff = true;
+        std::vector<CubeAxis> previous_schema{axis_schema_of(previous.cube)};
+        std::vector<CubeAxis> current_schema{axis_schema_of(current.cube)};
+        if (previous_schema != current_schema)
+            out.incomparable_signals.cube_diff =
+                CubeAxesDiffer{.previous_axes = std::move(previous_schema),
+                               .current_axes = std::move(current_schema)};
+        else
+        {
+            // note: the shift map is empty when neither document carries comparable duration data.
+            const std::unordered_map<std::string, OrdinalDrift> latency_shifts{
+                component_latency_shifts(previous, current)};
+            out.cube_diff = cube::cube_diff_of(previous.cube, current.cube, latency_shifts);
+            out.has_cube_diff = true;
+        }
     }
 
     return out;

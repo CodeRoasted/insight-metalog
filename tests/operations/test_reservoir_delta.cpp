@@ -43,14 +43,17 @@ using insight::template_id_of;
     return entry;
 }
 
-// invariant: default processing identifiers, so the comparability gate passes and the salience
-// memory is the only variable.
+// invariant: default processing identifiers and a declared reservoir cap, so the comparability
+// gate passes, both sides keep a reservoir, and the salience memory is the only variable.
+// refs: DN-56.D16
 [[nodiscard]] meta::MetaLogDocument doc_with(std::vector<meta::TopKEntry> top_k,
                                              std::vector<meta::ReservoirEntry> reservoir)
 {
+    constexpr std::size_t kDeclaredCap{8};
     meta::MetaLogDocument doc;
     doc.stats.top_k = std::move(top_k);
     doc.stats.reservoir = std::move(reservoir);
+    doc.stats.reservoir_size = kDeclaredCap;
     return doc;
 }
 

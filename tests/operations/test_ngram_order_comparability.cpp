@@ -126,10 +126,8 @@ TEST(NgramOrderComparability, UnstampedDiffAcrossOrdersCarriesNoNgramDelta)
     ASSERT_FALSE(same_order.ngram_delta.has_value())
         << "one input at one order must diff to no n-gram delta, or this file's input moves";
 
-    ASSERT_FALSE(same_order.ngram_order_mismatch.has_value())
-        << "one input at one order reported an order mismatch "
-        << same_order.ngram_order_mismatch->previous_ngram_size << " vs "
-        << same_order.ngram_order_mismatch->current_ngram_size;
+    ASSERT_FALSE(same_order.incomparable_signals.ngram_delta.has_value())
+        << "one input at one order stated its n-gram delta incomparable";
 
     for (const auto& [name, delta, previous_order, current_order] :
          {std::tuple{"diff(order 2, order 3)", meta::diff(order2, order3), 2U, 3U},
@@ -140,11 +138,15 @@ TEST(NgramOrderComparability, UnstampedDiffAcrossOrdersCarriesNoNgramDelta)
             << (delta.ngram_delta ? delta.ngram_delta->new_ngrams.size() : 0U) << ", vanished "
             << (delta.ngram_delta ? delta.ngram_delta->vanished_ngrams.size() : 0U)
             << ") over ONE input stream: the turnover is the order's, not the workload's";
-        ASSERT_TRUE(delta.ngram_order_mismatch.has_value())
+        ASSERT_TRUE(delta.incomparable_signals.ngram_delta.has_value())
             << name << " omitted the n-gram delta without recording why";
-        EXPECT_EQ(delta.ngram_order_mismatch->previous_ngram_size, previous_order)
+        const auto* order_mismatch{
+            std::get_if<meta::NGramSizeDiffers>(&*delta.incomparable_signals.ngram_delta)};
+        ASSERT_NE(order_mismatch, nullptr)
+            << name << " recorded a reason other than ngram_size_differs across two orders";
+        EXPECT_EQ(order_mismatch->previous_ngram_size, previous_order)
             << name << ": the previous document's order";
-        EXPECT_EQ(delta.ngram_order_mismatch->current_ngram_size, current_order)
+        EXPECT_EQ(order_mismatch->current_ngram_size, current_order)
             << name << ": the current document's order";
     }
 }
@@ -164,7 +166,7 @@ TEST(NgramOrderComparability, UnstampedDiffAcrossOrdersStatesTheNgramDeltaIncomp
         const std::string json{written_or_fail(meta::to_json(delta))};
         const std::string stated{
             std::format(R"("incomparable_signals":{{"ngram_delta":{{"reason":"ngram_size_differs",)"
-                        R"("previous_ngram_size":{},"current_ngram_size":{}}}}})",
+                        R"("previous_ngram_size":{},"current_ngram_size":{}}})",
                         previous_order, current_order)};
         EXPECT_NE(json.find(stated), std::string::npos)
             << name << " does not state the n-gram delta incomparable; expected the member\n  "
