@@ -447,3 +447,32 @@ TEST(IncomparableSignals, ControlSameOrderPairStatesNothing)
     const std::string json{wire_of(meta::diff(close_branching({}), close_branching({})))};
     EXPECT_EQ(incomparable_member(json), "") << "a fully comparable pair:\n  " << json;
 }
+
+// invariant: the exported wire name of each of the four reasons is the token the serializer writes,
+// so a consumer that spells a reason through to_string never drifts from the wire.
+TEST(IncomparableSignals, ExportedReasonNameIsTheSerializedToken)
+{
+    const std::array<meta::IncomparableReason, 4> reasons{
+        meta::IncomparableReason{
+            meta::NGramSizeDiffers{.previous_ngram_size = 2, .current_ngram_size = 3}},
+        meta::IncomparableReason{meta::AbsentInOneInput{.absent_in = meta::DiffSide::Current,
+                                                        .block = meta::SignalBlock::Cube}},
+        meta::IncomparableReason{meta::CubeAxesDiffer{}},
+        meta::IncomparableReason{meta::HistogramCapsDiffer{.previous_param_histograms_size = 4,
+                                                           .current_param_histograms_size = 8,
+                                                           .previous_value_counts_size = 64,
+                                                           .current_value_counts_size = 64}}};
+    std::set<std::string_view> names;
+    for (const meta::IncomparableReason& reason : reasons)
+    {
+        meta::MetaLogDiff delta;
+        delta.incomparable_signals.cube_diff = reason;
+        const std::string json{wire_of(delta)};
+        const std::string token{
+            std::format(R"("cube_diff":{{"reason":"{}")", meta::to_string(reason))};
+        expect_stated(std::format("reason alternative {}", reason.index()), json, token);
+        names.insert(meta::to_string(reason));
+    }
+    EXPECT_EQ(names.size(), reasons.size())
+        << "two reason alternatives share one exported name; the vocabulary is closed and distinct";
+}

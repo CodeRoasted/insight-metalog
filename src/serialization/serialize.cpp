@@ -1236,34 +1236,32 @@ namespace
     // collapse stamp because the domain record already stripped them.
     [[nodiscard]] dto::IncomparableReason make_incomparable_reason(const IncomparableReason& reason)
     {
-        return std::visit(
+        dto::IncomparableReason statement{std::visit(
             [](const auto& held) -> dto::IncomparableReason
             {
                 using Held = std::remove_cvref_t<decltype(held)>;
                 if constexpr (std::is_same_v<Held, NGramSizeDiffers>)
-                    return {.reason = "ngram_size_differs",
-                            .previous_ngram_size = held.previous_ngram_size,
+                    return {.previous_ngram_size = held.previous_ngram_size,
                             .current_ngram_size = held.current_ngram_size};
                 else if constexpr (std::is_same_v<Held, AbsentInOneInput>)
-                    return {.reason = "absent_in_one_input",
-                            .absent_in = std::string{to_string(held.absent_in)},
+                    return {.absent_in = std::string{to_string(held.absent_in)},
                             .block = std::string{to_string(held.block)}};
                 else if constexpr (std::is_same_v<Held, CubeAxesDiffer>)
-                    return {.reason = "cube_axes_differ",
-                            .previous_axes = make_cube_axes(held.previous_axes),
+                    return {.previous_axes = make_cube_axes(held.previous_axes),
                             .current_axes = make_cube_axes(held.current_axes)};
                 else
                 {
                     static_assert(std::is_same_v<Held, HistogramCapsDiffer>,
                                   "every reason of the closed vocabulary has a wire statement");
-                    return {.reason = "histogram_caps_differ",
-                            .previous_param_histograms_size = held.previous_param_histograms_size,
+                    return {.previous_param_histograms_size = held.previous_param_histograms_size,
                             .current_param_histograms_size = held.current_param_histograms_size,
                             .previous_value_counts_size = held.previous_value_counts_size,
                             .current_value_counts_size = held.current_value_counts_size};
                 }
             },
-            reason);
+            reason)};
+        statement.reason = std::string{to_string(reason)};
+        return statement;
     }
 
     [[nodiscard]] dto::IncomparableSignals

@@ -1776,6 +1776,25 @@ struct HistogramCapsDiffer
 using IncomparableReason =
     std::variant<NGramSizeDiffers, AbsentInOneInput, CubeAxesDiffer, HistogramCapsDiffer>;
 
+// post: the reason's wire token, the one spelling the serializer writes and every consumer reads.
+// refs: DN-56.D19, F-SRC-metalog-spec:SPEC.md
+// pre: `reason` holds an alternative; diff() builds every reason by value, so none is valueless.
+// note: holds_alternative, never visit, because a visit throws on a valueless variant.
+[[nodiscard]] inline std::string_view to_string(const IncomparableReason& reason) noexcept
+{
+    static_assert(std::variant_size_v<IncomparableReason> == 4,
+                  "every reason of the closed vocabulary has a wire token");
+    if (std::holds_alternative<NGramSizeDiffers>(reason))
+        return "ngram_size_differs";
+    if (std::holds_alternative<AbsentInOneInput>(reason))
+        return "absent_in_one_input";
+    if (std::holds_alternative<CubeAxesDiffer>(reason))
+        return "cube_axes_differ";
+    if (std::holds_alternative<HistogramCapsDiffer>(reason))
+        return "histogram_caps_differ";
+    std::terminate();
+}
+
 // invariant: one record per signal property a pair can make incomparable, each engaged only when
 // the property is absent from the diff; written on the wire only when some record is engaged.
 // invariant: a descriptor and never a witness -- comparison_outcome_of reads none of it.
