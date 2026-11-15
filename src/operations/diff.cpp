@@ -701,14 +701,6 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
             throw std::invalid_argument{
                 "diff: a document declares param_histograms_size without value_counts_size "
                 "(SPEC 3.5)"};
-    // note: one side absent is a legacy producer and proceeds; both stamped and different refuses.
-    // refs: ADR-17.D3, ADR-17.D8
-    check_processing_identifier_gate(
-        previous.ruleset ? std::optional<std::string>{previous.ruleset->semantic_identity}
-                         : std::nullopt,
-        current.ruleset ? std::optional<std::string>{current.ruleset->semantic_identity}
-                        : std::nullopt,
-        "semantic_identity", "diff");
 
     MetaLogDiff out;
     // post: the cap both inputs declare, the gate above having refused two different ones.

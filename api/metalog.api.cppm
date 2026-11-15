@@ -507,13 +507,11 @@ struct SpanEdgeBlock
     [[nodiscard]] bool operator==(const SpanEdgeBlock&) const noexcept = default;
 };
 
-// invariant: the identity of the semantic ruleset that SEGMENTED this document -- the comparability
-// key.
-// invariant: an additive flag-gated block, so absence means a legacy producer and no wire version
-// moves.
-// invariant: two documents are comparable iff their semantic_identity matches; on mismatch the
-// consumer re-segments where raw inputs exist and refuses otherwise, never compares.
-// refs: ADR-17.D3
+// invariant: the vocabulary packages that SEGMENTED this document, a LABEL that gates nothing.
+// invariant: the composed identity rides the SPEC 2.4 canonicalization_version, folded there at
+// the engine seam, so equal tokens imply equal identities and no second gate exists.
+// invariant: an additive block, so absence means a producer that injected no composition.
+// refs: ADR-17.D3, DN-42.D20
 struct RulesetPackageRef
 {
     std::string name;
@@ -523,18 +521,16 @@ struct RulesetPackageRef
 
 struct RulesetIdentity
 {
-    // invariant: the composed content hash over the actual composed rows, and the KEY.
-    std::string semantic_identity;
     // invariant: the composed package set, in canonical package-sorted order, for legibility only
-    // -- the hash is the key.
+    // -- the 2.4 token is the key.
     std::vector<RulesetPackageRef> packages;
     [[nodiscard]] bool operator==(const RulesetIdentity&) const noexcept = default;
 };
 
 // invariant: which delivery layers the declarer said wrap this run's lines. DISCLOSURE, never
 // evidence: a wrong declaration stays wrong and the declarer owns it.
-// invariant: not identity and not a comparability gate -- the transform GRAMMAR enters
-// semantic_identity and the per-run declaration does not.
+// invariant: not identity and not a comparability gate -- the transform GRAMMAR enters the
+// composed identity, so the 2.4 token, and the per-run declaration does not.
 // invariant: nothing here licenses a comparability statement ACROSS transport.
 // refs: ADR-23.D2, ADR-23.D4, ADR-23.D6
 struct TransportDeclaration
@@ -1177,8 +1173,8 @@ struct MetaLogDocument
     // vector.
     // refs: F-SRC-insight-metalog:metalog.api.cppm:SpanEdgeBlock
     std::optional<SpanEdgeBlock> span_edges;
-    // invariant: the semantic_identity and package list of the ruleset that segmented this
-    // document; absent means a legacy producer.
+    // invariant: the package list of the ruleset that segmented this document; absent means a
+    // producer that injected no composition.
     // invariant: stamped once at close and only read, so std::optional is sound.
     // refs: ADR-17.D3
     std::optional<RulesetIdentity> ruleset;

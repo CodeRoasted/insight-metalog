@@ -1,24 +1,18 @@
 
-// refs: F-SRC-metalog-spec:SPEC.md
+// refs: F-SRC-metalog-spec:SPEC.md, DN-42.D20
 // invariant: SPEC 2.4 defines canonicalization_version as naming masking, TOKENIZATION and
 // classification, and makes it a normative comparability GATE that MUST refuse unequal values.
-// invariant: our token is a canon-owned constant the composed package set cannot move.
-// invariant: worse, canon PREFIXES that constant into the preimage it hashes, so the masking token
-// is an INPUT to the ruleset identity and can never be a function of it.
-// invariant: two documents tokenized under different rulesets therefore carry an EQUAL 2.4 token
-// and the standard's own gate passes them.
-// invariant: a foreign consumer then diffs across incomparable tokenizations, which is the
-// precision loss 2.4 exists to prevent.
+// invariant: the LIBRARY default is the canon-owned masking constant, which the composed package
+// set cannot move: canon prefixes it into the preimage it hashes, an INPUT, never a function of it.
+// invariant: two documents tokenized under different rulesets at the library default therefore
+// carry an EQUAL 2.4 token, and the standard's own gate passes them.
+// invariant: the fold closes that at the engine seam: insight-eidos stamps canon's
+// ComposedSemantics::canonicalization_version() on every MetaLog configuration it builds.
 // note: homed at unit grain: all three things the property needs are already in this binary.
 // invariant: what this home CANNOT see is the shipping producer's own configuration, which has its
 // own pin in insight-eidos reading the token off a document the real pipeline emitted.
-// invariant: the joint was never made: each grain was proven alone, on hand-written values.
-// invariant: no test in the workspace had put a REAL composed identity and the DEFAULT token on one
-// document and compared two of them, and that is the joint the defect lives in.
-// invariant: all four arms are GREEN today and that is the homing call, not an oversight.
-// invariant: 2.4's bump MUST is a claim about a VALUE this package cannot produce, so a must-differ
-// arm homed here would be a can't-PASS gate still skipping after the fix.
-// note: this file owns the MECHANISM and the HARM; the arm that can flip lives in insight-eidos.
+// invariant: the library default stays blind (arm 3), because this package cannot know the
+// composition the caller tokenized under; arm 4 proves the folded token is what refuses the pair.
 // invariant: no RNG, no wall clock, single-threaded, literal input bytes; both arms consume
 // BYTE-IDENTICAL input and the composition is the only variable.
 #include <gtest/gtest.h>
@@ -51,12 +45,10 @@ using Clock = std::chrono::system_clock;
 // note: namespace scope so member initializers can name it; the manifest is a literal type.
 constexpr std::array kGithubOnly{insight::semantic::github::kManifest};
 
-// invariant: mirror of the production stamp -- the composed hash is the KEY and the package list is
-// the label.
+// invariant: mirror of the production label -- the package list, which gates nothing.
 [[nodiscard]] meta::RulesetIdentity ruleset_of(const insight::semantic::ComposedSemantics& composed)
 {
     meta::RulesetIdentity ruleset;
-    ruleset.semantic_identity = composed.identity_hex();
     ruleset.packages.reserve(composed.packages().size());
     for (const insight::semantic::ComposedPackage& pkg : composed.packages())
         ruleset.packages.push_back(
@@ -71,12 +63,10 @@ struct Arm
     std::string json;
 };
 
-// invariant: canonicalization_version is LEFT AT ITS DEFAULT on purpose, because that IS the
-// production configuration.
-// invariant: a sweep finds five internal propagations here and no production site overriding it, so
-// overriding it in this fixture would replace the measurement with an assumption.
+// invariant: canonicalization_version is LEFT AT THE LIBRARY DEFAULT unless `fold` is set; with
+// `fold` it is stamped exactly as the engine seam stamps it, from canon's token for `composed`.
 [[nodiscard]] Arm build_arm(const insight::semantic::ComposedSemantics& composed,
-                            bool stamp_ruleset)
+                            bool stamp_ruleset, bool fold = false)
 {
     const Clock::time_point window_start{std::chrono::seconds{1'700'000'000}};
     const Clock::time_point window_end{std::chrono::seconds{1'700'000'060}};
@@ -84,6 +74,8 @@ struct Arm
     meta::MetaLogConfig config;
     if (stamp_ruleset)
         config.ruleset = ruleset_of(composed);
+    if (fold)
+        config.canonicalization_version = composed.canonicalization_version();
 
     meta::MetaLogEngine engine{config};
     engine.open_window(window_start);
@@ -178,10 +170,9 @@ TEST_F(RulesetCoverageTest, TheCompositionSwapChangesWhatTheDocumentSays)
            "block stamped on either side — the tokenization difference never reached the wire";
 }
 
-// invariant: arm 3, the boundary -- a POSITIVE assertion that must STAY green, not a pre-registered
-// red.
+// invariant: arm 3, the boundary -- a POSITIVE assertion that must STAY green.
 // invariant: metalog can never derive a ruleset-aware token, canon shipping no default composition,
-// so the fold lands at the injection seam.
+// so the fold lands at the injection seam (insight-eidos stamp_producer_contract).
 // invariant: what IS this package's to state is that two genuinely different rulesets producing
 // genuinely different documents leave the library's 2.4 token untouched.
 // note: it reds if someone teaches the library to synthesize a token it cannot inform.
@@ -190,9 +181,7 @@ TEST_F(RulesetCoverageTest, TheLibraryDefaultTokenIsBlindToTheComposition)
     const Arm a{build_arm(core_only, /*stamp_ruleset=*/true)};
     const Arm b{build_arm(with_github, /*stamp_ruleset=*/true)};
 
-    ASSERT_TRUE(a.doc.ruleset.has_value());
-    ASSERT_TRUE(b.doc.ruleset.has_value());
-    ASSERT_NE(a.doc.ruleset->semantic_identity, b.doc.ruleset->semantic_identity)
+    ASSERT_NE(core_only.identity_hex(), with_github.identity_hex())
         << "the arms carry the same composed identity — ① should have caught this first";
 
     // invariant: printed UNCONDITIONALLY and not only on failure -- this arm IS the measurement the
@@ -201,8 +190,8 @@ TEST_F(RulesetCoverageTest, TheLibraryDefaultTokenIsBlindToTheComposition)
               << "             canonicalization_version   = "
               << show(a.doc.canonicalization_version) << " (core-only) / "
               << show(b.doc.canonicalization_version) << " (github)\n"
-              << "             ruleset.semantic_identity  = " << a.doc.ruleset->semantic_identity
-              << " (core-only) / " << b.doc.ruleset->semantic_identity << " (github)\n";
+              << "             composed identity          = " << core_only.identity_hex()
+              << " (core-only) / " << with_github.identity_hex() << " (github)\n";
 
     EXPECT_EQ(a.doc.canonicalization_version, b.doc.canonicalization_version)
         << "the library produced two DIFFERENT §2.4 tokens for two different rulesets:\n"
@@ -228,18 +217,13 @@ TEST_F(RulesetCoverageTest, TheLibraryDefaultTokenIsBlindToTheComposition)
            "production pin is reading a different contract than this file describes.";
 }
 
-// invariant: arm 4, the harm -- its SUBJECT is the ruleset member, so it dies with that member when
-// the fold lands, which is the fold's own cascade and not debt.
-// invariant: SPEC 7 orders consumers to ignore what they do not know, so an implementer holding
-// only the specification has no ruleset member to check.
-// invariant: stripping it is what a conformant foreign consumer's view of these two documents IS,
-// and under that view the pair, whose tokenizations genuinely differ, is ACCEPTED.
+// invariant: arm 4, the harm and its closure -- at the library default the pair whose tokenizations
+// differ is ACCEPTED by compose and diff: no member a conformant consumer reads tells them apart.
+// invariant: the package label gates nothing, so it cannot refuse the pair either (DN-42.D20).
+// invariant: stamped as the engine seam stamps it, the same pair is REFUSED by the one 2.4 gate.
 // note: compose and diff are asserted together, being the two 2.4-gated operations.
-TEST_F(RulesetCoverageTest, OnlyANonStandardMemberRefusesTheIncomparablePair)
+TEST_F(RulesetCoverageTest, TheFoldedTokenIsWhatRefusesTheIncomparablePair)
 {
-    const Arm a{build_arm(core_only, /*stamp_ruleset=*/true)};
-    const Arm b{build_arm(with_github, /*stamp_ruleset=*/true)};
-
     const auto refuses{
         [](const meta::MetaLogDocument& lhs, const meta::MetaLogDocument& rhs, bool as_diff)
         {
@@ -257,24 +241,21 @@ TEST_F(RulesetCoverageTest, OnlyANonStandardMemberRefusesTheIncomparablePair)
             return false;
         }};
 
-    // pre: the refusal must exist somewhere, or the standard-only view's acceptance is measuring a
-    // gate that never bites rather than one a consumer cannot reach.
-    ASSERT_TRUE(refuses(a.doc, b.doc, /*as_diff=*/false))
-        << "our own compose() accepted two different composed rulesets — the ruleset gate itself "
-           "is broken, which is a different defect from the one this arm is about";
-    ASSERT_TRUE(refuses(a.doc, b.doc, /*as_diff=*/true))
-        << "our own diff accepted two different composed rulesets";
+    const Arm blind_a{build_arm(core_only, /*stamp_ruleset=*/true)};
+    const Arm blind_b{build_arm(with_github, /*stamp_ruleset=*/true)};
+    EXPECT_FALSE(refuses(blind_a.doc, blind_b.doc, /*as_diff=*/false))
+        << "compose() refused the library-default pair, so a gate other than 2.4 still bites on "
+           "the label — DN-42.D20 ripped the second gate. canonicalization_version (both arms) = "
+        << show(blind_a.doc.canonicalization_version);
+    EXPECT_FALSE(refuses(blind_a.doc, blind_b.doc, /*as_diff=*/true))
+        << "diff refused the library-default pair — same, a second gate still bites";
 
-    meta::MetaLogDocument standard_a{a.doc};
-    meta::MetaLogDocument standard_b{b.doc};
-    standard_a.ruleset.reset();
-    standard_b.ruleset.reset();
-
-    EXPECT_FALSE(refuses(standard_a, standard_b, /*as_diff=*/false))
-        << "compose() refused the pair with `ruleset` stripped, so the refusal rides a STANDARD "
-           "member and this file's whole argument is stale — re-derive it before acting on it. "
-           "canonicalization_version (both arms) = "
-        << show(standard_a.canonicalization_version);
-    EXPECT_FALSE(refuses(standard_a, standard_b, /*as_diff=*/true))
-        << "diff refused the pair with `ruleset` stripped — same, re-derive before acting";
+    const Arm folded_a{build_arm(core_only, /*stamp_ruleset=*/true, /*fold=*/true)};
+    const Arm folded_b{build_arm(with_github, /*stamp_ruleset=*/true, /*fold=*/true)};
+    EXPECT_TRUE(refuses(folded_a.doc, folded_b.doc, /*as_diff=*/false))
+        << "compose() accepted two folded tokens: " << show(folded_a.doc.canonicalization_version)
+        << " / " << show(folded_b.doc.canonicalization_version);
+    EXPECT_TRUE(refuses(folded_a.doc, folded_b.doc, /*as_diff=*/true))
+        << "diff accepted two folded tokens: " << show(folded_a.doc.canonicalization_version)
+        << " / " << show(folded_b.doc.canonicalization_version);
 }

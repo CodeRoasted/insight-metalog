@@ -121,8 +121,7 @@ const insight::TemplateId kReservoirOneSided{template_number(6)};
     composed.children = std::vector<meta::ReDerivationCoordinate>{raw_coordinate("z-left", 30),
                                                                   raw_coordinate("a-left", 0)};
     doc.coordinate = composed;
-    doc.ruleset = meta::RulesetIdentity{.semantic_identity = "ruleset-key",
-                                        .packages = {{.name = "github", .version = "2"}}};
+    doc.ruleset = meta::RulesetIdentity{.packages = {{.name = "github", .version = "2"}}};
     doc.has_cube = true;
     return doc;
 }
@@ -157,8 +156,7 @@ const insight::TemplateId kReservoirOneSided{template_number(6)};
         meta::NGramEntry{
             .sequence = {kBoundaryRight, kEqualCount}, .count = 3, .probability = 0.2}};
     doc.coordinate = raw_coordinate("m-right", 60);
-    doc.ruleset = meta::RulesetIdentity{.semantic_identity = "ruleset-key",
-                                        .packages = {{.name = "github", .version = "1"}}};
+    doc.ruleset = meta::RulesetIdentity{.packages = {{.name = "github", .version = "1"}}};
     doc.has_cube = true;
     return doc;
 }
@@ -268,10 +266,9 @@ TEST(ComposeCommutativeBytesTest, EveryDisagreementResolvesByTheValueRule)
     EXPECT_EQ(composed.producer.implementation_uri, kComposer.implementation_uri);
     EXPECT_EQ(composed.metalog_version, std::string{meta::kMetaLogSpecVersion});
 
-    ASSERT_TRUE(composed.ruleset.has_value());
-    ASSERT_EQ(composed.ruleset->packages.size(), 1U);
-    EXPECT_EQ(composed.ruleset->packages.front().version, "1")
-        << "equal semantic_identity, different package lists: the lexicographically smaller list";
+    EXPECT_FALSE(composed.ruleset.has_value())
+        << "two different package labels: the composed document carries neither, never one "
+           "picked by a rule (DN-42.D20)";
 }
 
 // invariant: 12.1's provenance is A.provenance + B.provenance + one entry per input, even when an

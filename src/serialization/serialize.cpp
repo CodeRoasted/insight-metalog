@@ -285,7 +285,6 @@ namespace dto
 
     struct RulesetIdentity
     {
-        std::string semantic_identity;
         std::vector<RulesetPackageRef> packages;
     };
 
@@ -1084,8 +1083,7 @@ namespace
         // refs: ADR-17.D3
         if (doc.ruleset)
         {
-            dto::RulesetIdentity ruleset{.semantic_identity = doc.ruleset->semantic_identity,
-                                         .packages = {}};
+            dto::RulesetIdentity ruleset;
             ruleset.packages.reserve(doc.ruleset->packages.size());
             for (const RulesetPackageRef& pkg : doc.ruleset->packages)
                 ruleset.packages.push_back({.name = pkg.name, .version = pkg.version});

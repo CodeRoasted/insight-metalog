@@ -1,11 +1,8 @@
-
-// refs: F-SRC-metalog-spec:SPEC.md
-// invariant: the semantic packages in force are content-hashed into one semantic_identity that
-// rides every artifact, and two artifacts are comparable only when it matches.
-// invariant: enforcement is CENTRALIZED in the processing-identifier gate shared by compose() and
-// diff(), so semantic_identity is just another processing identifier through that one gate.
-// invariant: three faces -- ROUND-TRIP through the vendor-namespaced extensions container read back
-// generically, ABSENCE tolerated for a legacy producer, and MISMATCH failing closed.
+// refs: F-SRC-metalog-spec:SPEC.md, DN-42.D20
+// invariant: the composed identity of the semantic packages in force rides the SPEC 2.4
+// canonicalization_version, folded at the engine seam: two compositions carry two tokens, refused.
+// invariant: the vendor block extensions["fr.coderoast.ruleset"] keeps the package list alone, a
+// LABEL that gates nothing, carried by compose() only when both inputs carry an equal list.
 // note: a diff here is a comparability-contract break: fix the code, never the assertion.
 #include <glaze/glaze.hpp>
 #include <gtest/gtest.h>
@@ -20,25 +17,28 @@ namespace meta = insight::metalog;
 using insight::metalog::test::make_event;
 
 const meta::RulesetIdentity kRulesetA{
-    .semantic_identity = "a1b2c3d4e5f60718",
     .packages = {{.name = "github", .version = "1.0.0"},
                  {.name = "test_frameworks", .version = "1.0.0"}}};
 const meta::RulesetIdentity kRulesetB{
-    // note: a DIFFERENT composition, standing for a bumped package.
-    .semantic_identity = "ffffffffffffffff",
     .packages = {{.name = "github", .version = "2.0.0"},
                  {.name = "test_frameworks", .version = "1.0.0"}}};
+// note: two folded tokens under one masking generation, standing for two compositions.
+const std::string kTokenA{std::string{insight::kCanonicalizationVersion} +
+                          ":a1b2c3d4e5f60718a1b2c3d4e5f60718"};
+const std::string kTokenB{std::string{insight::kCanonicalizationVersion} +
+                          ":ffffffffffffffffffffffffffffffff"};
 
-// invariant: every other processing identifier stays at its default, so ruleset is the isolated
-// variable across the gate.
-[[nodiscard]] meta::MetaLogDocument
-build_doc_with_ruleset(std::optional<meta::RulesetIdentity> ruleset,
-                       meta::TemplateRegistry* out_registry = nullptr)
+// invariant: every other processing identifier stays at its default, so the token and the label
+// are the variables across the gate.
+[[nodiscard]] meta::MetaLogDocument build_doc(std::optional<meta::RulesetIdentity> ruleset,
+                                              std::string token = kTokenA,
+                                              meta::TemplateRegistry* out_registry = nullptr)
 {
     meta::MetaLogConfig cfg{.top_k_size = 8};
     cfg.ruleset = std::move(ruleset);
+    cfg.canonicalization_version = std::move(token);
     meta::MetaLogEngine engine{cfg};
-    const auto start{std::chrono::system_clock::now()};
+    const auto start{std::chrono::system_clock::time_point{std::chrono::seconds{1'700'000'000}}};
     engine.open_window(start);
     engine.ingest_event(make_event("alpha"));
     auto doc{engine.close_window(start + std::chrono::seconds(60))};
@@ -48,23 +48,12 @@ build_doc_with_ruleset(std::optional<meta::RulesetIdentity> ruleset,
 }
 } // namespace
 
-// note: stamping -- config.ruleset rides onto the document.
-TEST(RulesetIdentity, StampedFromConfigOnDocument)
-{
-    const auto doc{build_doc_with_ruleset(kRulesetA)};
-    ASSERT_TRUE(doc.ruleset.has_value());
-    EXPECT_EQ(doc.ruleset->semantic_identity, "a1b2c3d4e5f60718");
-    ASSERT_EQ(doc.ruleset->packages.size(), 2U);
-    EXPECT_EQ(doc.ruleset->packages[0].name, "github");
-    EXPECT_EQ(doc.ruleset->packages[1].name, "test_frameworks");
-}
-
-// invariant: the block rides the SPEC 7 container and reads back via a generic parser, there being
-// no typed one; inside the block the member name IS the JSON key.
-TEST(RulesetIdentity, RoundTripsThroughGenericJson)
+// invariant: the block rides the SPEC 7 container, reads back via a generic parser, and carries
+// the package list ONLY -- the identity it used to carry is the 2.4 token's now.
+TEST(RulesetIdentity, TheBlockRoundTripsThePackageListOnly)
 {
     meta::TemplateRegistry registry;
-    const auto doc{build_doc_with_ruleset(kRulesetA, &registry)};
+    const auto doc{build_doc(kRulesetA, kTokenA, &registry)};
     const std::string json{written_or_fail(meta::to_json(doc, registry))};
 
     const auto parsed{glz::read_json<glz::generic>(json)};
@@ -72,101 +61,68 @@ TEST(RulesetIdentity, RoundTripsThroughGenericJson)
     EXPECT_FALSE((*parsed).contains("ruleset"))
         << "SPEC §7: the ruleset block is vendor data and must never be a BARE root member: "
         << json;
-    ASSERT_TRUE((*parsed).contains("extensions"))
-        << "the stamped ruleset block must serialise under the §7 container: " << json;
-    ASSERT_TRUE((*parsed)["extensions"].contains("fr.coderoast.ruleset"))
-        << "the stamped ruleset block must serialise as extensions[\"fr.coderoast.ruleset\"]: "
-        << json;
+    ASSERT_TRUE((*parsed).contains("extensions")) << json;
+    ASSERT_TRUE((*parsed)["extensions"].contains("fr.coderoast.ruleset")) << json;
 
     auto& ruleset{(*parsed)["extensions"]["fr.coderoast.ruleset"]};
-    ASSERT_TRUE(ruleset.contains("semantic_identity")) << json;
-    EXPECT_EQ(ruleset["semantic_identity"].get<std::string>(), "a1b2c3d4e5f60718")
-        << "the comparability KEY must round-trip verbatim: " << json;
-
+    EXPECT_FALSE(ruleset.contains("semantic_identity"))
+        << "DN-42.D20: semantic_identity left the wire; the 2.4 token carries the identity: "
+        << json;
     ASSERT_TRUE(ruleset.contains("packages")) << json;
     auto& packages{ruleset["packages"].get_array()};
     ASSERT_EQ(packages.size(), 2U) << json;
     EXPECT_EQ(packages[0]["name"].get<std::string>(), "github") << json;
     EXPECT_EQ(packages[0]["version"].get<std::string>(), "1.0.0") << json;
     EXPECT_EQ(packages[1]["name"].get<std::string>(), "test_frameworks") << json;
+    EXPECT_EQ((*parsed)["canonicalization_version"].get<std::string>(), kTokenA) << json;
 }
 
-// invariant: a legacy producer with ruleset unset emits NO block, and the consumer tolerates it.
-TEST(RulesetIdentity, LegacyProducerEmitsNoBlock)
+// invariant: a producer that injects no composition emits NO block.
+TEST(RulesetIdentity, AProducerInjectingNoCompositionEmitsNoBlock)
 {
     meta::TemplateRegistry registry;
-    const auto doc{build_doc_with_ruleset(std::nullopt, &registry)};
+    const auto doc{build_doc(std::nullopt, kTokenA, &registry)};
     EXPECT_FALSE(doc.ruleset.has_value());
 
     const std::string json{written_or_fail(meta::to_json(doc, registry))};
     const auto parsed{glz::read_json<glz::generic>(json)};
     ASSERT_TRUE(parsed.has_value()) << json;
-    EXPECT_FALSE((*parsed).contains("ruleset"))
-        << "a legacy producer (no composition injected) must emit NO ruleset block: " << json;
+    EXPECT_FALSE((*parsed).contains("ruleset")) << json;
     // invariant: the container itself may exist, the engine stamping a transport declaration on
     // every document, so the assertion is on the ruleset KEY and not on the container.
     if ((*parsed).contains("extensions"))
     {
-        EXPECT_FALSE((*parsed)["extensions"].contains("fr.coderoast.ruleset"))
-            << "a legacy producer must emit NO ruleset block under the §7 container either: "
-            << json;
+        EXPECT_FALSE((*parsed)["extensions"].contains("fr.coderoast.ruleset")) << json;
     }
 }
 
-// invariant: two documents with DIFFERENT semantic_identity are not comparable and the gate fails
-// closed -- re-segment or refuse, never a silent compare.
-TEST(RulesetIdentity, ComposeMismatchedSemanticIdentityThrows)
+// invariant: two compositions' documents carry two tokens, and the ONE 2.4 gate refuses them in
+// both operations -- re-segment or refuse, never a silent compare.
+TEST(RulesetIdentity, TwoCompositionsAreRefusedThroughTheSection24Gate)
 {
-    const auto lhs{build_doc_with_ruleset(kRulesetA)};
-    const auto rhs{build_doc_with_ruleset(kRulesetB)};
+    const auto lhs{build_doc(kRulesetA, kTokenA)};
+    const auto rhs{build_doc(kRulesetB, kTokenB)};
     EXPECT_THROW((void)meta::compose(lhs, rhs), std::invalid_argument)
-        << "ADR-17.D3: composing across mismatched composed-ruleset identities MUST fail, never "
-           "silently merge";
+        << "two folded tokens must refuse compose(): " << kTokenA << " vs " << kTokenB;
+    EXPECT_THROW((void)meta::diff(lhs, rhs), std::invalid_argument)
+        << "two folded tokens must refuse diff(): " << kTokenA << " vs " << kTokenB;
 }
 
-TEST(RulesetIdentity, DiffMismatchedSemanticIdentityThrows)
+// invariant: the label gates nothing -- equal tokens with different lists compose and diff, and
+// the composed document omits the list rather than pick one.
+TEST(RulesetIdentity, TheLabelGatesNothingAndIsCarriedOnlyWhenEqual)
 {
-    const auto previous{build_doc_with_ruleset(kRulesetA)};
-    const auto current{build_doc_with_ruleset(kRulesetB)};
-    EXPECT_THROW((void)meta::diff(previous, current), std::invalid_argument)
-        << "ADR-17.D3: diffing across mismatched composed-ruleset identities MUST fail (re-segment "
-           "or "
-           "refuse upstream)";
-}
+    const auto lhs{build_doc(kRulesetA)};
+    const auto rhs{build_doc(kRulesetB)};
+    EXPECT_NO_THROW((void)meta::diff(lhs, rhs));
+    EXPECT_FALSE(meta::compose(lhs, rhs).ruleset.has_value())
+        << "two different lists under one token: the composed document carries neither";
+    EXPECT_FALSE(meta::compose(rhs, lhs).ruleset.has_value());
 
-// note: matching identity is comparable and is carried into the compose() output.
-TEST(RulesetIdentity, ComposeMatchingCarriesIdentity)
-{
-    const auto lhs{build_doc_with_ruleset(kRulesetA)};
-    const auto rhs{build_doc_with_ruleset(kRulesetA)};
-    const auto out{meta::compose(lhs, rhs)};
-    ASSERT_TRUE(out.ruleset.has_value()) << "matched identity must carry into the merged document";
-    EXPECT_EQ(out.ruleset->semantic_identity, "a1b2c3d4e5f60718");
-}
+    const auto same{meta::compose(lhs, build_doc(kRulesetA))};
+    ASSERT_TRUE(same.ruleset.has_value()) << "an equal list on both inputs is carried";
+    EXPECT_EQ(*same.ruleset, kRulesetA);
 
-TEST(RulesetIdentity, DiffMatchingSemanticIdentitySucceeds)
-{
-    const auto previous{build_doc_with_ruleset(kRulesetA)};
-    const auto current{build_doc_with_ruleset(kRulesetA)};
-    EXPECT_NO_THROW((void)meta::diff(previous, current));
-}
-
-// invariant: with one legacy side the operation MAY proceed, but the output OMITS the identifier
-// rather than over-claim a contract the merged document only half-covers.
-TEST(RulesetIdentity, ComposeAsymmetricProceedsButOmitsIdentity)
-{
-    const auto stamped{build_doc_with_ruleset(kRulesetA)};
-    const auto legacy{build_doc_with_ruleset(std::nullopt)};
-    const auto out{meta::compose(stamped, legacy)};
-    EXPECT_FALSE(out.ruleset.has_value()) << "an asymmetric composed-ruleset identity must NOT be "
-                                             "carried — over-claiming comparability is unsafe";
-}
-
-TEST(RulesetIdentity, DiffAgainstLegacyProceeds)
-{
-    const auto previous{build_doc_with_ruleset(kRulesetA)};
-    const auto current{build_doc_with_ruleset(std::nullopt)};
-    EXPECT_NO_THROW((void)meta::diff(previous, current))
-        << "diff against a legacy (unstamped) document proceeds — the consumer treats it with "
-           "caution";
+    EXPECT_FALSE(meta::compose(lhs, build_doc(std::nullopt)).ruleset.has_value())
+        << "a one-sided list is not carried: it describes one input under a window covering both";
 }

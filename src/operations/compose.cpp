@@ -965,20 +965,15 @@ namespace
         return composed;
     }
 
-    // post: carried only when both inputs supplied one; the gate already made their
-    // semantic_identity equal.
-    // post: two package lists under that one key resolve to the smaller list, never to an operand.
-    // refs: ADR-17.D3
+    // post: the package list carried only when both inputs carry an EQUAL one, omitted otherwise.
+    // note: under equal 2.4 tokens the lists are equal by construction; a label gates nothing.
+    // refs: ADR-17.D3, DN-42.D20
     [[nodiscard]] std::optional<RulesetIdentity> merge_ruleset(const MetaLogDocument& lhs,
                                                                const MetaLogDocument& rhs)
     {
-        if (!lhs.ruleset || !rhs.ruleset)
+        if (!lhs.ruleset || !rhs.ruleset || *lhs.ruleset != *rhs.ruleset)
             return std::nullopt;
-        const auto package_key{[](const RulesetPackageRef& ref)
-                               { return std::tie(ref.name, ref.version); }};
-        const bool rhs_smaller{std::ranges::lexicographical_compare(
-            rhs.ruleset->packages, lhs.ruleset->packages, std::less<>{}, package_key, package_key)};
-        return rhs_smaller ? rhs.ruleset : lhs.ruleset;
+        return lhs.ruleset;
     }
 
     // post: both inputs' dropped_ngram_observations summed, an absent block or count adding zero.
@@ -1251,12 +1246,6 @@ MetaLogDocument compose(const MetaLogDocument& lhs, const MetaLogDocument& rhs,
                                      "canonicalization_version", "compose");
     check_processing_identifier_gate(lhs.retention_profile, rhs.retention_profile,
                                      "retention_profile", "compose");
-    // note: composing across different ruleset identities merges vocabularies -- refuse.
-    // refs: ADR-17.D3, ADR-17.D8
-    check_processing_identifier_gate(
-        lhs.ruleset ? std::optional<std::string>{lhs.ruleset->semantic_identity} : std::nullopt,
-        rhs.ruleset ? std::optional<std::string>{rhs.ruleset->semantic_identity} : std::nullopt,
-        "semantic_identity", "compose");
     const auto lhs_envelope{stamped_envelope(lhs, "lhs")};
     const auto rhs_envelope{stamped_envelope(rhs, "rhs")};
 
