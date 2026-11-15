@@ -214,7 +214,7 @@ namespace
     // post: a two-sided slot's cardinality is the largest of the inputs' and the merged key count
     // taken BEFORE the cut, when either input carries one; 0 (absent) when neither does.
     // note: no sketch registers ride the wire; each merged key is a distinct value, a lower bound.
-    // refs: DN-148.D5, DN-56.D21
+    // refs: DN-148.D5, ADR-25.D12
     [[nodiscard]] std::vector<FieldHistogram>
     merge_field_histograms(const std::vector<FieldHistogram>& lhs,
                            const std::vector<FieldHistogram>& rhs,
@@ -913,7 +913,7 @@ namespace
     // post: nullopt when neither input carried one, AND when an input that observed lines carried
     // none, so the coordinate never recovers fewer lines than C counts.
     // note: the ticks lead because they compare exactly; the canonical bytes are digit strings.
-    // refs: DN-56.D20
+    // refs: ADR-25.D12
     std::optional<ReDerivationCoordinate> merge_coordinate(const MetaLogDocument& lhs,
                                                            const MetaLogDocument& rhs)
     {
@@ -989,7 +989,7 @@ namespace
     // post: a merged probability is sum(count) / sum(count / probability) over the inputs carrying
     // the key with a count above 0; 0 when none contributes.
     // note: count / probability IS an input's prefix total; a count-weighted mean is NOT this.
-    // refs: DN-56.D23
+    // refs: ADR-25.D12
     [[nodiscard]] std::vector<NGramEntry> summed_ngram_entries(const MetaLogDocument& lhs,
                                                                const MetaLogDocument& rhs)
     {

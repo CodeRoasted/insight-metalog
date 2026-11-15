@@ -431,7 +431,7 @@ TEST(ComposeCommutativeBytesTest, ProvenanceOrdersByRfc8785CanonicalBytes)
 // invariant: SPEC 15.5 (PR #31) -- the composed children are ordered by start_tick, then
 // end_tick, compared as INTEGERS.
 // invariant: the canonical bytes, which open on "end_tick" as a digit string, cannot decide it.
-// refs: DN-56.D20, DN-56.O8
+// refs: ADR-25.D12, DN-56.O8
 TEST(ComposeCommutativeBytesTest, CoordinateChildrenOrderByTicksNotByCanonicalBytes)
 {
     // note: A [5, 30) and B [10, 20): "20" < "30" as bytes writes B first; the ticks write A first.
@@ -450,7 +450,7 @@ TEST(ComposeCommutativeBytesTest, CoordinateChildrenOrderByTicksNotByCanonicalBy
 
 // invariant: SPEC 15.5 (PR #31) -- C.coordinate is omitted unless every input either carries one
 // or observed no line, so a coordinate never recovers fewer lines than C counts.
-// refs: DN-56.D20, DN-56.O8
+// refs: ADR-25.D12, DN-56.O8
 TEST(ComposeCommutativeBytesTest, CoordinateIsOmittedWhenAnInputWithLinesCarriesNone)
 {
     const meta::MetaLogDocument with_coordinate{raw_window(10, "a", 0, 60)};
@@ -472,7 +472,7 @@ TEST(ComposeCommutativeBytesTest, CoordinateIsOmittedWhenAnInputWithLinesCarries
 
 // invariant: SPEC 12.1 and 15.5 -- compose(A, A) keeps BOTH copies in provenance and both leaves in
 // the coordinate, because C.window.lines_observed counts A twice.
-// refs: DN-56.D20
+// refs: ADR-25.D12
 TEST(ComposeCommutativeBytesTest, SelfCompositionKeepsEveryDuplicate)
 {
     const meta::MetaLogDocument window{raw_window(10, "self", 0, 60)};
@@ -511,7 +511,7 @@ TEST(ComposeCommutativeBytesTest, SelfCompositionKeepsEveryDuplicate)
 // invariant: SPEC 12.1 (PR #31) -- a composed n-gram's probability is
 // sum(count) / sum(count / probability) over the inputs carrying the key, the merged conditional.
 // invariant: the count-weighted mean of the probabilities is NOT that conditional.
-// refs: DN-56.D23, DN-56.O9
+// refs: ADR-25.D12, DN-56.O9
 TEST(ComposeCommutativeBytesTest, NgramProbabilityIsTheMergedConditional)
 {
     const std::vector<insight::TemplateId> key{kHigherCount, kEqualCount};

@@ -1773,7 +1773,7 @@ using IncomparableReason =
     std::variant<NGramSizeDiffers, AbsentInOneInput, CubeAxesDiffer, HistogramCapsDiffer>;
 
 // post: the reason's wire token, the one spelling the serializer writes and every consumer reads.
-// refs: DN-56.D19, F-SRC-metalog-spec:SPEC.md
+// refs: ADR-25.D13, F-SRC-metalog-spec:SPEC.md
 // pre: `reason` holds an alternative; diff() builds every reason by value, so none is valueless.
 // note: holds_alternative, never visit, because a visit throws on a valueless variant.
 [[nodiscard]] inline std::string_view to_string(const IncomparableReason& reason) noexcept

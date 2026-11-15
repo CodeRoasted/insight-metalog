@@ -74,7 +74,7 @@ TEST(ParamHistogramsCompose, ApproximateCardinalityIsMaxAcrossInputs)
 
 // invariant: SPEC 12.1 (PR #31) -- every merged key is a distinct observed value, so the merged key
 // count, taken BEFORE the cut, is a floor under the composed cardinality.
-// refs: DN-56.D21, DN-56.O8
+// refs: ADR-25.D12, DN-56.O8
 TEST(ParamHistogramsCompose, ApproximateCardinalityIsNeverBelowTheMergedKeyCount)
 {
     const auto lhs{make_doc_with_histogram("h:abc", 0, {{"x", 1}}, 1, /*card=*/1, 10)};
@@ -102,7 +102,7 @@ TEST(ParamHistogramsCompose, ApproximateCardinalityIsNeverBelowTheMergedKeyCount
 
 // invariant: SPEC 3.5.1 -- a cardinality of 0 is absent on the wire, so when neither input carries
 // one the composed slot carries none either, whatever its key count.
-// refs: DN-56.D21
+// refs: ADR-25.D12
 TEST(ParamHistogramsCompose, ApproximateCardinalityStaysAbsentWhenNeitherInputCarriesOne)
 {
     const auto lhs{make_doc_with_histogram("h:abc", 0, {{"x", 1}}, 1, /*card=*/0, 10)};
@@ -113,7 +113,7 @@ TEST(ParamHistogramsCompose, ApproximateCardinalityStaysAbsentWhenNeitherInputCa
 
 // invariant: SPEC 12.1 -- the cut keeps the highest counts, then the key whose UTF-8 bytes sort
 // first, and a composed entry's histograms are ordered by param_index.
-// refs: DN-56.D21
+// refs: ADR-25.D12
 TEST(ParamHistogramsCompose, CutTieBreaksOnKeyBytesAndSlotsOrderByParamIndex)
 {
     constexpr std::size_t kCap{meta::MetaLogConfig::kDefaultMaxHistogramValues};

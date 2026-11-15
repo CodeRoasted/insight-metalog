@@ -223,7 +223,7 @@ int main(int argc, char** argv)
 
     // post: emits the one document whose collapse drops the WHERE axis, so a floor_depth of 0
     // reaches the published digest and the conformance gate judges it against the schema.
-    // refs: DN-56.D22
+    // refs: ADR-25.D11
     if (std::string{argv[1]} == "--where-drop")
     {
         namespace ml = insight::metalog;

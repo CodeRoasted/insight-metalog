@@ -2,7 +2,7 @@
 // emitted where axis carries floor_depth 0 -- the stamp SPEC 16.2 names for a dropped chain.
 // invariant: ingested identically by the in-suite guard and the cross-compiler fixture.
 // note: every level sits on every component, so LEVEL banding cannot fit until WHERE goes.
-// refs: DN-56.D22, ADR-31.D8
+// refs: ADR-25.D11, ADR-31.D8
 #ifndef INSIGHT_METALOG_WHERE_DROP_SCENARIO_HPP
 #define INSIGHT_METALOG_WHERE_DROP_SCENARIO_HPP
 

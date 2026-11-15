@@ -695,7 +695,7 @@ TEST(MetaLogDocument, SpanOrder3PairRidesDeclaredEdgesApartFromTrigrams)
 // invariant: the --where-drop window collapses WHERE away, so the published digest carries a where
 // axis at floor_depth 0 and the conformance gate judges the value the collapse can reach.
 // note: it goes hollow if LEVEL banding alone fits the budget again, so the depth is read first.
-// refs: DN-56.D22
+// refs: ADR-25.D11
 TEST(MetaLogDocument, WhereDropWindowStampsFloorDepthZeroOnTheWire)
 {
     meta::MetaLogConfig cfg;
