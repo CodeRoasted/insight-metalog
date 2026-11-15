@@ -76,7 +76,7 @@ on:
 
 jobs:
   proof:
-    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-golden-proof.yml@d33c84a0754b7a1a249e76d9c1e3f47afe016600
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-golden-proof.yml@b19e8fcc3883664d1340e70756d9ca9c3cc10e0f
     with:
       linux-proof: scripts/determinism_bitidentity.sh
       msvc-proof: scripts/determinism_msvc.ps1
@@ -99,7 +99,7 @@ jobs:
     # run not cancelled, and its min-legs check names the missing digests.
     needs: [proof]
     if: ${{ !cancelled() }}
-    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-golden-compare.yml@d33c84a0754b7a1a249e76d9c1e3f47afe016600
+    uses: CodeRoasted/malf-toolchain/.github/workflows/coderoast-golden-compare.yml@b19e8fcc3883664d1340e70756d9ca9c3cc10e0f
     with:
       min-legs: '5'
       spec-ref: ${{ needs.proof.outputs.spec }}
