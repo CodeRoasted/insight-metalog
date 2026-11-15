@@ -241,9 +241,10 @@ TEST(PresenceChurnProducer, AnObservedWindowStampsTheOneWindowElementOnEveryReta
 }
 
 // refs: DN-50.D4
-// invariant: SPEC 12.2's ZERO is DN-50.D4's empty block, and mapping the two onto one state is what
-// makes the monoid's identity law and the standard's identity MUST the same law.
-TEST(PresenceChurnProducer, AnEventFreeWindowIsTheMonoidIdentityAndComposeIdentityHolds)
+// invariant: an event-free window carries DN-50.D4's empty block, the churn monoid's identity, so
+// composing it leaves A's churn untouched -- the monoid's law, a producer member's.
+// note: SPEC 12.2 (0.10.0) gives compose itself no identity element.
+TEST(PresenceChurnProducer, AnEventFreeWindowIsTheMonoidIdentitySoComposeLeavesTheChurnUntouched)
 {
     const auto cfg{churn_config(8)};
     meta::MetaLogEngine engine_a{cfg};
@@ -258,17 +259,17 @@ TEST(PresenceChurnProducer, AnEventFreeWindowIsTheMonoidIdentityAndComposeIdenti
 
     ASSERT_EQ(zero.window.lines_observed, 0U);
     EXPECT_FALSE(zero.presence_churn.has_value())
-        << "a ZERO document must carry NO churn observation — it is the identity, not a window in "
-           "which everything was absent";
+        << "an event-free document must carry NO churn observation — its block is the monoid's "
+           "identity, not a window in which everything was absent";
 
     const auto composed{meta::compose(doc_a, zero)};
     ASSERT_TRUE(composed.presence_churn.has_value());
     EXPECT_EQ(composed.presence_churn->span_windows, 1U)
-        << "compose(A, ZERO) must leave A's span untouched; got "
+        << "the monoid identity must leave A's span untouched; got "
         << composed.presence_churn->span_windows;
     ASSERT_EQ(composed.stats.top_k.size(), doc_a.stats.top_k.size()) << render_top_k(composed);
     EXPECT_EQ(composed.stats.top_k.front().presence_churn, doc_a.stats.top_k.front().presence_churn)
-        << "compose(A, ZERO) must reproduce A's element exactly. A="
+        << "the monoid identity must reproduce A's element exactly. A="
         << render(doc_a.stats.top_k.front().presence_churn)
         << " composed=" << render(composed.stats.top_k.front().presence_churn);
 }

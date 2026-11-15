@@ -1,7 +1,7 @@
 
 // refs: ADR-25.D5, F-SRC-metalog-spec:SPEC.md
-// invariant: SPEC 12.2's three clauses carry three different modal strengths and are therefore
-// separate arms: commutativity MUST, identity MUST, associativity SHOULD.
+// invariant: SPEC 12.2 (0.10.0) states three clauses, each its own arm: commutativity MUST, NO
+// identity element, and associativity a partition of MUST-agree and MAY-differ members.
 // note: associativity is not uniformly SHOULD: behavior ordering MAY differ, its counts MUST agree.
 // invariant: the associativity arms assert the exact scope-dependence ADR-25.D5 rules, from BOTH
 // sides; every magnitude is derived from the frozen band ladder and none is read off a run.
@@ -184,15 +184,18 @@ TEST(ComposeAlgebraTest, CommutativityHoldsOnTheRequiredCapFields)
         << "min(8, 2) = 2; got " << ab.behavior->top_ngrams_size;
 }
 
-// refs: ADR-25.D5
-// invariant: SPEC 12.2 MUST -- compose(A, ZERO) equals A. Literal document equality is refused by
-// 12.1, which orders provenance and coordinate constructed, so those two blocks are excluded.
-// invariant: identity is asserted over every required field plus every optional field A declares.
-// pre: A's tail is EMPTY, asserted before anything else: SPEC 12.3 makes composition lossy on a
-// tailed input, so an identity red over a tailed document would be 12.3 working, not a defect.
+// refs: ADR-25.D5, F-SRC-metalog-spec:SPEC.md
+// invariant: SPEC 12.2 (0.10.0) rules compose has NO identity element: compose(A, ZERO) MUST agree
+// with A on the window envelope and lines_observed only, so A's equality is never asserted.
+// invariant: every other comparison is 12.1 evaluated on a TAIL-FREE A: the recount runs over the
+// templates A carries individually, which with an empty tail are all of A's, so it lands on A's.
+// pre: A's tail is EMPTY, asserted before anything else: a tailed A turns tail templates into mass
+// (12.2's own example), so a red over a tailed document would be 12.2 working, not a defect.
+// note: provenance, coordinate, producer and metalog_version record the composition (12.2).
+// invariant: none of those four is compared to A's; metalog_version is the composer's own.
 // invariant: stats.reservoir_size is the load-bearing field -- ZERO declares no cap, and only
-// identity separates a min that reads absence as a value from one that skips it.
-TEST(ComposeAlgebraTest, IdentityPreservesTheDocumentIncludingItsDeclaredReservoirCap)
+// 12.1's min over the DECLARED caps keeps an input that declares none from stripping A's.
+TEST(ComposeAlgebraTest, AnEmptyInputCostsATailFreeDocumentNeitherItsRecountNorItsDeclaredCap)
 {
     const meta::MetaLogConfig cfg{
         .top_k_size = 3,
@@ -216,11 +219,13 @@ TEST(ComposeAlgebraTest, IdentityPreservesTheDocumentIncludingItsDeclaredReservo
     // note: ZERO -- a producer keeping no reservoir, every other parameter A's, and no events.
     // invariant: a reservoir-keeping producer declares its cap on every document (ADR-25.D11), so
     // the undeclared-cap ZERO comes from a producer that keeps none.
+    // invariant: ZERO is closed as a batch caller closes a window with no event time, so it has no
+    // envelope (SPEC 2.2) and the envelope check reaches 12.1's no-bound clause, not a min/max.
     meta::MetaLogConfig zero_cfg{cfg};
     zero_cfg.reservoir_size = 0;
     meta::MetaLogEngine engine_z{zero_cfg};
     engine_z.open_window(kT0);
-    const auto zero{engine_z.close_window(kT1)};
+    const auto zero{engine_z.close_window(kT1, meta::ReportedWindowBounds{})};
 
     // pre: A is the fixture the scope above describes.
     ASSERT_EQ(doc_a.window.lines_observed, 301U) << "3 steady × 100 + 1 rare";
@@ -237,6 +242,10 @@ TEST(ComposeAlgebraTest, IdentityPreservesTheDocumentIncludingItsDeclaredReservo
 
     // pre: ZERO is genuinely a zero, and it declares NO cap.
     ASSERT_EQ(zero.window.lines_observed, 0U);
+    ASSERT_FALSE(zero.window.envelope.has_value())
+        << "ZERO reported no event time, so §2.2 gives it no envelope and §12.1 no bound";
+    ASSERT_TRUE(doc_a.window.envelope.has_value())
+        << "A must carry an envelope, or the envelope assertion below compares two absences";
     ASSERT_TRUE(zero.stats.top_k.empty());
     ASSERT_TRUE(zero.stats.reservoir.empty());
     ASSERT_FALSE(zero.stats.reservoir_size.has_value())
@@ -250,16 +259,22 @@ TEST(ComposeAlgebraTest, IdentityPreservesTheDocumentIncludingItsDeclaredReservo
 
     const auto composed{meta::compose(doc_a, zero)};
 
-    EXPECT_EQ(composed.metalog_version, doc_a.metalog_version);
-    EXPECT_EQ(composed.window.envelope, doc_a.window.envelope);
-    EXPECT_EQ(composed.window.lines_observed, doc_a.window.lines_observed);
+    EXPECT_EQ(composed.metalog_version, std::string{meta::kMetaLogSpecVersion})
+        << "§12.2: C carries the composer's own metalog_version, not one copied from an input";
+    EXPECT_EQ(composed.window.envelope, doc_a.window.envelope)
+        << "§12.2 MUST: compose(A, ZERO) agrees with A on the window envelope — ZERO observed no "
+           "line, so it contributes no bound (§12.1) and C carries A's envelope unchanged";
+    EXPECT_EQ(composed.window.lines_observed, doc_a.window.lines_observed)
+        << "§12.2 MUST: compose(A, ZERO) agrees with A on lines_observed — A's "
+        << doc_a.window.lines_observed << " + ZERO's 0";
     EXPECT_EQ(composed.source, doc_a.source);
     EXPECT_EQ(composed.canonicalization_version, doc_a.canonicalization_version);
     EXPECT_EQ(composed.retention_profile, doc_a.retention_profile);
     EXPECT_EQ(composed.stats.unique_templates, doc_a.stats.unique_templates);
     EXPECT_EQ(composed.stats.top_k_size, doc_a.stats.top_k_size);
     EXPECT_EQ(top_k_signature(composed), top_k_signature(doc_a))
-        << "compose(A, ZERO) must reproduce A's top_k exactly.\n    A:        "
+        << "§12.1's recount over a tail-free A's own counts, truncated at the same top_k_size, "
+           "is A's top_k.\n    A:        "
         << render_top_k(doc_a) << "\n    composed: " << render_top_k(composed);
     EXPECT_EQ(composed.stats.tail_count, doc_a.stats.tail_count);
     EXPECT_EQ(composed.stats.tail_unique, doc_a.stats.tail_unique);
@@ -272,8 +287,8 @@ TEST(ComposeAlgebraTest, IdentityPreservesTheDocumentIncludingItsDeclaredReservo
     // refs: ADR-25.D5
     // note: entropy_bits has its own arm below, so one red is never ambiguous between two clauses.
     EXPECT_EQ(composed.stats.reservoir_size, doc_a.stats.reservoir_size)
-        << "SPEC §12.2 identity is a MUST: compose(A, ZERO) must equal A, and A declared a "
-           "reservoir cap of "
+        << "SPEC §12.1 (0.10.0): a composer holding no cap of its own takes the MINIMUM over the "
+           "inputs that DECLARE one, so ZERO, which declares none, cannot strip A's cap of "
         << (doc_a.stats.reservoir_size ? std::to_string(*doc_a.stats.reservoir_size)
                                        : std::string{"<absent>"})
         << ". The composed document declared "
@@ -689,7 +704,7 @@ TEST(ComposeAlgebraTest, ComposedReservoirCapResolvesAnExactTieByTheMeaningBlind
 // refs: ADR-25.D5, F-SRC-metalog-spec:GOVERNANCE.md
 // invariant: SPEC 12.1 states entropy_bits is recomputed from the merged counts and compose() never
 // assigned it, so GOVERNANCE 3 rules the implementation buggy and the spec text stands.
-// note: kept out of the identity arm so one red is never ambiguous between two clauses.
+// note: kept out of the empty-input arm so one red is never ambiguous between two clauses.
 // invariant: the oracle is closed-form arithmetic -- every count and line total is a power of two,
 // so det_log2_fixed is exact and the whole reduction is an exact integer divide.
 TEST(ComposeAlgebraTest, ComposedEntropyBitsIsRecomputedFromTheMergedCounts)
@@ -739,8 +754,9 @@ TEST(ComposeAlgebraTest, ComposedEntropyBitsIsRecomputedFromTheMergedCounts)
            "(128·2 + 128·2)/512 = 1.0, so this value is what pins the residual convention. Got "
         << *tailed.stats.entropy_bits;
 
-    // invariant: the identity leg -- A's tail is empty so the merged counts ARE A's counts, and the
-    // equality is exact because the accumulation is integer and order-independent.
+    // invariant: the empty-input leg, not an identity law (SPEC 12.2 at 0.10.0 has none): A's tail
+    // is empty, so 12.1's merged counts ARE A's counts.
+    // note: the equality is exact because the accumulation is integer and order-independent.
     const meta::MetaLogConfig cfg{
         .top_k_size = 3,
         .reservoir_size = 8,
@@ -766,14 +782,15 @@ TEST(ComposeAlgebraTest, ComposedEntropyBitsIsRecomputedFromTheMergedCounts)
         << "A must have an EMPTY tail, or §12.3 lossiness — not the recomputation — explains a red";
     ASSERT_TRUE(doc_a.stats.entropy_bits.has_value())
         << "A must carry entropy_bits or this leg is about an absent input";
-    const auto identity{meta::compose(doc_a, zero)};
-    EXPECT_EQ(identity.stats.entropy_bits, doc_a.stats.entropy_bits)
-        << "§12.2 identity over §12.1's recomputed field: A = "
+    const auto with_empty{meta::compose(doc_a, zero)};
+    EXPECT_EQ(with_empty.stats.entropy_bits, doc_a.stats.entropy_bits)
+        << "§12.1 recomputes entropy_bits from the merged counts, which over a tail-free A and an "
+           "empty input are A's own: A = "
         << (doc_a.stats.entropy_bits ? std::to_string(*doc_a.stats.entropy_bits)
                                      : std::string{"<absent>"})
         << ", compose(A, ZERO) = "
-        << (identity.stats.entropy_bits ? std::to_string(*identity.stats.entropy_bits)
-                                        : std::string{"<absent>"});
+        << (with_empty.stats.entropy_bits ? std::to_string(*with_empty.stats.entropy_bits)
+                                          : std::string{"<absent>"});
 
     // invariant: an event-free composition has no distribution to describe, so the field is omitted
     // rather than emitted as a 0.0 that would read as perfectly concentrated.
