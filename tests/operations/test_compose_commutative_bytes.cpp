@@ -268,7 +268,7 @@ TEST(ComposeCommutativeBytesTest, EveryDisagreementResolvesByTheValueRule)
 
     EXPECT_FALSE(composed.ruleset.has_value())
         << "two different package labels: the composed document carries neither, never one "
-           "picked by a rule (DN-42.D20)";
+           "picked by a rule (ADR-17.D3)";
 }
 
 // invariant: 12.1's provenance is A.provenance + B.provenance + one entry per input, even when an

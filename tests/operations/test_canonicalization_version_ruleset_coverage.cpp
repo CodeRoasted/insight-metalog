@@ -1,5 +1,5 @@
 
-// refs: F-SRC-metalog-spec:SPEC.md, DN-42.D20
+// refs: F-SRC-metalog-spec:SPEC.md, ADR-17.D3
 // invariant: SPEC 2.4 defines canonicalization_version as naming masking, TOKENIZATION and
 // classification, and makes it a normative comparability GATE that MUST refuse unequal values.
 // invariant: the LIBRARY default is the canon-owned masking constant, which the composed package
@@ -219,7 +219,7 @@ TEST_F(RulesetCoverageTest, TheLibraryDefaultTokenIsBlindToTheComposition)
 
 // invariant: arm 4, the harm and its closure -- at the library default the pair whose tokenizations
 // differ is ACCEPTED by compose and diff: no member a conformant consumer reads tells them apart.
-// invariant: the package label gates nothing, so it cannot refuse the pair either (DN-42.D20).
+// invariant: the package label gates nothing, so it cannot refuse the pair either (ADR-17.D3).
 // invariant: stamped as the engine seam stamps it, the same pair is REFUSED by the one 2.4 gate.
 // note: compose and diff are asserted together, being the two 2.4-gated operations.
 TEST_F(RulesetCoverageTest, TheFoldedTokenIsWhatRefusesTheIncomparablePair)
@@ -245,7 +245,7 @@ TEST_F(RulesetCoverageTest, TheFoldedTokenIsWhatRefusesTheIncomparablePair)
     const Arm blind_b{build_arm(with_github, /*stamp_ruleset=*/true)};
     EXPECT_FALSE(refuses(blind_a.doc, blind_b.doc, /*as_diff=*/false))
         << "compose() refused the library-default pair, so a gate other than 2.4 still bites on "
-           "the label — DN-42.D20 ripped the second gate. canonicalization_version (both arms) = "
+           "the label — ADR-17.D3 ripped the second gate. canonicalization_version (both arms) = "
         << show(blind_a.doc.canonicalization_version);
     EXPECT_FALSE(refuses(blind_a.doc, blind_b.doc, /*as_diff=*/true))
         << "diff refused the library-default pair — same, a second gate still bites";

@@ -511,7 +511,7 @@ struct SpanEdgeBlock
 // invariant: the composed identity rides the SPEC 2.4 canonicalization_version, folded there at
 // the engine seam, so equal tokens imply equal identities and no second gate exists.
 // invariant: an additive block, so absence means a producer that injected no composition.
-// refs: ADR-17.D3, DN-42.D20
+// refs: ADR-17.D3
 struct RulesetPackageRef
 {
     std::string name;

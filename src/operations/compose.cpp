@@ -967,7 +967,7 @@ namespace
 
     // post: the package list carried only when both inputs carry an EQUAL one, omitted otherwise.
     // note: under equal 2.4 tokens the lists are equal by construction; a label gates nothing.
-    // refs: ADR-17.D3, DN-42.D20
+    // refs: ADR-17.D3
     [[nodiscard]] std::optional<RulesetIdentity> merge_ruleset(const MetaLogDocument& lhs,
                                                                const MetaLogDocument& rhs)
     {

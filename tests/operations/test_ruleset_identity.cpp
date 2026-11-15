@@ -1,4 +1,4 @@
-// refs: F-SRC-metalog-spec:SPEC.md, DN-42.D20
+// refs: F-SRC-metalog-spec:SPEC.md, ADR-17.D3
 // invariant: the composed identity of the semantic packages in force rides the SPEC 2.4
 // canonicalization_version, folded at the engine seam: two compositions carry two tokens, refused.
 // invariant: the vendor block extensions["fr.coderoast.ruleset"] keeps the package list alone, a
@@ -66,7 +66,7 @@ TEST(RulesetIdentity, TheBlockRoundTripsThePackageListOnly)
 
     auto& ruleset{(*parsed)["extensions"]["fr.coderoast.ruleset"]};
     EXPECT_FALSE(ruleset.contains("semantic_identity"))
-        << "DN-42.D20: semantic_identity left the wire; the 2.4 token carries the identity: "
+        << "ADR-17.D3: semantic_identity left the wire; the 2.4 token carries the identity: "
         << json;
     ASSERT_TRUE(ruleset.contains("packages")) << json;
     auto& packages{ruleset["packages"].get_array()};
