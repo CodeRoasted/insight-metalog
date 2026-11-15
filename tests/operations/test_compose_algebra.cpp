@@ -2,7 +2,7 @@
 // refs: ADR-25.D5, F-SRC-metalog-spec:SPEC.md
 // invariant: SPEC 12.2 (0.10.0) states three clauses, each its own arm: commutativity MUST, NO
 // identity element, and associativity a partition of MUST-agree and MAY-differ members.
-// note: associativity is not uniformly SHOULD: behavior ordering MAY differ, its counts MUST agree.
+// note: MUST agree: the window envelope, lines_observed; MAY differ: every retained-set member.
 // invariant: the associativity arms assert the exact scope-dependence ADR-25.D5 rules, from BOTH
 // sides; every magnitude is derived from the frozen band ladder and none is read off a run.
 // note: homed as a unit test: compose() is a pure function of two documents, crossing no seam.
@@ -501,9 +501,9 @@ TEST(ComposeAlgebraTest, ComposedReservoirStaysAssociativeWhenNoCapBinds)
         << "the full rung ranks the error first (8000 > 7500) and keeps both.\n    (A∘B)∘C: "
         << render_reservoir(abc);
     EXPECT_EQ(reservoir_signature(abc), reservoir_signature(a_bc))
-        << "SPEC §12.2 associativity (SHOULD) over the composed reservoir. With no binding cap, "
-           "membership is the union of unions and the final salience is re-derived at a total "
-           "scope both bracketings share.\n"
+        << "SPEC §12.2 (0.10.0) lets reservoir membership differ across bracketings (MAY); with no "
+           "binding cap it does not, because membership is the union of unions and the final "
+           "salience is re-derived at a total scope both bracketings share.\n"
         << "    (A∘B)∘C: " << render_reservoir(abc) << "\n"
         << "    A∘(B∘C): " << render_reservoir(a_bc);
 }
@@ -587,7 +587,8 @@ TEST(ComposeAlgebraTest, ComposedReservoirCapBreaksAssociativityExactlyAsDN56D3R
            "80×100 = 8000 — beating the off-path's 7500 and taking the single slot.\n    "
         << render_reservoir(a_bc);
     EXPECT_NE(reservoir_signature(abc), reservoir_signature(a_bc))
-        << "SPEC §12.2 associativity (SHOULD) DOES NOT HOLD under a binding cap, and that is "
+        << "SPEC §12.2 (0.10.0): reservoir membership MAY differ across bracketings, and under a "
+           "binding cap it DOES, which is "
            "ADR-25.D5's ruled and disclosed trade, not a regression. If this arm ever reds by the "
            "two sides AGREEING, associativity was restored — check whether the cap was removed "
            "(the thing ADR-25.D5 forbids) before believing it is an improvement.\n"
@@ -800,8 +801,8 @@ TEST(ComposeAlgebraTest, ComposedEntropyBitsIsRecomputedFromTheMergedCounts)
         << "zero lines is an absent distribution, not an entropy of zero";
 }
 
-// refs: ADR-25.D5, DN-57.O1
-// invariant: the RFC asserts to external implementers that 12.2's associativity is violated BY THE
+// refs: ADR-25.D5, F-SRC-metalog-spec:SPEC.md
+// invariant: SPEC 12.2 (0.10.0) tells external implementers a retained-set member MAY differ BY THE
 // FORMAT, so the falsifier must reach the property with the reservoir mechanism out of the picture.
 // invariant: these documents declare no reservoir cap and carry no reservoir entry, so every line
 // of rederive_reservoir is inert and the ONE remaining lossy operator is top_k_size truncation.
@@ -862,11 +863,11 @@ TEST(ComposeAlgebraTest, TopKTruncationAloneBreaksAssociativityWithNoReservoirAn
         << "A∘(B∘C) sees a, c, d AND b — b never met a binding cut before the final merge.\n    "
         << render_top_k(a_bc);
     EXPECT_NE(ab_c.stats.unique_templates, a_bc.stats.unique_templates)
-        << "§12.2's associativity SHOULD, violated on a REQUIRED field with the reservoir "
-           "mechanism entirely inert: (A∘B)∘C = "
+        << "§12.2 (0.10.0) puts unique_templates on its MAY-differ side, and this REQUIRED field "
+           "differs with the reservoir mechanism entirely inert: (A∘B)∘C = "
         << ab_c.stats.unique_templates << ", A∘(B∘C) = " << a_bc.stats.unique_templates
-        << ". If these ever agree, ADR-25.D5's partition is WRONG and the RFC body must be "
-           "re-derived before it is posted.";
+        << ". If these ever agree, ADR-25.D5's partition is WRONG and SPEC §12.2's "
+           "MAY-differ side must be re-derived.";
     EXPECT_EQ(ab_c.stats.tail_unique, 1U) << "only d is a visible tail template on this side";
     EXPECT_EQ(a_bc.stats.tail_unique, 2U)
         << "d and b are both visible tail templates on this side — the cardinality diverges too, "
@@ -911,9 +912,9 @@ TEST(ComposeAlgebraTest, TheSameDocumentsStayAssociativeWhenTheTopKCutDoesNotBit
            "exactly — an integer reduction over an identically ordered distribution";
 }
 
-// refs: DN-57.O1
-// invariant: DN-57.O1 problem (e) carries TWO worked examples and they falsify DIFFERENT required
-// fields, so one test cannot stand for both -- this is the second.
+// refs: ADR-25.D5, F-SRC-metalog-spec:SPEC.md
+// invariant: the 0.10.0 RFC's problem (e) carried TWO worked examples and they falsify DIFFERENT
+// required fields, so one test cannot stand for both -- this is the second.
 // invariant: example 1 (the arm above) shares no template between A and C, so the divergence lands
 // on the SET fields, unique_templates and tail_unique, while mass agrees.
 // invariant: example 2 shares template y between A and C, so the set fields AGREE and the
@@ -924,7 +925,7 @@ TEST(ComposeAlgebraTest, TheSameDocumentsStayAssociativeWhenTheTopKCutDoesNotBit
 TEST(ComposeAlgebraTest, TopKTruncationBreaksAssociativityOfARetainedEntrysOwnCount)
 {
     constexpr std::size_t kCut{2};
-    // note: DN-57.O1's A = {x:5, y:4}, B = {z:6}, C = {y:10} at top_k_size 2 and no reservoir.
+    // note: the RFC's A = {x:5, y:4}, B = {z:6}, C = {y:10} at top_k_size 2 and no reservoir.
     const auto a{make_document("2026-03-01T00:00:00Z", "2026-03-01T00:01:00Z", 9, kCut,
                                std::nullopt, {{"assoc ex2 x", 5}, {"assoc ex2 y", 4}}, {})};
     const auto b{make_document("2026-03-01T00:01:00Z", "2026-03-01T00:02:00Z", 6, kCut,
@@ -999,11 +1000,11 @@ TEST(ComposeAlgebraTest, TopKTruncationBreaksAssociativityOfARetainedEntrysOwnCo
            "Got "
         << *right << ":\n    " << render_top_k(a_bc);
     EXPECT_NE(*left, *right)
-        << "§12.2 says the counts underlying a three-way compose MUST agree, and a top_k entry's "
-           "`count` is REQUIRED: (A∘B)∘C = "
+        << "§12.2 (0.10.0) puts a top_k entry's `count` on its MAY-differ side, and that count is "
+           "REQUIRED: (A∘B)∘C = "
         << *left << ", A∘(B∘C) = " << *right
-        << ". If these ever agree, DN-57.O1 problem (e)'s second worked example is WRONG and the "
-           "`0.10.0` RFC body must be re-derived before it is posted.";
+        << ". If these ever agree, the 0.10.0 RFC's second worked example of problem (e) is WRONG "
+           "and SPEC §12.2's MAY-differ side must be re-derived.";
 
     EXPECT_EQ(ab_c.stats.tail_count, 9U)
         << "5 (x, newly cut) + 4 (A∘B's lumped y). Got " << ab_c.stats.tail_count;
