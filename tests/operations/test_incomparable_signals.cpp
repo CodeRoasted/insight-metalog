@@ -1,4 +1,4 @@
-// refs: DN-56.D13, DN-56.D14, DN-56.D15, DN-56.D16, DN-56.D17, F-SRC-metalog-spec:SPEC.md
+// refs: ADR-25.D11, F-SRC-metalog-spec:SPEC.md
 // invariant: a diff states every comparison its PAIR made impossible, in incomparable_signals, and
 // never leaves the property silently absent nor computes it across the impossibility.
 // invariant: every arm reads the serialized diff, so the statement is checked on the wire bytes a

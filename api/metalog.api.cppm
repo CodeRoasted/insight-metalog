@@ -839,7 +839,7 @@ struct StatsBlock
     // included, and written on the wire exactly when engaged: diff() reads it as "kept".
     // invariant: compose() sets it to the minimum over the caps its inputs actually declared, and
     // omits it only when both inputs declared none.
-    // refs: ADR-25.D5, DN-56.D16
+    // refs: ADR-25.D5, ADR-25.D11
     std::optional<std::size_t> reservoir_size;
     // invariant: the slot cap P every top_k entry's field histograms were admitted under; ABSENT
     // is a declared posture, set by a producer only when it builds histograms at all.
@@ -1732,7 +1732,7 @@ enum class SignalBlock : std::uint8_t
 
 // invariant: reason ngram_size_differs -- the two behavior.ngram_size, each in its document's role,
 // and they differ.
-// refs: ADR-25.D5, DN-56.D15
+// refs: ADR-25.D5, ADR-25.D11
 struct NGramSizeDiffers
 {
     std::size_t previous_ngram_size{0};
@@ -1742,7 +1742,7 @@ struct NGramSizeDiffers
 
 // invariant: reason absent_in_one_input -- exactly one input carries the block the property reads;
 // absent_in names the input that lacks it.
-// refs: DN-56.D13
+// refs: ADR-25.D11
 struct AbsentInOneInput
 {
     DiffSide absent_in{DiffSide::Previous};
@@ -1752,7 +1752,7 @@ struct AbsentInOneInput
 
 // invariant: reason cube_axes_differ -- both inputs' axis descriptors with their collapse stamps
 // stripped, the evidence being the schema that differed.
-// refs: DN-56.D14
+// refs: ADR-25.D11
 struct CubeAxesDiffer
 {
     std::vector<CubeAxis> previous_axes;
@@ -1762,7 +1762,7 @@ struct CubeAxesDiffer
 
 // invariant: reason histogram_caps_differ -- the four declared histogram caps, at least one pair
 // unequal.
-// refs: DN-56.D17
+// refs: ADR-25.D11
 struct HistogramCapsDiffer
 {
     std::size_t previous_param_histograms_size{0};
@@ -1867,7 +1867,7 @@ struct MetaLogDiff
     std::optional<NGramDelta> ngram_delta;
     // invariant: the comparisons the PAIR made impossible, one record per signal property; an
     // engaged record implies that property is absent from this diff.
-    // refs: ADR-25.D5, DN-56.D13, DN-56.D14, DN-56.D15, DN-56.D16, DN-56.D17
+    // refs: ADR-25.D5, ADR-25.D11
     IncomparableSignals incomparable_signals{};
     // invariant: present ONLY when both documents carried a service_edges block; absence reads
     // unknown.
@@ -1881,7 +1881,7 @@ struct MetaLogDiff
     std::optional<SpanEdgeDelta> span_edge_delta;
     // invariant: empty unless both documents tracked histograms at equal declared caps, or neither
     // declared, and share a template; sorted by js_divergence descending.
-    // refs: DN-56.D17
+    // refs: ADR-25.D11
     std::vector<FieldHistogramDelta> field_histogram_deltas;
     // invariant: empty unless both documents tracked histograms and share a (template_id,
     // declared-ordinal field); sorted by (template_id, field_name).
@@ -1891,7 +1891,7 @@ struct MetaLogDiff
     std::optional<TailDelta> tail_delta;
     // invariant: present whenever both documents carried a cube of one axis SCHEMA -- the collapse
     // stamps may differ, and the pair is then read at its minimal common collapse.
-    // refs: DN-56.D14
+    // refs: ADR-25.D11
     // invariant: structured evidence -- the upper border is the deterministic headline, and it is
     // not an alert on its own.
     // invariant: a presence bool plus an inline value for MetaLogDocument::cube's reason, and

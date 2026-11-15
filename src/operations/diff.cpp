@@ -15,7 +15,7 @@ namespace
 {
     // post: the statement for a block exactly one input carries, or nothing when both or neither
     // carry it -- a pair holding no operand made no comparison impossible.
-    // refs: DN-56.D13
+    // refs: ADR-25.D11
     [[nodiscard]] std::optional<IncomparableReason> one_sided(bool previous_has, bool current_has,
                                                               SignalBlock block)
     {
@@ -41,7 +41,7 @@ namespace
     }
 
     // post: whether the document keeps a reservoir -- it carries the block or declares its cap.
-    // refs: DN-56.D16
+    // refs: ADR-25.D11
     [[nodiscard]] bool keeps_reservoir(const MetaLogDocument& doc) noexcept
     {
         return !doc.stats.reservoir.empty() || doc.stats.reservoir_size.has_value();
@@ -49,7 +49,7 @@ namespace
 
     // post: whether the document tracks field histograms -- it declares param_histograms_size.
     // pre: a tracking document declares value_counts_size beside it, or diff() refuses it.
-    // refs: DN-56.D17
+    // refs: ADR-25.D11
     [[nodiscard]] bool tracks_histograms(const MetaLogDocument& doc) noexcept
     {
         return doc.stats.param_histograms_size.has_value();
@@ -58,7 +58,7 @@ namespace
     // post: the statement that two histogram-tracking inputs run at different caps, or nothing when
     // either tracks none or both caps match.
     // pre: a tracking document declares value_counts_size beside it, or diff() refuses it.
-    // refs: DN-56.D17
+    // refs: ADR-25.D11
     [[nodiscard]] std::optional<HistogramCapsDiffer>
     histogram_caps_differ(const MetaLogDocument& previous, const MetaLogDocument& current)
     {
@@ -77,7 +77,7 @@ namespace
     }
 
     // post: the axis descriptors with their collapse stamps stripped -- the cube's axis SCHEMA.
-    // refs: DN-56.D14
+    // refs: ADR-25.D11
     [[nodiscard]] std::vector<CubeAxis> axis_schema_of(const CubeBlock& cube)
     {
         std::vector<CubeAxis> schema;
@@ -159,7 +159,7 @@ namespace
     // post: no row when the PAIR makes the block incomparable, stated instead -- absence first
     // (behavior, then behavior.branching), then the order, since an absent operand has no order.
     // note: a missing branching entry means not comparable, never zero entropy.
-    // refs: DN-126.D9, DN-56.D13, DN-56.D15
+    // refs: DN-126.D9, ADR-25.D11
     void diff_branching_delta(MetaLogDiff& out, const MetaLogDocument& previous,
                               const MetaLogDocument& current)
     {
@@ -228,7 +228,7 @@ namespace
     // post: each omission is stated in incomparable_signals, so the document says which comparison
     // it did not perform rather than read as one finding nothing.
     // invariant: reached only by unstamped pairs; the retention_profile gate refuses a stamped one.
-    // refs: ADR-20.D17, ADR-25.D5, DN-56.D13
+    // refs: ADR-20.D17, ADR-25.D5, ADR-25.D11
     void diff_ngram_delta(MetaLogDiff& out, const MetaLogDocument& previous,
                           const MetaLogDocument& current)
     {
@@ -695,7 +695,7 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
                                      "retention_profile", "diff");
     // assert: a document tracking histograms declares both caps, so a caps-differ statement never
     // carries a value no input declared; a declared value cap alone is the composer's posture.
-    // refs: DN-56.D17, DN-148.D5
+    // refs: ADR-25.D11, DN-148.D5
     for (const MetaLogDocument* doc : {&previous, &current})
         if (doc->stats.param_histograms_size && !doc->stats.value_counts_size)
             throw std::invalid_argument{
@@ -735,7 +735,7 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
     diff_ngram_delta(out, previous, current);
     // assert: absence before the caps -- an input that tracks nothing has no cap to compare -- and
     // an incomparable block computes no row, so withheld_signals can never name it.
-    // refs: DN-56.D17
+    // refs: ADR-25.D11
     if (auto absent{one_sided(tracks_histograms(previous), tracks_histograms(current),
                               SignalBlock::ParamHistograms)})
         out.incomparable_signals.field_histogram_deltas = std::move(absent);
@@ -747,7 +747,7 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
     diff_tail_delta(out, previous, current);
     // assert: membership read against a side that keeps no reservoir reports configuration as
     // births and deaths, so a one-sided pair is stated and never differenced.
-    // refs: DN-56.D16
+    // refs: ADR-25.D11
     if (auto absent{one_sided(keeps_reservoir(previous), keeps_reservoir(current),
                               SignalBlock::StatsReservoir)})
         out.incomparable_signals.reservoir_delta = std::move(absent);
@@ -757,7 +757,7 @@ MetaLogDiff diff(const MetaLogDocument& previous, const MetaLogDocument& current
     diff_span_edge_delta(out, previous, current);
     // assert: the gate is both cubes at one axis SCHEMA; the collapse stamps may differ, and the
     // pair is then read at its minimal common collapse, which loses granularity and no count.
-    // refs: ADR-24.D7, DN-56.D14
+    // refs: ADR-24.D7, ADR-25.D11
     if (auto absent{one_sided(previous.has_cube, current.has_cube, SignalBlock::Cube)})
         out.incomparable_signals.cube_diff = std::move(absent);
     else if (previous.has_cube)

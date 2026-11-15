@@ -214,7 +214,7 @@ TEST(ComposeAlgebraTest, IdentityPreservesTheDocumentIncludingItsDeclaredReservo
     const auto doc_a{engine_a.close_window(kT1)};
 
     // note: ZERO -- a producer keeping no reservoir, every other parameter A's, and no events.
-    // invariant: a reservoir-keeping producer declares its cap on every document (DN-56.D16), so
+    // invariant: a reservoir-keeping producer declares its cap on every document (ADR-25.D11), so
     // the undeclared-cap ZERO comes from a producer that keeps none.
     meta::MetaLogConfig zero_cfg{cfg};
     zero_cfg.reservoir_size = 0;
@@ -1009,7 +1009,7 @@ TEST(ComposeAlgebraTest, TopKTruncationBreaksAssociativityOfARetainedEntrysOwnCo
         << "right bracketing must account for every line:\n    " << render_top_k(a_bc);
 }
 
-// refs: ADR-25.D5, DN-56.D16
+// refs: ADR-25.D5, ADR-25.D11
 // invariant: a reservoir-keeping producer declares its cap on every window, a quiet one whose
 // templates all fit in top-K included, so the absent-cap input is a producer keeping none.
 // invariant: a min folding absence in as zero would make the composed cap zero and silently drop
@@ -1069,7 +1069,7 @@ TEST(ComposeAlgebraTest, MinOverDeclaredCapsSurvivesAnAbsentCapPair)
     ASSERT_TRUE(quiet.stats.reservoir.empty()) << render_reservoir(quiet);
     ASSERT_EQ(quiet_keeping.stats.reservoir_size, kCap)
         << "a producer keeping a reservoir declares its cap on a window whose templates ALL fit in "
-           "top-K, so the wire tells kept-and-empty from never kept (DN-56.D16):\n    "
+           "top-K, so the wire tells kept-and-empty from never kept (ADR-25.D11):\n    "
         << render_reservoir(quiet_keeping);
     ASSERT_TRUE(quiet_keeping.stats.reservoir.empty()) << render_reservoir(quiet_keeping);
     ASSERT_EQ(busy.stats.reservoir_size, kCap)

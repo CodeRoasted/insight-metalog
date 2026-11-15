@@ -820,7 +820,7 @@ void MetaLogEngine::build_reservoir(MetaLogDocument& doc, const WindowAnalysis& 
         return;
     // invariant: a kept reservoir declares its cap in every document, an empty one included, so the
     // wire tells a reservoir kept and empty from one never kept; admission stops at the same value.
-    // refs: DN-56.D16
+    // refs: ADR-25.D11
     doc.stats.reservoir_size = config_.reservoir_size;
     if (analysis.ordered.size() <= analysis.top_k_cut)
         return;

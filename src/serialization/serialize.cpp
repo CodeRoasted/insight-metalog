@@ -528,7 +528,7 @@ namespace dto
 
     // invariant: one statement of why a comparison was not made: the reason token, then exactly the
     // evidence members that reason carries; every name is the specification's, verbatim.
-    // refs: ADR-25.D5, DN-56.D13, F-SRC-metalog-spec:metalog_diff.v0.schema.json
+    // refs: ADR-25.D5, ADR-25.D11, F-SRC-metalog-spec:metalog_diff.v0.schema.json
     struct IncomparableReason
     {
         std::string reason;
@@ -939,7 +939,7 @@ namespace
         }
         // invariant: the cap is written whenever declared, beside an empty reservoir too: absent
         // reservoir beside a declared cap reads "kept and empty".
-        // refs: DN-56.D16
+        // refs: ADR-25.D11
         out.reservoir_size = stats.reservoir_size;
         out.param_histograms_size = stats.param_histograms_size;
         out.value_counts_size = stats.value_counts_size;

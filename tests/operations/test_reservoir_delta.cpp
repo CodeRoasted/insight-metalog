@@ -45,7 +45,7 @@ using insight::template_id_of;
 
 // invariant: default processing identifiers and a declared reservoir cap, so the comparability
 // gate passes, both sides keep a reservoir, and the salience memory is the only variable.
-// refs: DN-56.D16
+// refs: ADR-25.D11
 [[nodiscard]] meta::MetaLogDocument doc_with(std::vector<meta::TopKEntry> top_k,
                                              std::vector<meta::ReservoirEntry> reservoir)
 {
