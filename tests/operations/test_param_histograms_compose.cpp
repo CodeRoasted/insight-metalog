@@ -74,7 +74,7 @@ TEST(ParamHistogramsCompose, ApproximateCardinalityIsMaxAcrossInputs)
 
 // invariant: SPEC 12.1 (PR #31) -- every merged key is a distinct observed value, so the merged key
 // count, taken BEFORE the cut, is a floor under the composed cardinality.
-// refs: ADR-25.D12, DN-56.O8
+// refs: ADR-25.D12
 TEST(ParamHistogramsCompose, ApproximateCardinalityIsNeverBelowTheMergedKeyCount)
 {
     const auto lhs{make_doc_with_histogram("h:abc", 0, {{"x", 1}}, 1, /*card=*/1, 10)};
