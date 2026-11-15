@@ -86,3 +86,10 @@
 # so rate_changed and the composed mean carry them. Every other section is order 2 or span-free.
 # Appended LAST so every earlier section's bytes stay where they were.
 --span-order3 (ADR-24.D7 order-3 declared span edges in their own block, trigrams in top_ngrams)
+
+# The one window whose §C3 collapse drops the WHERE axis to depth 0, so the digest carries a
+# `floor_depth` of 0 — the stamp §16.2 names for a dropped chain, which the schema refused until
+# metalog-spec 0.10.0's closing pull request (#31). Without it the conformance gate never judges
+# the value the producer's collapse can reach. Appended LAST so every earlier section's bytes stay
+# where they were.
+--where-drop (Sec16.2 WHERE axis dropped, floor_depth 0)

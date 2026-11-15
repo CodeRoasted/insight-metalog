@@ -26,6 +26,8 @@ import insight.metalog.test;
 #include "collapse_depths_scenario.hpp"
 // note: the only scenario here whose documents carry two n-gram lengths at once.
 #include "span_order3_scenario.hpp"
+// note: the only scenario here whose collapse drops the WHERE axis to depth 0.
+#include "where_drop_scenario.hpp"
 
 namespace
 {
@@ -688,6 +690,39 @@ TEST(MetaLogDocument, SpanOrder3PairRidesDeclaredEdgesApartFromTrigrams)
     ASSERT_TRUE(delta.ngram_delta.has_value()) << "the pair moved no n-gram at all";
     EXPECT_EQ(lengths_of(delta.ngram_delta->rate_changed), trigrams_only)
         << "rate_changed must carry the trigram conditionals and never a declared edge";
+}
+
+// invariant: the --where-drop window collapses WHERE away, so the published digest carries a where
+// axis at floor_depth 0 and the conformance gate judges the value the collapse can reach.
+// note: it goes hollow if LEVEL banding alone fits the budget again, so the depth is read first.
+// refs: DN-56.D22
+TEST(MetaLogDocument, WhereDropWindowStampsFloorDepthZeroOnTheWire)
+{
+    meta::MetaLogConfig cfg;
+    meta::where_drop::configure(cfg);
+    meta::MetaLogEngine engine{cfg};
+    using Clock = std::chrono::system_clock;
+    engine.open_window(Clock::time_point{std::chrono::seconds{1700000000}});
+    meta::where_drop::emit_window(engine);
+    const auto doc{engine.close_window(Clock::time_point{std::chrono::seconds{1700000060}})};
+
+    ASSERT_TRUE(doc.has_cube);
+    std::optional<std::uint32_t> where_depth;
+    std::optional<std::size_t> chain_length;
+    for (const auto& axis : doc.cube.axes)
+        if (axis.name == "where")
+        {
+            where_depth = axis.floor_depth;
+            chain_length = axis.chain ? std::optional{axis.chain->size()} : std::nullopt;
+        }
+    ASSERT_EQ(where_depth, std::optional<std::uint32_t>{0U})
+        << "the window must collapse WHERE away, or the digest never carries floor_depth 0";
+    ASSERT_EQ(chain_length, std::optional<std::size_t>{1U})
+        << "SPEC 16.2: the chain stops at the schema floor, so depth 0 < len(chain) reads as "
+           "truncated";
+    const std::string wire{written_or_fail(meta::to_json(doc, engine.registry()))};
+    EXPECT_NE(wire.find("\"floor_depth\":0"), std::string::npos)
+        << "the stamp must reach the wire, where the conformance gate judges it";
 }
 
 } // namespace

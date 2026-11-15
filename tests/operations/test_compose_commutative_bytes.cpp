@@ -305,9 +305,15 @@ TEST(ComposeCommutativeBytesTest, ProvenanceAddsBothInputsAndSortsByWindow)
     std::vector<std::string> handles;
     for (const auto& child : *composed.coordinate->children)
         handles.push_back(child.source_ref ? child.source_ref->handle : std::string{"<none>"});
-    // note: canonical bytes open on "bounds":{"end_tick":, so end ticks 120 < 60 < 90 as BYTES.
-    EXPECT_EQ(handles, (std::vector<std::string>{"m-right", "a-left", "z-left"}))
-        << "the composed coordinate's children are a set, emitted in RFC 8785 byte order";
+    // note: ticks 0 < 30 < 60 order them; digit strings ("120" < "60") would put m-right first.
+    EXPECT_EQ(handles, (std::vector<std::string>{"a-left", "z-left", "m-right"}))
+        << "SPEC 15.5: the composed coordinate's children are ordered by start_tick, then "
+           "end_tick, as integers, then canonically";
+    for (const auto& child : *composed.coordinate->children)
+        EXPECT_FALSE(child.children.has_value())
+            << "SPEC 15.5: children is FLATTENED -- every element raw, a composed input "
+               "contributing its own children; got a nested child under "
+            << (child.source_ref ? child.source_ref->handle : std::string{"<none>"});
 }
 
 // post: a provenance entry on one fixed early window, so it sorts ahead of every other entry and
@@ -386,6 +392,162 @@ TEST(ComposeCommutativeBytesTest, ProvenanceOrdersByRfc8785CanonicalBytes)
            "b, against the exact ticks); with no document_id the exact decimal decides; the emoji "
            "key (UTF-16 D83D) precedes U+E000, so its value decides the tagged pair. Got:"
         << listing;
+}
+
+// post: a raw window: one service, `lines` observed, and a raw coordinate over [start, end) when
+// `start` is engaged.
+[[nodiscard]] meta::MetaLogDocument raw_window(std::uint64_t lines, std::string handle,
+                                               std::optional<std::uint64_t> start,
+                                               std::uint64_t end)
+{
+    meta::MetaLogDocument doc;
+    doc.window.lines_observed = lines;
+    doc.source.service = "checkout";
+    doc.stats.top_k_size = 3;
+    if (start)
+    {
+        meta::ReDerivationCoordinate coord;
+        coord.source_ref = meta::SourceRef{.resolver_kind = "replay", .handle = std::move(handle)};
+        coord.bounds = meta::EventTimeBounds{.start_tick = *start, .end_tick = end};
+        doc.coordinate = coord;
+    }
+    return doc;
+}
+
+[[nodiscard]] std::vector<std::string> child_handles(const meta::MetaLogDocument& doc)
+{
+    std::vector<std::string> handles;
+    if (doc.coordinate && doc.coordinate->children)
+        for (const auto& child : *doc.coordinate->children)
+            handles.push_back(child.source_ref ? child.source_ref->handle : std::string{"<none>"});
+    return handles;
+}
+
+[[nodiscard]] std::string listed(const std::vector<std::string>& values)
+{
+    std::string out{"["};
+    for (const auto& value : values)
+        out += (out.size() > 1 ? ", " : "") + value;
+    return out + "]";
+}
+
+// invariant: SPEC 15.5 (PR #31) -- the composed children are ordered by start_tick, then
+// end_tick, compared as INTEGERS.
+// invariant: the canonical bytes, which open on "end_tick" as a digit string, cannot decide it.
+// refs: DN-56.D20, DN-56.O8
+TEST(ComposeCommutativeBytesTest, CoordinateChildrenOrderByTicksNotByCanonicalBytes)
+{
+    // note: A [5, 30) and B [10, 20): "20" < "30" as bytes writes B first; the ticks write A first.
+    const meta::MetaLogDocument earlier{raw_window(10, "a-earlier", 5, 30)};
+    const meta::MetaLogDocument later{raw_window(10, "b-later", 10, 20)};
+    const meta::TemplateRegistry registry;
+    const std::string forward{
+        written_or_fail(meta::to_json(meta::compose(earlier, later, kComposer), registry))};
+    const std::string reverse{
+        written_or_fail(meta::to_json(meta::compose(later, earlier, kComposer), registry))};
+    EXPECT_EQ(forward, reverse) << first_divergence(forward, reverse);
+    const std::vector<std::string> handles{child_handles(meta::compose(earlier, later, kComposer))};
+    EXPECT_EQ(handles, (std::vector<std::string>{"a-earlier", "b-later"}))
+        << "start_tick 5 precedes start_tick 10; got " << listed(handles);
+}
+
+// invariant: SPEC 15.5 (PR #31) -- C.coordinate is omitted unless every input either carries one
+// or observed no line, so a coordinate never recovers fewer lines than C counts.
+// refs: DN-56.D20, DN-56.O8
+TEST(ComposeCommutativeBytesTest, CoordinateIsOmittedWhenAnInputWithLinesCarriesNone)
+{
+    const meta::MetaLogDocument with_coordinate{raw_window(10, "a", 0, 60)};
+    const meta::MetaLogDocument lines_without{raw_window(7, "", std::nullopt, 0)};
+    const meta::MetaLogDocument empty_without{raw_window(0, "", std::nullopt, 0)};
+
+    for (const auto& composed : {meta::compose(with_coordinate, lines_without, kComposer),
+                                 meta::compose(lines_without, with_coordinate, kComposer)})
+        EXPECT_FALSE(composed.coordinate.has_value())
+            << "an input with 7 lines carries no coordinate, so a coordinate of the other "
+               "input's leaves recovers 10 of the 17 lines C counts; got children "
+            << listed(child_handles(composed));
+
+    for (const auto& composed : {meta::compose(with_coordinate, empty_without, kComposer),
+                                 meta::compose(empty_without, with_coordinate, kComposer)})
+        EXPECT_EQ(child_handles(composed), std::vector<std::string>{"a"})
+            << "an input of 0 lines with no coordinate does not strip the other's leaves";
+}
+
+// invariant: SPEC 12.1 and 15.5 -- compose(A, A) keeps BOTH copies in provenance and both leaves in
+// the coordinate, because C.window.lines_observed counts A twice.
+// refs: DN-56.D20
+TEST(ComposeCommutativeBytesTest, SelfCompositionKeepsEveryDuplicate)
+{
+    const meta::MetaLogDocument window{raw_window(10, "self", 0, 60)};
+    const meta::MetaLogDocument composed{meta::compose(window, window, kComposer)};
+    EXPECT_EQ(composed.window.lines_observed, 20U);
+    ASSERT_TRUE(composed.provenance.has_value());
+    EXPECT_EQ(composed.provenance->size(), 2U)
+        << "SPEC 12.1: provenance is A.provenance + B.provenance + one entry per input, "
+           "duplicates kept";
+    EXPECT_EQ(child_handles(composed), (std::vector<std::string>{"self", "self"}))
+        << "SPEC 15.5: every leaf is kept, a duplicate included, or a replay recovers half the "
+           "lines C counts";
+}
+
+// post: one n-gram block of order 2 carrying `entries`.
+[[nodiscard]] meta::BehaviorBlock ngram_block(std::vector<meta::NGramEntry> entries)
+{
+    meta::BehaviorBlock behavior;
+    behavior.ngram_size = 2;
+    behavior.top_ngrams_size = 4;
+    behavior.top_ngrams = std::move(entries);
+    return behavior;
+}
+
+[[nodiscard]] const meta::NGramEntry* ngram_find(const meta::MetaLogDocument& doc,
+                                                 const std::vector<insight::TemplateId>& key)
+{
+    if (!doc.behavior)
+        return nullptr;
+    for (const auto& entry : doc.behavior->top_ngrams)
+        if (entry.sequence == key)
+            return &entry;
+    return nullptr;
+}
+
+// invariant: SPEC 12.1 (PR #31) -- a composed n-gram's probability is
+// sum(count) / sum(count / probability) over the inputs carrying the key, the merged conditional.
+// invariant: the count-weighted mean of the probabilities is NOT that conditional.
+// refs: DN-56.D23, DN-56.O9
+TEST(ComposeCommutativeBytesTest, NgramProbabilityIsTheMergedConditional)
+{
+    const std::vector<insight::TemplateId> key{kHigherCount, kEqualCount};
+    const std::vector<insight::TemplateId> one_sided{kEqualCount, kBoundaryLeft};
+    meta::MetaLogDocument left{raw_window(10, "l", 0, 60)};
+    meta::MetaLogDocument right{raw_window(10, "r", 60, 120)};
+    // note: count 1 under a prefix total of 4, and count 3 under a prefix total of 4.
+    left.behavior =
+        ngram_block({meta::NGramEntry{.sequence = key, .count = 1, .probability = 0.25},
+                     meta::NGramEntry{.sequence = one_sided, .count = 2, .probability = 0.4}});
+    right.behavior =
+        ngram_block({meta::NGramEntry{.sequence = key, .count = 3, .probability = 0.75}});
+
+    const meta::MetaLogDocument composed{meta::compose(left, right, kComposer)};
+    const meta::NGramEntry* merged{ngram_find(composed, key)};
+    ASSERT_NE(merged, nullptr) << "the key both inputs carry must ride the composed top_ngrams";
+    EXPECT_EQ(merged->count, 4U);
+    EXPECT_EQ(merged->probability, 0.5)
+        << "4 sequences of the key over 4 + 4 under its prefix is 0.5; the count-weighted mean "
+           "of 0.25 and 0.75 is 0.625";
+
+    const meta::NGramEntry* carried{ngram_find(composed, one_sided)};
+    ASSERT_NE(carried, nullptr) << "the key only the left input carries must ride through";
+    EXPECT_EQ(carried->count, 2U);
+    EXPECT_EQ(carried->probability, 0.4)
+        << "a key one input carries keeps that input's conditional exactly";
+
+    const meta::TemplateRegistry registry;
+    const std::string forward{
+        written_or_fail(meta::to_json(meta::compose(left, right, kComposer), registry))};
+    const std::string reverse{
+        written_or_fail(meta::to_json(meta::compose(right, left, kComposer), registry))};
+    EXPECT_EQ(forward, reverse) << first_divergence(forward, reverse);
 }
 
 } // namespace

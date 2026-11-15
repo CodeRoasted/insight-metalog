@@ -211,8 +211,10 @@ namespace
     // post: value_counts union with sums on matching keys, total the sum and entropy recomputed
     // over the merge; every slot, a one-sided one included, re-admitted under `value_cap`.
     // post: a slot whose param_index is at or above an engaged `slot_cap` is dropped from both.
-    // note: cardinality takes the max (no registers on the wire).
-    // refs: DN-148.D5
+    // post: a two-sided slot's cardinality is the largest of the inputs' and the merged key count
+    // taken BEFORE the cut, when either input carries one; 0 (absent) when neither does.
+    // note: no sketch registers ride the wire; each merged key is a distinct value, a lower bound.
+    // refs: DN-148.D5, DN-56.D21
     [[nodiscard]] std::vector<FieldHistogram>
     merge_field_histograms(const std::vector<FieldHistogram>& lhs,
                            const std::vector<FieldHistogram>& rhs,
@@ -257,8 +259,10 @@ namespace
             for (const auto& [value, count] : merged.value_counts)
                 counts.push_back(count);
             merged.entropy_bits = shannon_entropy_bits(counts, merged.total);
-            merged.approximate_cardinality =
-                std::max(lhs_hist.approximate_cardinality, rhs_hist.approximate_cardinality);
+            if (lhs_hist.approximate_cardinality > 0 || rhs_hist.approximate_cardinality > 0)
+                merged.approximate_cardinality =
+                    std::max({lhs_hist.approximate_cardinality, rhs_hist.approximate_cardinality,
+                              static_cast<std::uint64_t>(merged.value_counts.size())});
             readmit_slot(merged, value_cap);
             out.push_back(std::move(merged));
         }
@@ -904,12 +908,18 @@ namespace
         return prov;
     }
 
-    // post: the SET of the inputs' raw-leaf coordinates, never a coarse single bound, in the
-    // canonical-key order of each child; nullopt when neither input carried one.
-    // note: SPEC 15.5 names a set and no order, and 12.2 requires one independent of the operands.
+    // post: every raw leaf of the inputs, a duplicate kept, never a coarse single bound, ordered by
+    // start_tick, then end_tick, as integers, then by the canonical key.
+    // post: nullopt when neither input carried one, AND when an input that observed lines carried
+    // none, so the coordinate never recovers fewer lines than C counts.
+    // note: the ticks lead because they compare exactly; the canonical bytes are digit strings.
+    // refs: DN-56.D20
     std::optional<ReDerivationCoordinate> merge_coordinate(const MetaLogDocument& lhs,
                                                            const MetaLogDocument& rhs)
     {
+        for (const MetaLogDocument* doc : {&lhs, &rhs})
+            if (!doc->coordinate && doc->window.lines_observed > 0)
+                return std::nullopt;
         std::vector<std::pair<CanonicalKey, ReDerivationCoordinate>> keyed;
         const auto add{[&keyed](const ReDerivationCoordinate& child)
                        { keyed.emplace_back(canonical_key_of(child), child); }};
@@ -927,8 +937,23 @@ namespace
         collect_leaves(rhs);
         if (keyed.empty())
             return std::nullopt;
-        std::ranges::sort(keyed, [](const auto& lhs_keyed, const auto& rhs_keyed)
-                          { return lhs_keyed.first < rhs_keyed.first; });
+        // invariant: a leaf is RAW, so its bounds are engaged; a missing bound sorts first so a
+        // malformed input still orders independently of the operands.
+        const auto ticks{[](const ReDerivationCoordinate& leaf)
+                         {
+                             return leaf.bounds ? std::optional{std::pair{leaf.bounds->start_tick,
+                                                                          leaf.bounds->end_tick}}
+                                                : std::nullopt;
+                         }};
+        std::ranges::sort(keyed,
+                          [&ticks](const auto& lhs_keyed, const auto& rhs_keyed)
+                          {
+                              const auto lhs_ticks{ticks(lhs_keyed.second)};
+                              const auto rhs_ticks{ticks(rhs_keyed.second)};
+                              if (lhs_ticks != rhs_ticks)
+                                  return lhs_ticks < rhs_ticks;
+                              return lhs_keyed.first < rhs_keyed.first;
+                          });
         std::vector<ReDerivationCoordinate> child_coords;
         child_coords.reserve(keyed.size());
         for (auto& [key, child] : keyed)
@@ -964,6 +989,65 @@ namespace
                (rhs.behavior ? rhs.behavior->dropped_ngram_observations.value_or(0) : 0);
     }
 
+    // post: the inputs' n-gram entries summed on identical sequences, counted descending, then by
+    // sequence; every key kept, the cap not yet applied.
+    // post: a merged probability is sum(count) / sum(count / probability) over the inputs carrying
+    // the key with a count above 0; 0 when none contributes.
+    // note: count / probability IS an input's prefix total; a count-weighted mean is NOT this.
+    // refs: DN-56.D23
+    [[nodiscard]] std::vector<NGramEntry> summed_ngram_entries(const MetaLogDocument& lhs,
+                                                               const MetaLogDocument& rhs)
+    {
+        // note: one accumulator keyed on the scalar id replaces three sequence-keyed maps.
+        // refs: F-SRC-insight-canon:canon.api.cppm:NgramId, ADR-16.D1
+        struct NgramAccum
+        {
+            std::vector<TemplateId> sequence;
+            std::uint64_t count{0};
+            // invariant: the summed prefix totals, count / probability per contributing input.
+            double prefix_total{0.0};
+        };
+        std::unordered_map<NgramId, NgramAccum> acc;
+        auto absorb = [&](const std::optional<BehaviorBlock>& block)
+        {
+            if (!block)
+                return;
+            for (const auto& entry : block->top_ngrams)
+            {
+                auto [iter, inserted]{acc.try_emplace(insight::ngram_id_of(entry.sequence))};
+                if (inserted)
+                    iter->second.sequence = entry.sequence;
+                if (entry.count == 0)
+                    continue;
+                iter->second.count += entry.count;
+                iter->second.prefix_total += static_cast<double>(entry.count) / entry.probability;
+            }
+        };
+        absorb(lhs.behavior);
+        absorb(rhs.behavior);
+        std::vector<NGramEntry> entries;
+        entries.reserve(acc.size());
+        for (auto& [tid, accum] : acc)
+        {
+            NGramEntry entry;
+            entry.sequence = std::move(accum.sequence);
+            entry.count = accum.count;
+            // assert: two inputs, so the prefix sum has two addends at most and IEEE addition of
+            // two is commutative: the bytes do not depend on the operand order.
+            entry.probability =
+                accum.count > 0 ? static_cast<double>(accum.count) / accum.prefix_total : 0.0;
+            entries.push_back(std::move(entry));
+        }
+        std::ranges::sort(entries,
+                          [](const NGramEntry& lhs, const NGramEntry& rhs)
+                          {
+                              if (lhs.count != rhs.count)
+                                  return lhs.count > rhs.count;
+                              return lhs.sequence < rhs.sequence;
+                          });
+        return entries;
+    }
+
     // post: top_ngrams merged by summing counts on identical sequences; branching, dominant_path
     // and graph_edge_count are deliberately NOT re-derived.
     // post: nullopt when both inputs carry a block at DIFFERENT ngram_size: two orders' keys
@@ -992,50 +1076,7 @@ namespace
         // written 0 and a silent omission on inputs that did drop are both wrong.
         if (const std::uint64_t dropped{dropped_ngram_sum(lhs, rhs)}; dropped > 0)
             behavior.dropped_ngram_observations = dropped;
-        // note: one accumulator keyed on the scalar id replaces three sequence-keyed maps.
-        // refs: F-SRC-insight-canon:canon.api.cppm:NgramId, ADR-16.D1
-        struct NgramAccum
-        {
-            std::vector<TemplateId> sequence;
-            std::uint64_t count{0};
-            double prob_sum{0.0};
-            std::uint64_t prob_n{0};
-        };
-        std::unordered_map<NgramId, NgramAccum> acc;
-        auto absorb = [&](const std::optional<BehaviorBlock>& block)
-        {
-            if (!block)
-                return;
-            for (const auto& entry : block->top_ngrams)
-            {
-                auto [iter, inserted]{acc.try_emplace(insight::ngram_id_of(entry.sequence))};
-                if (inserted)
-                    iter->second.sequence = entry.sequence;
-                iter->second.count += entry.count;
-                iter->second.prob_sum += entry.probability * static_cast<double>(entry.count);
-                iter->second.prob_n += entry.count;
-            }
-        };
-        absorb(lhs.behavior);
-        absorb(rhs.behavior);
-        std::vector<NGramEntry> entries;
-        entries.reserve(acc.size());
-        for (auto& [tid, accum] : acc)
-        {
-            NGramEntry entry;
-            entry.sequence = std::move(accum.sequence);
-            entry.count = accum.count;
-            entry.probability =
-                accum.prob_n > 0 ? accum.prob_sum / static_cast<double>(accum.prob_n) : 0.0;
-            entries.push_back(std::move(entry));
-        }
-        std::ranges::sort(entries,
-                          [](const NGramEntry& lhs, const NGramEntry& rhs)
-                          {
-                              if (lhs.count != rhs.count)
-                                  return lhs.count > rhs.count;
-                              return lhs.sequence < rhs.sequence;
-                          });
+        std::vector<NGramEntry> entries{summed_ngram_entries(lhs, rhs)};
         if (entries.size() > behavior.top_ngrams_size)
             entries.resize(behavior.top_ngrams_size);
         behavior.top_ngrams = std::move(entries);

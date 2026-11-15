@@ -72,6 +72,73 @@ TEST(ParamHistogramsCompose, ApproximateCardinalityIsMaxAcrossInputs)
     EXPECT_EQ(composed.stats.top_k[0].field_histograms[0].approximate_cardinality, 1847U);
 }
 
+// invariant: SPEC 12.1 (PR #31) -- every merged key is a distinct observed value, so the merged key
+// count, taken BEFORE the cut, is a floor under the composed cardinality.
+// refs: DN-56.D21, DN-56.O8
+TEST(ParamHistogramsCompose, ApproximateCardinalityIsNeverBelowTheMergedKeyCount)
+{
+    const auto lhs{make_doc_with_histogram("h:abc", 0, {{"x", 1}}, 1, /*card=*/1, 10)};
+    const auto rhs{make_doc_with_histogram("h:abc", 0, {{"y", 1}}, 1, /*card=*/1, 10)};
+    const auto composed{meta::compose(lhs, rhs)};
+    EXPECT_EQ(composed.stats.top_k[0].field_histograms[0].approximate_cardinality, 2U)
+        << "{x} and {y} merge to two distinct values; max(1, 1) under-reports them";
+
+    constexpr std::size_t kCap{meta::MetaLogConfig::kDefaultMaxHistogramValues};
+    std::unordered_map<std::string, std::uint64_t> wide_lhs;
+    std::unordered_map<std::string, std::uint64_t> wide_rhs;
+    for (std::size_t i{0}; i < kCap; ++i)
+    {
+        wide_lhs.emplace("l" + std::to_string(i), 1);
+        wide_rhs.emplace("r" + std::to_string(i), 1);
+    }
+    const auto cut{meta::compose(
+        make_doc_with_histogram("h:abc", 0, std::move(wide_lhs), kCap, /*card=*/kCap, 100),
+        make_doc_with_histogram("h:abc", 0, std::move(wide_rhs), kCap, /*card=*/kCap, 100))};
+    const auto& slot{cut.stats.top_k[0].field_histograms[0]};
+    EXPECT_EQ(slot.value_counts.size(), kCap) << "the merged map is cut to the value cap";
+    EXPECT_EQ(slot.approximate_cardinality, 2 * kCap)
+        << "the floor is the merged key count BEFORE the cut, not the kept count";
+}
+
+// invariant: SPEC 3.5.1 -- a cardinality of 0 is absent on the wire, so when neither input carries
+// one the composed slot carries none either, whatever its key count.
+// refs: DN-56.D21
+TEST(ParamHistogramsCompose, ApproximateCardinalityStaysAbsentWhenNeitherInputCarriesOne)
+{
+    const auto lhs{make_doc_with_histogram("h:abc", 0, {{"x", 1}}, 1, /*card=*/0, 10)};
+    const auto rhs{make_doc_with_histogram("h:abc", 0, {{"y", 1}}, 1, /*card=*/0, 10)};
+    EXPECT_EQ(meta::compose(lhs, rhs).stats.top_k[0].field_histograms[0].approximate_cardinality,
+              0U);
+}
+
+// invariant: SPEC 12.1 -- the cut keeps the highest counts, then the key whose UTF-8 bytes sort
+// first, and a composed entry's histograms are ordered by param_index.
+// refs: DN-56.D21
+TEST(ParamHistogramsCompose, CutTieBreaksOnKeyBytesAndSlotsOrderByParamIndex)
+{
+    constexpr std::size_t kCap{meta::MetaLogConfig::kDefaultMaxHistogramValues};
+    std::unordered_map<std::string, std::uint64_t> values;
+    for (std::size_t i{0}; i <= kCap; ++i)
+        values.emplace(std::format("v{:03}", i), 1);
+    auto lhs{make_doc_with_histogram("h:abc", 2, std::move(values), kCap + 1, 0, 100)};
+    auto rhs{make_doc_with_histogram("h:abc", 0, {{"z", 1}}, 1, 0, 100)};
+    meta::FieldHistogram middle;
+    middle.param_index = 1;
+    middle.value_counts = {{"m", 1}};
+    middle.total = 1;
+    rhs.stats.top_k[0].field_histograms.push_back(middle);
+
+    const auto composed{meta::compose(lhs, rhs)};
+    const auto& slots{composed.stats.top_k[0].field_histograms};
+    ASSERT_EQ(slots.size(), 3U);
+    for (std::uint32_t index{0}; index < slots.size(); ++index)
+        EXPECT_EQ(slots[index].param_index, index) << "slots ordered by param_index";
+    EXPECT_EQ(slots[2].value_counts.size(), kCap);
+    EXPECT_FALSE(slots[2].value_counts.contains(std::format("v{:03}", kCap)))
+        << "every value ties at count 1, so the key whose bytes sort LAST is the one cut";
+    EXPECT_TRUE(slots[2].value_counts.contains("v000"));
+}
+
 // invariant: a one-sided slot is CARRIED rather than omitted, preserving more information, so the
 // composed drift and shift can still see the asymmetric distribution.
 TEST(ParamHistogramsCompose, CarriesOneSidedHistogramUnchanged)

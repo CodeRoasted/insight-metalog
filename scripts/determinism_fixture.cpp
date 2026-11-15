@@ -29,6 +29,7 @@ import insight.metalog;
 #include "reservoir_streaming_scenario.hpp"
 #include "service_edges_overcap_scenario.hpp"
 #include "span_order3_scenario.hpp"
+#include "where_drop_scenario.hpp"
 
 // note: an escaping exception terminating this fixture IS its intended failure mode.
 // NOLINTNEXTLINE(bugprone-exception-escape)
@@ -48,7 +49,8 @@ int main(int argc, char** argv)
     {
         std::cerr << "usage: determinism_fixture <corpus | --reservoir-nearfull | "
                      "--reservoir-streaming | --cube-collapse | --service-edges | "
-                     "--ngram-cap | --latency-shift | --collapse-depths | --span-order3>\n";
+                     "--ngram-cap | --latency-shift | --collapse-depths | --span-order3 | "
+                     "--where-drop>\n";
         return 2;
     }
 
@@ -216,6 +218,23 @@ int main(int argc, char** argv)
                   << ml::to_json(current, engine.registry()).value() << "\n"
                   << ml::to_json(ml::diff(previous, current)).value() << "\n"
                   << ml::to_json(ml::compose(previous, current), engine.registry()).value() << "\n";
+        return 0;
+    }
+
+    // post: emits the one document whose collapse drops the WHERE axis, so a floor_depth of 0
+    // reaches the published digest and the conformance gate judges it against the schema.
+    // refs: DN-56.D22
+    if (std::string{argv[1]} == "--where-drop")
+    {
+        namespace ml = insight::metalog;
+        ml::MetaLogConfig cfg;
+        ml::where_drop::configure(cfg);
+        ml::MetaLogEngine engine{cfg};
+        using Clock = std::chrono::system_clock;
+        engine.open_window(Clock::time_point{std::chrono::seconds{1700000000}});
+        ml::where_drop::emit_window(engine);
+        const auto doc{engine.close_window(Clock::time_point{std::chrono::seconds{1700000060}})};
+        std::cout << ml::to_json(doc, engine.registry()).value() << "\n";
         return 0;
     }
 
